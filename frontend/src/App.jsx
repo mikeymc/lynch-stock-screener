@@ -156,7 +156,7 @@ function App() {
         </div>
       )}
 
-      {summary && summary.totalAnalyzed > 0 && (
+      {summary && (
         <div className="summary-banner">
           <strong>Analyzed {summary.totalAnalyzed} stocks:</strong>
           <span className="summary-stat pass">{summary.passCount} PASS</span>
