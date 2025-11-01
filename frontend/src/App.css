@@ -124,6 +124,46 @@ button:disabled {
   background-color: #7f1d1d;
 }
 
+.summary-banner {
+  background-color: #1e293b;
+  border: 1px solid #475569;
+  border-left: 4px solid #3b82f6;
+  padding: 1rem 1.5rem;
+  border-radius: 0.5rem;
+  margin: 1rem 0;
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.summary-banner strong {
+  color: #e2e8f0;
+  font-size: 1.1rem;
+}
+
+.summary-stat {
+  padding: 0.5rem 1rem;
+  border-radius: 0.25rem;
+  font-weight: 600;
+  font-size: 0.95rem;
+}
+
+.summary-stat.pass {
+  background-color: #4ade80;
+  color: #000;
+}
+
+.summary-stat.close {
+  background-color: #fbbf24;
+  color: #000;
+}
+
+.summary-stat.fail {
+  background-color: #f87171;
+  color: #000;
+}
+
 .empty-state {
   text-align: center;
   font-size: 1.1rem;

@@ -11,12 +11,14 @@ function App() {
   const [filter, setFilter] = useState('all')
   const [sortBy, setSortBy] = useState('symbol')
   const [sortDir, setSortDir] = useState('asc')
+  const [summary, setSummary] = useState(null)
 
   const screenStocks = async (limit) => {
     setLoading(true)
     setProgress('Fetching stock list...')
     setError(null)
     setStocks([])
+    setSummary(null)
 
     try {
       const url = limit ? `${API_BASE}/screen?limit=${limit}` : `${API_BASE}/screen`
@@ -52,6 +54,12 @@ function App() {
                 ...data.results.fail
               ]
               setStocks(allStocks)
+              setSummary({
+                totalAnalyzed: data.total_analyzed,
+                passCount: data.pass_count,
+                closeCount: data.close_count,
+                failCount: data.fail_count
+              })
               setProgress('')
             } else if (data.type === 'error') {
               setError(data.message)
@@ -145,6 +153,15 @@ function App() {
         <div className="error-message">
           {error}
           <button onClick={() => setError(null)} className="error-dismiss">Dismiss</button>
+        </div>
+      )}
+
+      {summary && (
+        <div className="summary-banner">
+          <strong>Analyzed {summary.totalAnalyzed} stocks:</strong>
+          <span className="summary-stat pass">{summary.passCount} PASS</span>
+          <span className="summary-stat close">{summary.closeCount} CLOSE</span>
+          <span className="summary-stat fail">{summary.failCount} FAIL</span>
         </div>
       )}
 
