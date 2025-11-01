@@ -6,42 +6,66 @@ const API_BASE = 'http://localhost:5000/api'
 function App() {
   const [stocks, setStocks] = useState([])
   const [loading, setLoading] = useState(false)
+  const [progress, setProgress] = useState('')
+  const [error, setError] = useState(null)
   const [filter, setFilter] = useState('all')
   const [sortBy, setSortBy] = useState('symbol')
   const [sortDir, setSortDir] = useState('asc')
 
-  const loadCachedStocks = async () => {
+  const screenStocks = async (limit) => {
     setLoading(true)
-    try {
-      const response = await fetch(`${API_BASE}/cached`)
-      const data = await response.json()
-      const allStocks = [
-        ...data.results.pass,
-        ...data.results.close,
-        ...data.results.fail
-      ]
-      setStocks(allStocks)
-    } catch (error) {
-      console.error('Error loading stocks:', error)
-    }
-    setLoading(false)
-  }
+    setProgress('Fetching stock list...')
+    setError(null)
+    setStocks([])
 
-  const screenStocks = async (limit = 50) => {
-    setLoading(true)
     try {
-      const response = await fetch(`${API_BASE}/screen?limit=${limit}`)
-      const data = await response.json()
-      const allStocks = [
-        ...data.results.pass,
-        ...data.results.close,
-        ...data.results.fail
-      ]
-      setStocks(allStocks)
-    } catch (error) {
-      console.error('Error screening stocks:', error)
+      const url = limit ? `${API_BASE}/screen?limit=${limit}` : `${API_BASE}/screen`
+      const response = await fetch(url)
+
+      if (!response.ok) {
+        throw new Error(`API returned ${response.status}: ${response.statusText}`)
+      }
+
+      const reader = response.body.getReader()
+      const decoder = new TextDecoder()
+      let buffer = ''
+
+      while (true) {
+        const { done, value } = await reader.read()
+
+        if (done) break
+
+        buffer += decoder.decode(value, { stream: true })
+        const lines = buffer.split('\n')
+        buffer = lines.pop()
+
+        for (const line of lines) {
+          if (line.startsWith('data: ')) {
+            const data = JSON.parse(line.slice(6))
+
+            if (data.type === 'progress') {
+              setProgress(data.message)
+            } else if (data.type === 'complete') {
+              const allStocks = [
+                ...data.results.pass,
+                ...data.results.close,
+                ...data.results.fail
+              ]
+              setStocks(allStocks)
+              setProgress('')
+            } else if (data.type === 'error') {
+              setError(data.message)
+            }
+          }
+        }
+      }
+    } catch (err) {
+      console.error('Error screening stocks:', err)
+      setError(`Failed to screen stocks: ${err.message}`)
+    } finally {
+      setLoading(false)
+      setProgress('')
     }
-    setLoading(false)
   }
 
   const getStatusColor = (status) => {
@@ -91,14 +115,11 @@ function App() {
       </header>
 
       <div className="controls">
-        <button onClick={loadCachedStocks} disabled={loading}>
-          Load Cached Stocks
-        </button>
         <button onClick={() => screenStocks(50)} disabled={loading}>
           Screen 50 Stocks
         </button>
-        <button onClick={() => screenStocks(100)} disabled={loading}>
-          Screen 100 Stocks
+        <button onClick={() => screenStocks(null)} disabled={loading}>
+          Screen All Stocks
         </button>
 
         <div className="filter-controls">
@@ -112,7 +133,20 @@ function App() {
         </div>
       </div>
 
-      {loading && <div className="loading">Loading stocks...</div>}
+      {loading && (
+        <div className="status-container">
+          <div className="loading">
+            {progress || 'Loading...'}
+          </div>
+        </div>
+      )}
+
+      {error && (
+        <div className="error-message">
+          {error}
+          <button onClick={() => setError(null)} className="error-dismiss">Dismiss</button>
+        </div>
+      )}
 
       {!loading && sortedStocks.length > 0 && (
         <div className="table-container">

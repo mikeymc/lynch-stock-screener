@@ -1,8 +1,9 @@
 # ABOUTME: Flask REST API for Lynch stock screener
 # ABOUTME: Provides endpoints for screening stocks and retrieving stock analysis
 
-from flask import Flask, jsonify, request
+from flask import Flask, jsonify, request, Response, stream_with_context
 from flask_cors import CORS
+import json
 from database import Database
 from data_fetcher import DataFetcher
 from earnings_analyzer import EarningsAnalyzer
@@ -40,40 +41,51 @@ def get_stock(symbol):
 
 @app.route('/api/screen', methods=['GET'])
 def screen_stocks():
-    limit = int(request.args.get('limit', 100))
+    limit_param = request.args.get('limit')
+    limit = int(limit_param) if limit_param else None
     force_refresh = request.args.get('refresh', 'false').lower() == 'true'
 
-    symbols = fetcher.get_nyse_nasdaq_symbols()
-
-    if not symbols:
-        return jsonify({'error': 'Unable to fetch stock symbols'}), 500
-
-    symbols = symbols[:limit]
-
-    results = []
-    for symbol in symbols:
+    def generate():
         try:
-            fetcher.fetch_stock_data(symbol, force_refresh)
-            evaluation = criteria.evaluate_stock(symbol)
-            if evaluation:
-                results.append(evaluation)
+            yield f"data: {json.dumps({'type': 'progress', 'message': 'Fetching stock list...'})}\n\n"
+
+            symbols = fetcher.get_nyse_nasdaq_symbols()
+
+            if not symbols:
+                yield f"data: {json.dumps({'type': 'error', 'message': 'Unable to fetch stock symbols'})}\n\n"
+                return
+
+            if limit:
+                symbols = symbols[:limit]
+
+            total = len(symbols)
+            yield f"data: {json.dumps({'type': 'progress', 'message': f'Found {total} stocks to screen...'})}\n\n"
+
+            results = []
+            for i, symbol in enumerate(symbols, 1):
+                try:
+                    yield f"data: {json.dumps({'type': 'progress', 'message': f'Analyzing {symbol} ({i}/{total})...'})}\n\n"
+
+                    fetcher.fetch_stock_data(symbol, force_refresh)
+                    evaluation = criteria.evaluate_stock(symbol)
+                    if evaluation:
+                        results.append(evaluation)
+                except Exception as e:
+                    print(f"Error processing {symbol}: {e}")
+                    continue
+
+            results_by_status = {
+                'pass': [r for r in results if r['overall_status'] == 'PASS'],
+                'close': [r for r in results if r['overall_status'] == 'CLOSE'],
+                'fail': [r for r in results if r['overall_status'] == 'FAIL']
+            }
+
+            yield f"data: {json.dumps({'type': 'complete', 'total_analyzed': len(results), 'pass_count': len(results_by_status['pass']), 'close_count': len(results_by_status['close']), 'fail_count': len(results_by_status['fail']), 'results': results_by_status})}\n\n"
+
         except Exception as e:
-            print(f"Error processing {symbol}: {e}")
-            continue
+            yield f"data: {json.dumps({'type': 'error', 'message': str(e)})}\n\n"
 
-    results_by_status = {
-        'pass': [r for r in results if r['overall_status'] == 'PASS'],
-        'close': [r for r in results if r['overall_status'] == 'CLOSE'],
-        'fail': [r for r in results if r['overall_status'] == 'FAIL']
-    }
-
-    return jsonify({
-        'total_analyzed': len(results),
-        'pass_count': len(results_by_status['pass']),
-        'close_count': len(results_by_status['close']),
-        'fail_count': len(results_by_status['fail']),
-        'results': results_by_status
-    })
+    return Response(stream_with_context(generate()), content_type='text/event-stream')
 
 
 @app.route('/api/cached', methods=['GET'])
