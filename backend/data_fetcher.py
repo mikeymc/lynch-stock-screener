@@ -79,6 +79,9 @@ class DataFetcher:
             nasdaq_symbols = pd.read_csv(nasdaq_url, header=None)[0].tolist()
 
             all_symbols = list(set(nyse_symbols + nasdaq_symbols))
+
+            all_symbols = [s for s in all_symbols if isinstance(s, str)]
+
             return sorted(all_symbols)
         except Exception as e:
             print(f"Error fetching stock symbols: {type(e).__name__}: {str(e)}")
