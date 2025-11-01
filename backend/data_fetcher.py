@@ -56,12 +56,20 @@ class DataFetcher:
             financials = stock.financials
             if financials is not None and not financials.empty:
                 for col in financials.columns:
+                    year = col.year if hasattr(col, 'year') else None
+                    if not year:
+                        continue
+
+                    revenue = None
                     if 'Total Revenue' in financials.index:
-                        year = col.year if hasattr(col, 'year') else None
                         revenue = financials.loc['Total Revenue', col]
-                        if year and pd.notna(revenue):
-                            eps = 0.0
-                            self.db.save_earnings_history(symbol, year, eps, float(revenue))
+
+                    eps = None
+                    if 'Diluted EPS' in financials.index:
+                        eps = financials.loc['Diluted EPS', col]
+
+                    if year and pd.notna(revenue) and pd.notna(eps):
+                        self.db.save_earnings_history(symbol, year, float(eps), float(revenue))
         except Exception:
             pass
 

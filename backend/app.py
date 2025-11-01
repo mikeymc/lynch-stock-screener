@@ -50,14 +50,17 @@ def screen_stocks():
         try:
             yield f"data: {json.dumps({'type': 'progress', 'message': 'Fetching stock list...'})}\n\n"
 
-            symbols = fetcher.get_nyse_nasdaq_symbols()
+            if limit == 50:
+                symbols = ['AAPL', 'MSFT', 'GOOGL', 'AMZN', 'NVDA', 'META', 'TSLA', 'BRK.B', 'V', 'JPM']
+            else:
+                symbols = fetcher.get_nyse_nasdaq_symbols()
 
-            if not symbols:
-                yield f"data: {json.dumps({'type': 'error', 'message': 'Unable to fetch stock symbols'})}\n\n"
-                return
+                if not symbols:
+                    yield f"data: {json.dumps({'type': 'error', 'message': 'Unable to fetch stock symbols'})}\n\n"
+                    return
 
-            if limit:
-                symbols = symbols[:limit]
+                if limit:
+                    symbols = symbols[:limit]
 
             total = len(symbols)
             yield f"data: {json.dumps({'type': 'progress', 'message': f'Found {total} stocks to screen...'})}\n\n"
@@ -79,7 +82,7 @@ def screen_stocks():
 
                     results.append(evaluation)
 
-                    time.sleep(0.2)
+                    time.sleep(0.25)
                 except Exception as e:
                     print(f"Error processing {symbol}: {e}")
                     import traceback

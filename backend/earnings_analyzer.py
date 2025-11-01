@@ -13,7 +13,7 @@ class EarningsAnalyzer:
     def calculate_earnings_growth(self, symbol: str) -> Optional[Dict[str, Any]]:
         history = self.db.get_earnings_history(symbol)
 
-        if len(history) < 5:
+        if len(history) < 3:
             return None
 
         history_sorted = sorted(history, key=lambda x: x['year'])
