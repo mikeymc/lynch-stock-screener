@@ -71,11 +71,18 @@ class LynchCriteria:
         }
 
     def calculate_peg_ratio(self, pe_ratio: float, earnings_growth: float) -> Optional[float]:
+        if pe_ratio is None or earnings_growth is None:
+            return None
+        if isinstance(pe_ratio, str) or isinstance(earnings_growth, str):
+            return None
         if earnings_growth <= 0:
             return None
         return pe_ratio / earnings_growth
 
     def evaluate_criterion(self, value: float, ideal_threshold: float, close_threshold: float, lower_is_better: bool = True) -> str:
+        if value is None:
+            return "FAIL"
+
         if lower_is_better:
             if value <= ideal_threshold:
                 return "PASS"

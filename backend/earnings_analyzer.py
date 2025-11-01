@@ -41,7 +41,7 @@ class EarningsAnalyzer:
         }
 
     def calculate_cagr(self, start_value: float, end_value: float, years: int) -> Optional[float]:
-        if start_value <= 0 or years <= 0:
+        if start_value <= 0 or end_value <= 0 or years <= 0:
             return None
 
         cagr = (math.pow(end_value / start_value, 1 / years) - 1) * 100
