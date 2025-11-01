@@ -80,5 +80,8 @@ class DataFetcher:
 
             all_symbols = list(set(nyse_symbols + nasdaq_symbols))
             return sorted(all_symbols)
-        except Exception:
+        except Exception as e:
+            print(f"Error fetching stock symbols: {type(e).__name__}: {str(e)}")
+            import traceback
+            traceback.print_exc()
             return []
