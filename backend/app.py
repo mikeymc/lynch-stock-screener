@@ -4,6 +4,7 @@
 from flask import Flask, jsonify, request, Response, stream_with_context
 from flask_cors import CORS
 import json
+import time
 from database import Database
 from data_fetcher import DataFetcher
 from earnings_analyzer import EarningsAnalyzer
@@ -66,12 +67,23 @@ def screen_stocks():
                 try:
                     yield f"data: {json.dumps({'type': 'progress', 'message': f'Analyzing {symbol} ({i}/{total})...'})}\n\n"
 
-                    fetcher.fetch_stock_data(symbol, force_refresh)
+                    stock_data = fetcher.fetch_stock_data(symbol, force_refresh)
+                    if not stock_data:
+                        print(f"No stock data returned for {symbol}")
+                        continue
+
                     evaluation = criteria.evaluate_stock(symbol)
-                    if evaluation:
-                        results.append(evaluation)
+                    if not evaluation:
+                        print(f"No evaluation returned for {symbol}")
+                        continue
+
+                    results.append(evaluation)
+
+                    time.sleep(0.2)
                 except Exception as e:
                     print(f"Error processing {symbol}: {e}")
+                    import traceback
+                    traceback.print_exc()
                     continue
 
             results_by_status = {

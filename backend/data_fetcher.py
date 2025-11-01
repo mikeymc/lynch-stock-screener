@@ -46,6 +46,9 @@ class DataFetcher:
             return self.db.get_stock_metrics(symbol)
 
         except Exception as e:
+            print(f"Error fetching stock data for {symbol}: {type(e).__name__}: {str(e)}")
+            import traceback
+            traceback.print_exc()
             return None
 
     def _fetch_and_store_earnings(self, symbol: str, stock):
