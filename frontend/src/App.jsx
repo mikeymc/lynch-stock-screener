@@ -47,6 +47,8 @@ function App() {
 
             if (data.type === 'progress') {
               setProgress(data.message)
+            } else if (data.type === 'stock_result') {
+              setStocks(prevStocks => [...prevStocks, data.stock])
             } else if (data.type === 'complete') {
               const allStocks = [
                 ...data.results.pass,

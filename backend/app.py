@@ -82,7 +82,9 @@ def screen_stocks():
 
                     results.append(evaluation)
 
-                    time.sleep(0.25)
+                    yield f"data: {json.dumps({'type': 'stock_result', 'stock': evaluation})}\n\n"
+
+                    time.sleep(0.2)
                 except Exception as e:
                     print(f"Error processing {symbol}: {e}")
                     import traceback
