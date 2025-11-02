@@ -34,13 +34,13 @@ class LynchCriteria:
         earnings_cagr = growth_data['earnings_cagr']
         peg_ratio = self.calculate_peg_ratio(pe_ratio, earnings_cagr)
 
-        if peg_ratio is None:
-            return None
-
         debt_to_equity = metrics.get('debt_to_equity', 0)
         institutional_ownership = metrics.get('institutional_ownership', 0)
 
-        peg_status = self.evaluate_criterion(peg_ratio, self.PEG_IDEAL, self.PEG_CLOSE, lower_is_better=True)
+        if peg_ratio is None:
+            peg_status = "FAIL"
+        else:
+            peg_status = self.evaluate_criterion(peg_ratio, self.PEG_IDEAL, self.PEG_CLOSE, lower_is_better=True)
         debt_status = self.evaluate_criterion(debt_to_equity, self.DEBT_TO_EQUITY_IDEAL, self.DEBT_TO_EQUITY_CLOSE, lower_is_better=True)
         inst_ownership_status = self.evaluate_criterion(institutional_ownership, self.INSTITUTIONAL_OWNERSHIP_IDEAL, self.INSTITUTIONAL_OWNERSHIP_CLOSE, lower_is_better=True)
 
