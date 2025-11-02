@@ -161,7 +161,7 @@ function App() {
         </div>
       )}
 
-      {!loading && sortedStocks.length > 0 && (
+      {sortedStocks.length > 0 && (
         <div className="table-container">
           <table>
             <thead>
