@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import './App.css'
 
 const API_BASE = 'http://localhost:5001/api'
@@ -81,26 +81,33 @@ function App() {
     }
   }
 
-  const filteredStocks = stocks.filter(stock => {
-    if (filter === 'all') return true
-    return stock.overall_status === filter
-  })
+  const sortedStocks = useMemo(() => {
+    const filtered = stocks.filter(stock => {
+      if (filter === 'all') return true
+      return stock.overall_status === filter
+    })
 
-  const sortedStocks = [...filteredStocks].sort((a, b) => {
-    let aVal = a[sortBy]
-    let bVal = b[sortBy]
+    return [...filtered].sort((a, b) => {
+      let aVal = a[sortBy]
+      let bVal = b[sortBy]
 
-    if (typeof aVal === 'string') {
-      aVal = aVal.toLowerCase()
-      bVal = bVal.toLowerCase()
-    }
+      // Handle null/undefined values
+      if (aVal == null && bVal == null) return 0
+      if (aVal == null) return 1
+      if (bVal == null) return -1
 
-    if (sortDir === 'asc') {
-      return aVal < bVal ? -1 : 1
-    } else {
-      return aVal > bVal ? -1 : 1
-    }
-  })
+      if (typeof aVal === 'string') {
+        aVal = aVal.toLowerCase()
+        bVal = (bVal || '').toLowerCase()
+      }
+
+      if (sortDir === 'asc') {
+        return aVal < bVal ? -1 : 1
+      } else {
+        return aVal > bVal ? -1 : 1
+      }
+    })
+  }, [stocks, filter, sortBy, sortDir])
 
   const toggleSort = (column) => {
     if (sortBy === column) {
@@ -185,14 +192,14 @@ function App() {
               {sortedStocks.map(stock => (
                 <tr key={stock.symbol}>
                   <td><strong>{stock.symbol}</strong></td>
-                  <td>{stock.company_name}</td>
-                  <td>${stock.price?.toFixed(2)}</td>
-                  <td>{stock.peg_ratio?.toFixed(2)}</td>
-                  <td>{stock.pe_ratio?.toFixed(2)}</td>
-                  <td>{stock.debt_to_equity?.toFixed(2)}</td>
-                  <td>{(stock.institutional_ownership * 100)?.toFixed(1)}%</td>
-                  <td>{stock.earnings_cagr?.toFixed(1)}%</td>
-                  <td>{stock.revenue_cagr?.toFixed(1)}%</td>
+                  <td>{stock.company_name || 'N/A'}</td>
+                  <td>{stock.price != null ? `$${stock.price.toFixed(2)}` : 'N/A'}</td>
+                  <td>{stock.peg_ratio != null ? stock.peg_ratio.toFixed(2) : 'N/A'}</td>
+                  <td>{stock.pe_ratio != null ? stock.pe_ratio.toFixed(2) : 'N/A'}</td>
+                  <td>{stock.debt_to_equity != null ? stock.debt_to_equity.toFixed(2) : 'N/A'}</td>
+                  <td>{stock.institutional_ownership != null ? `${(stock.institutional_ownership * 100).toFixed(1)}%` : 'N/A'}</td>
+                  <td>{stock.earnings_cagr != null ? `${stock.earnings_cagr.toFixed(1)}%` : 'N/A'}</td>
+                  <td>{stock.revenue_cagr != null ? `${stock.revenue_cagr.toFixed(1)}%` : 'N/A'}</td>
                   <td style={{ backgroundColor: getStatusColor(stock.peg_status), color: '#000' }}>
                     {stock.peg_status}
                   </td>
