@@ -50,12 +50,6 @@ function App() {
             } else if (data.type === 'stock_result') {
               setStocks(prevStocks => [...prevStocks, data.stock])
             } else if (data.type === 'complete') {
-              const allStocks = [
-                ...data.results.pass,
-                ...data.results.close,
-                ...data.results.fail
-              ]
-              setStocks(allStocks)
               setSummary({
                 totalAnalyzed: data.total_analyzed,
                 passCount: data.pass_count,
