@@ -12,6 +12,8 @@ function App() {
   const [sortBy, setSortBy] = useState('symbol')
   const [sortDir, setSortDir] = useState('asc')
   const [summary, setSummary] = useState(null)
+  const [currentPage, setCurrentPage] = useState(1)
+  const itemsPerPage = 100
 
   const screenStocks = async (limit) => {
     setLoading(true)
@@ -19,6 +21,7 @@ function App() {
     setError(null)
     setStocks([])
     setSummary(null)
+    setCurrentPage(1)
 
     try {
       const url = limit ? `${API_BASE}/screen?limit=${limit}` : `${API_BASE}/screen`
@@ -109,6 +112,11 @@ function App() {
     })
   }, [stocks, filter, sortBy, sortDir])
 
+  const totalPages = Math.ceil(sortedStocks.length / itemsPerPage)
+  const startIndex = (currentPage - 1) * itemsPerPage
+  const endIndex = startIndex + itemsPerPage
+  const paginatedStocks = sortedStocks.slice(startIndex, endIndex)
+
   const toggleSort = (column) => {
     if (sortBy === column) {
       setSortDir(sortDir === 'asc' ? 'desc' : 'asc')
@@ -169,27 +177,31 @@ function App() {
       )}
 
       {sortedStocks.length > 0 && (
-        <div className="table-container">
-          <table>
-            <thead>
-              <tr>
-                <th onClick={() => toggleSort('symbol')}>Symbol {sortBy === 'symbol' && (sortDir === 'asc' ? '↑' : '↓')}</th>
-                <th onClick={() => toggleSort('company_name')}>Company {sortBy === 'company_name' && (sortDir === 'asc' ? '↑' : '↓')}</th>
-                <th onClick={() => toggleSort('price')}>Price {sortBy === 'price' && (sortDir === 'asc' ? '↑' : '↓')}</th>
-                <th onClick={() => toggleSort('peg_ratio')}>PEG {sortBy === 'peg_ratio' && (sortDir === 'asc' ? '↑' : '↓')}</th>
-                <th onClick={() => toggleSort('pe_ratio')}>P/E {sortBy === 'pe_ratio' && (sortDir === 'asc' ? '↑' : '↓')}</th>
-                <th onClick={() => toggleSort('debt_to_equity')}>D/E {sortBy === 'debt_to_equity' && (sortDir === 'asc' ? '↑' : '↓')}</th>
-                <th onClick={() => toggleSort('institutional_ownership')}>Inst Own % {sortBy === 'institutional_ownership' && (sortDir === 'asc' ? '↑' : '↓')}</th>
-                <th onClick={() => toggleSort('earnings_cagr')}>5Y EPS Growth {sortBy === 'earnings_cagr' && (sortDir === 'asc' ? '↑' : '↓')}</th>
-                <th onClick={() => toggleSort('revenue_cagr')}>5Y Rev Growth {sortBy === 'revenue_cagr' && (sortDir === 'asc' ? '↑' : '↓')}</th>
-                <th>PEG Status</th>
-                <th>Debt Status</th>
-                <th>Inst Own Status</th>
-                <th onClick={() => toggleSort('overall_status')}>Overall {sortBy === 'overall_status' && (sortDir === 'asc' ? '↑' : '↓')}</th>
-              </tr>
-            </thead>
-            <tbody>
-              {sortedStocks.map(stock => (
+        <>
+          <div className="pagination-info">
+            Showing {startIndex + 1}-{Math.min(endIndex, sortedStocks.length)} of {sortedStocks.length} stocks
+          </div>
+          <div className="table-container">
+            <table>
+              <thead>
+                <tr>
+                  <th onClick={() => toggleSort('symbol')}>Symbol {sortBy === 'symbol' && (sortDir === 'asc' ? '↑' : '↓')}</th>
+                  <th onClick={() => toggleSort('company_name')}>Company {sortBy === 'company_name' && (sortDir === 'asc' ? '↑' : '↓')}</th>
+                  <th onClick={() => toggleSort('price')}>Price {sortBy === 'price' && (sortDir === 'asc' ? '↑' : '↓')}</th>
+                  <th onClick={() => toggleSort('peg_ratio')}>PEG {sortBy === 'peg_ratio' && (sortDir === 'asc' ? '↑' : '↓')}</th>
+                  <th onClick={() => toggleSort('pe_ratio')}>P/E {sortBy === 'pe_ratio' && (sortDir === 'asc' ? '↑' : '↓')}</th>
+                  <th onClick={() => toggleSort('debt_to_equity')}>D/E {sortBy === 'debt_to_equity' && (sortDir === 'asc' ? '↑' : '↓')}</th>
+                  <th onClick={() => toggleSort('institutional_ownership')}>Inst Own % {sortBy === 'institutional_ownership' && (sortDir === 'asc' ? '↑' : '↓')}</th>
+                  <th onClick={() => toggleSort('earnings_cagr')}>5Y EPS Growth {sortBy === 'earnings_cagr' && (sortDir === 'asc' ? '↑' : '↓')}</th>
+                  <th onClick={() => toggleSort('revenue_cagr')}>5Y Rev Growth {sortBy === 'revenue_cagr' && (sortDir === 'asc' ? '↑' : '↓')}</th>
+                  <th>PEG Status</th>
+                  <th>Debt Status</th>
+                  <th>Inst Own Status</th>
+                  <th onClick={() => toggleSort('overall_status')}>Overall {sortBy === 'overall_status' && (sortDir === 'asc' ? '↑' : '↓')}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {paginatedStocks.map(stock => (
                 <tr key={stock.symbol}>
                   <td><strong>{stock.symbol}</strong></td>
                   <td>{stock.company_name || 'N/A'}</td>
@@ -217,6 +229,27 @@ function App() {
             </tbody>
           </table>
         </div>
+
+        {totalPages > 1 && (
+          <div className="pagination">
+            <button
+              onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+              disabled={currentPage === 1}
+            >
+              Previous
+            </button>
+            <span className="page-info">
+              Page {currentPage} of {totalPages}
+            </span>
+            <button
+              onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+              disabled={currentPage === totalPages}
+            >
+              Next
+            </button>
+          </div>
+        )}
+        </>
       )}
 
       {!loading && sortedStocks.length === 0 && stocks.length === 0 && (

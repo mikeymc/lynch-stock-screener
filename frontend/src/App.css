@@ -215,3 +215,42 @@ tr:last-child td {
 td strong {
   color: #60a5fa;
 }
+
+.pagination-info {
+  text-align: center;
+  color: #cbd5e1;
+  margin: 1rem 0 0.5rem 0;
+  font-size: 0.95rem;
+}
+
+.pagination {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 1rem;
+  margin: 1.5rem 0;
+}
+
+.pagination button {
+  background-color: #3b82f6;
+  color: white;
+  border: none;
+  padding: 0.5rem 1rem;
+  border-radius: 0.5rem;
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.pagination button:hover:not(:disabled) {
+  background-color: #2563eb;
+}
+
+.pagination button:disabled {
+  background-color: #475569;
+  cursor: not-allowed;
+}
+
+.pagination .page-info {
+  color: #e2e8f0;
+  font-weight: 500;
+}
