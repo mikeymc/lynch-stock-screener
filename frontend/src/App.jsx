@@ -205,13 +205,13 @@ function App() {
                 <tr key={stock.symbol}>
                   <td><strong>{stock.symbol}</strong></td>
                   <td>{stock.company_name || 'N/A'}</td>
-                  <td>{stock.price != null ? `$${stock.price.toFixed(2)}` : 'N/A'}</td>
-                  <td>{stock.peg_ratio != null ? stock.peg_ratio.toFixed(2) : 'N/A'}</td>
-                  <td>{stock.pe_ratio != null ? stock.pe_ratio.toFixed(2) : 'N/A'}</td>
-                  <td>{stock.debt_to_equity != null ? stock.debt_to_equity.toFixed(2) : 'N/A'}</td>
-                  <td>{stock.institutional_ownership != null ? `${(stock.institutional_ownership * 100).toFixed(1)}%` : 'N/A'}</td>
-                  <td>{stock.earnings_cagr != null ? `${stock.earnings_cagr.toFixed(1)}%` : 'N/A'}</td>
-                  <td>{stock.revenue_cagr != null ? `${stock.revenue_cagr.toFixed(1)}%` : 'N/A'}</td>
+                  <td>{typeof stock.price === 'number' ? `$${stock.price.toFixed(2)}` : 'N/A'}</td>
+                  <td>{typeof stock.peg_ratio === 'number' ? stock.peg_ratio.toFixed(2) : 'N/A'}</td>
+                  <td>{typeof stock.pe_ratio === 'number' ? stock.pe_ratio.toFixed(2) : 'N/A'}</td>
+                  <td>{typeof stock.debt_to_equity === 'number' ? stock.debt_to_equity.toFixed(2) : 'N/A'}</td>
+                  <td>{typeof stock.institutional_ownership === 'number' ? `${(stock.institutional_ownership * 100).toFixed(1)}%` : 'N/A'}</td>
+                  <td>{typeof stock.earnings_cagr === 'number' ? `${stock.earnings_cagr.toFixed(1)}%` : 'N/A'}</td>
+                  <td>{typeof stock.revenue_cagr === 'number' ? `${stock.revenue_cagr.toFixed(1)}%` : 'N/A'}</td>
                   <td style={{ backgroundColor: getStatusColor(stock.peg_status), color: '#000' }}>
                     {stock.peg_status}
                   </td>
