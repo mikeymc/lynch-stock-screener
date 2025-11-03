@@ -1,19 +1,37 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import './App.css'
 
 const API_BASE = 'http://localhost:5001/api'
 
 function App() {
-  const [stocks, setStocks] = useState([])
+  const [stocks, setStocks] = useState(() => {
+    const saved = localStorage.getItem('stocks')
+    return saved ? JSON.parse(saved) : []
+  })
   const [loading, setLoading] = useState(false)
   const [progress, setProgress] = useState('')
   const [error, setError] = useState(null)
   const [filter, setFilter] = useState('all')
   const [sortBy, setSortBy] = useState('symbol')
   const [sortDir, setSortDir] = useState('asc')
-  const [summary, setSummary] = useState(null)
+  const [summary, setSummary] = useState(() => {
+    const saved = localStorage.getItem('summary')
+    return saved ? JSON.parse(saved) : null
+  })
   const [currentPage, setCurrentPage] = useState(1)
   const itemsPerPage = 100
+
+  // Persist stocks to localStorage
+  useEffect(() => {
+    localStorage.setItem('stocks', JSON.stringify(stocks))
+  }, [stocks])
+
+  // Persist summary to localStorage
+  useEffect(() => {
+    if (summary) {
+      localStorage.setItem('summary', JSON.stringify(summary))
+    }
+  }, [summary])
 
   const screenStocks = async (limit) => {
     setLoading(true)
