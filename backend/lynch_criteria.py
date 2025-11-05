@@ -24,15 +24,16 @@ class LynchCriteria:
             return None
 
         growth_data = self.analyzer.calculate_earnings_growth(symbol)
-        if not growth_data:
-            return None
+
+        # Extract growth data or None if unavailable
+        earnings_cagr = growth_data['earnings_cagr'] if growth_data else None
+        revenue_cagr = growth_data['revenue_cagr'] if growth_data else None
+        consistency_score = growth_data['consistency_score'] if growth_data else None
 
         pe_ratio = metrics.get('pe_ratio')
-        if not pe_ratio:
-            return None
 
-        earnings_cagr = growth_data['earnings_cagr']
-        peg_ratio = self.calculate_peg_ratio(pe_ratio, earnings_cagr)
+        # Calculate PEG ratio only if both P/E and earnings growth are available
+        peg_ratio = self.calculate_peg_ratio(pe_ratio, earnings_cagr) if pe_ratio and earnings_cagr else None
 
         debt_to_equity = metrics.get('debt_to_equity', 0)
         institutional_ownership = metrics.get('institutional_ownership', 0)
@@ -62,8 +63,8 @@ class LynchCriteria:
             'debt_to_equity': debt_to_equity,
             'institutional_ownership': institutional_ownership,
             'earnings_cagr': earnings_cagr,
-            'revenue_cagr': growth_data['revenue_cagr'],
-            'consistency_score': growth_data['consistency_score'],
+            'revenue_cagr': revenue_cagr,
+            'consistency_score': consistency_score,
             'peg_status': peg_status,
             'debt_status': debt_status,
             'institutional_ownership_status': inst_ownership_status,

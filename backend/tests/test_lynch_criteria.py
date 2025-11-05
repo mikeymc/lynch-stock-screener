@@ -166,7 +166,10 @@ def test_evaluate_stock_insufficient_data(criteria, test_db):
 
     result = criteria.evaluate_stock("INSUFF")
 
-    assert result is None
+    assert result is not None
+    assert result['overall_status'] == "FAIL"
+    assert result['peg_ratio'] is None
+    assert result['earnings_cagr'] is None
 
 
 def test_evaluate_stock_missing_metrics(criteria, test_db):
@@ -175,3 +178,27 @@ def test_evaluate_stock_missing_metrics(criteria, test_db):
     result = criteria.evaluate_stock("MISSING")
 
     assert result is None
+
+
+def test_evaluate_stock_no_pe_ratio(criteria, test_db):
+    test_db.save_stock_basic("NOPE", "No PE Corp.", "NASDAQ", "Technology")
+    metrics = {
+        'price': 50.0,
+        'pe_ratio': None,
+        'market_cap': 500000000000,
+        'debt_to_equity': 0.25,
+        'institutional_ownership': 0.35,
+        'revenue': 500000000000
+    }
+    test_db.save_stock_metrics("NOPE", metrics)
+    test_db.save_earnings_history("NOPE", 2023, 2.0, 500000000000)
+    test_db.save_earnings_history("NOPE", 2022, 1.8, 480000000000)
+    test_db.save_earnings_history("NOPE", 2021, 1.5, 450000000000)
+
+    result = criteria.evaluate_stock("NOPE")
+
+    assert result is not None
+    assert result['overall_status'] == "FAIL"
+    assert result['peg_ratio'] is None
+    assert result['peg_status'] == "FAIL"
+    assert result['earnings_cagr'] is not None

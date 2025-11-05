@@ -52,74 +52,78 @@ def test_fetch_stock_data_from_cache(fetcher, test_db):
 
 @patch('data_fetcher.yf.Ticker')
 def test_fetch_stock_data_not_cached(mock_ticker, fetcher):
-    mock_stock = MagicMock()
-    mock_stock.info = {
-        'symbol': 'MSFT',
-        'longName': 'Microsoft Corp.',
-        'exchange': 'NASDAQ',
-        'sector': 'Technology',
-        'currentPrice': 380.50,
-        'trailingPE': 35.2,
-        'marketCap': 2800000000000,
-        'debtToEquity': 42.5,
-        'heldPercentInstitutions': 0.73,
-        'totalRevenue': 211000000000
-    }
-    mock_stock.earnings_history = MagicMock()
-    mock_stock.earnings_history.to_dict.return_value = {
-        'EPS': {0: 9.72, 1: 10.15}
-    }
-    mock_stock.financials = MagicMock()
-    mock_stock.financials.to_dict.return_value = {
-        ('Total Revenue', '2023-12-31'): 211000000000,
-        ('Total Revenue', '2022-12-31'): 198000000000
-    }
-    mock_ticker.return_value = mock_stock
+    from edgar_fetcher import EdgarFetcher
+    with patch.object(EdgarFetcher, 'fetch_stock_fundamentals', return_value=None):
+        mock_stock = MagicMock()
+        mock_stock.info = {
+            'symbol': 'MSFT',
+            'longName': 'Microsoft Corp.',
+            'exchange': 'NASDAQ',
+            'sector': 'Technology',
+            'currentPrice': 380.50,
+            'trailingPE': 35.2,
+            'marketCap': 2800000000000,
+            'debtToEquity': 42.5,
+            'heldPercentInstitutions': 0.73,
+            'totalRevenue': 211000000000
+        }
+        mock_stock.earnings_history = MagicMock()
+        mock_stock.earnings_history.to_dict.return_value = {
+            'EPS': {0: 9.72, 1: 10.15}
+        }
+        mock_stock.financials = MagicMock()
+        mock_stock.financials.to_dict.return_value = {
+            ('Total Revenue', '2023-12-31'): 211000000000,
+            ('Total Revenue', '2022-12-31'): 198000000000
+        }
+        mock_ticker.return_value = mock_stock
 
-    result = fetcher.fetch_stock_data("MSFT")
+        result = fetcher.fetch_stock_data("MSFT")
 
-    assert result is not None
-    assert result['symbol'] == 'MSFT'
-    assert result['company_name'] == 'Microsoft Corp.'
-    assert result['price'] == 380.50
+        assert result is not None
+        assert result['symbol'] == 'MSFT'
+        assert result['company_name'] == 'Microsoft Corp.'
+        assert result['price'] == 380.50
 
 
 @patch('data_fetcher.yf.Ticker')
 def test_fetch_stock_data_force_refresh(mock_ticker, fetcher, test_db):
-    test_db.save_stock_basic("AAPL", "Apple Inc.", "NASDAQ", "Technology")
-    metrics = {
-        'price': 150.25,
-        'pe_ratio': 25.5,
-        'market_cap': 2500000000000,
-        'debt_to_equity': 0.35,
-        'institutional_ownership': 0.45,
-        'revenue': 394000000000
-    }
-    test_db.save_stock_metrics("AAPL", metrics)
+    from edgar_fetcher import EdgarFetcher
+    with patch.object(EdgarFetcher, 'fetch_stock_fundamentals', return_value=None):
+        test_db.save_stock_basic("AAPL", "Apple Inc.", "NASDAQ", "Technology")
+        metrics = {
+            'price': 150.25,
+            'pe_ratio': 25.5,
+            'market_cap': 2500000000000,
+            'debt_to_equity': 0.35,
+            'institutional_ownership': 0.45,
+            'revenue': 394000000000
+        }
+        test_db.save_stock_metrics("AAPL", metrics)
 
-    mock_stock = MagicMock()
-    mock_stock.info = {
-        'symbol': 'AAPL',
-        'longName': 'Apple Inc.',
-        'exchange': 'NASDAQ',
-        'sector': 'Technology',
-        'currentPrice': 155.75,
-        'trailingPE': 26.0,
-        'marketCap': 2600000000000,
-        'debtToEquity': 38.0,
-        'heldPercentInstitutions': 0.48,
-        'totalRevenue': 400000000000
-    }
-    mock_stock.earnings_history = MagicMock()
-    mock_stock.earnings_history.to_dict.return_value = {}
-    mock_stock.financials = MagicMock()
-    mock_stock.financials.to_dict.return_value = {}
-    mock_ticker.return_value = mock_stock
+        mock_stock = MagicMock()
+        mock_stock.info = {
+            'symbol': 'AAPL',
+            'longName': 'Apple Inc.',
+            'exchange': 'NASDAQ',
+            'sector': 'Technology',
+            'currentPrice': 155.75,
+            'trailingPE': 26.0,
+            'marketCap': 2600000000000,
+            'debtToEquity': 38.0,
+            'heldPercentInstitutions': 0.48,
+            'totalRevenue': 400000000000
+        }
+        mock_stock.earnings_history = MagicMock()
+        mock_stock.earnings_history.to_dict.return_value = {}
+        mock_stock.financials = MagicMock()
+        mock_stock.financials.to_dict.return_value = {}
+        mock_ticker.return_value = mock_stock
 
-    result = fetcher.fetch_stock_data("AAPL", force_refresh=True)
+        result = fetcher.fetch_stock_data("AAPL", force_refresh=True)
 
-    assert result is not None
-    assert result['price'] == 155.75
+        assert result is not None
+        assert result['price'] == 155.75
 
 
 @patch('data_fetcher.yf.Ticker')
@@ -139,64 +143,68 @@ def test_fetch_stock_data_missing_info(mock_ticker, fetcher):
 
 @patch('data_fetcher.yf.Ticker')
 def test_fetch_multiple_stocks(mock_ticker, fetcher):
-    def mock_ticker_factory(symbol):
-        mock_stock = MagicMock()
-        mock_stock.info = {
-            'symbol': symbol,
-            'longName': f'{symbol} Corp.',
-            'exchange': 'NASDAQ',
-            'sector': 'Technology',
-            'currentPrice': 100.0,
-            'trailingPE': 20.0,
-            'marketCap': 1000000000000,
-            'debtToEquity': 30.0,
-            'heldPercentInstitutions': 0.50,
-            'totalRevenue': 100000000000
-        }
-        mock_stock.earnings_history = MagicMock()
-        mock_stock.earnings_history.to_dict.return_value = {}
-        mock_stock.financials = MagicMock()
-        mock_stock.financials.to_dict.return_value = {}
-        return mock_stock
+    from edgar_fetcher import EdgarFetcher
+    with patch.object(EdgarFetcher, 'fetch_stock_fundamentals', return_value=None):
+        def mock_ticker_factory(symbol):
+            mock_stock = MagicMock()
+            mock_stock.info = {
+                'symbol': symbol,
+                'longName': f'{symbol} Corp.',
+                'exchange': 'NASDAQ',
+                'sector': 'Technology',
+                'currentPrice': 100.0,
+                'trailingPE': 20.0,
+                'marketCap': 1000000000000,
+                'debtToEquity': 30.0,
+                'heldPercentInstitutions': 0.50,
+                'totalRevenue': 100000000000
+            }
+            mock_stock.earnings_history = MagicMock()
+            mock_stock.earnings_history.to_dict.return_value = {}
+            mock_stock.financials = MagicMock()
+            mock_stock.financials.to_dict.return_value = {}
+            return mock_stock
 
-    mock_ticker.side_effect = mock_ticker_factory
+        mock_ticker.side_effect = mock_ticker_factory
 
-    results = fetcher.fetch_multiple_stocks(["AAPL", "MSFT", "GOOGL"])
+        results = fetcher.fetch_multiple_stocks(["AAPL", "MSFT", "GOOGL"])
 
-    assert len(results) == 3
-    assert "AAPL" in results
-    assert "MSFT" in results
-    assert "GOOGL" in results
-    assert results["AAPL"]['company_name'] == "AAPL Corp."
+        assert len(results) == 3
+        assert "AAPL" in results
+        assert "MSFT" in results
+        assert "GOOGL" in results
+        assert results["AAPL"]['company_name'] == "AAPL Corp."
 
 
 def test_fetch_stock_data_stores_in_db(fetcher, test_db):
-    with patch('data_fetcher.yf.Ticker') as mock_ticker:
-        mock_stock = MagicMock()
-        mock_stock.info = {
-            'symbol': 'TEST',
-            'longName': 'Test Corp.',
-            'exchange': 'NASDAQ',
-            'sector': 'Technology',
-            'currentPrice': 50.0,
-            'trailingPE': 15.0,
-            'marketCap': 500000000000,
-            'debtToEquity': 25.0,
-            'heldPercentInstitutions': 0.40,
-            'totalRevenue': 50000000000
-        }
-        mock_stock.earnings_history = MagicMock()
-        mock_stock.earnings_history.to_dict.return_value = {}
-        mock_stock.financials = MagicMock()
-        mock_stock.financials.to_dict.return_value = {}
-        mock_ticker.return_value = mock_stock
+    from edgar_fetcher import EdgarFetcher
+    with patch.object(EdgarFetcher, 'fetch_stock_fundamentals', return_value=None):
+        with patch('data_fetcher.yf.Ticker') as mock_ticker:
+            mock_stock = MagicMock()
+            mock_stock.info = {
+                'symbol': 'TEST',
+                'longName': 'Test Corp.',
+                'exchange': 'NASDAQ',
+                'sector': 'Technology',
+                'currentPrice': 50.0,
+                'trailingPE': 15.0,
+                'marketCap': 500000000000,
+                'debtToEquity': 25.0,
+                'heldPercentInstitutions': 0.40,
+                'totalRevenue': 50000000000
+            }
+            mock_stock.earnings_history = MagicMock()
+            mock_stock.earnings_history.to_dict.return_value = {}
+            mock_stock.financials = MagicMock()
+            mock_stock.financials.to_dict.return_value = {}
+            mock_ticker.return_value = mock_stock
 
-        fetcher.fetch_stock_data("TEST")
+            fetcher.fetch_stock_data("TEST")
 
-        cached = test_db.get_stock_metrics("TEST")
-        assert cached is not None
-        assert cached['symbol'] == "TEST"
-        assert cached['price'] == 50.0
+            cached = test_db.get_stock_metrics("TEST")
+            assert cached is not None
+            assert cached['symbol'] == "TEST"
+            assert cached['price'] == 50.0
 
 
 @patch('data_fetcher.pd.read_csv')
@@ -215,3 +223,84 @@ def test_get_nyse_nasdaq_symbols_returns_list(mock_read_csv, fetcher):
     assert len(symbols) > 0
     assert 'AAPL' in symbols
     assert 'GOOGL' in symbols
+
+
+@patch('data_fetcher.yf.Ticker')
+def test_hybrid_fetch_uses_edgar_for_fundamentals(mock_ticker, test_db):
+    from edgar_fetcher import EdgarFetcher
+    with patch.object(EdgarFetcher, 'fetch_stock_fundamentals') as mock_edgar:
+        mock_edgar.return_value = {
+            'ticker': 'AAPL',
+            'cik': '0000320193',
+            'company_name': 'Apple Inc.',
+            'eps_history': [
+                {'year': 2023, 'eps': 6.13},
+                {'year': 2022, 'eps': 6.11},
+                {'year': 2021, 'eps': 5.61}
+            ],
+            'revenue_history': [
+                {'year': 2023, 'revenue': 383285000000},
+                {'year': 2022, 'revenue': 394328000000},
+                {'year': 2021, 'revenue': 365817000000}
+            ],
+            'debt_to_equity': 4.67
+        }
+
+        mock_stock = MagicMock()
+        mock_stock.info = {
+            'symbol': 'AAPL',
+            'longName': 'Apple Inc.',
+            'exchange': 'NASDAQ',
+            'sector': 'Technology',
+            'currentPrice': 180.50,
+            'trailingPE': 29.5,
+            'marketCap': 2800000000000,
+            'heldPercentInstitutions': 0.60,
+            'totalRevenue': 383000000000
+        }
+        mock_ticker.return_value = mock_stock
+
+        fetcher = DataFetcher(test_db)
+        result = fetcher.fetch_stock_data("AAPL")
+
+        assert result is not None
+
+        earnings = test_db.get_earnings_history("AAPL")
+        assert len(earnings) == 3
+        assert earnings[0]['eps'] == 6.13
+        assert earnings[0]['year'] == 2023
+
+        metrics = test_db.get_stock_metrics("AAPL")
+        assert metrics['price'] == 180.50
+        assert metrics['debt_to_equity'] == 4.67
+
+
+@patch('data_fetcher.yf.Ticker')
+def test_hybrid_fallback_to_yfinance_when_edgar_fails(mock_ticker, test_db):
+    from edgar_fetcher import EdgarFetcher
+    with patch.object(EdgarFetcher, 'fetch_stock_fundamentals') as mock_edgar:
+        mock_edgar.return_value = None
+
+        mock_stock = MagicMock()
+        mock_stock.info = {
+            'symbol': 'NEWSTOCK',
+            'longName': 'New Stock Corp.',
+            'exchange': 'NASDAQ',
+            'sector': 'Technology',
+            'currentPrice': 50.0,
+            'trailingPE': 15.0,
+            'marketCap': 500000000000,
+            'debtToEquity': 30.0,
+            'heldPercentInstitutions': 0.40,
+            'totalRevenue': 50000000000
+        }
+        mock_stock.financials = MagicMock()
+        mock_stock.financials.to_dict.return_value = {}
+        mock_ticker.return_value = mock_stock
+
+        fetcher = DataFetcher(test_db)
+        result = fetcher.fetch_stock_data("NEWSTOCK")
+
+        assert result is not None
+        assert result['price'] == 50.0
+        assert result['debt_to_equity'] == 0.3
