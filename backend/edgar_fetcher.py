@@ -3,7 +3,10 @@
 
 import requests
 import time
+import logging
 from typing import Dict, List, Optional, Any
+
+logger = logging.getLogger(__name__)
 
 
 class EdgarFetcher:
@@ -59,7 +62,9 @@ class EdgarFetcher:
             return mapping
 
         except Exception as e:
-            print(f"Error loading ticker-to-CIK mapping from EDGAR: {e}")
+            logger.error(f"Error loading ticker-to-CIK mapping from EDGAR: {e}")
+            import traceback
+            traceback.print_exc()
             # Return empty mapping to allow fallback to yfinance
             self.ticker_to_cik_cache = {}
             return {}
@@ -75,7 +80,12 @@ class EdgarFetcher:
             10-digit CIK string or None if not found
         """
         mapping = self._load_ticker_to_cik_mapping()
-        return mapping.get(ticker.upper())
+        cik = mapping.get(ticker.upper())
+        if cik:
+            logger.info(f"[{ticker}] Found CIK: {cik}")
+        else:
+            logger.warning(f"[{ticker}] CIK not found in EDGAR mapping")
+        return cik
 
     def fetch_company_facts(self, cik: str) -> Optional[Dict[str, Any]]:
         """
@@ -93,9 +103,10 @@ class EdgarFetcher:
         try:
             response = requests.get(url, headers=self.headers)
             response.raise_for_status()
+            logger.info(f"[CIK {cik}] Successfully fetched company facts from EDGAR")
             return response.json()
         except requests.exceptions.RequestException as e:
-            print(f"Error fetching company facts for CIK {cik}: {e}")
+            logger.error(f"[CIK {cik}] Error fetching company facts: {type(e).__name__}: {e}")
             return None
 
     def parse_eps_history(self, company_facts: Dict[str, Any]) -> List[Dict[str, Any]]:
@@ -130,9 +141,11 @@ class EdgarFetcher:
 
             # Sort by year descending
             annual_eps.sort(key=lambda x: x['year'], reverse=True)
+            logger.info(f"Successfully parsed {len(annual_eps)} years of EPS data from EDGAR")
             return annual_eps
 
-        except (KeyError, TypeError):
+        except (KeyError, TypeError) as e:
+            logger.warning(f"Could not parse EPS history from EDGAR: {type(e).__name__}")
             return []
 
     def parse_revenue_history(self, company_facts: Dict[str, Any]) -> List[Dict[str, Any]]:
@@ -147,41 +160,60 @@ class EdgarFetcher:
         """
         try:
             # Try multiple possible field names for revenue
-            revenue_fields = ['Revenues', 'RevenueFromContractWithCustomerExcludingAssessedTax', 'SalesRevenueNet']
+            # Companies often change field names over time, so we collect from ALL fields
+            revenue_fields = [
+                'Revenues',
+                'RevenueFromContractWithCustomerExcludingAssessedTax',
+                'SalesRevenueNet',
+                'RevenueFromContractWithCustomerIncludingAssessedTax',
+                'SalesRevenueGoodsNet',
+                'SalesRevenueServicesNet',
+                'RevenuesNetOfInterestExpense',
+                'RegulatedAndUnregulatedOperatingRevenue',
+                'HealthCareOrganizationRevenue',
+                'InterestAndDividendIncomeOperating'
+            ]
 
-            revenue_data = None
+            # Collect data from ALL revenue fields (not just the first one)
+            annual_revenue = []
+            seen_years = set()
+            fields_found = []
+
             for field in revenue_fields:
                 try:
                     revenue_data = company_facts['facts']['us-gaap'][field]['units']['USD']
-                    break
+                    fields_found.append(field)
+                    logger.info(f"Found revenue data using field: '{field}'")
+
+                    # Filter for 10-K annual reports only
+                    for entry in revenue_data:
+                        if entry.get('form') == '10-K':
+                            year = entry.get('fy')
+                            revenue = entry.get('val')
+
+                            # Avoid duplicates across all fields
+                            if year and revenue and year not in seen_years:
+                                annual_revenue.append({
+                                    'year': year,
+                                    'revenue': revenue
+                                })
+                                seen_years.add(year)
+
                 except KeyError:
+                    logger.debug(f"Revenue field '{field}' not found, trying next...")
                     continue
 
-            if not revenue_data:
+            if not annual_revenue:
+                logger.warning(f"No revenue data found after trying: {', '.join(revenue_fields)}")
                 return []
-
-            # Filter for 10-K annual reports only
-            annual_revenue = []
-            seen_years = set()
-
-            for entry in revenue_data:
-                if entry.get('form') == '10-K':
-                    year = entry.get('fy')
-                    revenue = entry.get('val')
-
-                    # Avoid duplicates
-                    if year and revenue and year not in seen_years:
-                        annual_revenue.append({
-                            'year': year,
-                            'revenue': revenue
-                        })
-                        seen_years.add(year)
 
             # Sort by year descending
             annual_revenue.sort(key=lambda x: x['year'], reverse=True)
+            logger.info(f"Successfully parsed {len(annual_revenue)} years of revenue data from {len(fields_found)} field(s): {', '.join(fields_found)}")
             return annual_revenue
 
-        except (KeyError, TypeError):
+        except (KeyError, TypeError) as e:
+            logger.warning(f"Could not parse revenue history from EDGAR: {type(e).__name__}")
             return []
 
     def parse_debt_to_equity(self, company_facts: Dict[str, Any]) -> Optional[float]:
@@ -243,7 +275,6 @@ class EdgarFetcher:
         # Get CIK for ticker
         cik = self.get_cik_for_ticker(ticker)
         if not cik:
-            print(f"Could not find CIK for ticker {ticker}")
             return None
 
         # Fetch company facts
@@ -252,13 +283,19 @@ class EdgarFetcher:
             return None
 
         # Parse all fundamental data
+        eps_history = self.parse_eps_history(company_facts)
+        revenue_history = self.parse_revenue_history(company_facts)
+        debt_to_equity = self.parse_debt_to_equity(company_facts)
+
+        logger.info(f"[{ticker}] EDGAR fetch complete: {len(eps_history)} EPS years, {len(revenue_history)} revenue years, D/E: {debt_to_equity}")
+
         fundamentals = {
             'ticker': ticker,
             'cik': cik,
             'company_name': company_facts.get('entityName', ''),
-            'eps_history': self.parse_eps_history(company_facts),
-            'revenue_history': self.parse_revenue_history(company_facts),
-            'debt_to_equity': self.parse_debt_to_equity(company_facts)
+            'eps_history': eps_history,
+            'revenue_history': revenue_history,
+            'debt_to_equity': debt_to_equity
         }
 
         return fundamentals

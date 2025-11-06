@@ -282,3 +282,138 @@ def test_fetch_stock_fundamentals(edgar_fetcher):
         assert "revenue_history" in fundamentals
         assert len(fundamentals["eps_history"]) > 0
         assert len(fundamentals["revenue_history"]) > 0
+
+
+def test_parse_revenue_with_alternative_field_names(edgar_fetcher):
+    """Test that revenue parser tries multiple field names and finds the right one"""
+    # Test with 'RevenueFromContractWithCustomerExcludingAssessedTax' field
+    company_facts_alt1 = {
+        "facts": {
+            "us-gaap": {
+                "RevenueFromContractWithCustomerExcludingAssessedTax": {
+                    "units": {
+                        "USD": [
+                            {"end": "2023-12-31", "val": 100000000000, "fy": 2023, "form": "10-K"},
+                            {"end": "2022-12-31", "val": 95000000000, "fy": 2022, "form": "10-K"}
+                        ]
+                    }
+                }
+            }
+        }
+    }
+
+    revenue_history = edgar_fetcher.parse_revenue_history(company_facts_alt1)
+    assert len(revenue_history) == 2
+    assert revenue_history[0]["revenue"] == 100000000000
+
+    # Test with 'SalesRevenueNet' field
+    company_facts_alt2 = {
+        "facts": {
+            "us-gaap": {
+                "SalesRevenueNet": {
+                    "units": {
+                        "USD": [
+                            {"end": "2023-12-31", "val": 50000000000, "fy": 2023, "form": "10-K"}
+                        ]
+                    }
+                }
+            }
+        }
+    }
+
+    revenue_history = edgar_fetcher.parse_revenue_history(company_facts_alt2)
+    assert len(revenue_history) == 1
+    assert revenue_history[0]["revenue"] == 50000000000
+
+
+def test_parse_revenue_field_priority(edgar_fetcher):
+    """Test that revenue parser uses the first matching field when multiple are available"""
+    company_facts_multiple = {
+        "facts": {
+            "us-gaap": {
+                "Revenues": {
+                    "units": {
+                        "USD": [
+                            {"end": "2023-12-31", "val": 100000000000, "fy": 2023, "form": "10-K"}
+                        ]
+                    }
+                },
+                "SalesRevenueNet": {
+                    "units": {
+                        "USD": [
+                            {"end": "2023-12-31", "val": 50000000000, "fy": 2023, "form": "10-K"}
+                        ]
+                    }
+                }
+            }
+        }
+    }
+
+    revenue_history = edgar_fetcher.parse_revenue_history(company_facts_multiple)
+    # Should use 'Revenues' which comes first in the list
+    assert len(revenue_history) == 1
+    assert revenue_history[0]["revenue"] == 100000000000
+
+
+def test_parse_revenue_collects_from_multiple_fields():
+    """
+    Test that revenue parsing collects data from ALL available fields,
+    not just the first one found. This handles companies that change
+    their revenue field names over time (e.g., Apple uses SalesRevenueNet
+    for 2009-2017, Revenues for 2018, and RevenueFromContractWithCustomer...
+    for 2019-2025).
+    """
+    fetcher = EdgarFetcher(user_agent="test@example.com")
+
+    # Mock data simulating Apple's structure: different fields for different years
+    company_facts = {
+        "facts": {
+            "us-gaap": {
+                # 2009-2017 data in SalesRevenueNet
+                "SalesRevenueNet": {
+                    "units": {
+                        "USD": [
+                            {"form": "10-K", "fy": 2017, "val": 229234000000, "end": "2017-09-30"},
+                            {"form": "10-K", "fy": 2016, "val": 215639000000, "end": "2016-09-24"},
+                            {"form": "10-K", "fy": 2015, "val": 233715000000, "end": "2015-09-26"},
+                            {"form": "10-Q", "fy": 2015, "val": 51501000000, "end": "2015-09-26"},  # Should be filtered out
+                        ]
+                    }
+                },
+                # 2018 data in Revenues
+                "Revenues": {
+                    "units": {
+                        "USD": [
+                            {"form": "10-K", "fy": 2018, "val": 265595000000, "end": "2018-09-29"},
+                        ]
+                    }
+                },
+                # 2019-2021 data in RevenueFromContractWithCustomerExcludingAssessedTax
+                "RevenueFromContractWithCustomerExcludingAssessedTax": {
+                    "units": {
+                        "USD": [
+                            {"form": "10-K", "fy": 2021, "val": 365817000000, "end": "2021-09-25"},
+                            {"form": "10-K", "fy": 2020, "val": 274515000000, "end": "2020-09-26"},
+                            {"form": "10-K", "fy": 2019, "val": 260174000000, "end": "2019-09-28"},
+                        ]
+                    }
+                }
+            }
+        }
+    }
+
+    revenue_history = fetcher.parse_revenue_history(company_facts)
+
+    # Should collect from all three fields: 3 + 1 + 3 = 7 years total
+    assert len(revenue_history) == 7, f"Expected 7 years, got {len(revenue_history)}"
+
+    # Verify all years are present
+    years = {entry["year"] for entry in revenue_history}
+    expected_years = {2015, 2016, 2017, 2018, 2019, 2020, 2021}
+    assert years == expected_years, f"Expected years {expected_years}, got {years}"
+
+    # Verify values are correct (spot check)
+    revenue_by_year = {entry["year"]: entry["revenue"] for entry in revenue_history}
+    assert revenue_by_year[2021] == 365817000000
+    assert revenue_by_year[2018] == 265595000000
+    assert revenue_by_year[2015] == 233715000000

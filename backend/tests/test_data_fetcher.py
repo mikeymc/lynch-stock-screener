@@ -4,6 +4,7 @@
 import pytest
 import os
 import sys
+import logging
 from unittest.mock import Mock, patch, MagicMock
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
@@ -229,6 +230,7 @@ def test_get_nyse_nasdaq_symbols_returns_list(mock_read_csv, fetcher):
 def test_hybrid_fetch_uses_edgar_for_fundamentals(mock_ticker, test_db):
     from edgar_fetcher import EdgarFetcher
     with patch.object(EdgarFetcher, 'fetch_stock_fundamentals') as mock_edgar:
+        # Provide >= 5 years for EDGAR to be used
         mock_edgar.return_value = {
             'ticker': 'AAPL',
             'cik': '0000320193',
@@ -236,12 +238,16 @@ def test_hybrid_fetch_uses_edgar_for_fundamentals(mock_ticker, test_db):
             'eps_history': [
                 {'year': 2023, 'eps': 6.13},
                 {'year': 2022, 'eps': 6.11},
-                {'year': 2021, 'eps': 5.61}
+                {'year': 2021, 'eps': 5.61},
+                {'year': 2020, 'eps': 3.28},
+                {'year': 2019, 'eps': 2.97}
             ],
             'revenue_history': [
                 {'year': 2023, 'revenue': 383285000000},
                 {'year': 2022, 'revenue': 394328000000},
-                {'year': 2021, 'revenue': 365817000000}
+                {'year': 2021, 'revenue': 365817000000},
+                {'year': 2020, 'revenue': 274515000000},
+                {'year': 2019, 'revenue': 260174000000}
             ],
             'debt_to_equity': 4.67
         }
@@ -266,7 +272,7 @@ def test_hybrid_fetch_uses_edgar_for_fundamentals(mock_ticker, test_db):
         assert result is not None
 
         earnings = test_db.get_earnings_history("AAPL")
-        assert len(earnings) == 3
+        assert len(earnings) == 5
         assert earnings[0]['eps'] == 6.13
         assert earnings[0]['year'] == 2023
 
@@ -304,3 +310,336 @@ def test_hybrid_fallback_to_yfinance_when_edgar_fails(mock_ticker, test_db):
         assert result is not None
         assert result['price'] == 50.0
         assert result['debt_to_equity'] == 0.3
+
+
+@patch('data_fetcher.yf.Ticker')
+def test_logging_edgar_attempt(mock_ticker, test_db, caplog):
+    """Test that EDGAR fetch attempts are logged"""
+    from edgar_fetcher import EdgarFetcher
+    with patch.object(EdgarFetcher, 'fetch_stock_fundamentals') as mock_edgar:
+        mock_edgar.return_value = None
+
+        mock_stock = MagicMock()
+        mock_stock.info = {
+            'symbol': 'TEST',
+            'longName': 'Test Corp.',
+            'exchange': 'NASDAQ',
+            'sector': 'Technology',
+            'currentPrice': 50.0,
+            'trailingPE': 15.0,
+            'marketCap': 500000000000,
+            'heldPercentInstitutions': 0.40,
+            'totalRevenue': 50000000000
+        }
+        mock_stock.financials = MagicMock()
+        mock_stock.financials.to_dict.return_value = {}
+        mock_ticker.return_value = mock_stock
+
+        with caplog.at_level(logging.INFO):
+            fetcher = DataFetcher(test_db)
+            result = fetcher.fetch_stock_data("TEST")
+
+        assert result is not None
+        assert any("Attempting EDGAR fetch" in record.message for record in caplog.records)
+
+
+@patch('data_fetcher.yf.Ticker')
+def test_logging_edgar_success_with_year_counts(mock_ticker, test_db, caplog):
+    """Test that successful EDGAR fetch logs the number of years retrieved"""
+    from edgar_fetcher import EdgarFetcher
+    with patch.object(EdgarFetcher, 'fetch_stock_fundamentals') as mock_edgar:
+        mock_edgar.return_value = {
+            'ticker': 'TEST',
+            'cik': '0000123456',
+            'company_name': 'Test Corp.',
+            'eps_history': [
+                {'year': 2023, 'eps': 5.0},
+                {'year': 2022, 'eps': 4.5},
+                {'year': 2021, 'eps': 4.0},
+                {'year': 2020, 'eps': 3.5},
+                {'year': 2019, 'eps': 3.0},
+                {'year': 2018, 'eps': 2.8},
+                {'year': 2017, 'eps': 2.5},
+                {'year': 2016, 'eps': 2.3},
+                {'year': 2015, 'eps': 2.0},
+                {'year': 2014, 'eps': 1.8}
+            ],
+            'revenue_history': [
+                {'year': 2023, 'revenue': 100000000000},
+                {'year': 2022, 'revenue': 95000000000},
+                {'year': 2021, 'revenue': 90000000000},
+                {'year': 2020, 'revenue': 85000000000},
+                {'year': 2019, 'revenue': 80000000000},
+                {'year': 2018, 'revenue': 75000000000},
+                {'year': 2017, 'revenue': 70000000000},
+                {'year': 2016, 'revenue': 65000000000},
+                {'year': 2015, 'revenue': 60000000000},
+                {'year': 2014, 'revenue': 55000000000}
+            ],
+            'debt_to_equity': 0.5
+        }
+
+        mock_stock = MagicMock()
+        mock_stock.info = {
+            'symbol': 'TEST',
+            'longName': 'Test Corp.',
+            'exchange': 'NASDAQ',
+            'sector': 'Technology',
+            'currentPrice': 50.0,
+            'trailingPE': 15.0,
+            'marketCap': 500000000000,
+            'heldPercentInstitutions': 0.40,
+            'totalRevenue': 100000000000
+        }
+        mock_ticker.return_value = mock_stock
+
+        with caplog.at_level(logging.INFO):
+            fetcher = DataFetcher(test_db)
+            result = fetcher.fetch_stock_data("TEST")
+
+        assert result is not None
+        assert any("EDGAR returned" in record.message and "10" in record.message for record in caplog.records)
+
+
+@patch('data_fetcher.yf.Ticker')
+def test_logging_fallback_to_yfinance_with_reason(mock_ticker, test_db, caplog):
+    """Test that fallback to yfinance is logged with the reason"""
+    from edgar_fetcher import EdgarFetcher
+    with patch.object(EdgarFetcher, 'fetch_stock_fundamentals') as mock_edgar:
+        mock_edgar.return_value = None
+
+        mock_stock = MagicMock()
+        mock_stock.info = {
+            'symbol': 'TEST',
+            'longName': 'Test Corp.',
+            'exchange': 'NASDAQ',
+            'sector': 'Technology',
+            'currentPrice': 50.0,
+            'trailingPE': 15.0,
+            'marketCap': 500000000000,
+            'heldPercentInstitutions': 0.40,
+            'totalRevenue': 50000000000
+        }
+        mock_stock.financials = MagicMock()
+        mock_stock.financials.to_dict.return_value = {}
+        mock_ticker.return_value = mock_stock
+
+        with caplog.at_level(logging.INFO):
+            fetcher = DataFetcher(test_db)
+            result = fetcher.fetch_stock_data("TEST")
+
+        assert result is not None
+        assert any("EDGAR fetch failed" in record.message or "Using yfinance" in record.message for record in caplog.records)
+
+
+@patch('data_fetcher.yf.Ticker')
+def test_logging_yfinance_data_completeness_warning(mock_ticker, test_db, caplog):
+    """Test that warnings are logged when yfinance returns limited years"""
+    from edgar_fetcher import EdgarFetcher
+    with patch.object(EdgarFetcher, 'fetch_stock_fundamentals') as mock_edgar:
+        mock_edgar.return_value = None
+
+        mock_stock = MagicMock()
+        mock_stock.info = {
+            'symbol': 'TEST',
+            'longName': 'Test Corp.',
+            'exchange': 'NASDAQ',
+            'sector': 'Technology',
+            'currentPrice': 50.0,
+            'trailingPE': 15.0,
+            'marketCap': 500000000000,
+            'heldPercentInstitutions': 0.40,
+            'totalRevenue': 50000000000
+        }
+        # Mock financials to return only 3 years (which should trigger warning)
+        mock_stock.financials = MagicMock()
+        mock_stock.financials.empty = False
+        mock_stock.financials.columns = ['2023-12-31', '2022-12-31', '2021-12-31']
+        mock_stock.financials.to_dict.return_value = {
+            ('Total Revenue', '2023-12-31'): 50000000000,
+            ('Total Revenue', '2022-12-31'): 48000000000,
+            ('Total Revenue', '2021-12-31'): 45000000000
+        }
+        mock_ticker.return_value = mock_stock
+
+        with caplog.at_level(logging.WARNING):
+            fetcher = DataFetcher(test_db)
+            result = fetcher.fetch_stock_data("TEST")
+
+        assert result is not None
+        assert any("only 3 years" in record.message or "limited" in record.message.lower() for record in caplog.records)
+
+
+@patch('data_fetcher.yf.Ticker')
+def test_hybrid_partial_edgar_data_uses_available_years(mock_ticker, test_db):
+    """Test that when EDGAR has mismatched EPS/revenue years, we store what we can"""
+    from edgar_fetcher import EdgarFetcher
+    with patch.object(EdgarFetcher, 'fetch_stock_fundamentals') as mock_edgar:
+        # EDGAR returns 10 EPS years but only 8 revenue years
+        mock_edgar.return_value = {
+            'ticker': 'TEST',
+            'cik': '0000123456',
+            'company_name': 'Test Corp.',
+            'eps_history': [
+                {'year': 2023, 'eps': 10.0},
+                {'year': 2022, 'eps': 9.5},
+                {'year': 2021, 'eps': 9.0},
+                {'year': 2020, 'eps': 8.5},
+                {'year': 2019, 'eps': 8.0},
+                {'year': 2018, 'eps': 7.5},
+                {'year': 2017, 'eps': 7.0},
+                {'year': 2016, 'eps': 6.5},
+                {'year': 2015, 'eps': 6.0},
+                {'year': 2014, 'eps': 5.5}
+            ],
+            'revenue_history': [
+                {'year': 2023, 'revenue': 100000000000},
+                {'year': 2022, 'revenue': 95000000000},
+                {'year': 2021, 'revenue': 90000000000},
+                {'year': 2020, 'revenue': 85000000000},
+                {'year': 2019, 'revenue': 80000000000},
+                {'year': 2018, 'revenue': 75000000000},
+                {'year': 2017, 'revenue': 70000000000},
+                {'year': 2016, 'revenue': 65000000000}
+                # Missing 2015 and 2014
+            ],
+            'debt_to_equity': 0.5
+        }
+
+        mock_stock = MagicMock()
+        mock_stock.info = {
+            'symbol': 'TEST',
+            'longName': 'Test Corp.',
+            'exchange': 'NASDAQ',
+            'sector': 'Technology',
+            'currentPrice': 50.0,
+            'trailingPE': 15.0,
+            'marketCap': 500000000000,
+            'heldPercentInstitutions': 0.40,
+            'totalRevenue': 100000000000
+        }
+        mock_ticker.return_value = mock_stock
+
+        fetcher = DataFetcher(test_db)
+        result = fetcher.fetch_stock_data("TEST")
+
+        assert result is not None
+        # Should have stored 8 years (where both EPS and revenue match)
+        earnings = test_db.get_earnings_history("TEST")
+        assert len(earnings) == 8
+        assert earnings[0]['year'] == 2023
+        assert earnings[7]['year'] == 2016
+
+
+@patch('data_fetcher.yf.Ticker')
+def test_hybrid_uses_edgar_when_sufficient_years(mock_ticker, test_db):
+    """Test that EDGAR is used when it has >= 5 years of matched data"""
+    from edgar_fetcher import EdgarFetcher
+    with patch.object(EdgarFetcher, 'fetch_stock_fundamentals') as mock_edgar:
+        # EDGAR returns exactly 5 years
+        mock_edgar.return_value = {
+            'ticker': 'TEST',
+            'cik': '0000123456',
+            'company_name': 'Test Corp.',
+            'eps_history': [
+                {'year': 2023, 'eps': 5.0},
+                {'year': 2022, 'eps': 4.5},
+                {'year': 2021, 'eps': 4.0},
+                {'year': 2020, 'eps': 3.5},
+                {'year': 2019, 'eps': 3.0}
+            ],
+            'revenue_history': [
+                {'year': 2023, 'revenue': 50000000000},
+                {'year': 2022, 'revenue': 48000000000},
+                {'year': 2021, 'revenue': 45000000000},
+                {'year': 2020, 'revenue': 42000000000},
+                {'year': 2019, 'revenue': 40000000000}
+            ],
+            'debt_to_equity': 0.5
+        }
+
+        mock_stock = MagicMock()
+        mock_stock.info = {
+            'symbol': 'TEST',
+            'longName': 'Test Corp.',
+            'exchange': 'NASDAQ',
+            'sector': 'Technology',
+            'currentPrice': 50.0,
+            'trailingPE': 15.0,
+            'marketCap': 500000000000,
+            'heldPercentInstitutions': 0.40,
+            'totalRevenue': 50000000000
+        }
+        mock_ticker.return_value = mock_stock
+
+        fetcher = DataFetcher(test_db)
+        result = fetcher.fetch_stock_data("TEST")
+
+        assert result is not None
+        earnings = test_db.get_earnings_history("TEST")
+        assert len(earnings) == 5
+
+
+@patch('data_fetcher.yf.Ticker')
+def test_hybrid_falls_back_when_insufficient_edgar_years(mock_ticker, test_db):
+    """Test that we fall back to yfinance when EDGAR has < 5 years"""
+    from edgar_fetcher import EdgarFetcher
+    with patch.object(EdgarFetcher, 'fetch_stock_fundamentals') as mock_edgar:
+        # EDGAR returns only 3 years
+        mock_edgar.return_value = {
+            'ticker': 'TEST',
+            'cik': '0000123456',
+            'company_name': 'Test Corp.',
+            'eps_history': [
+                {'year': 2023, 'eps': 5.0},
+                {'year': 2022, 'eps': 4.5},
+                {'year': 2021, 'eps': 4.0}
+            ],
+            'revenue_history': [
+                {'year': 2023, 'revenue': 50000000000},
+                {'year': 2022, 'revenue': 48000000000},
+                {'year': 2021, 'revenue': 45000000000}
+            ],
+            'debt_to_equity': 0.5
+        }
+
+        mock_stock = MagicMock()
+        mock_stock.info = {
+            'symbol': 'TEST',
+            'longName': 'Test Corp.',
+            'exchange': 'NASDAQ',
+            'sector': 'Technology',
+            'currentPrice': 50.0,
+            'trailingPE': 15.0,
+            'marketCap': 500000000000,
+            'heldPercentInstitutions': 0.40,
+            'totalRevenue': 50000000000
+        }
+        # Mock yfinance to return 4 years - properly simulate pandas DataFrame
+        import pandas as pd
+        from datetime import datetime
+
+        dates = [
+            pd.Timestamp('2023-12-31'),
+            pd.Timestamp('2022-12-31'),
+            pd.Timestamp('2021-12-31'),
+            pd.Timestamp('2020-12-31')
+        ]
+
+        mock_financials = pd.DataFrame({
+            dates[0]: {'Total Revenue': 50000000000, 'Diluted EPS': 5.0},
+            dates[1]: {'Total Revenue': 48000000000, 'Diluted EPS': 4.5},
+            dates[2]: {'Total Revenue': 45000000000, 'Diluted EPS': 4.0},
+            dates[3]: {'Total Revenue': 42000000000, 'Diluted EPS': 3.5}
+        })
+
+        mock_stock.financials = mock_financials
+        mock_ticker.return_value = mock_stock
+
+        fetcher = DataFetcher(test_db)
+        result = fetcher.fetch_stock_data("TEST")
+
+        assert result is not None
+        # Should use yfinance (4 years) instead of EDGAR (3 years)
+        earnings = test_db.get_earnings_history("TEST")
+        assert len(earnings) >= 4  # yfinance should provide 4 years

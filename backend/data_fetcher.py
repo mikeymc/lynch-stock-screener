@@ -2,10 +2,13 @@
 # ABOUTME: Uses EDGAR for fundamentals, yfinance for current market data
 
 import yfinance as yf
+import logging
 from typing import Dict, Any, Optional, List
 from database import Database
 from edgar_fetcher import EdgarFetcher
 import pandas as pd
+
+logger = logging.getLogger(__name__)
 
 
 class DataFetcher:
@@ -19,6 +22,7 @@ class DataFetcher:
 
         try:
             # Try fetching fundamentals from EDGAR first
+            logger.info(f"[{symbol}] Attempting EDGAR fetch")
             edgar_data = self.edgar_fetcher.fetch_stock_fundamentals(symbol)
 
             # Fetch current market data from yfinance
@@ -55,8 +59,30 @@ class DataFetcher:
 
             # Use EDGAR earnings history if available, otherwise fall back to yfinance
             if edgar_data and edgar_data.get('eps_history') and edgar_data.get('revenue_history'):
-                self._store_edgar_earnings(symbol, edgar_data)
+                eps_count = len(edgar_data.get('eps_history', []))
+                rev_count = len(edgar_data.get('revenue_history', []))
+
+                # Calculate how many matched years we'll get
+                eps_years = {entry['year'] for entry in edgar_data.get('eps_history', [])}
+                rev_years = {entry['year'] for entry in edgar_data.get('revenue_history', [])}
+                matched_years = len(eps_years & rev_years)
+
+                logger.info(f"[{symbol}] EDGAR returned {eps_count} EPS years, {rev_count} revenue years, {matched_years} matched")
+
+                # Use EDGAR only if we have >= 5 matched years, otherwise fall back to yfinance
+                if matched_years >= 5:
+                    logger.info(f"[{symbol}] Using EDGAR data ({matched_years} years)")
+                    self._store_edgar_earnings(symbol, edgar_data)
+                else:
+                    logger.info(f"[{symbol}] EDGAR has insufficient matched years ({matched_years} < 5). Falling back to yfinance")
+                    self._fetch_and_store_earnings(symbol, stock)
             else:
+                if edgar_data:
+                    eps_count = len(edgar_data.get('eps_history', []))
+                    rev_count = len(edgar_data.get('revenue_history', []))
+                    logger.info(f"[{symbol}] Partial EDGAR data: {eps_count} EPS years, {rev_count} revenue years. Falling back to yfinance")
+                else:
+                    logger.info(f"[{symbol}] EDGAR fetch failed. Using yfinance")
                 self._fetch_and_store_earnings(symbol, stock)
 
             return self.db.get_stock_metrics(symbol)
@@ -88,6 +114,12 @@ class DataFetcher:
         try:
             financials = stock.financials
             if financials is not None and not financials.empty:
+                year_count = len(financials.columns)
+                logger.info(f"[{symbol}] yfinance returned {year_count} years of data")
+
+                if year_count < 5:
+                    logger.warning(f"[{symbol}] Limited data: only {year_count} years available from yfinance")
+
                 for col in financials.columns:
                     year = col.year if hasattr(col, 'year') else None
                     if not year:
@@ -103,8 +135,10 @@ class DataFetcher:
 
                     if year and pd.notna(revenue) and pd.notna(eps):
                         self.db.save_earnings_history(symbol, year, float(eps), float(revenue))
-        except Exception:
-            pass
+        except Exception as e:
+            logger.error(f"[{symbol}] Error fetching earnings from yfinance: {type(e).__name__}: {e}")
+            import traceback
+            traceback.print_exc()
 
     def fetch_multiple_stocks(self, symbols: List[str], force_refresh: bool = False) -> Dict[str, Dict[str, Any]]:
         results = {}
