@@ -10,6 +10,7 @@ import {
   Tooltip,
   Legend
 } from 'chart.js'
+import LynchAnalysis from './components/LynchAnalysis'
 import './App.css'
 
 ChartJS.register(
@@ -376,6 +377,13 @@ function App() {
                               />
                             )}
                           </div>
+
+                          {!loadingHistory && historyData && (
+                            <LynchAnalysis
+                              symbol={stock.symbol}
+                              stockName={stock.company_name}
+                            />
+                          )}
                         </td>
                       </tr>
                     )}
