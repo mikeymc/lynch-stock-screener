@@ -46,5 +46,9 @@ yarn-error.log*
 .env
 .env.local
 
+# Schwab API tokens
+tokens/
+*.json
+
 # Test cache
 .pytest_cache/

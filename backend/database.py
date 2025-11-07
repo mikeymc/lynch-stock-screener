@@ -49,11 +49,18 @@ class Database:
                 year INTEGER,
                 earnings_per_share REAL,
                 revenue REAL,
+                fiscal_end TEXT,
                 last_updated TIMESTAMP,
                 FOREIGN KEY (symbol) REFERENCES stocks(symbol),
                 UNIQUE(symbol, year)
             )
         """)
+
+        # Migration: Add fiscal_end column if it doesn't exist
+        cursor.execute("PRAGMA table_info(earnings_history)")
+        columns = [row[1] for row in cursor.fetchall()]
+        if 'fiscal_end' not in columns:
+            cursor.execute("ALTER TABLE earnings_history ADD COLUMN fiscal_end TEXT")
 
         conn.commit()
         conn.close()
@@ -88,14 +95,14 @@ class Database:
         conn.commit()
         conn.close()
 
-    def save_earnings_history(self, symbol: str, year: int, eps: float, revenue: float):
+    def save_earnings_history(self, symbol: str, year: int, eps: float, revenue: float, fiscal_end: Optional[str] = None):
         conn = self.get_connection()
         cursor = conn.cursor()
         cursor.execute("""
             INSERT OR REPLACE INTO earnings_history
-            (symbol, year, earnings_per_share, revenue, last_updated)
-            VALUES (?, ?, ?, ?, ?)
-        """, (symbol, year, eps, revenue, datetime.now().isoformat()))
+            (symbol, year, earnings_per_share, revenue, fiscal_end, last_updated)
+            VALUES (?, ?, ?, ?, ?, ?)
+        """, (symbol, year, eps, revenue, fiscal_end, datetime.now().isoformat()))
         conn.commit()
         conn.close()
 
@@ -132,7 +139,7 @@ class Database:
         conn = self.get_connection()
         cursor = conn.cursor()
         cursor.execute("""
-            SELECT year, earnings_per_share, revenue, last_updated
+            SELECT year, earnings_per_share, revenue, fiscal_end, last_updated
             FROM earnings_history
             WHERE symbol = ?
             ORDER BY year DESC
@@ -145,7 +152,8 @@ class Database:
                 'year': row[0],
                 'eps': row[1],
                 'revenue': row[2],
-                'last_updated': row[3]
+                'fiscal_end': row[3],
+                'last_updated': row[4]
             }
             for row in rows
         ]

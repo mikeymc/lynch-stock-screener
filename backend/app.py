@@ -5,10 +5,13 @@ from flask import Flask, jsonify, request, Response, stream_with_context
 from flask_cors import CORS
 import json
 import time
+import yfinance as yf
+from datetime import datetime
 from database import Database
 from data_fetcher import DataFetcher
 from earnings_analyzer import EarningsAnalyzer
 from lynch_criteria import LynchCriteria
+from schwab_client import SchwabClient
 
 app = Flask(__name__)
 CORS(app)
@@ -17,6 +20,7 @@ db = Database("stocks.db")
 fetcher = DataFetcher(db)
 analyzer = EarningsAnalyzer(db)
 criteria = LynchCriteria(db, analyzer)
+schwab_client = SchwabClient()
 
 
 @app.route('/api/health', methods=['GET'])
@@ -127,6 +131,101 @@ def get_cached_stocks():
         'close_count': len(results_by_status['close']),
         'fail_count': len(results_by_status['fail']),
         'results': results_by_status
+    })
+
+
+@app.route('/api/stock/<symbol>/history', methods=['GET'])
+def get_stock_history(symbol):
+    """Get historical earnings, revenue, price, and P/E ratio data for charting"""
+
+    # Get earnings history from database
+    earnings_history = db.get_earnings_history(symbol.upper())
+
+    if not earnings_history:
+        return jsonify({'error': f'No historical data found for {symbol}'}), 404
+
+    # Sort by year ascending for charting
+    earnings_history.sort(key=lambda x: x['year'])
+
+    years = []
+    eps_values = []
+    revenue_values = []
+    pe_ratios = []
+    prices = []
+
+    # Get yfinance ticker for fallback
+    ticker = yf.Ticker(symbol.upper())
+
+    for entry in earnings_history:
+        year = entry['year']
+        eps = entry['eps']
+        revenue = entry['revenue']
+        fiscal_end = entry.get('fiscal_end')
+
+        years.append(year)
+        eps_values.append(eps)
+        revenue_values.append(revenue)
+
+        price = None
+
+        # Fetch historical price for this year's fiscal year-end
+        if fiscal_end:
+            # Try Schwab API first if available
+            if schwab_client.is_available():
+                try:
+                    price = schwab_client.get_historical_price(symbol.upper(), fiscal_end)
+                except Exception as e:
+                    print(f"Schwab API error for {symbol} on {fiscal_end}: {e}")
+                    price = None
+
+            # Fall back to yfinance if Schwab failed or unavailable
+            if price is None:
+                try:
+                    # Use fiscal year-end date for yfinance
+                    # Fetch a few days before and after to handle weekends/holidays
+                    from datetime import datetime, timedelta
+                    fiscal_date = datetime.strptime(fiscal_end, '%Y-%m-%d')
+                    start_date = (fiscal_date - timedelta(days=7)).strftime('%Y-%m-%d')
+                    end_date = (fiscal_date + timedelta(days=3)).strftime('%Y-%m-%d')
+
+                    hist = ticker.history(start=start_date, end=end_date)
+
+                    if not hist.empty:
+                        # Get closing price from the last available day
+                        price = hist.iloc[-1]['Close']
+                except Exception as e:
+                    print(f"yfinance error for {symbol} on {fiscal_end}: {e}")
+                    price = None
+        else:
+            # No fiscal_end date, fall back to December 31
+            try:
+                start_date = f"{year}-12-01"
+                end_date = f"{year}-12-31"
+
+                hist = ticker.history(start=start_date, end=end_date)
+
+                if not hist.empty:
+                    price = hist.iloc[-1]['Close']
+            except Exception as e:
+                print(f"Error fetching historical price for {symbol} year {year}: {e}")
+                price = None
+
+        # Calculate P/E ratio if we have price and positive EPS
+        if price is not None and eps > 0:
+            pe_ratio = price / eps
+            pe_ratios.append(pe_ratio)
+            prices.append(price)
+        else:
+            # No price data or negative EPS
+            pe_ratios.append(None)
+            prices.append(None)
+
+    return jsonify({
+        'years': years,
+        'eps': eps_values,
+        'revenue': revenue_values,
+        'price': prices,
+        'pe_ratio': pe_ratios
     })
 
 

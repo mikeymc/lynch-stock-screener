@@ -1,0 +1,8 @@
+flask
+flask-cors
+yfinance
+pandas
+requests
+pytest
+python-dotenv
+schwab-py

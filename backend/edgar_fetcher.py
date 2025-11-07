@@ -111,53 +111,84 @@ class EdgarFetcher:
 
     def parse_eps_history(self, company_facts: Dict[str, Any]) -> List[Dict[str, Any]]:
         """
-        Extract EPS history from company facts
+        Extract EPS history from company facts (supports both US-GAAP and IFRS)
 
         Args:
             company_facts: Company facts data from EDGAR API
 
         Returns:
-            List of dictionaries with year and eps values
+            List of dictionaries with year, eps, and fiscal_end values
         """
+        eps_data_list = None
+
+        # Try US-GAAP first (domestic companies)
         try:
-            eps_data = company_facts['facts']['us-gaap']['EarningsPerShareDiluted']['units']['USD/shares']
+            eps_units = company_facts['facts']['us-gaap']['EarningsPerShareDiluted']['units']
+            if 'USD/shares' in eps_units:
+                eps_data_list = eps_units['USD/shares']
+        except (KeyError, TypeError):
+            pass
 
-            # Filter for 10-K annual reports only
-            annual_eps = []
-            seen_years = set()
+        # Fall back to IFRS (foreign companies filing 20-F)
+        if eps_data_list is None:
+            try:
+                eps_units = company_facts['facts']['ifrs-full']['DilutedEarningsLossPerShare']['units']
 
-            for entry in eps_data:
-                if entry.get('form') == '10-K':
-                    year = entry.get('fy')
-                    eps = entry.get('val')
+                # Prefer USD if available, otherwise use any currency
+                if 'USD/shares' in eps_units:
+                    eps_data_list = eps_units['USD/shares']
+                else:
+                    # Find first unit matching */shares pattern
+                    share_units = [u for u in eps_units.keys() if u.endswith('/shares')]
+                    if share_units:
+                        eps_data_list = eps_units[share_units[0]]
+            except (KeyError, TypeError):
+                pass
 
-                    # Avoid duplicates, keep only one entry per fiscal year
-                    if year and eps and year not in seen_years:
-                        annual_eps.append({
-                            'year': year,
-                            'eps': eps
-                        })
-                        seen_years.add(year)
-
-            # Sort by year descending
-            annual_eps.sort(key=lambda x: x['year'], reverse=True)
-            logger.info(f"Successfully parsed {len(annual_eps)} years of EPS data from EDGAR")
-            return annual_eps
-
-        except (KeyError, TypeError) as e:
-            logger.warning(f"Could not parse EPS history from EDGAR: {type(e).__name__}")
+        # If we still don't have data, return empty
+        if eps_data_list is None:
+            logger.warning("Could not parse EPS history from EDGAR: No us-gaap or ifrs-full data found")
             return []
+
+        # Filter for annual reports (10-K for US, 20-F for foreign)
+        annual_eps = []
+        seen_years = set()
+
+        for entry in eps_data_list:
+            if entry.get('form') in ['10-K', '20-F']:
+                year = entry.get('fy')
+                eps = entry.get('val')
+                fiscal_end = entry.get('end')
+
+                # Avoid duplicates, keep only one entry per fiscal year
+                if year and eps and year not in seen_years:
+                    annual_eps.append({
+                        'year': year,
+                        'eps': eps,
+                        'fiscal_end': fiscal_end
+                    })
+                    seen_years.add(year)
+
+        # Sort by year descending
+        annual_eps.sort(key=lambda x: x['year'], reverse=True)
+        logger.info(f"Successfully parsed {len(annual_eps)} years of EPS data from EDGAR")
+        return annual_eps
 
     def parse_revenue_history(self, company_facts: Dict[str, Any]) -> List[Dict[str, Any]]:
         """
-        Extract revenue history from company facts
+        Extract revenue history from company facts (supports both US-GAAP and IFRS)
 
         Args:
             company_facts: Company facts data from EDGAR API
 
         Returns:
-            List of dictionaries with year and revenue values
+            List of dictionaries with year, revenue, and fiscal_end values
         """
+        annual_revenue = []
+        seen_years = set()
+        fields_found = []
+
+        # Try US-GAAP first (domestic companies)
         try:
             # Try multiple possible field names for revenue
             # Companies often change field names over time, so we collect from ALL fields
@@ -174,28 +205,25 @@ class EdgarFetcher:
                 'InterestAndDividendIncomeOperating'
             ]
 
-            # Collect data from ALL revenue fields (not just the first one)
-            annual_revenue = []
-            seen_years = set()
-            fields_found = []
-
             for field in revenue_fields:
                 try:
                     revenue_data = company_facts['facts']['us-gaap'][field]['units']['USD']
                     fields_found.append(field)
                     logger.info(f"Found revenue data using field: '{field}'")
 
-                    # Filter for 10-K annual reports only
+                    # Filter for 10-K annual reports
                     for entry in revenue_data:
                         if entry.get('form') == '10-K':
                             year = entry.get('fy')
                             revenue = entry.get('val')
+                            fiscal_end = entry.get('end')
 
                             # Avoid duplicates across all fields
                             if year and revenue and year not in seen_years:
                                 annual_revenue.append({
                                     'year': year,
-                                    'revenue': revenue
+                                    'revenue': revenue,
+                                    'fiscal_end': fiscal_end
                                 })
                                 seen_years.add(year)
 
@@ -203,18 +231,63 @@ class EdgarFetcher:
                     logger.debug(f"Revenue field '{field}' not found, trying next...")
                     continue
 
-            if not annual_revenue:
-                logger.warning(f"No revenue data found after trying: {', '.join(revenue_fields)}")
-                return []
+        except (KeyError, TypeError):
+            pass
 
-            # Sort by year descending
-            annual_revenue.sort(key=lambda x: x['year'], reverse=True)
-            logger.info(f"Successfully parsed {len(annual_revenue)} years of revenue data from {len(fields_found)} field(s): {', '.join(fields_found)}")
-            return annual_revenue
+        # Fall back to IFRS if no US-GAAP data found (foreign companies filing 20-F)
+        if not annual_revenue:
+            try:
+                ifrs_revenue_fields = ['Revenue', 'RevenueFromSaleOfGoods']
 
-        except (KeyError, TypeError) as e:
-            logger.warning(f"Could not parse revenue history from EDGAR: {type(e).__name__}")
+                for field in ifrs_revenue_fields:
+                    try:
+                        revenue_units = company_facts['facts']['ifrs-full'][field]['units']
+
+                        # Prefer USD if available, otherwise use any currency
+                        revenue_data = None
+                        if 'USD' in revenue_units:
+                            revenue_data = revenue_units['USD']
+                        else:
+                            # Find first currency unit (3-letter code)
+                            currency_units = [u for u in revenue_units.keys() if len(u) == 3 and u.isupper()]
+                            if currency_units:
+                                revenue_data = revenue_units[currency_units[0]]
+
+                        if revenue_data:
+                            fields_found.append(f"ifrs-full:{field}")
+                            logger.info(f"Found IFRS revenue data using field: '{field}'")
+
+                            # Filter for 20-F annual reports
+                            for entry in revenue_data:
+                                if entry.get('form') == '20-F':
+                                    year = entry.get('fy')
+                                    revenue = entry.get('val')
+                                    fiscal_end = entry.get('end')
+
+                                    # Avoid duplicates
+                                    if year and revenue and year not in seen_years:
+                                        annual_revenue.append({
+                                            'year': year,
+                                            'revenue': revenue,
+                                            'fiscal_end': fiscal_end
+                                        })
+                                        seen_years.add(year)
+
+                    except KeyError:
+                        logger.debug(f"IFRS revenue field '{field}' not found, trying next...")
+                        continue
+
+            except (KeyError, TypeError):
+                pass
+
+        if not annual_revenue:
+            logger.warning(f"No revenue data found in us-gaap or ifrs-full")
             return []
+
+        # Sort by year descending
+        annual_revenue.sort(key=lambda x: x['year'], reverse=True)
+        logger.info(f"Successfully parsed {len(annual_revenue)} years of revenue data from {len(fields_found)} field(s): {', '.join(fields_found)}")
+        return annual_revenue
 
     def parse_debt_to_equity(self, company_facts: Dict[str, Any]) -> Optional[float]:
         """

@@ -417,3 +417,142 @@ def test_parse_revenue_collects_from_multiple_fields():
     assert revenue_by_year[2021] == 365817000000
     assert revenue_by_year[2018] == 265595000000
     assert revenue_by_year[2015] == 233715000000
+
+
+def test_parse_eps_history_ifrs_with_dkk(edgar_fetcher):
+    """Test parsing IFRS EPS history with DKK currency (Novo Nordisk example)"""
+    company_facts = {
+        "facts": {
+            "ifrs-full": {
+                "DilutedEarningsLossPerShare": {
+                    "units": {
+                        "DKK/shares": [
+                            {"end": "2023-12-31", "val": 24.32, "fy": 2023, "form": "20-F"},
+                            {"end": "2022-12-31", "val": 20.71, "fy": 2022, "form": "20-F"},
+                            {"end": "2021-12-31", "val": 16.34, "fy": 2021, "form": "20-F"},
+                            {"end": "2020-12-31", "val": 14.78, "fy": 2020, "form": "20-F"},
+                            {"end": "2019-12-31", "val": 12.25, "fy": 2019, "form": "20-F"}
+                        ]
+                    }
+                }
+            }
+        }
+    }
+
+    eps_history = edgar_fetcher.parse_eps_history(company_facts)
+
+    assert len(eps_history) == 5
+    assert eps_history[0]["year"] == 2023
+    assert eps_history[0]["eps"] == 24.32
+    assert eps_history[0]["fiscal_end"] == "2023-12-31"
+    assert eps_history[4]["year"] == 2019
+    assert eps_history[4]["eps"] == 12.25
+
+
+def test_parse_eps_history_ifrs_with_usd_fallback(edgar_fetcher):
+    """Test parsing IFRS EPS with USD available (Taiwan Semiconductor example)"""
+    company_facts = {
+        "facts": {
+            "ifrs-full": {
+                "DilutedEarningsLossPerShare": {
+                    "units": {
+                        "USD/shares": [
+                            {"end": "2023-12-31", "val": 5.18, "fy": 2023, "form": "20-F"},
+                            {"end": "2022-12-31", "val": 4.75, "fy": 2022, "form": "20-F"}
+                        ],
+                        "TWD/shares": [
+                            {"end": "2023-12-31", "val": 39.20, "fy": 2023, "form": "20-F"},
+                            {"end": "2022-12-31", "val": 36.02, "fy": 2022, "form": "20-F"},
+                            {"end": "2021-12-31", "val": 23.01, "fy": 2021, "form": "20-F"}
+                        ]
+                    }
+                }
+            }
+        }
+    }
+
+    eps_history = edgar_fetcher.parse_eps_history(company_facts)
+
+    # Should prefer USD when available
+    assert len(eps_history) == 2
+    assert eps_history[0]["eps"] == 5.18
+
+
+def test_parse_revenue_history_ifrs_with_dkk(edgar_fetcher):
+    """Test parsing IFRS revenue history with DKK currency (Novo Nordisk example)"""
+    company_facts = {
+        "facts": {
+            "ifrs-full": {
+                "Revenue": {
+                    "units": {
+                        "DKK": [
+                            {"end": "2023-12-31", "val": 232329000000, "fy": 2023, "form": "20-F"},
+                            {"end": "2022-12-31", "val": 177644000000, "fy": 2022, "form": "20-F"},
+                            {"end": "2021-12-31", "val": 140796000000, "fy": 2021, "form": "20-F"}
+                        ]
+                    }
+                }
+            }
+        }
+    }
+
+    revenue_history = edgar_fetcher.parse_revenue_history(company_facts)
+
+    assert len(revenue_history) == 3
+    assert revenue_history[0]["year"] == 2023
+    assert revenue_history[0]["revenue"] == 232329000000
+    assert revenue_history[0]["fiscal_end"] == "2023-12-31"
+
+
+def test_parse_revenue_history_ifrs_prefers_usd(edgar_fetcher):
+    """Test that IFRS revenue parsing prefers USD when multiple currencies available"""
+    company_facts = {
+        "facts": {
+            "ifrs-full": {
+                "Revenue": {
+                    "units": {
+                        "USD": [
+                            {"end": "2023-12-31", "val": 69298000000, "fy": 2023, "form": "20-F"}
+                        ],
+                        "TWD": [
+                            {"end": "2023-12-31", "val": 2162103000000, "fy": 2023, "form": "20-F"},
+                            {"end": "2022-12-31", "val": 2263891000000, "fy": 2022, "form": "20-F"}
+                        ]
+                    }
+                }
+            }
+        }
+    }
+
+    revenue_history = edgar_fetcher.parse_revenue_history(company_facts)
+
+    # Should prefer USD when available
+    assert len(revenue_history) == 1
+    assert revenue_history[0]["revenue"] == 69298000000
+
+
+def test_parse_eps_history_ifrs_filters_20f_forms(edgar_fetcher):
+    """Test that IFRS parsing correctly filters for 20-F forms and excludes others"""
+    company_facts = {
+        "facts": {
+            "ifrs-full": {
+                "DilutedEarningsLossPerShare": {
+                    "units": {
+                        "EUR/shares": [
+                            {"end": "2023-12-31", "val": 2.65, "fy": 2023, "form": "20-F"},
+                            {"end": "2023-06-30", "val": 1.32, "fy": 2023, "fp": "Q2", "form": "6-K"},  # Quarterly - should be excluded
+                            {"end": "2022-12-31", "val": 2.41, "fy": 2022, "form": "20-F"}
+                        ]
+                    }
+                }
+            }
+        }
+    }
+
+    eps_history = edgar_fetcher.parse_eps_history(company_facts)
+
+    # Should only include 20-F forms, not 6-K
+    assert len(eps_history) == 2
+    assert all(entry["year"] in [2023, 2022] for entry in eps_history)
+    # Q2 entry should be excluded
+    assert not any(entry.get("fp") == "Q2" for entry in eps_history)

@@ -99,6 +99,26 @@ def test_save_and_retrieve_earnings_history(test_db):
     assert history[4]['eps'] == 2.97
 
 
+def test_save_and_retrieve_earnings_with_fiscal_end(test_db):
+    """Test that fiscal year-end dates are stored and retrieved correctly"""
+    test_db.save_stock_basic("AAPL", "Apple Inc.", "NASDAQ", "Technology")
+
+    # Save earnings with fiscal year-end dates (Apple's fiscal year ends in September)
+    test_db.save_earnings_history("AAPL", 2023, 6.13, 383000000000, fiscal_end="2023-09-30")
+    test_db.save_earnings_history("AAPL", 2022, 6.11, 394000000000, fiscal_end="2022-09-24")
+    test_db.save_earnings_history("AAPL", 2021, 5.61, 366000000000, fiscal_end="2021-09-25")
+
+    history = test_db.get_earnings_history("AAPL")
+
+    assert len(history) == 3
+    assert history[0]['year'] == 2023
+    assert history[0]['fiscal_end'] == "2023-09-30"
+    assert history[1]['year'] == 2022
+    assert history[1]['fiscal_end'] == "2022-09-24"
+    assert history[2]['year'] == 2021
+    assert history[2]['fiscal_end'] == "2021-09-25"
+
+
 def test_cache_validity_fresh_data(test_db):
     test_db.save_stock_basic("AAPL", "Apple Inc.", "NASDAQ", "Technology")
 
