@@ -16,7 +16,7 @@ class LynchAnalyst:
             api_key: Gemini API key (defaults to GEMINI_API_KEY env var)
         """
         self.db = db
-        self.model_version = "gemini-1.5-flash"
+        self.model_version = "gemini-2.5-flash"
 
         # Configure Gemini API
         api_key = api_key or os.getenv('GEMINI_API_KEY')
