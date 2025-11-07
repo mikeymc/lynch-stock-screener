@@ -1,5 +1,26 @@
 import { useState, useMemo, useEffect } from 'react'
+import { Line } from 'react-chartjs-2'
+import {
+  Chart as ChartJS,
+  CategoryScale,
+  LinearScale,
+  PointElement,
+  LineElement,
+  Title,
+  Tooltip,
+  Legend
+} from 'chart.js'
 import './App.css'
+
+ChartJS.register(
+  CategoryScale,
+  LinearScale,
+  PointElement,
+  LineElement,
+  Title,
+  Tooltip,
+  Legend
+)
 
 const API_BASE = 'http://localhost:5001/api'
 
@@ -20,6 +41,9 @@ function App() {
   })
   const [currentPage, setCurrentPage] = useState(1)
   const itemsPerPage = 100
+  const [expandedSymbol, setExpandedSymbol] = useState(null)
+  const [historyData, setHistoryData] = useState(null)
+  const [loadingHistory, setLoadingHistory] = useState(false)
 
   // Persist stocks to localStorage
   useEffect(() => {
@@ -144,6 +168,34 @@ function App() {
     }
   }
 
+  const fetchHistoryData = async (symbol) => {
+    setLoadingHistory(true)
+    try {
+      const response = await fetch(`${API_BASE}/stock/${symbol}/history`)
+      if (!response.ok) {
+        throw new Error(`Failed to fetch history for ${symbol}`)
+      }
+      const data = await response.json()
+      setHistoryData(data)
+    } catch (err) {
+      console.error('Error fetching history:', err)
+      setError(`Failed to load history: ${err.message}`)
+      setHistoryData(null)
+    } finally {
+      setLoadingHistory(false)
+    }
+  }
+
+  const toggleRowExpansion = (symbol) => {
+    if (expandedSymbol === symbol) {
+      setExpandedSymbol(null)
+      setHistoryData(null)
+    } else {
+      setExpandedSymbol(symbol)
+      fetchHistoryData(symbol)
+    }
+  }
+
   return (
     <div className="app">
       <header>
@@ -220,31 +272,116 @@ function App() {
               </thead>
               <tbody>
                 {paginatedStocks.map(stock => (
-                <tr key={stock.symbol}>
-                  <td><strong>{stock.symbol}</strong></td>
-                  <td>{stock.company_name || 'N/A'}</td>
-                  <td>{typeof stock.price === 'number' ? `$${stock.price.toFixed(2)}` : 'N/A'}</td>
-                  <td>{typeof stock.peg_ratio === 'number' ? stock.peg_ratio.toFixed(2) : 'N/A'}</td>
-                  <td>{typeof stock.pe_ratio === 'number' ? stock.pe_ratio.toFixed(2) : 'N/A'}</td>
-                  <td>{typeof stock.debt_to_equity === 'number' ? stock.debt_to_equity.toFixed(2) : 'N/A'}</td>
-                  <td>{typeof stock.institutional_ownership === 'number' ? `${(stock.institutional_ownership * 100).toFixed(1)}%` : 'N/A'}</td>
-                  <td>{typeof stock.earnings_cagr === 'number' ? `${stock.earnings_cagr.toFixed(1)}%` : 'N/A'}</td>
-                  <td>{typeof stock.revenue_cagr === 'number' ? `${stock.revenue_cagr.toFixed(1)}%` : 'N/A'}</td>
-                  <td style={{ backgroundColor: getStatusColor(stock.peg_status), color: '#000' }}>
-                    {stock.peg_status}
-                  </td>
-                  <td style={{ backgroundColor: getStatusColor(stock.debt_status), color: '#000' }}>
-                    {stock.debt_status}
-                  </td>
-                  <td style={{ backgroundColor: getStatusColor(stock.institutional_ownership_status), color: '#000' }}>
-                    {stock.institutional_ownership_status}
-                  </td>
-                  <td style={{ backgroundColor: getStatusColor(stock.overall_status), color: '#000', fontWeight: 'bold' }}>
-                    {stock.overall_status}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
+                  <>
+                    <tr
+                      key={stock.symbol}
+                      onClick={() => toggleRowExpansion(stock.symbol)}
+                      className={`stock-row ${expandedSymbol === stock.symbol ? 'expanded' : ''}`}
+                    >
+                      <td><strong>{stock.symbol}</strong></td>
+                      <td>{stock.company_name || 'N/A'}</td>
+                      <td>{typeof stock.price === 'number' ? `$${stock.price.toFixed(2)}` : 'N/A'}</td>
+                      <td>{typeof stock.peg_ratio === 'number' ? stock.peg_ratio.toFixed(2) : 'N/A'}</td>
+                      <td>{typeof stock.pe_ratio === 'number' ? stock.pe_ratio.toFixed(2) : 'N/A'}</td>
+                      <td>{typeof stock.debt_to_equity === 'number' ? stock.debt_to_equity.toFixed(2) : 'N/A'}</td>
+                      <td>{typeof stock.institutional_ownership === 'number' ? `${(stock.institutional_ownership * 100).toFixed(1)}%` : 'N/A'}</td>
+                      <td>{typeof stock.earnings_cagr === 'number' ? `${stock.earnings_cagr.toFixed(1)}%` : 'N/A'}</td>
+                      <td>{typeof stock.revenue_cagr === 'number' ? `${stock.revenue_cagr.toFixed(1)}%` : 'N/A'}</td>
+                      <td style={{ backgroundColor: getStatusColor(stock.peg_status), color: '#000' }}>
+                        {stock.peg_status}
+                      </td>
+                      <td style={{ backgroundColor: getStatusColor(stock.debt_status), color: '#000' }}>
+                        {stock.debt_status}
+                      </td>
+                      <td style={{ backgroundColor: getStatusColor(stock.institutional_ownership_status), color: '#000' }}>
+                        {stock.institutional_ownership_status}
+                      </td>
+                      <td style={{ backgroundColor: getStatusColor(stock.overall_status), color: '#000', fontWeight: 'bold' }}>
+                        {stock.overall_status}
+                      </td>
+                    </tr>
+                    {expandedSymbol === stock.symbol && (
+                      <tr key={`${stock.symbol}-details`} className="expanded-row">
+                        <td colSpan="13">
+                          <div className="chart-container">
+                            {loadingHistory && <div className="loading">Loading historical data...</div>}
+                            {!loadingHistory && historyData && (
+                              <Line
+                                data={{
+                                  labels: historyData.years,
+                                  datasets: [
+                                    {
+                                      label: 'Revenue (Billions)',
+                                      data: historyData.revenue.map(r => r / 1e9),
+                                      borderColor: 'rgb(75, 192, 192)',
+                                      backgroundColor: 'rgba(75, 192, 192, 0.2)',
+                                      yAxisID: 'y',
+                                    },
+                                    {
+                                      label: 'EPS',
+                                      data: historyData.eps,
+                                      borderColor: 'rgb(255, 99, 132)',
+                                      backgroundColor: 'rgba(255, 99, 132, 0.2)',
+                                      yAxisID: 'y1',
+                                    },
+                                    {
+                                      label: 'P/E Ratio',
+                                      data: historyData.pe_ratio,
+                                      borderColor: 'rgb(153, 102, 255)',
+                                      backgroundColor: 'rgba(153, 102, 255, 0.2)',
+                                      yAxisID: 'y1',
+                                    }
+                                  ]
+                                }}
+                                options={{
+                                  responsive: true,
+                                  interaction: {
+                                    mode: 'index',
+                                    intersect: false,
+                                  },
+                                  plugins: {
+                                    title: {
+                                      display: true,
+                                      text: `${stock.symbol} - Historical Financials`,
+                                      font: { size: 16 }
+                                    },
+                                    legend: {
+                                      position: 'top',
+                                    }
+                                  },
+                                  scales: {
+                                    y: {
+                                      type: 'linear',
+                                      display: true,
+                                      position: 'left',
+                                      title: {
+                                        display: true,
+                                        text: 'Revenue (Billions)'
+                                      }
+                                    },
+                                    y1: {
+                                      type: 'linear',
+                                      display: true,
+                                      position: 'right',
+                                      title: {
+                                        display: true,
+                                        text: 'EPS / P/E Ratio'
+                                      },
+                                      grid: {
+                                        drawOnChartArea: false,
+                                      },
+                                    },
+                                  }
+                                }}
+                              />
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+                  </>
+                ))}
+              </tbody>
           </table>
         </div>
 

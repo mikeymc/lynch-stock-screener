@@ -254,3 +254,39 @@ td strong {
   color: #e2e8f0;
   font-weight: 500;
 }
+
+.stock-row {
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.stock-row:hover {
+  background-color: #334155;
+}
+
+.stock-row.expanded {
+  background-color: #374151;
+}
+
+.expanded-row {
+  background-color: #1e293b;
+}
+
+.expanded-row:hover {
+  background-color: #1e293b;
+}
+
+.expanded-row td {
+  padding: 2rem;
+}
+
+.chart-container {
+  background-color: #0f172a;
+  border-radius: 0.5rem;
+  padding: 2rem;
+  min-height: 400px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
