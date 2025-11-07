@@ -56,6 +56,16 @@ class Database:
             )
         """)
 
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS lynch_analyses (
+                symbol TEXT PRIMARY KEY,
+                analysis_text TEXT,
+                generated_at TIMESTAMP,
+                model_version TEXT,
+                FOREIGN KEY (symbol) REFERENCES stocks(symbol)
+            )
+        """)
+
         # Migration: Add fiscal_end column if it doesn't exist
         cursor.execute("PRAGMA table_info(earnings_history)")
         columns = [row[1] for row in cursor.fetchall()]
@@ -182,3 +192,35 @@ class Database:
         conn.close()
 
         return [row[0] for row in rows]
+
+    def save_lynch_analysis(self, symbol: str, analysis_text: str, model_version: str):
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        cursor.execute("""
+            INSERT OR REPLACE INTO lynch_analyses
+            (symbol, analysis_text, generated_at, model_version)
+            VALUES (?, ?, ?, ?)
+        """, (symbol, analysis_text, datetime.now().isoformat(), model_version))
+        conn.commit()
+        conn.close()
+
+    def get_lynch_analysis(self, symbol: str) -> Optional[Dict[str, Any]]:
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT symbol, analysis_text, generated_at, model_version
+            FROM lynch_analyses
+            WHERE symbol = ?
+        """, (symbol,))
+        row = cursor.fetchone()
+        conn.close()
+
+        if not row:
+            return None
+
+        return {
+            'symbol': row[0],
+            'analysis_text': row[1],
+            'generated_at': row[2],
+            'model_version': row[3]
+        }

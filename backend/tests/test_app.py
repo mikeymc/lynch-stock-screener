@@ -366,3 +366,135 @@ def test_stock_history_uses_fiscal_year_end_dates(client, test_db, monkeypatch):
             call[0][1] == f"{year}-12-31"
             for call in mock_schwab_client.get_historical_price.call_args_list
         )
+
+
+def test_lynch_analysis_endpoint_returns_cached_analysis(client, test_db, monkeypatch):
+    """Test that /api/stock/<symbol>/lynch-analysis returns cached analysis when available"""
+    import app as app_module
+    from lynch_analyst import LynchAnalyst
+
+    monkeypatch.setattr(app_module, 'db', test_db)
+    monkeypatch.setattr(app_module, 'lynch_analyst', LynchAnalyst(test_db))
+
+    # Set up test data
+    symbol = "AAPL"
+    test_db.save_stock_basic(symbol, "Apple Inc.", "NASDAQ", "Technology")
+    test_db.save_stock_metrics(symbol, {
+        'price': 150.25,
+        'pe_ratio': 25.5,
+        'market_cap': 2500000000000,
+        'debt_to_equity': 0.35,
+        'institutional_ownership': 0.62,
+        'revenue': 394000000000
+    })
+    test_db.save_earnings_history(symbol, 2023, 6.13, 383000000000)
+
+    # Save a cached analysis
+    cached_analysis = "This is a cached Peter Lynch analysis of Apple. Strong fundamentals and growth trajectory."
+    test_db.save_lynch_analysis(symbol, cached_analysis, "gemini-pro")
+
+    # Request analysis
+    response = client.get(f'/api/stock/{symbol}/lynch-analysis')
+
+    assert response.status_code == 200
+    data = json.loads(response.data)
+    assert data['analysis'] == cached_analysis
+    assert data['cached'] is True
+    assert 'generated_at' in data
+
+
+@patch('lynch_analyst.genai.GenerativeModel')
+def test_lynch_analysis_endpoint_generates_fresh_analysis(mock_model_class, client, test_db, monkeypatch):
+    """Test that /api/stock/<symbol>/lynch-analysis generates fresh analysis when cache is empty"""
+    import app as app_module
+    from lynch_analyst import LynchAnalyst
+
+    monkeypatch.setattr(app_module, 'db', test_db)
+    monkeypatch.setattr(app_module, 'lynch_analyst', LynchAnalyst(test_db))
+
+    # Setup mock Gemini response
+    mock_model = MagicMock()
+    mock_response = MagicMock()
+    mock_response.text = "Fresh Peter Lynch analysis: Apple shows strong growth with a PEG ratio of 1.2, suggesting reasonable valuation."
+    mock_model.generate_content.return_value = mock_response
+    mock_model_class.return_value = mock_model
+
+    # Set up test stock and earnings data
+    symbol = "AAPL"
+    test_db.save_stock_basic(symbol, "Apple Inc.", "NASDAQ", "Technology")
+    test_db.save_stock_metrics(symbol, {
+        'price': 150.25,
+        'pe_ratio': 25.5,
+        'market_cap': 2500000000000,
+        'debt_to_equity': 0.35,
+        'institutional_ownership': 0.62,
+        'revenue': 394000000000
+    })
+    test_db.save_earnings_history(symbol, 2023, 6.13, 383000000000)
+
+    # Request analysis
+    response = client.get(f'/api/stock/{symbol}/lynch-analysis')
+
+    assert response.status_code == 200
+    data = json.loads(response.data)
+    assert "Fresh Peter Lynch analysis" in data['analysis']
+    assert data['cached'] is False
+    assert 'generated_at' in data
+
+
+@patch('lynch_analyst.genai.GenerativeModel')
+def test_lynch_analysis_refresh_endpoint(mock_model_class, client, test_db, monkeypatch):
+    """Test that POST /api/stock/<symbol>/lynch-analysis/refresh forces regeneration"""
+    import app as app_module
+    from lynch_analyst import LynchAnalyst
+
+    monkeypatch.setattr(app_module, 'db', test_db)
+    monkeypatch.setattr(app_module, 'lynch_analyst', LynchAnalyst(test_db))
+
+    # Setup mock Gemini response
+    mock_model = MagicMock()
+    mock_response = MagicMock()
+    mock_response.text = "Updated Peter Lynch analysis with latest data."
+    mock_model.generate_content.return_value = mock_response
+    mock_model_class.return_value = mock_model
+
+    # Set up test stock and earnings data
+    symbol = "AAPL"
+    test_db.save_stock_basic(symbol, "Apple Inc.", "NASDAQ", "Technology")
+    test_db.save_stock_metrics(symbol, {
+        'price': 150.25,
+        'pe_ratio': 25.5,
+        'market_cap': 2500000000000,
+        'debt_to_equity': 0.35,
+        'institutional_ownership': 0.62,
+        'revenue': 394000000000
+    })
+    test_db.save_earnings_history(symbol, 2023, 6.13, 383000000000)
+
+    # Save old cached analysis
+    test_db.save_lynch_analysis(symbol, "Old cached analysis", "gemini-pro")
+
+    # Request refresh
+    response = client.post(f'/api/stock/{symbol}/lynch-analysis/refresh')
+
+    assert response.status_code == 200
+    data = json.loads(response.data)
+    assert "Updated Peter Lynch analysis" in data['analysis']
+    assert data['cached'] is False
+    assert 'generated_at' in data
+
+    # Verify the cache was updated
+    cached = test_db.get_lynch_analysis(symbol)
+    assert cached['analysis_text'] == "Updated Peter Lynch analysis with latest data."
+
+
+def test_lynch_analysis_endpoint_returns_404_for_unknown_stock(client, test_db, monkeypatch):
+    """Test that /api/stock/<symbol>/lynch-analysis returns 404 for unknown stock"""
+    import app as app_module
+    monkeypatch.setattr(app_module, 'db', test_db)
+
+    response = client.get('/api/stock/UNKNOWN/lynch-analysis')
+
+    assert response.status_code == 404
+    data = json.loads(response.data)
+    assert 'error' in data

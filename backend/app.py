@@ -12,6 +12,7 @@ from data_fetcher import DataFetcher
 from earnings_analyzer import EarningsAnalyzer
 from lynch_criteria import LynchCriteria
 from schwab_client import SchwabClient
+from lynch_analyst import LynchAnalyst
 
 app = Flask(__name__)
 CORS(app)
@@ -21,6 +22,7 @@ fetcher = DataFetcher(db)
 analyzer = EarningsAnalyzer(db)
 criteria = LynchCriteria(db, analyzer)
 schwab_client = SchwabClient()
+lynch_analyst = LynchAnalyst(db)
 
 
 @app.route('/api/health', methods=['GET'])
@@ -227,6 +229,108 @@ def get_stock_history(symbol):
         'price': prices,
         'pe_ratio': pe_ratios
     })
+
+
+@app.route('/api/stock/<symbol>/lynch-analysis', methods=['GET'])
+def get_lynch_analysis(symbol):
+    """
+    Get Peter Lynch-style analysis for a stock.
+    Returns cached analysis if available, otherwise generates a new one.
+    """
+    symbol = symbol.upper()
+
+    # Check if stock exists
+    stock_metrics = db.get_stock_metrics(symbol)
+    if not stock_metrics:
+        return jsonify({'error': f'Stock {symbol} not found'}), 404
+
+    # Get historical data
+    history = db.get_earnings_history(symbol)
+    if not history:
+        return jsonify({'error': f'No historical data for {symbol}'}), 404
+
+    # Prepare stock data for analysis
+    evaluation = criteria.evaluate_stock(symbol)
+    stock_data = {
+        **stock_metrics,
+        'peg_ratio': evaluation.get('peg_ratio'),
+        'earnings_cagr': evaluation.get('earnings_cagr'),
+        'revenue_cagr': evaluation.get('revenue_cagr')
+    }
+
+    # Check if analysis exists in cache before generating
+    cached_analysis = db.get_lynch_analysis(symbol)
+    was_cached = cached_analysis is not None
+
+    # Get or generate analysis
+    try:
+        analysis_text = lynch_analyst.get_or_generate_analysis(
+            symbol,
+            stock_data,
+            history,
+            use_cache=True
+        )
+
+        # Get timestamp (fetch again if it was just generated)
+        if not was_cached:
+            cached_analysis = db.get_lynch_analysis(symbol)
+
+        return jsonify({
+            'analysis': analysis_text,
+            'cached': was_cached,
+            'generated_at': cached_analysis['generated_at'] if cached_analysis else datetime.now().isoformat()
+        })
+    except Exception as e:
+        print(f"Error generating Lynch analysis for {symbol}: {e}")
+        return jsonify({'error': f'Failed to generate analysis: {str(e)}'}), 500
+
+
+@app.route('/api/stock/<symbol>/lynch-analysis/refresh', methods=['POST'])
+def refresh_lynch_analysis(symbol):
+    """
+    Force regeneration of Peter Lynch-style analysis for a stock,
+    bypassing the cache.
+    """
+    symbol = symbol.upper()
+
+    # Check if stock exists
+    stock_metrics = db.get_stock_metrics(symbol)
+    if not stock_metrics:
+        return jsonify({'error': f'Stock {symbol} not found'}), 404
+
+    # Get historical data
+    history = db.get_earnings_history(symbol)
+    if not history:
+        return jsonify({'error': f'No historical data for {symbol}'}), 404
+
+    # Prepare stock data for analysis
+    evaluation = criteria.evaluate_stock(symbol)
+    stock_data = {
+        **stock_metrics,
+        'peg_ratio': evaluation.get('peg_ratio'),
+        'earnings_cagr': evaluation.get('earnings_cagr'),
+        'revenue_cagr': evaluation.get('revenue_cagr')
+    }
+
+    # Force regeneration
+    try:
+        analysis_text = lynch_analyst.get_or_generate_analysis(
+            symbol,
+            stock_data,
+            history,
+            use_cache=False
+        )
+
+        cached_analysis = db.get_lynch_analysis(symbol)
+
+        return jsonify({
+            'analysis': analysis_text,
+            'cached': False,
+            'generated_at': cached_analysis['generated_at'] if cached_analysis else datetime.now().isoformat()
+        })
+    except Exception as e:
+        print(f"Error refreshing Lynch analysis for {symbol}: {e}")
+        return jsonify({'error': f'Failed to generate analysis: {str(e)}'}), 500
 
 
 if __name__ == '__main__':

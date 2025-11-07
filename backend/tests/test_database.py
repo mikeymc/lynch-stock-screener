@@ -191,3 +191,71 @@ def test_update_earnings_history(test_db):
     history = test_db.get_earnings_history("AAPL")
     assert len(history) == 1
     assert history[0]['eps'] == 6.15
+
+
+def test_lynch_analyses_table_exists(test_db):
+    """Test that lynch_analyses table is created"""
+    conn = test_db.get_connection()
+    cursor = conn.cursor()
+
+    cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='lynch_analyses'")
+    assert cursor.fetchone() is not None
+
+    conn.close()
+
+
+def test_save_and_retrieve_lynch_analysis(test_db):
+    """Test saving and retrieving a Lynch analysis"""
+    test_db.save_stock_basic("AAPL", "Apple Inc.", "NASDAQ", "Technology")
+
+    analysis_text = "Apple is a solid growth company with strong earnings momentum. The PEG ratio of 1.2 suggests it's reasonably valued for its growth rate. With low debt and high institutional ownership, this is a textbook Peter Lynch growth stock. The consistent earnings growth over the past 5 years demonstrates strong management execution."
+    model_version = "gemini-pro"
+
+    test_db.save_lynch_analysis("AAPL", analysis_text, model_version)
+
+    retrieved = test_db.get_lynch_analysis("AAPL")
+
+    assert retrieved is not None
+    assert retrieved['symbol'] == "AAPL"
+    assert retrieved['analysis_text'] == analysis_text
+    assert retrieved['model_version'] == model_version
+    assert 'generated_at' in retrieved
+
+
+def test_get_nonexistent_lynch_analysis(test_db):
+    """Test retrieving analysis for stock that doesn't have one"""
+    result = test_db.get_lynch_analysis("NONEXISTENT")
+    assert result is None
+
+
+def test_update_lynch_analysis(test_db):
+    """Test updating an existing Lynch analysis (refresh)"""
+    test_db.save_stock_basic("AAPL", "Apple Inc.", "NASDAQ", "Technology")
+
+    # Save initial analysis
+    initial_analysis = "Initial analysis text"
+    test_db.save_lynch_analysis("AAPL", initial_analysis, "gemini-pro")
+
+    # Update with new analysis
+    updated_analysis = "Updated analysis text with new insights"
+    test_db.save_lynch_analysis("AAPL", updated_analysis, "gemini-pro")
+
+    retrieved = test_db.get_lynch_analysis("AAPL")
+    assert retrieved['analysis_text'] == updated_analysis
+
+
+def test_lynch_analysis_has_timestamp(test_db):
+    """Test that generated_at timestamp is saved correctly"""
+    test_db.save_stock_basic("AAPL", "Apple Inc.", "NASDAQ", "Technology")
+
+    before_save = datetime.now()
+    test_db.save_lynch_analysis("AAPL", "Test analysis", "gemini-pro")
+    after_save = datetime.now()
+
+    retrieved = test_db.get_lynch_analysis("AAPL")
+
+    assert retrieved is not None
+    generated_at = datetime.fromisoformat(retrieved['generated_at'])
+
+    # Check that timestamp is between before and after save
+    assert before_save <= generated_at <= after_save
