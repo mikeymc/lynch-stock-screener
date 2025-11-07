@@ -72,16 +72,25 @@ class Database:
         if 'fiscal_end' not in columns:
             cursor.execute("ALTER TABLE earnings_history ADD COLUMN fiscal_end TEXT")
 
+        # Migration: Add country and ipo_year columns to stocks table
+        cursor.execute("PRAGMA table_info(stocks)")
+        stocks_columns = [row[1] for row in cursor.fetchall()]
+        if 'country' not in stocks_columns:
+            cursor.execute("ALTER TABLE stocks ADD COLUMN country TEXT")
+        if 'ipo_year' not in stocks_columns:
+            cursor.execute("ALTER TABLE stocks ADD COLUMN ipo_year INTEGER")
+
         conn.commit()
         conn.close()
 
-    def save_stock_basic(self, symbol: str, company_name: str, exchange: str, sector: str = None):
+    def save_stock_basic(self, symbol: str, company_name: str, exchange: str, sector: str = None,
+                        country: str = None, ipo_year: int = None):
         conn = self.get_connection()
         cursor = conn.cursor()
         cursor.execute("""
-            INSERT OR REPLACE INTO stocks (symbol, company_name, exchange, sector, last_updated)
-            VALUES (?, ?, ?, ?, ?)
-        """, (symbol, company_name, exchange, sector, datetime.now().isoformat()))
+            INSERT OR REPLACE INTO stocks (symbol, company_name, exchange, sector, country, ipo_year, last_updated)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+        """, (symbol, company_name, exchange, sector, country, ipo_year, datetime.now().isoformat()))
         conn.commit()
         conn.close()
 
@@ -120,7 +129,7 @@ class Database:
         conn = self.get_connection()
         cursor = conn.cursor()
         cursor.execute("""
-            SELECT sm.*, s.company_name, s.exchange, s.sector
+            SELECT sm.*, s.company_name, s.exchange, s.sector, s.country, s.ipo_year
             FROM stock_metrics sm
             JOIN stocks s ON sm.symbol = s.symbol
             WHERE sm.symbol = ?
@@ -142,7 +151,9 @@ class Database:
             'last_updated': row[7],
             'company_name': row[8],
             'exchange': row[9],
-            'sector': row[10]
+            'sector': row[10],
+            'country': row[11],
+            'ipo_year': row[12]
         }
 
     def get_earnings_history(self, symbol: str) -> List[Dict[str, Any]]:

@@ -35,8 +35,16 @@ class DataFetcher:
             company_name = info.get('longName', '')
             exchange = info.get('exchange', '')
             sector = info.get('sector', '')
+            country = info.get('country', '')
 
-            self.db.save_stock_basic(symbol, company_name, exchange, sector)
+            # Calculate IPO year from firstTradeDateEpochUtc
+            ipo_year = None
+            first_trade_epoch = info.get('firstTradeDateEpochUtc')
+            if first_trade_epoch:
+                from datetime import datetime as dt
+                ipo_year = dt.fromtimestamp(first_trade_epoch).year
+
+            self.db.save_stock_basic(symbol, company_name, exchange, sector, country, ipo_year)
 
             # Use EDGAR debt-to-equity if available, otherwise fall back to yfinance
             debt_to_equity = None
