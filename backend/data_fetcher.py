@@ -37,10 +37,14 @@ class DataFetcher:
             sector = info.get('sector', '')
             country = info.get('country', '')
 
-            # Calculate IPO year from firstTradeDateEpochUtc
+            # Calculate IPO year from firstTradeDateMilliseconds or firstTradeDateEpochUtc
             ipo_year = None
+            first_trade_millis = info.get('firstTradeDateMilliseconds')
             first_trade_epoch = info.get('firstTradeDateEpochUtc')
-            if first_trade_epoch:
+            if first_trade_millis:
+                from datetime import datetime as dt
+                ipo_year = dt.fromtimestamp(first_trade_millis / 1000).year
+            elif first_trade_epoch:
                 from datetime import datetime as dt
                 ipo_year = dt.fromtimestamp(first_trade_epoch).year
 

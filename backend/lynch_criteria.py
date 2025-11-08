@@ -57,6 +57,10 @@ class LynchCriteria:
         return {
             'symbol': symbol,
             'company_name': metrics.get('company_name'),
+            'country': metrics.get('country'),
+            'market_cap': metrics.get('market_cap'),
+            'sector': metrics.get('sector'),
+            'ipo_year': metrics.get('ipo_year'),
             'price': metrics.get('price'),
             'pe_ratio': pe_ratio,
             'peg_ratio': peg_ratio,
