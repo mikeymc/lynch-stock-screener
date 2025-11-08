@@ -498,3 +498,61 @@ def test_lynch_analysis_endpoint_returns_404_for_unknown_stock(client, test_db, 
     assert response.status_code == 404
     data = json.loads(response.data)
     assert 'error' in data
+
+
+# Screening Sessions Tests
+
+def test_get_latest_session_returns_most_recent_screening(client, test_db, monkeypatch):
+    """Test that GET /api/sessions/latest returns the most recent screening session"""
+    import app as app_module
+    monkeypatch.setattr(app_module, 'db', test_db)
+
+    # Create a session with results
+    session_id = test_db.create_session(total_analyzed=2, pass_count=1, close_count=0, fail_count=1)
+
+    result1 = {
+        'symbol': 'AAPL', 'company_name': 'Apple Inc.', 'country': 'United States',
+        'market_cap': 2500000000000, 'sector': 'Technology', 'ipo_year': 1980,
+        'price': 150.25, 'pe_ratio': 25.5, 'peg_ratio': 1.2, 'debt_to_equity': 0.35,
+        'institutional_ownership': 0.45, 'earnings_cagr': 15.5, 'revenue_cagr': 12.3,
+        'consistency_score': 85.0, 'peg_status': 'PASS', 'debt_status': 'PASS',
+        'institutional_ownership_status': 'PASS', 'overall_status': 'PASS'
+    }
+    test_db.save_screening_result(session_id, result1)
+
+    result2 = {
+        'symbol': 'MSFT', 'company_name': 'Microsoft Corp.', 'country': 'United States',
+        'market_cap': 2000000000000, 'sector': 'Technology', 'ipo_year': 1986,
+        'price': 300.00, 'pe_ratio': 30.0, 'peg_ratio': 2.5, 'debt_to_equity': 0.40,
+        'institutional_ownership': 0.70, 'earnings_cagr': 10.0, 'revenue_cagr': 8.0,
+        'consistency_score': 75.0, 'peg_status': 'FAIL', 'debt_status': 'PASS',
+        'institutional_ownership_status': 'FAIL', 'overall_status': 'FAIL'
+    }
+    test_db.save_screening_result(session_id, result2)
+
+    response = client.get('/api/sessions/latest')
+
+    assert response.status_code == 200
+    data = json.loads(response.data)
+
+    assert 'session_id' in data
+    assert 'created_at' in data
+    assert data['total_analyzed'] == 2
+    assert data['pass_count'] == 1
+    assert data['close_count'] == 0
+    assert data['fail_count'] == 1
+    assert len(data['results']) == 2
+    assert data['results'][0]['symbol'] in ['AAPL', 'MSFT']
+    assert data['results'][1]['symbol'] in ['AAPL', 'MSFT']
+
+
+def test_get_latest_session_returns_404_when_no_sessions(client, test_db, monkeypatch):
+    """Test that GET /api/sessions/latest returns 404 when no sessions exist"""
+    import app as app_module
+    monkeypatch.setattr(app_module, 'db', test_db)
+
+    response = client.get('/api/sessions/latest')
+
+    assert response.status_code == 404
+    data = json.loads(response.data)
+    assert 'error' in data

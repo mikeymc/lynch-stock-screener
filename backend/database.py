@@ -12,7 +12,9 @@ class Database:
         self.init_schema()
 
     def get_connection(self):
-        return sqlite3.connect(self.db_path)
+        conn = sqlite3.connect(self.db_path)
+        conn.execute("PRAGMA foreign_keys = ON")
+        return conn
 
     def init_schema(self):
         conn = self.get_connection()
@@ -63,6 +65,43 @@ class Database:
                 generated_at TIMESTAMP,
                 model_version TEXT,
                 FOREIGN KEY (symbol) REFERENCES stocks(symbol)
+            )
+        """)
+
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS screening_sessions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                created_at TIMESTAMP,
+                total_analyzed INTEGER,
+                pass_count INTEGER,
+                close_count INTEGER,
+                fail_count INTEGER
+            )
+        """)
+
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS screening_results (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                session_id INTEGER,
+                symbol TEXT,
+                company_name TEXT,
+                country TEXT,
+                market_cap REAL,
+                sector TEXT,
+                ipo_year INTEGER,
+                price REAL,
+                pe_ratio REAL,
+                peg_ratio REAL,
+                debt_to_equity REAL,
+                institutional_ownership REAL,
+                earnings_cagr REAL,
+                revenue_cagr REAL,
+                consistency_score REAL,
+                peg_status TEXT,
+                debt_status TEXT,
+                institutional_ownership_status TEXT,
+                overall_status TEXT,
+                FOREIGN KEY (session_id) REFERENCES screening_sessions(id) ON DELETE CASCADE
             )
         """)
 
@@ -235,3 +274,133 @@ class Database:
             'generated_at': row[2],
             'model_version': row[3]
         }
+
+    def create_session(self, total_analyzed: int, pass_count: int, close_count: int, fail_count: int) -> int:
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        cursor.execute("""
+            INSERT INTO screening_sessions (created_at, total_analyzed, pass_count, close_count, fail_count)
+            VALUES (?, ?, ?, ?, ?)
+        """, (datetime.now().isoformat(), total_analyzed, pass_count, close_count, fail_count))
+        session_id = cursor.lastrowid
+        conn.commit()
+        conn.close()
+        return session_id
+
+    def save_screening_result(self, session_id: int, result_data: Dict[str, Any]):
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        cursor.execute("""
+            INSERT INTO screening_results
+            (session_id, symbol, company_name, country, market_cap, sector, ipo_year,
+             price, pe_ratio, peg_ratio, debt_to_equity, institutional_ownership,
+             earnings_cagr, revenue_cagr, consistency_score,
+             peg_status, debt_status, institutional_ownership_status, overall_status)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (
+            session_id,
+            result_data.get('symbol'),
+            result_data.get('company_name'),
+            result_data.get('country'),
+            result_data.get('market_cap'),
+            result_data.get('sector'),
+            result_data.get('ipo_year'),
+            result_data.get('price'),
+            result_data.get('pe_ratio'),
+            result_data.get('peg_ratio'),
+            result_data.get('debt_to_equity'),
+            result_data.get('institutional_ownership'),
+            result_data.get('earnings_cagr'),
+            result_data.get('revenue_cagr'),
+            result_data.get('consistency_score'),
+            result_data.get('peg_status'),
+            result_data.get('debt_status'),
+            result_data.get('institutional_ownership_status'),
+            result_data.get('overall_status')
+        ))
+        conn.commit()
+        conn.close()
+
+    def get_latest_session(self) -> Optional[Dict[str, Any]]:
+        conn = self.get_connection()
+        cursor = conn.cursor()
+
+        # Get the latest session
+        cursor.execute("""
+            SELECT id, created_at, total_analyzed, pass_count, close_count, fail_count
+            FROM screening_sessions
+            ORDER BY created_at DESC
+            LIMIT 1
+        """)
+        session_row = cursor.fetchone()
+
+        if not session_row:
+            conn.close()
+            return None
+
+        session_id = session_row[0]
+
+        # Get all results for this session
+        cursor.execute("""
+            SELECT symbol, company_name, country, market_cap, sector, ipo_year,
+                   price, pe_ratio, peg_ratio, debt_to_equity, institutional_ownership,
+                   earnings_cagr, revenue_cagr, consistency_score,
+                   peg_status, debt_status, institutional_ownership_status, overall_status
+            FROM screening_results
+            WHERE session_id = ?
+        """, (session_id,))
+        result_rows = cursor.fetchall()
+
+        conn.close()
+
+        results = []
+        for row in result_rows:
+            results.append({
+                'symbol': row[0],
+                'company_name': row[1],
+                'country': row[2],
+                'market_cap': row[3],
+                'sector': row[4],
+                'ipo_year': row[5],
+                'price': row[6],
+                'pe_ratio': row[7],
+                'peg_ratio': row[8],
+                'debt_to_equity': row[9],
+                'institutional_ownership': row[10],
+                'earnings_cagr': row[11],
+                'revenue_cagr': row[12],
+                'consistency_score': row[13],
+                'peg_status': row[14],
+                'debt_status': row[15],
+                'institutional_ownership_status': row[16],
+                'overall_status': row[17]
+            })
+
+        return {
+            'session_id': session_id,
+            'created_at': session_row[1],
+            'total_analyzed': session_row[2],
+            'pass_count': session_row[3],
+            'close_count': session_row[4],
+            'fail_count': session_row[5],
+            'results': results
+        }
+
+    def cleanup_old_sessions(self, keep_count: int = 2):
+        conn = self.get_connection()
+        cursor = conn.cursor()
+
+        # Get IDs of sessions to delete (all except the keep_count most recent)
+        cursor.execute("""
+            SELECT id FROM screening_sessions
+            ORDER BY created_at DESC
+            LIMIT -1 OFFSET ?
+        """, (keep_count,))
+        old_session_ids = [row[0] for row in cursor.fetchall()]
+
+        # Delete old sessions (CASCADE will delete associated results)
+        for session_id in old_session_ids:
+            cursor.execute("DELETE FROM screening_sessions WHERE id = ?", (session_id,))
+
+        conn.commit()
+        conn.close()

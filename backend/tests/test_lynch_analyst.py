@@ -62,7 +62,7 @@ def test_lynch_analyst_initialization(analyst):
     """Test that LynchAnalyst initializes properly"""
     assert analyst is not None
     assert analyst.db is not None
-    assert analyst.model_version == "gemini-pro"
+    assert analyst.model_version == "gemini-2.5-flash"
 
 
 def test_format_prompt_includes_key_metrics(analyst, sample_stock_data, sample_history):

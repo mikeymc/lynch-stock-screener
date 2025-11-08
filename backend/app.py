@@ -53,6 +53,7 @@ def screen_stocks():
     force_refresh = request.args.get('refresh', 'false').lower() == 'true'
 
     def generate():
+        session_id = None
         try:
             yield f"data: {json.dumps({'type': 'progress', 'message': 'Fetching stock list...'})}\n\n"
 
@@ -71,6 +72,9 @@ def screen_stocks():
             total = len(symbols)
             yield f"data: {json.dumps({'type': 'progress', 'message': f'Found {total} stocks to screen...'})}\n\n"
 
+            # Create a new screening session
+            session_id = db.create_session(total_analyzed=0, pass_count=0, close_count=0, fail_count=0)
+
             results = []
             for i, symbol in enumerate(symbols, 1):
                 try:
@@ -88,6 +92,9 @@ def screen_stocks():
 
                     results.append(evaluation)
 
+                    # Save result to session
+                    db.save_screening_result(session_id, evaluation)
+
                     yield f"data: {json.dumps({'type': 'stock_result', 'stock': evaluation})}\n\n"
 
                     time.sleep(0.2)
@@ -102,6 +109,20 @@ def screen_stocks():
                 'close': [r for r in results if r['overall_status'] == 'CLOSE'],
                 'fail': [r for r in results if r['overall_status'] == 'FAIL']
             }
+
+            # Update session with final counts
+            conn = db.get_connection()
+            cursor = conn.cursor()
+            cursor.execute("""
+                UPDATE screening_sessions
+                SET total_analyzed = ?, pass_count = ?, close_count = ?, fail_count = ?
+                WHERE id = ?
+            """, (len(results), len(results_by_status['pass']), len(results_by_status['close']), len(results_by_status['fail']), session_id))
+            conn.commit()
+            conn.close()
+
+            # Cleanup old sessions, keeping only the 2 most recent
+            db.cleanup_old_sessions(keep_count=2)
 
             yield f"data: {json.dumps({'type': 'complete', 'total_analyzed': len(results), 'pass_count': len(results_by_status['pass']), 'close_count': len(results_by_status['close']), 'fail_count': len(results_by_status['fail']), 'results': results_by_status})}\n\n"
 
@@ -134,6 +155,17 @@ def get_cached_stocks():
         'fail_count': len(results_by_status['fail']),
         'results': results_by_status
     })
+
+
+@app.route('/api/sessions/latest', methods=['GET'])
+def get_latest_session():
+    """Get the most recent screening session with all results"""
+    session_data = db.get_latest_session()
+
+    if not session_data:
+        return jsonify({'error': 'No screening sessions found'}), 404
+
+    return jsonify(session_data)
 
 
 @app.route('/api/stock/<symbol>/history', methods=['GET'])

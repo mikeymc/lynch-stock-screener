@@ -26,37 +26,55 @@ ChartJS.register(
 const API_BASE = 'http://localhost:5001/api'
 
 function App() {
-  const [stocks, setStocks] = useState(() => {
-    const saved = localStorage.getItem('stocks')
-    return saved ? JSON.parse(saved) : []
-  })
+  const [stocks, setStocks] = useState([])
   const [loading, setLoading] = useState(false)
   const [progress, setProgress] = useState('')
   const [error, setError] = useState(null)
   const [filter, setFilter] = useState('all')
   const [sortBy, setSortBy] = useState('symbol')
   const [sortDir, setSortDir] = useState('asc')
-  const [summary, setSummary] = useState(() => {
-    const saved = localStorage.getItem('summary')
-    return saved ? JSON.parse(saved) : null
-  })
+  const [summary, setSummary] = useState(null)
   const [currentPage, setCurrentPage] = useState(1)
   const itemsPerPage = 100
   const [expandedSymbol, setExpandedSymbol] = useState(null)
   const [historyData, setHistoryData] = useState(null)
   const [loadingHistory, setLoadingHistory] = useState(false)
+  const [loadingSession, setLoadingSession] = useState(true)
 
-  // Persist stocks to localStorage
+  // Load latest session on mount
   useEffect(() => {
-    localStorage.setItem('stocks', JSON.stringify(stocks))
-  }, [stocks])
+    const loadLatestSession = async () => {
+      try {
+        const response = await fetch(`${API_BASE}/sessions/latest`)
 
-  // Persist summary to localStorage
-  useEffect(() => {
-    if (summary) {
-      localStorage.setItem('summary', JSON.stringify(summary))
+        if (response.ok) {
+          const sessionData = await response.json()
+          setStocks(sessionData.results || [])
+          setSummary({
+            totalAnalyzed: sessionData.total_analyzed,
+            passCount: sessionData.pass_count,
+            closeCount: sessionData.close_count,
+            failCount: sessionData.fail_count
+          })
+        } else if (response.status === 404) {
+          // No sessions yet, this is okay
+          setStocks([])
+          setSummary(null)
+        } else {
+          throw new Error(`Failed to load session: ${response.status}`)
+        }
+      } catch (err) {
+        console.error('Error loading latest session:', err)
+        // Don't show error to user on initial load, just start with empty state
+        setStocks([])
+        setSummary(null)
+      } finally {
+        setLoadingSession(false)
+      }
     }
-  }, [summary])
+
+    loadLatestSession()
+  }, [])
 
   const screenStocks = async (limit) => {
     setLoading(true)
@@ -423,9 +441,17 @@ function App() {
         </>
       )}
 
-      {!loading && sortedStocks.length === 0 && stocks.length === 0 && (
+      {loadingSession && (
+        <div className="status-container">
+          <div className="loading">
+            Loading previous screening results...
+          </div>
+        </div>
+      )}
+
+      {!loadingSession && !loading && sortedStocks.length === 0 && stocks.length === 0 && (
         <div className="empty-state">
-          No stocks loaded. Click "Load Cached Stocks" or "Screen Stocks" to begin.
+          No stocks loaded. Click "Screen Stocks" to begin.
         </div>
       )}
 
