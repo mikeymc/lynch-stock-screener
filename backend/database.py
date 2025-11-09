@@ -133,6 +133,16 @@ class Database:
         if 'dividend_yield' not in results_columns:
             cursor.execute("ALTER TABLE screening_results ADD COLUMN dividend_yield REAL")
 
+        # Migration: Add score columns to screening_results table
+        cursor.execute("PRAGMA table_info(screening_results)")
+        results_columns = [row[1] for row in cursor.fetchall()]
+        if 'peg_score' not in results_columns:
+            cursor.execute("ALTER TABLE screening_results ADD COLUMN peg_score REAL")
+        if 'debt_score' not in results_columns:
+            cursor.execute("ALTER TABLE screening_results ADD COLUMN debt_score REAL")
+        if 'institutional_ownership_score' not in results_columns:
+            cursor.execute("ALTER TABLE screening_results ADD COLUMN institutional_ownership_score REAL")
+
         conn.commit()
         conn.close()
 
@@ -311,8 +321,9 @@ class Database:
             (session_id, symbol, company_name, country, market_cap, sector, ipo_year,
              price, pe_ratio, peg_ratio, debt_to_equity, institutional_ownership, dividend_yield,
              earnings_cagr, revenue_cagr, consistency_score,
-             peg_status, debt_status, institutional_ownership_status, overall_status)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+             peg_status, peg_score, debt_status, debt_score,
+             institutional_ownership_status, institutional_ownership_score, overall_status)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
             session_id,
             result_data.get('symbol'),
@@ -331,8 +342,11 @@ class Database:
             result_data.get('revenue_cagr'),
             result_data.get('consistency_score'),
             result_data.get('peg_status'),
+            result_data.get('peg_score'),
             result_data.get('debt_status'),
+            result_data.get('debt_score'),
             result_data.get('institutional_ownership_status'),
+            result_data.get('institutional_ownership_score'),
             result_data.get('overall_status')
         ))
         conn.commit()
@@ -362,7 +376,8 @@ class Database:
             SELECT symbol, company_name, country, market_cap, sector, ipo_year,
                    price, pe_ratio, peg_ratio, debt_to_equity, institutional_ownership, dividend_yield,
                    earnings_cagr, revenue_cagr, consistency_score,
-                   peg_status, debt_status, institutional_ownership_status, overall_status
+                   peg_status, peg_score, debt_status, debt_score,
+                   institutional_ownership_status, institutional_ownership_score, overall_status
             FROM screening_results
             WHERE session_id = ?
         """, (session_id,))
@@ -389,9 +404,12 @@ class Database:
                 'revenue_cagr': row[13],
                 'consistency_score': row[14],
                 'peg_status': row[15],
-                'debt_status': row[16],
-                'institutional_ownership_status': row[17],
-                'overall_status': row[18]
+                'peg_score': row[16],
+                'debt_status': row[17],
+                'debt_score': row[18],
+                'institutional_ownership_status': row[19],
+                'institutional_ownership_score': row[20],
+                'overall_status': row[21]
             })
 
         return {
