@@ -26,17 +26,8 @@ ChartJS.register(
 const API_BASE = 'http://localhost:5001/api'
 
 function StatusBar({ status, score, value }) {
-  const getStatusColor = (status) => {
-    switch (status) {
-      case 'PASS': return '#4ade80'
-      case 'CLOSE': return '#fbbf24'
-      case 'FAIL': return '#f87171'
-      default: return '#6b7280'
-    }
-  }
-
   const displayValue = typeof value === 'number' ? value.toFixed(2) : 'N/A'
-  const tooltipText = `${status} (${displayValue})`
+  const tooltipText = `${status}: ${displayValue}`
 
   // Position marker based on score (0-100)
   const markerPosition = `${score}%`
@@ -49,10 +40,7 @@ function StatusBar({ status, score, value }) {
         <div className="status-zone fail"></div>
         <div
           className="status-marker"
-          style={{
-            left: markerPosition,
-            backgroundColor: getStatusColor(status)
-          }}
+          style={{ left: markerPosition }}
         ></div>
       </div>
     </div>
