@@ -25,6 +25,40 @@ ChartJS.register(
 
 const API_BASE = 'http://localhost:5001/api'
 
+function StatusBar({ status, score, value }) {
+  const getStatusColor = (status) => {
+    switch (status) {
+      case 'PASS': return '#4ade80'
+      case 'CLOSE': return '#fbbf24'
+      case 'FAIL': return '#f87171'
+      default: return '#6b7280'
+    }
+  }
+
+  const displayValue = typeof value === 'number' ? value.toFixed(2) : 'N/A'
+  const tooltipText = `${status} (${displayValue})`
+
+  // Position marker based on score (0-100)
+  const markerPosition = `${score}%`
+
+  return (
+    <div className="status-bar-container" title={tooltipText}>
+      <div className="status-bar">
+        <div className="status-zone pass"></div>
+        <div className="status-zone close"></div>
+        <div className="status-zone fail"></div>
+        <div
+          className="status-marker"
+          style={{
+            left: markerPosition,
+            backgroundColor: getStatusColor(status)
+          }}
+        ></div>
+      </div>
+    </div>
+  )
+}
+
 function App() {
   const [stocks, setStocks] = useState([])
   const [loading, setLoading] = useState(false)
@@ -352,14 +386,26 @@ function App() {
                       <td>{typeof stock.dividend_yield === 'number' ? `${stock.dividend_yield.toFixed(1)}%` : 'N/A'}</td>
                       <td>{typeof stock.earnings_cagr === 'number' ? `${stock.earnings_cagr.toFixed(1)}%` : 'N/A'}</td>
                       <td>{typeof stock.revenue_cagr === 'number' ? `${stock.revenue_cagr.toFixed(1)}%` : 'N/A'}</td>
-                      <td style={{ backgroundColor: getStatusColor(stock.peg_status), color: '#000' }}>
-                        {stock.peg_status}
+                      <td>
+                        <StatusBar
+                          status={stock.peg_status}
+                          score={stock.peg_score || 0}
+                          value={stock.peg_ratio}
+                        />
                       </td>
-                      <td style={{ backgroundColor: getStatusColor(stock.debt_status), color: '#000' }}>
-                        {stock.debt_status}
+                      <td>
+                        <StatusBar
+                          status={stock.debt_status}
+                          score={stock.debt_score || 0}
+                          value={stock.debt_to_equity}
+                        />
                       </td>
-                      <td style={{ backgroundColor: getStatusColor(stock.institutional_ownership_status), color: '#000' }}>
-                        {stock.institutional_ownership_status}
+                      <td>
+                        <StatusBar
+                          status={stock.institutional_ownership_status}
+                          score={stock.institutional_ownership_score || 0}
+                          value={stock.institutional_ownership}
+                        />
                       </td>
                       <td style={{ backgroundColor: getStatusColor(stock.overall_status), color: '#000', fontWeight: 'bold' }}>
                         {stock.overall_status}

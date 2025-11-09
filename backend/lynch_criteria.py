@@ -40,10 +40,16 @@ class LynchCriteria:
 
         if peg_ratio is None:
             peg_status = "FAIL"
+            peg_score = 0.0
         else:
             peg_status = self.evaluate_criterion(peg_ratio, self.PEG_IDEAL, self.PEG_CLOSE, lower_is_better=True)
+            peg_score = self.calculate_metric_score(peg_ratio, self.PEG_IDEAL, self.PEG_CLOSE, lower_is_better=True)
+
         debt_status = self.evaluate_criterion(debt_to_equity, self.DEBT_TO_EQUITY_IDEAL, self.DEBT_TO_EQUITY_CLOSE, lower_is_better=True)
+        debt_score = self.calculate_metric_score(debt_to_equity, self.DEBT_TO_EQUITY_IDEAL, self.DEBT_TO_EQUITY_CLOSE, lower_is_better=True)
+
         inst_ownership_status = self.evaluate_criterion(institutional_ownership, self.INSTITUTIONAL_OWNERSHIP_IDEAL, self.INSTITUTIONAL_OWNERSHIP_CLOSE, lower_is_better=True)
+        inst_ownership_score = self.calculate_metric_score(institutional_ownership, self.INSTITUTIONAL_OWNERSHIP_IDEAL, self.INSTITUTIONAL_OWNERSHIP_CLOSE, lower_is_better=True)
 
         statuses = [peg_status, debt_status, inst_ownership_status]
 
@@ -71,8 +77,11 @@ class LynchCriteria:
             'revenue_cagr': revenue_cagr,
             'consistency_score': consistency_score,
             'peg_status': peg_status,
+            'peg_score': peg_score,
             'debt_status': debt_status,
+            'debt_score': debt_score,
             'institutional_ownership_status': inst_ownership_status,
+            'institutional_ownership_score': inst_ownership_score,
             'overall_status': overall_status
         }
 
@@ -103,3 +112,47 @@ class LynchCriteria:
                 return "CLOSE"
             else:
                 return "FAIL"
+
+    def calculate_metric_score(self, value: float, ideal_threshold: float, close_threshold: float, lower_is_better: bool = True) -> float:
+        """
+        Calculate a 0-100 score showing position within pass/close/fail ranges.
+        100 = perfect (ideal threshold), 0 = worst
+        """
+        if value is None:
+            return 0.0
+
+        if lower_is_better:
+            # Perfect score at or below ideal threshold
+            if value <= ideal_threshold:
+                return 100.0
+            # Score 75-100 between ideal and close
+            elif value <= close_threshold:
+                range_size = close_threshold - ideal_threshold
+                position = (close_threshold - value) / range_size if range_size > 0 else 0
+                return 75.0 + (25.0 * position)
+            # Score 0-75 in fail zone (estimate fail zone as 2x close threshold)
+            else:
+                fail_estimate = close_threshold * 2
+                if value <= fail_estimate:
+                    range_size = fail_estimate - close_threshold
+                    position = (fail_estimate - value) / range_size if range_size > 0 else 0
+                    return 50.0 * position
+                else:
+                    return 0.0
+        else:
+            # For "higher is better" metrics
+            if value >= ideal_threshold:
+                return 100.0
+            elif value >= close_threshold:
+                range_size = ideal_threshold - close_threshold
+                position = (value - close_threshold) / range_size if range_size > 0 else 0
+                return 75.0 + (25.0 * position)
+            else:
+                # Estimate fail zone
+                fail_estimate = close_threshold / 2
+                if value >= fail_estimate:
+                    range_size = close_threshold - fail_estimate
+                    position = (value - fail_estimate) / range_size if range_size > 0 else 0
+                    return 50.0 * position
+                else:
+                    return 0.0
