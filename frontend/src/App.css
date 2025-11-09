@@ -522,6 +522,6 @@ td strong {
   height: 0;
   border-left: 5px solid transparent;
   border-right: 5px solid transparent;
-  border-top: 6px solid #000;
-  filter: drop-shadow(0 0 1px rgba(255, 255, 255, 0.8));
+  border-top: 6px solid #fff;
+  filter: drop-shadow(0 0 2px rgba(0, 0, 0, 0.8));
 }
