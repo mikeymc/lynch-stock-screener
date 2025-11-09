@@ -321,6 +321,7 @@ function App() {
                   <th onClick={() => toggleSort('pe_ratio')}>P/E {sortBy === 'pe_ratio' && (sortDir === 'asc' ? '↑' : '↓')}</th>
                   <th onClick={() => toggleSort('debt_to_equity')}>D/E {sortBy === 'debt_to_equity' && (sortDir === 'asc' ? '↑' : '↓')}</th>
                   <th onClick={() => toggleSort('institutional_ownership')}>Inst Own % {sortBy === 'institutional_ownership' && (sortDir === 'asc' ? '↑' : '↓')}</th>
+                  <th onClick={() => toggleSort('dividend_yield')}>Div Yield % {sortBy === 'dividend_yield' && (sortDir === 'asc' ? '↑' : '↓')}</th>
                   <th onClick={() => toggleSort('earnings_cagr')}>5Y EPS Growth {sortBy === 'earnings_cagr' && (sortDir === 'asc' ? '↑' : '↓')}</th>
                   <th onClick={() => toggleSort('revenue_cagr')}>5Y Rev Growth {sortBy === 'revenue_cagr' && (sortDir === 'asc' ? '↑' : '↓')}</th>
                   <th>PEG Status</th>
@@ -348,6 +349,7 @@ function App() {
                       <td>{typeof stock.pe_ratio === 'number' ? stock.pe_ratio.toFixed(2) : 'N/A'}</td>
                       <td>{typeof stock.debt_to_equity === 'number' ? stock.debt_to_equity.toFixed(2) : 'N/A'}</td>
                       <td>{typeof stock.institutional_ownership === 'number' ? `${(stock.institutional_ownership * 100).toFixed(1)}%` : 'N/A'}</td>
+                      <td>{typeof stock.dividend_yield === 'number' ? `${stock.dividend_yield.toFixed(1)}%` : 'N/A'}</td>
                       <td>{typeof stock.earnings_cagr === 'number' ? `${stock.earnings_cagr.toFixed(1)}%` : 'N/A'}</td>
                       <td>{typeof stock.revenue_cagr === 'number' ? `${stock.revenue_cagr.toFixed(1)}%` : 'N/A'}</td>
                       <td style={{ backgroundColor: getStatusColor(stock.peg_status), color: '#000' }}>
@@ -365,7 +367,7 @@ function App() {
                     </tr>
                     {expandedSymbol === stock.symbol && (
                       <tr key={`${stock.symbol}-details`} className="expanded-row">
-                        <td colSpan="17">
+                        <td colSpan="18">
                           <div className="chart-container">
                             {loadingHistory && <div className="loading">Loading historical data...</div>}
                             {!loadingHistory && historyData && (

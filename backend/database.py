@@ -39,6 +39,7 @@ class Database:
                 debt_to_equity REAL,
                 institutional_ownership REAL,
                 revenue REAL,
+                dividend_yield REAL,
                 last_updated TIMESTAMP,
                 FOREIGN KEY (symbol) REFERENCES stocks(symbol)
             )
@@ -94,6 +95,7 @@ class Database:
                 peg_ratio REAL,
                 debt_to_equity REAL,
                 institutional_ownership REAL,
+                dividend_yield REAL,
                 earnings_cagr REAL,
                 revenue_cagr REAL,
                 consistency_score REAL,
@@ -119,6 +121,18 @@ class Database:
         if 'ipo_year' not in stocks_columns:
             cursor.execute("ALTER TABLE stocks ADD COLUMN ipo_year INTEGER")
 
+        # Migration: Add dividend_yield column to stock_metrics table
+        cursor.execute("PRAGMA table_info(stock_metrics)")
+        metrics_columns = [row[1] for row in cursor.fetchall()]
+        if 'dividend_yield' not in metrics_columns:
+            cursor.execute("ALTER TABLE stock_metrics ADD COLUMN dividend_yield REAL")
+
+        # Migration: Add dividend_yield column to screening_results table
+        cursor.execute("PRAGMA table_info(screening_results)")
+        results_columns = [row[1] for row in cursor.fetchall()]
+        if 'dividend_yield' not in results_columns:
+            cursor.execute("ALTER TABLE screening_results ADD COLUMN dividend_yield REAL")
+
         conn.commit()
         conn.close()
 
@@ -138,8 +152,8 @@ class Database:
         cursor = conn.cursor()
         cursor.execute("""
             INSERT OR REPLACE INTO stock_metrics
-            (symbol, price, pe_ratio, market_cap, debt_to_equity, institutional_ownership, revenue, last_updated)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            (symbol, price, pe_ratio, market_cap, debt_to_equity, institutional_ownership, revenue, dividend_yield, last_updated)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
             symbol,
             metrics.get('price'),
@@ -148,6 +162,7 @@ class Database:
             metrics.get('debt_to_equity'),
             metrics.get('institutional_ownership'),
             metrics.get('revenue'),
+            metrics.get('dividend_yield'),
             datetime.now().isoformat()
         ))
         conn.commit()
@@ -187,12 +202,13 @@ class Database:
             'debt_to_equity': row[4],
             'institutional_ownership': row[5],
             'revenue': row[6],
-            'last_updated': row[7],
-            'company_name': row[8],
-            'exchange': row[9],
-            'sector': row[10],
-            'country': row[11],
-            'ipo_year': row[12]
+            'dividend_yield': row[7],
+            'last_updated': row[8],
+            'company_name': row[9],
+            'exchange': row[10],
+            'sector': row[11],
+            'country': row[12],
+            'ipo_year': row[13]
         }
 
     def get_earnings_history(self, symbol: str) -> List[Dict[str, Any]]:
@@ -293,10 +309,10 @@ class Database:
         cursor.execute("""
             INSERT INTO screening_results
             (session_id, symbol, company_name, country, market_cap, sector, ipo_year,
-             price, pe_ratio, peg_ratio, debt_to_equity, institutional_ownership,
+             price, pe_ratio, peg_ratio, debt_to_equity, institutional_ownership, dividend_yield,
              earnings_cagr, revenue_cagr, consistency_score,
              peg_status, debt_status, institutional_ownership_status, overall_status)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
             session_id,
             result_data.get('symbol'),
@@ -310,6 +326,7 @@ class Database:
             result_data.get('peg_ratio'),
             result_data.get('debt_to_equity'),
             result_data.get('institutional_ownership'),
+            result_data.get('dividend_yield'),
             result_data.get('earnings_cagr'),
             result_data.get('revenue_cagr'),
             result_data.get('consistency_score'),
@@ -343,7 +360,7 @@ class Database:
         # Get all results for this session
         cursor.execute("""
             SELECT symbol, company_name, country, market_cap, sector, ipo_year,
-                   price, pe_ratio, peg_ratio, debt_to_equity, institutional_ownership,
+                   price, pe_ratio, peg_ratio, debt_to_equity, institutional_ownership, dividend_yield,
                    earnings_cagr, revenue_cagr, consistency_score,
                    peg_status, debt_status, institutional_ownership_status, overall_status
             FROM screening_results
@@ -367,13 +384,14 @@ class Database:
                 'peg_ratio': row[8],
                 'debt_to_equity': row[9],
                 'institutional_ownership': row[10],
-                'earnings_cagr': row[11],
-                'revenue_cagr': row[12],
-                'consistency_score': row[13],
-                'peg_status': row[14],
-                'debt_status': row[15],
-                'institutional_ownership_status': row[16],
-                'overall_status': row[17]
+                'dividend_yield': row[11],
+                'earnings_cagr': row[12],
+                'revenue_cagr': row[13],
+                'consistency_score': row[14],
+                'peg_status': row[15],
+                'debt_status': row[16],
+                'institutional_ownership_status': row[17],
+                'overall_status': row[18]
             })
 
         return {

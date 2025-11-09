@@ -66,6 +66,7 @@ class LynchCriteria:
             'peg_ratio': peg_ratio,
             'debt_to_equity': debt_to_equity,
             'institutional_ownership': institutional_ownership,
+            'dividend_yield': metrics.get('dividend_yield'),
             'earnings_cagr': earnings_cagr,
             'revenue_cagr': revenue_cagr,
             'consistency_score': consistency_score,

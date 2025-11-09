@@ -62,7 +62,8 @@ def test_save_and_retrieve_stock_metrics(test_db):
         'market_cap': 2500000000000,
         'debt_to_equity': 0.35,
         'institutional_ownership': 0.45,
-        'revenue': 394000000000
+        'revenue': 394000000000,
+        'dividend_yield': 2.79
     }
     test_db.save_stock_metrics("AAPL", metrics)
 
@@ -76,9 +77,32 @@ def test_save_and_retrieve_stock_metrics(test_db):
     assert retrieved['debt_to_equity'] == 0.35
     assert retrieved['institutional_ownership'] == 0.45
     assert retrieved['revenue'] == 394000000000
+    assert retrieved['dividend_yield'] == 2.79
     assert retrieved['company_name'] == "Apple Inc."
     assert retrieved['exchange'] == "NASDAQ"
     assert retrieved['sector'] == "Technology"
+
+
+def test_stock_metrics_with_null_dividend_yield(test_db):
+    """Test that stocks without dividends (None) are handled correctly"""
+    test_db.save_stock_basic("TSLA", "Tesla Inc.", "NASDAQ", "Automotive")
+
+    metrics = {
+        'price': 250.50,
+        'pe_ratio': 45.2,
+        'market_cap': 800000000000,
+        'debt_to_equity': 0.15,
+        'institutional_ownership': 0.40,
+        'revenue': 81000000000,
+        'dividend_yield': None  # Growth stock with no dividend
+    }
+    test_db.save_stock_metrics("TSLA", metrics)
+
+    retrieved = test_db.get_stock_metrics("TSLA")
+
+    assert retrieved is not None
+    assert retrieved['symbol'] == "TSLA"
+    assert retrieved['dividend_yield'] is None
 
 
 def test_save_and_retrieve_earnings_history(test_db):
