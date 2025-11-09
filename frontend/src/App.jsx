@@ -245,13 +245,25 @@ function App() {
 
         <div className="filter-controls">
           <label>Search: </label>
-          <input
-            type="text"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Filter by symbol or company name..."
-            style={{ width: '250px', padding: '5px' }}
-          />
+          <div className="search-container">
+            <span className="search-icon">🔍</span>
+            <input
+              type="text"
+              className="search-input"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Filter by symbol or company name..."
+            />
+            {searchQuery && (
+              <button
+                className="clear-button"
+                onClick={() => setSearchQuery('')}
+                aria-label="Clear search"
+              >
+                ×
+              </button>
+            )}
+          </div>
         </div>
 
         <div className="filter-controls">
