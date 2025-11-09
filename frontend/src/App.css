@@ -476,7 +476,6 @@ td strong {
   height: 20px;
   display: flex;
   border-radius: 4px;
-  overflow: hidden;
   border: 1px solid #475569;
 }
 
@@ -488,6 +487,7 @@ td strong {
 .status-zone.pass {
   background-color: #4ade80;
   width: 50%;
+  border-radius: 4px 0 0 4px;
 }
 
 .status-zone.close {
@@ -498,6 +498,7 @@ td strong {
 .status-zone.fail {
   background-color: #f87171;
   width: 25%;
+  border-radius: 0 4px 4px 0;
 }
 
 .status-marker {
