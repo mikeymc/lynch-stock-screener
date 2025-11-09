@@ -59,9 +59,8 @@ class DataFetcher:
                 debt_to_equity = debt_to_equity_pct / 100 if debt_to_equity_pct else None
 
             # Use yfinance for current market data (price, P/E, market cap, institutional ownership)
-            # Convert dividend yield from decimal to percentage (e.g., 0.0279 -> 2.79)
-            dividend_yield_raw = info.get('dividendYield')
-            dividend_yield = (dividend_yield_raw * 100) if dividend_yield_raw is not None else None
+            # yfinance returns dividendYield already as percentage (e.g., 2.79 for 2.79%)
+            dividend_yield = info.get('dividendYield')
 
             metrics = {
                 'price': info.get('currentPrice'),
