@@ -35,6 +35,7 @@ function App() {
   const [sortDir, setSortDir] = useState('asc')
   const [summary, setSummary] = useState(null)
   const [currentPage, setCurrentPage] = useState(1)
+  const [searchQuery, setSearchQuery] = useState('')
   const itemsPerPage = 100
   const [expandedSymbol, setExpandedSymbol] = useState(null)
   const [historyData, setHistoryData] = useState(null)
@@ -147,8 +148,23 @@ function App() {
 
   const sortedStocks = useMemo(() => {
     const filtered = stocks.filter(stock => {
-      if (filter === 'all') return true
-      return stock.overall_status === filter
+      // Apply status filter
+      if (filter !== 'all' && stock.overall_status !== filter) {
+        return false
+      }
+
+      // Apply search filter
+      if (searchQuery.trim()) {
+        const query = searchQuery.toLowerCase()
+        const symbol = (stock.symbol || '').toLowerCase()
+        const companyName = (stock.company_name || '').toLowerCase()
+
+        if (!symbol.includes(query) && !companyName.includes(query)) {
+          return false
+        }
+      }
+
+      return true
     })
 
     return [...filtered].sort((a, b) => {
@@ -171,7 +187,7 @@ function App() {
         return aVal > bVal ? -1 : 1
       }
     })
-  }, [stocks, filter, sortBy, sortDir])
+  }, [stocks, filter, sortBy, sortDir, searchQuery])
 
   const totalPages = Math.ceil(sortedStocks.length / itemsPerPage)
   const startIndex = (currentPage - 1) * itemsPerPage
@@ -226,6 +242,17 @@ function App() {
         <button onClick={() => screenStocks(null)} disabled={loading}>
           Screen All Stocks
         </button>
+
+        <div className="filter-controls">
+          <label>Search: </label>
+          <input
+            type="text"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder="Filter by symbol or company name..."
+            style={{ width: '250px', padding: '5px' }}
+          />
+        </div>
 
         <div className="filter-controls">
           <label>Filter: </label>
@@ -454,7 +481,7 @@ function App() {
 
       {!loading && sortedStocks.length === 0 && stocks.length > 0 && (
         <div className="empty-state">
-          No stocks match the current filter.
+          No stocks match the current {searchQuery ? 'search and filter' : 'filter'}.
         </div>
       )}
     </div>
