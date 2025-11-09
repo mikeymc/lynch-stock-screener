@@ -72,12 +72,19 @@ function App() {
 
         if (response.ok) {
           const sessionData = await response.json()
-          setStocks(sessionData.results || [])
+          const results = sessionData.results || []
+          setStocks(results)
+
+          // Calculate counts from actual results instead of trusting stored metadata
+          const passCount = results.filter(s => s.overall_status === 'PASS').length
+          const closeCount = results.filter(s => s.overall_status === 'CLOSE').length
+          const failCount = results.filter(s => s.overall_status === 'FAIL').length
+
           setSummary({
-            totalAnalyzed: sessionData.total_analyzed,
-            passCount: sessionData.pass_count,
-            closeCount: sessionData.close_count,
-            failCount: sessionData.fail_count
+            totalAnalyzed: results.length,
+            passCount,
+            closeCount,
+            failCount
           })
         } else if (response.status === 404) {
           // No sessions yet, this is okay
