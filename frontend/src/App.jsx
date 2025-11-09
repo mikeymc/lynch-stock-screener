@@ -223,9 +223,6 @@ function App() {
       </header>
 
       <div className="controls">
-        <button onClick={() => screenStocks(50)} disabled={loading}>
-          Screen 50 Stocks
-        </button>
         <button onClick={() => screenStocks(null)} disabled={loading}>
           Screen All Stocks
         </button>
