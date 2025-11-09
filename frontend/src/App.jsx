@@ -168,6 +168,15 @@ function App() {
     }
   }
 
+  const getStatusRank = (status) => {
+    switch (status) {
+      case 'PASS': return 1
+      case 'CLOSE': return 2
+      case 'FAIL': return 3
+      default: return 4
+    }
+  }
+
   const sortedStocks = useMemo(() => {
     const filtered = stocks.filter(stock => {
       // Apply status filter
@@ -198,7 +207,11 @@ function App() {
       if (aVal == null) return 1
       if (bVal == null) return -1
 
-      if (typeof aVal === 'string') {
+      // Special handling for status columns - use rank instead of alphabetical
+      if (sortBy.endsWith('_status') || sortBy === 'overall_status') {
+        aVal = getStatusRank(aVal)
+        bVal = getStatusRank(bVal)
+      } else if (typeof aVal === 'string') {
         aVal = aVal.toLowerCase()
         bVal = (bVal || '').toLowerCase()
       }
