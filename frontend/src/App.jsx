@@ -29,8 +29,8 @@ function StatusBar({ status, score, value }) {
   const displayValue = typeof value === 'number' ? value.toFixed(2) : 'N/A'
   const tooltipText = `${status}: ${displayValue}`
 
-  // Position marker based on score (0-100)
-  const markerPosition = `${score}%`
+  // Invert position: score 100 (best) = left (0%), score 0 (worst) = right (100%)
+  const markerPosition = `${100 - score}%`
 
   return (
     <div className="status-bar-container" title={tooltipText}>
