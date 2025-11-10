@@ -183,6 +183,7 @@ def get_stock_history(symbol):
     revenue_values = []
     pe_ratios = []
     prices = []
+    debt_to_equity_values = []
 
     # Get yfinance ticker for fallback
     ticker = yf.Ticker(symbol.upper())
@@ -192,10 +193,12 @@ def get_stock_history(symbol):
         eps = entry['eps']
         revenue = entry['revenue']
         fiscal_end = entry.get('fiscal_end')
+        debt_to_equity = entry.get('debt_to_equity')
 
         years.append(year)
         eps_values.append(eps)
         revenue_values.append(revenue)
+        debt_to_equity_values.append(debt_to_equity)
 
         price = None
 
@@ -256,7 +259,8 @@ def get_stock_history(symbol):
         'eps': eps_values,
         'revenue': revenue_values,
         'price': prices,
-        'pe_ratio': pe_ratios
+        'pe_ratio': pe_ratios,
+        'debt_to_equity': debt_to_equity_values
     })
 
 

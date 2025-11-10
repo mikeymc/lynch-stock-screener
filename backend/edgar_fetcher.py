@@ -335,6 +335,75 @@ class EdgarFetcher:
         except (KeyError, TypeError):
             return None
 
+    def parse_debt_to_equity_history(self, company_facts: Dict[str, Any]) -> List[Dict[str, Any]]:
+        """
+        Extract historical debt-to-equity ratios from company facts
+
+        Args:
+            company_facts: Company facts data from EDGAR API
+
+        Returns:
+            List of dictionaries with year, debt_to_equity, and fiscal_end values
+        """
+        try:
+            facts = company_facts['facts']['us-gaap']
+
+            # Get equity data
+            equity_data = facts.get('StockholdersEquity', {}).get('units', {}).get('USD', [])
+            if not equity_data:
+                logger.warning("No StockholdersEquity data found")
+                return []
+
+            # Get liabilities data
+            liabilities_data = facts.get('Liabilities', {}).get('units', {}).get('USD', [])
+            if not liabilities_data:
+                logger.warning("No Liabilities data found")
+                return []
+
+            # Filter for 10-K entries and create lookup by fiscal year
+            equity_by_year = {}
+            for entry in equity_data:
+                if entry.get('form') == '10-K':
+                    year = entry.get('fy')
+                    fiscal_end = entry.get('end')
+                    val = entry.get('val')
+                    if year and val and year not in equity_by_year:
+                        equity_by_year[year] = {'val': val, 'fiscal_end': fiscal_end}
+
+            liabilities_by_year = {}
+            for entry in liabilities_data:
+                if entry.get('form') == '10-K':
+                    year = entry.get('fy')
+                    fiscal_end = entry.get('end')
+                    val = entry.get('val')
+                    if year and val and year not in liabilities_by_year:
+                        liabilities_by_year[year] = {'val': val, 'fiscal_end': fiscal_end}
+
+            # Calculate D/E ratio for each year where we have both values
+            debt_to_equity_history = []
+            for year in equity_by_year.keys():
+                if year in liabilities_by_year:
+                    equity = equity_by_year[year]['val']
+                    liabilities = liabilities_by_year[year]['val']
+                    fiscal_end = equity_by_year[year]['fiscal_end']
+
+                    if equity > 0:
+                        debt_to_equity = liabilities / equity
+                        debt_to_equity_history.append({
+                            'year': year,
+                            'debt_to_equity': debt_to_equity,
+                            'fiscal_end': fiscal_end
+                        })
+
+            # Sort by year descending
+            debt_to_equity_history.sort(key=lambda x: x['year'], reverse=True)
+            logger.info(f"Successfully parsed {len(debt_to_equity_history)} years of D/E ratio data from EDGAR")
+            return debt_to_equity_history
+
+        except (KeyError, TypeError) as e:
+            logger.warning(f"Error parsing D/E history: {e}")
+            return []
+
     def fetch_stock_fundamentals(self, ticker: str) -> Optional[Dict[str, Any]]:
         """
         Fetch complete fundamental data for a stock
@@ -359,8 +428,9 @@ class EdgarFetcher:
         eps_history = self.parse_eps_history(company_facts)
         revenue_history = self.parse_revenue_history(company_facts)
         debt_to_equity = self.parse_debt_to_equity(company_facts)
+        debt_to_equity_history = self.parse_debt_to_equity_history(company_facts)
 
-        logger.info(f"[{ticker}] EDGAR fetch complete: {len(eps_history)} EPS years, {len(revenue_history)} revenue years, D/E: {debt_to_equity}")
+        logger.info(f"[{ticker}] EDGAR fetch complete: {len(eps_history)} EPS years, {len(revenue_history)} revenue years, {len(debt_to_equity_history)} D/E years, current D/E: {debt_to_equity}")
 
         fundamentals = {
             'ticker': ticker,
@@ -368,7 +438,8 @@ class EdgarFetcher:
             'company_name': company_facts.get('entityName', ''),
             'eps_history': eps_history,
             'revenue_history': revenue_history,
-            'debt_to_equity': debt_to_equity
+            'debt_to_equity': debt_to_equity,
+            'debt_to_equity_history': debt_to_equity_history
         }
 
         return fundamentals

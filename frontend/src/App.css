@@ -366,15 +366,24 @@ td strong {
   padding: 2rem;
 }
 
-.chart-container {
-  background-color: #0f172a;
-  border-radius: 0.5rem;
+.charts-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 1.5rem;
   padding: 2rem;
-  min-height: 400px;
+  background-color: #0f172a;
+}
+
+.chart-container {
+  background-color: #1e293b;
+  border-radius: 0.5rem;
+  padding: 1.5rem;
+  min-height: 300px;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
+  border: 1px solid #334155;
 }
 
 .filings-container {

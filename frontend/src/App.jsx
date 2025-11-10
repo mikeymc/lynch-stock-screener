@@ -493,78 +493,162 @@ function App() {
                     {expandedSymbol === stock.symbol && (
                       <tr key={`${stock.symbol}-details`} className="expanded-row">
                         <td colSpan="19">
-                          <div className="chart-container">
+                          <div className="charts-grid">
                             {loadingHistory && <div className="loading">Loading historical data...</div>}
                             {!loadingHistory && historyData && (
-                              <Line
-                                data={{
-                                  labels: historyData.years,
-                                  datasets: [
-                                    {
-                                      label: 'Revenue (Billions)',
-                                      data: historyData.revenue.map(r => r / 1e9),
-                                      borderColor: 'rgb(75, 192, 192)',
-                                      backgroundColor: 'rgba(75, 192, 192, 0.2)',
-                                      yAxisID: 'y',
-                                    },
-                                    {
-                                      label: 'EPS',
-                                      data: historyData.eps,
-                                      borderColor: 'rgb(255, 99, 132)',
-                                      backgroundColor: 'rgba(255, 99, 132, 0.2)',
-                                      yAxisID: 'y1',
-                                    },
-                                    {
-                                      label: 'P/E Ratio',
-                                      data: historyData.pe_ratio,
-                                      borderColor: 'rgb(153, 102, 255)',
-                                      backgroundColor: 'rgba(153, 102, 255, 0.2)',
-                                      yAxisID: 'y1',
-                                    }
-                                  ]
-                                }}
-                                options={{
-                                  responsive: true,
-                                  maintainAspectRatio: false,
-                                  interaction: {
-                                    mode: 'index',
-                                    intersect: false,
-                                  },
-                                  plugins: {
-                                    title: {
-                                      display: true,
-                                      text: `${stock.symbol} - Historical Financials`,
-                                      font: { size: 16 }
-                                    },
-                                    legend: {
-                                      position: 'top',
-                                    }
-                                  },
-                                  scales: {
-                                    y: {
-                                      type: 'linear',
-                                      display: true,
-                                      position: 'left',
-                                      title: {
-                                        display: true,
-                                        text: 'Revenue (Billions)'
+                              <>
+                                <div className="chart-container">
+                                  <Line
+                                    data={{
+                                      labels: historyData.years,
+                                      datasets: [
+                                        {
+                                          label: 'Revenue (Billions)',
+                                          data: historyData.revenue.map(r => r / 1e9),
+                                          borderColor: 'rgb(75, 192, 192)',
+                                          backgroundColor: 'rgba(75, 192, 192, 0.2)',
+                                        }
+                                      ]
+                                    }}
+                                    options={{
+                                      responsive: true,
+                                      maintainAspectRatio: false,
+                                      plugins: {
+                                        title: {
+                                          display: true,
+                                          text: 'Revenue',
+                                          font: { size: 14 }
+                                        },
+                                        legend: {
+                                          display: false
+                                        }
+                                      },
+                                      scales: {
+                                        y: {
+                                          title: {
+                                            display: true,
+                                            text: 'Billions ($)'
+                                          }
+                                        }
                                       }
-                                    },
-                                    y1: {
-                                      type: 'linear',
-                                      display: true,
-                                      position: 'right',
-                                      title: {
-                                        display: true,
-                                        text: 'EPS / P/E Ratio'
+                                    }}
+                                  />
+                                </div>
+
+                                <div className="chart-container">
+                                  <Line
+                                    data={{
+                                      labels: historyData.years,
+                                      datasets: [
+                                        {
+                                          label: 'EPS',
+                                          data: historyData.eps,
+                                          borderColor: 'rgb(255, 99, 132)',
+                                          backgroundColor: 'rgba(255, 99, 132, 0.2)',
+                                        }
+                                      ]
+                                    }}
+                                    options={{
+                                      responsive: true,
+                                      maintainAspectRatio: false,
+                                      plugins: {
+                                        title: {
+                                          display: true,
+                                          text: 'Earnings Per Share',
+                                          font: { size: 14 }
+                                        },
+                                        legend: {
+                                          display: false
+                                        }
                                       },
-                                      grid: {
-                                        drawOnChartArea: false,
+                                      scales: {
+                                        y: {
+                                          title: {
+                                            display: true,
+                                            text: 'EPS ($)'
+                                          }
+                                        }
+                                      }
+                                    }}
+                                  />
+                                </div>
+
+                                <div className="chart-container">
+                                  <Line
+                                    data={{
+                                      labels: historyData.years,
+                                      datasets: [
+                                        {
+                                          label: 'P/E Ratio',
+                                          data: historyData.pe_ratio,
+                                          borderColor: 'rgb(153, 102, 255)',
+                                          backgroundColor: 'rgba(153, 102, 255, 0.2)',
+                                        }
+                                      ]
+                                    }}
+                                    options={{
+                                      responsive: true,
+                                      maintainAspectRatio: false,
+                                      plugins: {
+                                        title: {
+                                          display: true,
+                                          text: 'Price-to-Earnings Ratio',
+                                          font: { size: 14 }
+                                        },
+                                        legend: {
+                                          display: false
+                                        }
                                       },
-                                    },
-                                  }
-                                }}
-                              />
+                                      scales: {
+                                        y: {
+                                          title: {
+                                            display: true,
+                                            text: 'P/E Ratio'
+                                          }
+                                        }
+                                      }
+                                    }}
+                                  />
+                                </div>
+
+                                <div className="chart-container">
+                                  <Line
+                                    data={{
+                                      labels: historyData.years,
+                                      datasets: [
+                                        {
+                                          label: 'Debt-to-Equity',
+                                          data: historyData.debt_to_equity,
+                                          borderColor: 'rgb(255, 159, 64)',
+                                          backgroundColor: 'rgba(255, 159, 64, 0.2)',
+                                        }
+                                      ]
+                                    }}
+                                    options={{
+                                      responsive: true,
+                                      maintainAspectRatio: false,
+                                      plugins: {
+                                        title: {
+                                          display: true,
+                                          text: 'Debt-to-Equity Ratio',
+                                          font: { size: 14 }
+                                        },
+                                        legend: {
+                                          display: false
+                                        }
+                                      },
+                                      scales: {
+                                        y: {
+                                          title: {
+                                            display: true,
+                                            text: 'D/E Ratio'
+                                          }
+                                        }
+                                      }
+                                    }}
+                                  />
+                                </div>
+                              </>
                             )}
                           </div>
 

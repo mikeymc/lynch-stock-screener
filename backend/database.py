@@ -135,6 +135,12 @@ class Database:
         if 'fiscal_end' not in columns:
             cursor.execute("ALTER TABLE earnings_history ADD COLUMN fiscal_end TEXT")
 
+        # Migration: Add debt_to_equity column if it doesn't exist
+        cursor.execute("PRAGMA table_info(earnings_history)")
+        columns = [row[1] for row in cursor.fetchall()]
+        if 'debt_to_equity' not in columns:
+            cursor.execute("ALTER TABLE earnings_history ADD COLUMN debt_to_equity REAL")
+
         # Migration: Add country and ipo_year columns to stocks table
         cursor.execute("PRAGMA table_info(stocks)")
         stocks_columns = [row[1] for row in cursor.fetchall()]
@@ -200,14 +206,14 @@ class Database:
         conn.commit()
         conn.close()
 
-    def save_earnings_history(self, symbol: str, year: int, eps: float, revenue: float, fiscal_end: Optional[str] = None):
+    def save_earnings_history(self, symbol: str, year: int, eps: float, revenue: float, fiscal_end: Optional[str] = None, debt_to_equity: Optional[float] = None):
         conn = self.get_connection()
         cursor = conn.cursor()
         cursor.execute("""
             INSERT OR REPLACE INTO earnings_history
-            (symbol, year, earnings_per_share, revenue, fiscal_end, last_updated)
-            VALUES (?, ?, ?, ?, ?, ?)
-        """, (symbol, year, eps, revenue, fiscal_end, datetime.now().isoformat()))
+            (symbol, year, earnings_per_share, revenue, fiscal_end, debt_to_equity, last_updated)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+        """, (symbol, year, eps, revenue, fiscal_end, debt_to_equity, datetime.now().isoformat()))
         conn.commit()
         conn.close()
 
@@ -247,7 +253,7 @@ class Database:
         conn = self.get_connection()
         cursor = conn.cursor()
         cursor.execute("""
-            SELECT year, earnings_per_share, revenue, fiscal_end, last_updated
+            SELECT year, earnings_per_share, revenue, fiscal_end, debt_to_equity, last_updated
             FROM earnings_history
             WHERE symbol = ?
             ORDER BY year DESC
@@ -261,7 +267,8 @@ class Database:
                 'eps': row[1],
                 'revenue': row[2],
                 'fiscal_end': row[3],
-                'last_updated': row[4]
+                'debt_to_equity': row[4],
+                'last_updated': row[5]
             }
             for row in rows
         ]

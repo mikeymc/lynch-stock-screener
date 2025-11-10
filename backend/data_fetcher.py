@@ -113,9 +113,13 @@ class DataFetcher:
         """Store earnings history from EDGAR data"""
         eps_history = edgar_data.get('eps_history', [])
         revenue_history = edgar_data.get('revenue_history', [])
+        debt_to_equity_history = edgar_data.get('debt_to_equity_history', [])
 
         # Create mapping of year to revenue and fiscal_end for easy lookup
         revenue_by_year = {entry['year']: {'revenue': entry['revenue'], 'fiscal_end': entry.get('fiscal_end')} for entry in revenue_history}
+
+        # Create mapping of year to debt_to_equity for easy lookup
+        debt_to_equity_by_year = {entry['year']: entry['debt_to_equity'] for entry in debt_to_equity_history}
 
         # Store each year's data
         for eps_entry in eps_history:
@@ -123,12 +127,13 @@ class DataFetcher:
             eps = eps_entry['eps']
             fiscal_end = eps_entry.get('fiscal_end')
             revenue_data = revenue_by_year.get(year)
+            debt_to_equity = debt_to_equity_by_year.get(year)
 
             if year and eps and revenue_data:
                 revenue = revenue_data['revenue']
                 # Prefer revenue's fiscal_end if available, otherwise use EPS's fiscal_end
                 final_fiscal_end = revenue_data.get('fiscal_end') or fiscal_end
-                self.db.save_earnings_history(symbol, year, float(eps), float(revenue), fiscal_end=final_fiscal_end)
+                self.db.save_earnings_history(symbol, year, float(eps), float(revenue), fiscal_end=final_fiscal_end, debt_to_equity=debt_to_equity)
 
     def _fetch_and_store_earnings(self, symbol: str, stock):
         try:
