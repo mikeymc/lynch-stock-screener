@@ -16,7 +16,7 @@ class LynchAnalyst:
             api_key: Gemini API key (defaults to GEMINI_API_KEY env var)
         """
         self.db = db
-        self.model_version = "gemini-2.5-flash"
+        self.model_version = "gemini-2.5-pro"
 
         # Configure Gemini API
         api_key = api_key or os.getenv('GEMINI_API_KEY')
@@ -62,12 +62,13 @@ class LynchAnalyst:
 {history_text}
 
 Write a 200-300 word analysis in Peter Lynch's voice. Focus on:
-1. Whether this is a "growth stock," "stalwart," "fast grower," "cyclical," "turnaround," or "asset play"
-2. The PEG ratio and what it tells us about valuation relative to growth
-3. Earnings consistency and growth trajectory
-4. Debt levels and financial health
-5. Whether this passes your key screens (PEG < 1-2, manageable debt, earnings growth)
-6. A straightforward verdict: would you invest in this, and why or why not?
+1. What this company does, how it makes money, and who its customers are, in plain english.
+2. Whether this is a "growth stock," "stalwart," "fast grower," "cyclical," "turnaround," or "asset play"
+3. The PEG ratio and what it tells us about valuation relative to growth
+4. Earnings consistency and growth trajectory
+5. Debt levels and financial health
+6. Whether this passes your key screens (PEG < 1-2, manageable debt, earnings growth)
+7. A straightforward verdict: would you invest in this, and why or why not?
 
 Be honest, practical, and avoid jargon. Speak like you're explaining it to an amateur investor over coffee."""
 
