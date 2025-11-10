@@ -362,5 +362,35 @@ def refresh_lynch_analysis(symbol):
         return jsonify({'error': f'Failed to generate analysis: {str(e)}'}), 500
 
 
+@app.route('/api/watchlist', methods=['GET'])
+def get_watchlist():
+    try:
+        symbols = db.get_watchlist()
+        return jsonify({'symbols': symbols})
+    except Exception as e:
+        print(f"Error getting watchlist: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/watchlist/<symbol>', methods=['POST'])
+def add_to_watchlist(symbol):
+    try:
+        db.add_to_watchlist(symbol.upper())
+        return jsonify({'success': True})
+    except Exception as e:
+        print(f"Error adding {symbol} to watchlist: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/watchlist/<symbol>', methods=['DELETE'])
+def remove_from_watchlist(symbol):
+    try:
+        db.remove_from_watchlist(symbol.upper())
+        return jsonify({'success': True})
+    except Exception as e:
+        print(f"Error removing {symbol} from watchlist: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
 if __name__ == '__main__':
     app.run(debug=True, port=5001)

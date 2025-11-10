@@ -63,6 +63,23 @@ function App() {
   const [historyData, setHistoryData] = useState(null)
   const [loadingHistory, setLoadingHistory] = useState(false)
   const [loadingSession, setLoadingSession] = useState(true)
+  const [watchlist, setWatchlist] = useState(new Set())
+
+  // Load watchlist on mount
+  useEffect(() => {
+    const loadWatchlist = async () => {
+      try {
+        const response = await fetch(`${API_BASE}/watchlist`)
+        if (response.ok) {
+          const data = await response.json()
+          setWatchlist(new Set(data.symbols))
+        }
+      } catch (err) {
+        console.error('Error loading watchlist:', err)
+      }
+    }
+    loadWatchlist()
+  }, [])
 
   // Load latest session on mount
   useEffect(() => {
@@ -184,10 +201,35 @@ function App() {
     }
   }
 
+  const toggleWatchlist = async (symbol) => {
+    const isInWatchlist = watchlist.has(symbol)
+
+    try {
+      if (isInWatchlist) {
+        await fetch(`${API_BASE}/watchlist/${symbol}`, { method: 'DELETE' })
+        setWatchlist(prev => {
+          const newSet = new Set(prev)
+          newSet.delete(symbol)
+          return newSet
+        })
+      } else {
+        await fetch(`${API_BASE}/watchlist/${symbol}`, { method: 'POST' })
+        setWatchlist(prev => new Set([...prev, symbol]))
+      }
+    } catch (err) {
+      console.error('Error toggling watchlist:', err)
+    }
+  }
+
   const sortedStocks = useMemo(() => {
     const filtered = stocks.filter(stock => {
+      // Apply watchlist filter
+      if (filter === 'watchlist' && !watchlist.has(stock.symbol)) {
+        return false
+      }
+
       // Apply status filter
-      if (filter !== 'all' && stock.overall_status !== filter) {
+      if (filter !== 'all' && filter !== 'watchlist' && stock.overall_status !== filter) {
         return false
       }
 
@@ -275,11 +317,6 @@ function App() {
 
   return (
     <div className="app">
-      <header>
-        <h1>Lynch Stock Screener</h1>
-        <p>Screen stocks using Peter Lynch criteria</p>
-      </header>
-
       <div className="controls">
         <button onClick={() => screenStocks(null)} disabled={loading}>
           Screen All Stocks
@@ -312,11 +349,21 @@ function App() {
           <label>Filter: </label>
           <select value={filter} onChange={(e) => setFilter(e.target.value)}>
             <option value="all">All</option>
+            <option value="watchlist">⭐ Watchlist</option>
             <option value="PASS">Pass Only</option>
             <option value="CLOSE">Close Only</option>
             <option value="FAIL">Fail Only</option>
           </select>
         </div>
+
+        {summary && (
+          <div className="summary-stats">
+            <strong>Analyzed {summary.totalAnalyzed} stocks:</strong>
+            <span className="summary-stat pass">{summary.passCount} PASS</span>
+            <span className="summary-stat close">{summary.closeCount} CLOSE</span>
+            <span className="summary-stat fail">{summary.failCount} FAIL</span>
+          </div>
+        )}
       </div>
 
       {loading && (
@@ -334,15 +381,6 @@ function App() {
         </div>
       )}
 
-      {summary && (
-        <div className="summary-banner">
-          <strong>Analyzed {summary.totalAnalyzed} stocks:</strong>
-          <span className="summary-stat pass">{summary.passCount} PASS</span>
-          <span className="summary-stat close">{summary.closeCount} CLOSE</span>
-          <span className="summary-stat fail">{summary.failCount} FAIL</span>
-        </div>
-      )}
-
       {sortedStocks.length > 0 && (
         <>
           <div className="pagination-info">
@@ -352,6 +390,7 @@ function App() {
             <table>
               <thead>
                 <tr>
+                  <th className="watchlist-header">⭐</th>
                   <th onClick={() => toggleSort('symbol')}>Symbol {sortBy === 'symbol' && (sortDir === 'asc' ? '↑' : '↓')}</th>
                   <th onClick={() => toggleSort('company_name')}>Company {sortBy === 'company_name' && (sortDir === 'asc' ? '↑' : '↓')}</th>
                   <th onClick={() => toggleSort('country')}>Country {sortBy === 'country' && (sortDir === 'asc' ? '↑' : '↓')}</th>
@@ -380,6 +419,11 @@ function App() {
                       onClick={() => toggleRowExpansion(stock.symbol)}
                       className={`stock-row ${expandedSymbol === stock.symbol ? 'expanded' : ''}`}
                     >
+                      <td className="watchlist-cell" onClick={(e) => { e.stopPropagation(); toggleWatchlist(stock.symbol); }}>
+                        <span className={`watchlist-star ${watchlist.has(stock.symbol) ? 'checked' : ''}`}>
+                          ⭐
+                        </span>
+                      </td>
                       <td><strong>{stock.symbol}</strong></td>
                       <td>{stock.company_name || 'N/A'}</td>
                       <td>{stock.country || 'N/A'}</td>
@@ -421,7 +465,7 @@ function App() {
                     </tr>
                     {expandedSymbol === stock.symbol && (
                       <tr key={`${stock.symbol}-details`} className="expanded-row">
-                        <td colSpan="18">
+                        <td colSpan="19">
                           <div className="chart-container">
                             {loadingHistory && <div className="loading">Loading historical data...</div>}
                             {!loadingHistory && historyData && (
@@ -454,6 +498,7 @@ function App() {
                                 }}
                                 options={{
                                   responsive: true,
+                                  maintainAspectRatio: false,
                                   interaction: {
                                     mode: 'index',
                                     intersect: false,

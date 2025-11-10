@@ -70,6 +70,14 @@ class Database:
         """)
 
         cursor.execute("""
+            CREATE TABLE IF NOT EXISTS watchlist (
+                symbol TEXT PRIMARY KEY,
+                added_at TIMESTAMP,
+                FOREIGN KEY (symbol) REFERENCES stocks(symbol)
+            )
+        """)
+
+        cursor.execute("""
             CREATE TABLE IF NOT EXISTS screening_sessions (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 created_at TIMESTAMP,
@@ -440,3 +448,36 @@ class Database:
 
         conn.commit()
         conn.close()
+
+    def add_to_watchlist(self, symbol: str):
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        cursor.execute("""
+            INSERT OR IGNORE INTO watchlist (symbol, added_at)
+            VALUES (?, ?)
+        """, (symbol, datetime.now().isoformat()))
+        conn.commit()
+        conn.close()
+
+    def remove_from_watchlist(self, symbol: str):
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM watchlist WHERE symbol = ?", (symbol,))
+        conn.commit()
+        conn.close()
+
+    def get_watchlist(self) -> List[str]:
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT symbol FROM watchlist ORDER BY added_at DESC")
+        symbols = [row[0] for row in cursor.fetchall()]
+        conn.close()
+        return symbols
+
+    def is_in_watchlist(self, symbol: str) -> bool:
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT 1 FROM watchlist WHERE symbol = ?", (symbol,))
+        result = cursor.fetchone()
+        conn.close()
+        return result is not None
