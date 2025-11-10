@@ -78,6 +78,20 @@ class Database:
         """)
 
         cursor.execute("""
+            CREATE TABLE IF NOT EXISTS sec_filings (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                symbol TEXT,
+                filing_type TEXT,
+                filing_date TEXT,
+                document_url TEXT,
+                accession_number TEXT,
+                last_updated TIMESTAMP,
+                FOREIGN KEY (symbol) REFERENCES stocks(symbol),
+                UNIQUE(symbol, accession_number)
+            )
+        """)
+
+        cursor.execute("""
             CREATE TABLE IF NOT EXISTS screening_sessions (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 created_at TIMESTAMP,
@@ -481,3 +495,83 @@ class Database:
         result = cursor.fetchone()
         conn.close()
         return result is not None
+
+    def save_sec_filing(self, symbol: str, filing_type: str, filing_date: str, document_url: str, accession_number: str):
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        cursor.execute("""
+            INSERT OR REPLACE INTO sec_filings
+            (symbol, filing_type, filing_date, document_url, accession_number, last_updated)
+            VALUES (?, ?, ?, ?, ?, ?)
+        """, (symbol, filing_type, filing_date, document_url, accession_number, datetime.now().isoformat()))
+        conn.commit()
+        conn.close()
+
+    def get_sec_filings(self, symbol: str) -> Optional[Dict[str, Any]]:
+        conn = self.get_connection()
+        cursor = conn.cursor()
+
+        # Get most recent 10-K
+        cursor.execute("""
+            SELECT filing_date, document_url, accession_number
+            FROM sec_filings
+            WHERE symbol = ? AND filing_type = '10-K'
+            ORDER BY filing_date DESC
+            LIMIT 1
+        """, (symbol,))
+        ten_k_row = cursor.fetchone()
+
+        # Get 3 most recent 10-Qs
+        cursor.execute("""
+            SELECT filing_date, document_url, accession_number
+            FROM sec_filings
+            WHERE symbol = ? AND filing_type = '10-Q'
+            ORDER BY filing_date DESC
+            LIMIT 3
+        """, (symbol,))
+        ten_q_rows = cursor.fetchall()
+
+        conn.close()
+
+        if not ten_k_row and not ten_q_rows:
+            return None
+
+        result = {}
+
+        if ten_k_row:
+            result['10-K'] = {
+                'filed_date': ten_k_row[0],
+                'url': ten_k_row[1],
+                'accession_number': ten_k_row[2]
+            }
+
+        if ten_q_rows:
+            result['10-Q'] = [
+                {
+                    'filed_date': row[0],
+                    'url': row[1],
+                    'accession_number': row[2]
+                }
+                for row in ten_q_rows
+            ]
+
+        return result
+
+    def is_filings_cache_valid(self, symbol: str, max_age_days: int = 7) -> bool:
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT last_updated FROM sec_filings
+            WHERE symbol = ?
+            ORDER BY last_updated DESC
+            LIMIT 1
+        """, (symbol,))
+        row = cursor.fetchone()
+        conn.close()
+
+        if not row:
+            return False
+
+        last_updated = datetime.fromisoformat(row[0])
+        age_days = (datetime.now() - last_updated).total_seconds() / 86400
+        return age_days < max_age_days

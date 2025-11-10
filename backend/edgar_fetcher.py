@@ -372,3 +372,59 @@ class EdgarFetcher:
         }
 
         return fundamentals
+
+    def fetch_recent_filings(self, ticker: str) -> List[Dict[str, Any]]:
+        """
+        Fetch recent 10-K and 10-Q filings for a ticker
+
+        Returns:
+            List of filing dicts with 'type', 'date', 'url', 'accession_number'
+        """
+        cik = self.get_cik_for_ticker(ticker)
+        if not cik:
+            logger.warning(f"[{ticker}] Could not find CIK")
+            return []
+
+        # Pad CIK to 10 digits
+        padded_cik = cik.zfill(10)
+
+        try:
+            self._rate_limit()
+            submissions_url = f"https://data.sec.gov/submissions/CIK{padded_cik}.json"
+            response = requests.get(submissions_url, headers=self.headers, timeout=10)
+            response.raise_for_status()
+
+            data = response.json()
+            recent_filings = data.get('filings', {}).get('recent', {})
+
+            if not recent_filings:
+                logger.warning(f"[{ticker}] No recent filings found")
+                return []
+
+            forms = recent_filings.get('form', [])
+            filing_dates = recent_filings.get('filingDate', [])
+            accession_numbers = recent_filings.get('accessionNumber', [])
+
+            filings = []
+            for i, form in enumerate(forms):
+                if form in ['10-K', '10-Q']:
+                    # Remove dashes from accession number for URL
+                    acc_num = accession_numbers[i]
+                    acc_num_no_dashes = acc_num.replace('-', '')
+
+                    # Build the document viewer URL
+                    doc_url = f"https://www.sec.gov/cgi-bin/viewer?action=view&cik={cik}&accession_number={acc_num}&xbrl_type=v"
+
+                    filings.append({
+                        'type': form,
+                        'date': filing_dates[i],
+                        'url': doc_url,
+                        'accession_number': acc_num
+                    })
+
+            logger.info(f"[{ticker}] Found {len(filings)} 10-K/10-Q filings")
+            return filings
+
+        except Exception as e:
+            logger.error(f"[{ticker}] Error fetching filings: {e}")
+            return []

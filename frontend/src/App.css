@@ -377,6 +377,39 @@ td strong {
   justify-content: center;
 }
 
+.filings-container {
+  background-color: #1e293b;
+  border-radius: 0.5rem;
+  padding: 1.5rem;
+  margin-top: 1.5rem;
+  border: 1px solid #334155;
+}
+
+.filings-container h3 {
+  margin: 0 0 1rem 0;
+  color: #f1f5f9;
+  font-size: 1.1rem;
+  font-weight: 600;
+}
+
+.filings-links {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.filing-item a {
+  color: #60a5fa;
+  text-decoration: none;
+  font-size: 0.95rem;
+  transition: color 0.2s;
+}
+
+.filing-item a:hover {
+  color: #93c5fd;
+  text-decoration: underline;
+}
+
 .lynch-analysis-container {
   background-color: #1e293b;
   border-radius: 0.5rem;

@@ -260,6 +260,54 @@ def get_stock_history(symbol):
     })
 
 
+@app.route('/api/stock/<symbol>/filings', methods=['GET'])
+def get_stock_filings(symbol):
+    """Get recent SEC filings (10-K and 10-Q) for a stock"""
+    symbol = symbol.upper()
+
+    # Check if stock exists
+    stock_metrics = db.get_stock_metrics(symbol)
+    if not stock_metrics:
+        return jsonify({'error': f'Stock {symbol} not found'}), 404
+
+    # Only fetch for US stocks
+    country = stock_metrics.get('country', '')
+    if country and country.upper() != 'USA' and country.upper() != 'UNITED STATES':
+        return jsonify({})
+
+    # Check cache validity
+    if db.is_filings_cache_valid(symbol):
+        filings = db.get_sec_filings(symbol)
+        if filings:
+            return jsonify(filings)
+
+    # Fetch fresh filings from EDGAR
+    try:
+        edgar_fetcher = fetcher.edgar_fetcher
+        recent_filings = edgar_fetcher.fetch_recent_filings(symbol)
+
+        if not recent_filings:
+            return jsonify({})
+
+        # Save to database
+        for filing in recent_filings:
+            db.save_sec_filing(
+                symbol,
+                filing['type'],
+                filing['date'],
+                filing['url'],
+                filing['accession_number']
+            )
+
+        # Return the formatted result
+        filings = db.get_sec_filings(symbol)
+        return jsonify(filings if filings else {})
+
+    except Exception as e:
+        print(f"Error fetching filings for {symbol}: {e}")
+        return jsonify({'error': f'Failed to fetch filings: {str(e)}'}), 500
+
+
 @app.route('/api/stock/<symbol>/lynch-analysis', methods=['GET'])
 def get_lynch_analysis(symbol):
     """

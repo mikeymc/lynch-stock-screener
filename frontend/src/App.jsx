@@ -62,6 +62,8 @@ function App() {
   const [expandedSymbol, setExpandedSymbol] = useState(null)
   const [historyData, setHistoryData] = useState(null)
   const [loadingHistory, setLoadingHistory] = useState(false)
+  const [filingsData, setFilingsData] = useState(null)
+  const [loadingFilings, setLoadingFilings] = useState(false)
   const [loadingSession, setLoadingSession] = useState(true)
   const [watchlist, setWatchlist] = useState(new Set())
 
@@ -305,13 +307,32 @@ function App() {
     }
   }
 
+  const fetchFilingsData = async (symbol) => {
+    setLoadingFilings(true)
+    try {
+      const response = await fetch(`${API_BASE}/stock/${symbol}/filings`)
+      if (!response.ok) {
+        throw new Error(`Failed to fetch filings for ${symbol}`)
+      }
+      const data = await response.json()
+      setFilingsData(data)
+    } catch (err) {
+      console.error('Error fetching filings:', err)
+      setFilingsData(null)
+    } finally {
+      setLoadingFilings(false)
+    }
+  }
+
   const toggleRowExpansion = (symbol) => {
     if (expandedSymbol === symbol) {
       setExpandedSymbol(null)
       setHistoryData(null)
+      setFilingsData(null)
     } else {
       setExpandedSymbol(symbol)
       fetchHistoryData(symbol)
+      fetchFilingsData(symbol)
     }
   }
 
@@ -546,6 +567,28 @@ function App() {
                               />
                             )}
                           </div>
+
+                          {!loadingFilings && filingsData && (Object.keys(filingsData).length > 0) && (
+                            <div className="filings-container">
+                              <h3>SEC Filings</h3>
+                              <div className="filings-links">
+                                {filingsData['10-K'] && (
+                                  <div className="filing-item">
+                                    <a href={filingsData['10-K'].url} target="_blank" rel="noopener noreferrer">
+                                      📄 10-K Annual Report (Filed: {filingsData['10-K'].filed_date})
+                                    </a>
+                                  </div>
+                                )}
+                                {filingsData['10-Q']?.map((filing, idx) => (
+                                  <div key={idx} className="filing-item">
+                                    <a href={filing.url} target="_blank" rel="noopener noreferrer">
+                                      📄 10-Q Quarterly Report (Filed: {filing.filed_date})
+                                    </a>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          )}
 
                           {!loadingHistory && historyData && (
                             <LynchAnalysis
