@@ -383,9 +383,6 @@ function App() {
 
       {sortedStocks.length > 0 && (
         <>
-          <div className="pagination-info">
-            Showing {startIndex + 1}-{Math.min(endIndex, sortedStocks.length)} of {sortedStocks.length} stocks
-          </div>
           <div className="table-container">
             <table>
               <thead>
@@ -554,6 +551,10 @@ function App() {
                 ))}
               </tbody>
           </table>
+        </div>
+
+        <div className="pagination-info">
+          Showing {startIndex + 1}-{Math.min(endIndex, sortedStocks.length)} of {sortedStocks.length} stocks
         </div>
 
         {totalPages > 1 && (
