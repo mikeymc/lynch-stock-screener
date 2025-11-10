@@ -1,17 +1,19 @@
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 
 const API_BASE = 'http://localhost:5001/api'
 
 function LynchAnalysis({ symbol, stockName }) {
   const [analysis, setAnalysis] = useState(null)
-  const [loading, setLoading] = useState(true)
+  const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
   const [generatedAt, setGeneratedAt] = useState(null)
   const [cached, setCached] = useState(false)
   const [refreshing, setRefreshing] = useState(false)
+  const [requested, setRequested] = useState(false)
 
   const fetchAnalysis = async (forceRefresh = false) => {
     try {
+      setRequested(true)
       if (forceRefresh) {
         setRefreshing(true)
       } else {
@@ -44,12 +46,6 @@ function LynchAnalysis({ symbol, stockName }) {
     }
   }
 
-  useEffect(() => {
-    if (symbol) {
-      fetchAnalysis()
-    }
-  }, [symbol])
-
   const handleRefresh = () => {
     fetchAnalysis(true)
   }
@@ -64,6 +60,22 @@ function LynchAnalysis({ symbol, stockName }) {
       hour: '2-digit',
       minute: '2-digit'
     })
+  }
+
+  if (!requested) {
+    return (
+      <div className="lynch-analysis-container">
+        <div className="lynch-analysis-header">
+          <h3>Peter Lynch Analysis</h3>
+        </div>
+        <div className="lynch-analysis-loading">
+          <p>AI-powered Peter Lynch-style analysis for {stockName}</p>
+          <button onClick={() => fetchAnalysis()} className="refresh-button">
+            ✨ Generate Analysis
+          </button>
+        </div>
+      </div>
+    )
   }
 
   if (loading) {
