@@ -255,7 +255,6 @@ button:disabled {
 }
 
 .table-container {
-  overflow-x: auto;
   background-color: #1e293b;
   border-radius: 0.5rem;
   padding: 1rem;
@@ -269,6 +268,9 @@ table {
 }
 
 th {
+  position: sticky;
+  top: 65px;
+  z-index: 50;
   background-color: #334155;
   padding: 1rem;
   text-align: left;
