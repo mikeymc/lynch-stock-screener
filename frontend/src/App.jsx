@@ -545,6 +545,15 @@ function App() {
                                           data: historyData.eps,
                                           borderColor: 'rgb(255, 99, 132)',
                                           backgroundColor: 'rgba(255, 99, 132, 0.2)',
+                                          pointBackgroundColor: historyData.eps.map(eps => eps < 0 ? 'rgb(239, 68, 68)' : 'rgb(255, 99, 132)'),
+                                          pointBorderColor: historyData.eps.map(eps => eps < 0 ? 'rgb(239, 68, 68)' : 'rgb(255, 99, 132)'),
+                                          pointRadius: 4,
+                                          segment: {
+                                            borderColor: ctx => {
+                                              const value = ctx.p0.parsed.y;
+                                              return value < 0 ? 'rgb(239, 68, 68)' : 'rgb(255, 99, 132)';
+                                            }
+                                          }
                                         }
                                       ]
                                     }}
@@ -566,6 +575,20 @@ function App() {
                                           title: {
                                             display: true,
                                             text: 'EPS ($)'
+                                          },
+                                          grid: {
+                                            color: (context) => {
+                                              if (context.tick.value === 0) {
+                                                return 'rgba(255, 255, 255, 0.3)';
+                                              }
+                                              return 'rgba(255, 255, 255, 0.1)';
+                                            },
+                                            lineWidth: (context) => {
+                                              if (context.tick.value === 0) {
+                                                return 2;
+                                              }
+                                              return 1;
+                                            }
                                           }
                                         }
                                       }
