@@ -18,7 +18,7 @@ class LynchAnalyst:
             checklist_path: Path to the Lynch checklist file
         """
         self.db = db
-        self.model_version = "gemini-2.5-pro"
+        self.model_version = "gemini-2.5-flash"
         self.prompt_template_path = prompt_template_path
         self.checklist_path = checklist_path
 
