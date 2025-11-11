@@ -7,7 +7,7 @@ import google.generativeai as genai
 
 
 class LynchAnalyst:
-    def __init__(self, db, api_key: Optional[str] = None, prompt_template_path: str = "lynch_prompt.md"):
+    def __init__(self, db, api_key: Optional[str] = None, prompt_template_path: str = "lynch_prompt.md", checklist_path: str = "lynch_checklist.md"):
         """
         Initialize the LynchAnalyst with database and Gemini API key
 
@@ -15,15 +15,26 @@ class LynchAnalyst:
             db: Database instance for caching analyses
             api_key: Gemini API key (defaults to GEMINI_API_KEY env var)
             prompt_template_path: Path to the prompt template file
+            checklist_path: Path to the Lynch checklist file
         """
         self.db = db
         self.model_version = "gemini-2.5-pro"
         self.prompt_template_path = prompt_template_path
+        self.checklist_path = checklist_path
+
         try:
-            with open(self.prompt_template_path, 'r') as f:
-                self.prompt_template = f.read()
-        except FileNotFoundError:
-            raise FileNotFoundError(f"Prompt template file not found at: {self.prompt_template_path}")
+            with open(prompt_template_path, 'r') as f:
+                main_prompt = f.read()
+        except FileNotFoundError as e:
+            raise FileNotFoundError(f"Prompt template file not found at: {prompt_template_path}") from e
+
+        try:
+            with open(checklist_path, 'r') as f:
+                checklist_content = f.read()
+        except FileNotFoundError as e:
+            raise FileNotFoundError(f"Checklist file not found at: {checklist_path}") from e
+
+        self.prompt_template = f"{main_prompt}\n\n---\n\n## Reference: Peter Lynch's Checklist\n\n{checklist_content}"
 
         # Configure Gemini API
         api_key = api_key or os.getenv('GEMINI_API_KEY')
