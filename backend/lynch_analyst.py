@@ -7,16 +7,23 @@ import google.generativeai as genai
 
 
 class LynchAnalyst:
-    def __init__(self, db, api_key: Optional[str] = None):
+    def __init__(self, db, api_key: Optional[str] = None, prompt_template_path: str = "lynch_prompt.md"):
         """
         Initialize the LynchAnalyst with database and Gemini API key
 
         Args:
             db: Database instance for caching analyses
             api_key: Gemini API key (defaults to GEMINI_API_KEY env var)
+            prompt_template_path: Path to the prompt template file
         """
         self.db = db
         self.model_version = "gemini-2.5-pro"
+        self.prompt_template_path = prompt_template_path
+        try:
+            with open(self.prompt_template_path, 'r') as f:
+                self.prompt_template = f.read()
+        except FileNotFoundError:
+            raise FileNotFoundError(f"Prompt template file not found at: {self.prompt_template_path}")
 
         # Configure Gemini API
         api_key = api_key or os.getenv('GEMINI_API_KEY')
@@ -40,39 +47,30 @@ class LynchAnalyst:
             for h in sorted(history, key=lambda x: x['year'])
         ])
 
-        prompt = f"""You are Peter Lynch, the legendary investor known for your practical, straightforward approach to stock analysis. Analyze the following stock in your characteristic style, focusing on the key principles from "One Up on Wall Street":
+        # Prepare a dictionary of values for formatting
+        template_vars = {
+            'company_name': stock_data.get('company_name', 'N/A'),
+            'symbol': stock_data.get('symbol', 'N/A'),
+            'sector': stock_data.get('sector', 'N/A'),
+            'exchange': stock_data.get('exchange', 'N/A'),
+            'price': stock_data.get('price', 0),
+            'pe_ratio': stock_data.get('pe_ratio', 'N/A'),
+            'peg_ratio': stock_data.get('peg_ratio', 'N/A'),
+            'debt_to_equity': stock_data.get('debt_to_equity', 'N/A'),
+            'institutional_ownership': stock_data.get('institutional_ownership', 0) * 100,
+            'market_cap_billions': stock_data.get('market_cap', 0) / 1e9,
+            'earnings_cagr': stock_data.get('earnings_cagr', 'N/A'),
+            'revenue_cagr': stock_data.get('revenue_cagr', 'N/A'),
+            'history_text': history_text
+        }
 
-**Company:** {stock_data['company_name']} ({stock_data['symbol']})
-**Sector:** {stock_data.get('sector', 'N/A')}
-**Exchange:** {stock_data.get('exchange', 'N/A')}
+        # Format any 'N/A' values for cleaner output
+        for key, value in template_vars.items():
+            if value is None:
+                template_vars[key] = 'N/A'
 
-**Current Metrics:**
-- Price: ${stock_data.get('price', 0):.2f}
-- P/E Ratio: {stock_data.get('pe_ratio', 'N/A')}
-- PEG Ratio: {stock_data.get('peg_ratio', 'N/A')}
-- Debt-to-Equity: {stock_data.get('debt_to_equity', 'N/A')}
-- Institutional Ownership: {stock_data.get('institutional_ownership', 0)*100:.1f}%
-- Market Cap: ${stock_data.get('market_cap', 0)/1e9:.2f}B
-
-**Growth Metrics:**
-- 5-Year Earnings CAGR: {stock_data.get('earnings_cagr', 'N/A')}%
-- 5-Year Revenue CAGR: {stock_data.get('revenue_cagr', 'N/A')}%
-
-**Historical Performance (Last 5 Years):**
-{history_text}
-
-Write a 200-300 word analysis in Peter Lynch's voice. Focus on:
-1. What this company does, how it makes money, and who its customers are, in plain english.
-2. Whether this is a "growth stock," "stalwart," "fast grower," "cyclical," "turnaround," or "asset play"
-3. The PEG ratio and what it tells us about valuation relative to growth
-4. Earnings consistency and growth trajectory
-5. Debt levels and financial health
-6. Whether this passes your key screens (PEG < 1-2, manageable debt, earnings growth)
-7. A straightforward verdict: would you invest in this, and why or why not?
-
-Be honest, practical, and avoid jargon. Speak like you're explaining it to an amateur investor over coffee."""
-
-        return prompt
+        # Use str.format() with the loaded template
+        return self.prompt_template.format(**template_vars)
 
     def generate_analysis(self, stock_data: Dict[str, Any], history: List[Dict[str, Any]]) -> str:
         """
