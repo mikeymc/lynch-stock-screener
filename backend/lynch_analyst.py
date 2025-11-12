@@ -41,13 +41,14 @@ class LynchAnalyst:
         if api_key:
             genai.configure(api_key=api_key)
 
-    def format_prompt(self, stock_data: Dict[str, Any], history: List[Dict[str, Any]]) -> str:
+    def format_prompt(self, stock_data: Dict[str, Any], history: List[Dict[str, Any]], sections: Optional[Dict[str, Any]] = None) -> str:
         """
         Format a prompt for Gemini to generate a Peter Lynch-style analysis
 
         Args:
             stock_data: Dict containing current stock metrics
             history: List of dicts containing historical earnings/revenue data
+            sections: Optional dict of filing sections (business, risk_factors, mda, market_risk)
 
         Returns:
             Formatted prompt string
@@ -81,15 +82,48 @@ class LynchAnalyst:
                 template_vars[key] = 'N/A'
 
         # Use str.format() with the loaded template
-        return self.prompt_template.format(**template_vars)
+        formatted_prompt = self.prompt_template.format(**template_vars)
 
-    def generate_analysis(self, stock_data: Dict[str, Any], history: List[Dict[str, Any]]) -> str:
+        # Append SEC filing sections if available
+        if sections:
+            sections_text = "\n\n---\n\n## Additional Context from SEC Filings\n\n"
+
+            if 'business' in sections:
+                sections_text += f"### Business Description (Item 1 from 10-K)\n"
+                sections_text += f"Filed: {sections['business'].get('filing_date', 'N/A')}\n"
+                sections_text += f"{sections['business'].get('content', 'Not available')}\n\n"
+
+            if 'risk_factors' in sections:
+                sections_text += f"### Risk Factors (Item 1A from 10-K)\n"
+                sections_text += f"Filed: {sections['risk_factors'].get('filing_date', 'N/A')}\n"
+                sections_text += f"{sections['risk_factors'].get('content', 'Not available')}\n\n"
+
+            if 'mda' in sections:
+                filing_type = sections['mda'].get('filing_type', '10-K')
+                item_num = '7' if filing_type == '10-K' else '2'
+                sections_text += f"### Management's Discussion & Analysis (Item {item_num} from {filing_type})\n"
+                sections_text += f"Filed: {sections['mda'].get('filing_date', 'N/A')}\n"
+                sections_text += f"{sections['mda'].get('content', 'Not available')}\n\n"
+
+            if 'market_risk' in sections:
+                filing_type = sections['market_risk'].get('filing_type', '10-K')
+                item_num = '7A' if filing_type == '10-K' else '3'
+                sections_text += f"### Market Risk Disclosures (Item {item_num} from {filing_type})\n"
+                sections_text += f"Filed: {sections['market_risk'].get('filing_date', 'N/A')}\n"
+                sections_text += f"{sections['market_risk'].get('content', 'Not available')}\n\n"
+
+            formatted_prompt += sections_text
+
+        return formatted_prompt
+
+    def generate_analysis(self, stock_data: Dict[str, Any], history: List[Dict[str, Any]], sections: Optional[Dict[str, Any]] = None) -> str:
         """
         Generate a new Peter Lynch-style analysis using Gemini AI
 
         Args:
             stock_data: Dict containing current stock metrics
             history: List of dicts containing historical earnings/revenue data
+            sections: Optional dict of filing sections
 
         Returns:
             Generated analysis text
@@ -97,7 +131,7 @@ class LynchAnalyst:
         Raises:
             Exception: If API call fails
         """
-        prompt = self.format_prompt(stock_data, history)
+        prompt = self.format_prompt(stock_data, history, sections)
 
         model = genai.GenerativeModel(self.model_version)
         response = model.generate_content(prompt)
@@ -109,6 +143,7 @@ class LynchAnalyst:
         symbol: str,
         stock_data: Dict[str, Any],
         history: List[Dict[str, Any]],
+        sections: Optional[Dict[str, Any]] = None,
         use_cache: bool = True
     ) -> str:
         """
@@ -118,6 +153,7 @@ class LynchAnalyst:
             symbol: Stock symbol
             stock_data: Dict containing current stock metrics
             history: List of dicts containing historical earnings/revenue data
+            sections: Optional dict of filing sections
             use_cache: Whether to use cached analysis if available
 
         Returns:
@@ -130,7 +166,7 @@ class LynchAnalyst:
                 return cached['analysis_text']
 
         # Generate new analysis
-        analysis_text = self.generate_analysis(stock_data, history)
+        analysis_text = self.generate_analysis(stock_data, history, sections)
 
         # Save to cache
         self.db.save_lynch_analysis(symbol, analysis_text, self.model_version)

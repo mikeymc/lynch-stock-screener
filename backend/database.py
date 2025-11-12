@@ -92,6 +92,20 @@ class Database:
         """)
 
         cursor.execute("""
+            CREATE TABLE IF NOT EXISTS filing_sections (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                symbol TEXT,
+                section_name TEXT,
+                content TEXT,
+                filing_type TEXT,
+                filing_date TEXT,
+                last_updated TIMESTAMP,
+                FOREIGN KEY (symbol) REFERENCES stocks(symbol),
+                UNIQUE(symbol, section_name, filing_type)
+            )
+        """)
+
+        cursor.execute("""
             CREATE TABLE IF NOT EXISTS screening_sessions (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 created_at TIMESTAMP,
@@ -569,6 +583,62 @@ class Database:
         cursor = conn.cursor()
         cursor.execute("""
             SELECT last_updated FROM sec_filings
+            WHERE symbol = ?
+            ORDER BY last_updated DESC
+            LIMIT 1
+        """, (symbol,))
+        row = cursor.fetchone()
+        conn.close()
+
+        if not row:
+            return False
+
+        last_updated = datetime.fromisoformat(row[0])
+        age_days = (datetime.now() - last_updated).total_seconds() / 86400
+        return age_days < max_age_days
+
+    def save_filing_section(self, symbol: str, section_name: str, content: str, filing_type: str, filing_date: str):
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        cursor.execute("""
+            INSERT OR REPLACE INTO filing_sections
+            (symbol, section_name, content, filing_type, filing_date, last_updated)
+            VALUES (?, ?, ?, ?, ?, ?)
+        """, (symbol, section_name, content, filing_type, filing_date, datetime.now().isoformat()))
+        conn.commit()
+        conn.close()
+
+    def get_filing_sections(self, symbol: str) -> Optional[Dict[str, Any]]:
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT section_name, content, filing_type, filing_date, last_updated
+            FROM filing_sections
+            WHERE symbol = ?
+        """, (symbol,))
+        rows = cursor.fetchall()
+        conn.close()
+
+        if not rows:
+            return None
+
+        sections = {}
+        for row in rows:
+            section_name = row[0]
+            sections[section_name] = {
+                'content': row[1],
+                'filing_type': row[2],
+                'filing_date': row[3],
+                'last_updated': row[4]
+            }
+
+        return sections
+
+    def is_sections_cache_valid(self, symbol: str, max_age_days: int = 30) -> bool:
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT last_updated FROM filing_sections
             WHERE symbol = ?
             ORDER BY last_updated DESC
             LIMIT 1

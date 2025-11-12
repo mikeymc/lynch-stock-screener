@@ -5,6 +5,7 @@ import requests
 import time
 import logging
 from typing import Dict, List, Optional, Any
+from edgar import Company, set_identity
 
 logger = logging.getLogger(__name__)
 
@@ -31,6 +32,9 @@ class EdgarFetcher:
         self.ticker_to_cik_cache = None
         self.last_request_time = 0
         self.min_request_interval = 0.1  # 10 requests per second max
+
+        # Set identity for edgartools
+        set_identity(user_agent)
 
     def _rate_limit(self):
         """Enforce rate limiting of 10 requests per second"""
@@ -475,6 +479,7 @@ class EdgarFetcher:
             forms = recent_filings.get('form', [])
             filing_dates = recent_filings.get('filingDate', [])
             accession_numbers = recent_filings.get('accessionNumber', [])
+            primary_documents = recent_filings.get('primaryDocument', [])
 
             filings = []
             for i, form in enumerate(forms):
@@ -482,9 +487,15 @@ class EdgarFetcher:
                     # Remove dashes from accession number for URL
                     acc_num = accession_numbers[i]
                     acc_num_no_dashes = acc_num.replace('-', '')
+                    primary_doc = primary_documents[i] if i < len(primary_documents) else None
 
-                    # Build the document viewer URL
-                    doc_url = f"https://www.sec.gov/cgi-bin/viewer?action=view&cik={cik}&accession_number={acc_num}&xbrl_type=v"
+                    # Build the raw filing HTML URL
+                    # Format: https://www.sec.gov/Archives/edgar/data/{CIK}/{ACCESSION_NO_DASHES}/{PRIMARY_DOC}
+                    if primary_doc:
+                        doc_url = f"https://www.sec.gov/Archives/edgar/data/{cik}/{acc_num_no_dashes}/{primary_doc}"
+                    else:
+                        # Fallback: try common filing name pattern
+                        doc_url = f"https://www.sec.gov/Archives/edgar/data/{cik}/{acc_num_no_dashes}/{acc_num_no_dashes}.txt"
 
                     filings.append({
                         'type': form,
@@ -499,3 +510,111 @@ class EdgarFetcher:
         except Exception as e:
             logger.error(f"[{ticker}] Error fetching filings: {e}")
             return []
+
+    def extract_filing_sections(self, ticker: str, filing_type: str) -> Dict[str, Any]:
+        """
+        Extract key sections from a SEC filing using edgartools
+
+        Args:
+            ticker: Stock ticker symbol
+            filing_type: '10-K' or '10-Q'
+
+        Returns:
+            Dictionary with extracted sections:
+                - business: Item 1 (10-K only)
+                - risk_factors: Item 1A (10-K only)
+                - mda: Item 7 (10-K) or Item 2 (10-Q)
+                - market_risk: Item 7A (10-K) or Item 3 (10-Q)
+        """
+        logger.info(f"[{ticker}] Extracting sections from {filing_type} using edgartools")
+        sections = {}
+
+        try:
+            # Get company and latest filing
+            company = Company(ticker)
+            filings = company.get_filings(form=filing_type)
+
+            if not filings:
+                logger.warning(f"[{ticker}] No {filing_type} filings found")
+                return {}
+
+            latest_filing = filings.latest()
+            filing_date = str(latest_filing.filing_date)
+            logger.info(f"[{ticker}] Found {filing_type} filing from {filing_date}")
+
+            # Get the structured filing object
+            filing_obj = latest_filing.obj()
+
+            if filing_type == '10-K':
+                # Extract 10-K sections using properties
+                if filing_obj.business:
+                    sections['business'] = {
+                        'content': filing_obj.business,
+                        'filing_type': '10-K',
+                        'filing_date': filing_date
+                    }
+                    logger.info(f"[{ticker}] Extracted Item 1 (Business): {len(filing_obj.business)} chars")
+
+                if filing_obj.risk_factors:
+                    sections['risk_factors'] = {
+                        'content': filing_obj.risk_factors,
+                        'filing_type': '10-K',
+                        'filing_date': filing_date
+                    }
+                    logger.info(f"[{ticker}] Extracted Item 1A (Risk Factors): {len(filing_obj.risk_factors)} chars")
+
+                if filing_obj.management_discussion:
+                    sections['mda'] = {
+                        'content': filing_obj.management_discussion,
+                        'filing_type': '10-K',
+                        'filing_date': filing_date
+                    }
+                    logger.info(f"[{ticker}] Extracted Item 7 (MD&A): {len(filing_obj.management_discussion)} chars")
+
+                # Try to get Item 7A (Market Risk) via bracket notation
+                try:
+                    market_risk = filing_obj["Item 7A"]
+                    if market_risk:
+                        sections['market_risk'] = {
+                            'content': market_risk,
+                            'filing_type': '10-K',
+                            'filing_date': filing_date
+                        }
+                        logger.info(f"[{ticker}] Extracted Item 7A (Market Risk): {len(market_risk)} chars")
+                except (KeyError, AttributeError):
+                    logger.info(f"[{ticker}] Item 7A (Market Risk) not available")
+
+            elif filing_type == '10-Q':
+                # Extract 10-Q sections via bracket notation
+                try:
+                    mda = filing_obj["Item 2"]
+                    if mda:
+                        sections['mda'] = {
+                            'content': mda,
+                            'filing_type': '10-Q',
+                            'filing_date': filing_date
+                        }
+                        logger.info(f"[{ticker}] Extracted Item 2 (MD&A): {len(mda)} chars")
+                except (KeyError, AttributeError):
+                    logger.info(f"[{ticker}] Item 2 (MD&A) not available in 10-Q")
+
+                try:
+                    market_risk = filing_obj["Item 3"]
+                    if market_risk:
+                        sections['market_risk'] = {
+                            'content': market_risk,
+                            'filing_type': '10-Q',
+                            'filing_date': filing_date
+                        }
+                        logger.info(f"[{ticker}] Extracted Item 3 (Market Risk): {len(market_risk)} chars")
+                except (KeyError, AttributeError):
+                    logger.info(f"[{ticker}] Item 3 (Market Risk) not available in 10-Q")
+
+            logger.info(f"[{ticker}] Successfully extracted {len(sections)} sections from {filing_type}")
+            return sections
+
+        except Exception as e:
+            logger.error(f"[{ticker}] Error extracting {filing_type} sections: {e}")
+            import traceback
+            traceback.print_exc()
+            return {}

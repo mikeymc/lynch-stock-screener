@@ -47,6 +47,62 @@ function StatusBar({ status, score, value }) {
   )
 }
 
+function FilingSections({ sections }) {
+  const [expandedSections, setExpandedSections] = useState(new Set())
+
+  const toggleSection = (sectionName) => {
+    setExpandedSections(prev => {
+      const newSet = new Set(prev)
+      if (newSet.has(sectionName)) {
+        newSet.delete(sectionName)
+      } else {
+        newSet.add(sectionName)
+      }
+      return newSet
+    })
+  }
+
+  const sectionTitles = {
+    business: 'Business Description (Item 1)',
+    risk_factors: 'Risk Factors (Item 1A)',
+    mda: 'Management Discussion & Analysis',
+    market_risk: 'Market Risk Disclosures'
+  }
+
+  return (
+    <div className="sections-container">
+      <h3>Key Filing Sections</h3>
+      <div className="sections-list">
+        {Object.entries(sections).map(([sectionName, sectionData]) => {
+          const isExpanded = expandedSections.has(sectionName)
+          const title = sectionTitles[sectionName] || sectionName
+          const filingType = sectionData.filing_type
+          const filingDate = sectionData.filing_date
+          const content = sectionData.content
+
+          return (
+            <div key={sectionName} className="section-item">
+              <div
+                className="section-header"
+                onClick={() => toggleSection(sectionName)}
+              >
+                <span className="section-toggle">{isExpanded ? '▼' : '▶'}</span>
+                <span className="section-title">{title}</span>
+                <span className="section-metadata">({filingType} - Filed: {filingDate})</span>
+              </div>
+              {isExpanded && (
+                <div className="section-content">
+                  <div className="section-text">{content}</div>
+                </div>
+              )}
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
 function App() {
   const [stocks, setStocks] = useState([])
   const [loading, setLoading] = useState(false)
@@ -64,6 +120,8 @@ function App() {
   const [loadingHistory, setLoadingHistory] = useState(false)
   const [filingsData, setFilingsData] = useState(null)
   const [loadingFilings, setLoadingFilings] = useState(false)
+  const [sectionsData, setSectionsData] = useState(null)
+  const [loadingSections, setLoadingSections] = useState(false)
   const [loadingSession, setLoadingSession] = useState(true)
   const [watchlist, setWatchlist] = useState(new Set())
 
@@ -324,15 +382,34 @@ function App() {
     }
   }
 
+  const fetchSectionsData = async (symbol) => {
+    setLoadingSections(true)
+    try {
+      const response = await fetch(`${API_BASE}/stock/${symbol}/sections`)
+      if (!response.ok) {
+        throw new Error(`Failed to fetch sections for ${symbol}`)
+      }
+      const data = await response.json()
+      setSectionsData(data.sections || null)
+    } catch (err) {
+      console.error('Error fetching sections:', err)
+      setSectionsData(null)
+    } finally {
+      setLoadingSections(false)
+    }
+  }
+
   const toggleRowExpansion = (symbol) => {
     if (expandedSymbol === symbol) {
       setExpandedSymbol(null)
       setHistoryData(null)
       setFilingsData(null)
+      setSectionsData(null)
     } else {
       setExpandedSymbol(symbol)
       fetchHistoryData(symbol)
       fetchFilingsData(symbol)
+      fetchSectionsData(symbol)
     }
   }
 
@@ -695,6 +772,16 @@ function App() {
                                 ))}
                               </div>
                             </div>
+                          )}
+
+                          {loadingSections && (
+                            <div className="sections-container">
+                              <div className="sections-loading">Loading filing sections...</div>
+                            </div>
+                          )}
+
+                          {!loadingSections && sectionsData && Object.keys(sectionsData).length > 0 && (
+                            <FilingSections sections={sectionsData} />
                           )}
 
                           {!loadingHistory && historyData && (

@@ -312,6 +312,100 @@ def get_stock_filings(symbol):
         return jsonify({'error': f'Failed to fetch filings: {str(e)}'}), 500
 
 
+@app.route('/api/stock/<symbol>/sections', methods=['GET'])
+def get_stock_sections(symbol):
+    """
+    Extract key sections from SEC filings (10-K and 10-Q)
+    Returns: business, risk_factors, mda, market_risk
+    """
+    import sys
+    symbol = symbol.upper()
+    app.logger.info(f"[SECTIONS] Starting section extraction for {symbol}")
+    print(f"[SECTIONS] Starting section extraction for {symbol}", file=sys.stderr, flush=True)
+
+    # Check if stock exists
+    stock_metrics = db.get_stock_metrics(symbol)
+    if not stock_metrics:
+        return jsonify({'error': f'Stock {symbol} not found'}), 404
+
+    # Only fetch for US stocks
+    country = stock_metrics.get('country', '')
+    app.logger.info(f"[SECTIONS] {symbol} country: {country}")
+    print(f"[SECTIONS] {symbol} country: {country}", file=sys.stderr, flush=True)
+    if country and country.upper() != 'USA' and country.upper() != 'UNITED STATES':
+        app.logger.info(f"[SECTIONS] Skipping non-US stock {symbol}")
+        print(f"[SECTIONS] Skipping non-US stock {symbol}", file=sys.stderr, flush=True)
+        return jsonify({'sections': {}, 'cached': False})
+
+    # Check cache validity (30 days)
+    if db.is_sections_cache_valid(symbol, max_age_days=30):
+        app.logger.info(f"[SECTIONS] Cache is valid for {symbol}")
+        print(f"[SECTIONS] Cache is valid for {symbol}", file=sys.stderr, flush=True)
+        sections = db.get_filing_sections(symbol)
+        if sections:
+            return jsonify({'sections': sections, 'cached': True})
+    else:
+        app.logger.info(f"[SECTIONS] Cache is NOT valid for {symbol}")
+        print(f"[SECTIONS] Cache is NOT valid for {symbol}", file=sys.stderr, flush=True)
+
+    # Extract sections using edgartools (no need for filing URLs)
+    edgar_fetcher = fetcher.edgar_fetcher
+    all_sections = {}
+
+    # Extract from most recent 10-K (Items 1, 1A, 7, 7A)
+    try:
+        app.logger.info(f"[SECTIONS] Extracting 10-K sections for {symbol}")
+        print(f"[SECTIONS] Extracting 10-K sections for {symbol}", file=sys.stderr, flush=True)
+        sections_10k = edgar_fetcher.extract_filing_sections(symbol, '10-K')
+
+        # Save each section to database
+        for section_name, section_data in sections_10k.items():
+            db.save_filing_section(
+                symbol,
+                section_name,
+                section_data['content'],
+                section_data['filing_type'],
+                section_data['filing_date']
+            )
+            all_sections[section_name] = section_data
+
+        app.logger.info(f"[SECTIONS] Extracted {len(sections_10k)} sections from 10-K")
+        print(f"[SECTIONS] Extracted {len(sections_10k)} sections from 10-K", file=sys.stderr, flush=True)
+
+    except Exception as e:
+        print(f"Error extracting 10-K sections for {symbol}: {e}")
+        import traceback
+        traceback.print_exc()
+
+    # Extract from most recent 10-Q (Items 2, 3)
+    try:
+        app.logger.info(f"[SECTIONS] Extracting 10-Q sections for {symbol}")
+        print(f"[SECTIONS] Extracting 10-Q sections for {symbol}", file=sys.stderr, flush=True)
+        sections_10q = edgar_fetcher.extract_filing_sections(symbol, '10-Q')
+
+        # Save and add 10-Q sections (may overwrite 10-K MD&A and Market Risk with more recent data)
+        for section_name, section_data in sections_10q.items():
+            db.save_filing_section(
+                symbol,
+                section_name,
+                section_data['content'],
+                section_data['filing_type'],
+                section_data['filing_date']
+            )
+            all_sections[section_name] = section_data
+
+        app.logger.info(f"[SECTIONS] Extracted {len(sections_10q)} sections from 10-Q")
+        print(f"[SECTIONS] Extracted {len(sections_10q)} sections from 10-Q", file=sys.stderr, flush=True)
+
+    except Exception as e:
+        print(f"Error extracting 10-Q sections for {symbol}: {e}")
+        import traceback
+        traceback.print_exc()
+
+    # Return all extracted sections
+    return jsonify({'sections': all_sections, 'cached': False})
+
+
 @app.route('/api/stock/<symbol>/lynch-analysis', methods=['GET'])
 def get_lynch_analysis(symbol):
     """
@@ -339,6 +433,12 @@ def get_lynch_analysis(symbol):
         'revenue_cagr': evaluation.get('revenue_cagr')
     }
 
+    # Get filing sections if available (for US stocks only)
+    sections = None
+    country = stock_metrics.get('country', '')
+    if not country or country.upper() in ['USA', 'UNITED STATES']:
+        sections = db.get_filing_sections(symbol)
+
     # Check if analysis exists in cache before generating
     cached_analysis = db.get_lynch_analysis(symbol)
     was_cached = cached_analysis is not None
@@ -349,6 +449,7 @@ def get_lynch_analysis(symbol):
             symbol,
             stock_data,
             history,
+            sections=sections,
             use_cache=True
         )
 
@@ -393,12 +494,19 @@ def refresh_lynch_analysis(symbol):
         'revenue_cagr': evaluation.get('revenue_cagr')
     }
 
+    # Get filing sections if available (for US stocks only)
+    sections = None
+    country = stock_metrics.get('country', '')
+    if not country or country.upper() in ['USA', 'UNITED STATES']:
+        sections = db.get_filing_sections(symbol)
+
     # Force regeneration
     try:
         analysis_text = lynch_analyst.get_or_generate_analysis(
             symbol,
             stock_data,
             history,
+            sections=sections,
             use_cache=False
         )
 
