@@ -92,7 +92,13 @@ function FilingSections({ sections }) {
               </div>
               {isExpanded && (
                 <div className="section-content">
-                  <div className="section-text">{content}</div>
+                  <div className="section-text">
+                    {content.split('\n').map((paragraph, idx) => {
+                      // Skip empty lines
+                      if (paragraph.trim() === '') return null
+                      return <p key={idx}>{paragraph}</p>
+                    })}
+                  </div>
                 </div>
               )}
             </div>

@@ -676,8 +676,15 @@ td strong {
   color: #cbd5e1;
   line-height: 1.7;
   font-size: 0.9rem;
-  white-space: pre-wrap;
   word-wrap: break-word;
   max-height: 500px;
   overflow-y: auto;
+}
+
+.section-text p {
+  margin: 0 0 1rem 0;
+}
+
+.section-text p:last-child {
+  margin-bottom: 0;
 }

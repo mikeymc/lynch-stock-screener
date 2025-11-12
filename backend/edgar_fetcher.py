@@ -546,8 +546,8 @@ class EdgarFetcher:
             filing_obj = latest_filing.obj()
 
             if filing_type == '10-K':
-                # Extract 10-K sections using properties
-                if filing_obj.business:
+                # Extract 10-K sections
+                if hasattr(filing_obj, 'business') and filing_obj.business:
                     sections['business'] = {
                         'content': filing_obj.business,
                         'filing_type': '10-K',
@@ -555,7 +555,7 @@ class EdgarFetcher:
                     }
                     logger.info(f"[{ticker}] Extracted Item 1 (Business): {len(filing_obj.business)} chars")
 
-                if filing_obj.risk_factors:
+                if hasattr(filing_obj, 'risk_factors') and filing_obj.risk_factors:
                     sections['risk_factors'] = {
                         'content': filing_obj.risk_factors,
                         'filing_type': '10-K',
@@ -563,7 +563,7 @@ class EdgarFetcher:
                     }
                     logger.info(f"[{ticker}] Extracted Item 1A (Risk Factors): {len(filing_obj.risk_factors)} chars")
 
-                if filing_obj.management_discussion:
+                if hasattr(filing_obj, 'management_discussion') and filing_obj.management_discussion:
                     sections['mda'] = {
                         'content': filing_obj.management_discussion,
                         'filing_type': '10-K',
@@ -594,7 +594,7 @@ class EdgarFetcher:
                             'filing_type': '10-Q',
                             'filing_date': filing_date
                         }
-                        logger.info(f"[{ticker}] Extracted Item 2 (MD&A): {len(mda)} chars")
+                        logger.info(f"[{ticker}] Extracted Item 2 (MD&A): {len(str(mda))} chars")
                 except (KeyError, AttributeError):
                     logger.info(f"[{ticker}] Item 2 (MD&A) not available in 10-Q")
 
@@ -606,7 +606,7 @@ class EdgarFetcher:
                             'filing_type': '10-Q',
                             'filing_date': filing_date
                         }
-                        logger.info(f"[{ticker}] Extracted Item 3 (Market Risk): {len(market_risk)} chars")
+                        logger.info(f"[{ticker}] Extracted Item 3 (Market Risk): {len(str(market_risk))} chars")
                 except (KeyError, AttributeError):
                     logger.info(f"[{ticker}] Item 3 (Market Risk) not available in 10-Q")
 
