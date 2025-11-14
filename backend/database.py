@@ -220,14 +220,14 @@ class Database:
         conn.commit()
         conn.close()
 
-    def save_earnings_history(self, symbol: str, year: int, eps: float, revenue: float, fiscal_end: Optional[str] = None, debt_to_equity: Optional[float] = None):
+    def save_earnings_history(self, symbol: str, year: int, eps: float, revenue: float, fiscal_end: Optional[str] = None, debt_to_equity: Optional[float] = None, period: str = 'annual'):
         conn = self.get_connection()
         cursor = conn.cursor()
         cursor.execute("""
             INSERT OR REPLACE INTO earnings_history
-            (symbol, year, earnings_per_share, revenue, fiscal_end, debt_to_equity, last_updated)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-        """, (symbol, year, eps, revenue, fiscal_end, debt_to_equity, datetime.now().isoformat()))
+            (symbol, year, earnings_per_share, revenue, fiscal_end, debt_to_equity, period, last_updated)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        """, (symbol, year, eps, revenue, fiscal_end, debt_to_equity, period, datetime.now().isoformat()))
         conn.commit()
         conn.close()
 
@@ -267,7 +267,7 @@ class Database:
         conn = self.get_connection()
         cursor = conn.cursor()
         cursor.execute("""
-            SELECT year, earnings_per_share, revenue, fiscal_end, debt_to_equity, last_updated
+            SELECT year, earnings_per_share, revenue, fiscal_end, debt_to_equity, period, last_updated
             FROM earnings_history
             WHERE symbol = ?
             ORDER BY year DESC
@@ -282,7 +282,8 @@ class Database:
                 'revenue': row[2],
                 'fiscal_end': row[3],
                 'debt_to_equity': row[4],
-                'last_updated': row[5]
+                'period': row[5],
+                'last_updated': row[6]
             }
             for row in rows
         ]
