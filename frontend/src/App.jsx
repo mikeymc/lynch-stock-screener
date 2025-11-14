@@ -11,6 +11,7 @@ import {
   Legend
 } from 'chart.js'
 import LynchAnalysis from './components/LynchAnalysis'
+import ChatInterface from './components/ChatInterface'
 import './App.css'
 
 ChartJS.register(
@@ -795,6 +796,10 @@ function App() {
                               symbol={stock.symbol}
                               stockName={stock.company_name}
                             />
+                          )}
+
+                          {!loadingHistory && historyData && (
+                            <ChatInterface symbol={stock.symbol} />
                           )}
                         </td>
                       </tr>

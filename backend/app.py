@@ -13,6 +13,7 @@ from earnings_analyzer import EarningsAnalyzer
 from lynch_criteria import LynchCriteria
 from schwab_client import SchwabClient
 from lynch_analyst import LynchAnalyst
+from conversation_manager import ConversationManager
 
 app = Flask(__name__)
 CORS(app)
@@ -23,6 +24,7 @@ analyzer = EarningsAnalyzer(db)
 criteria = LynchCriteria(db, analyzer)
 schwab_client = SchwabClient()
 lynch_analyst = LynchAnalyst(db)
+conversation_manager = ConversationManager(db)
 
 
 @app.route('/api/health', methods=['GET'])
@@ -549,6 +551,133 @@ def remove_from_watchlist(symbol):
         return jsonify({'success': True})
     except Exception as e:
         print(f"Error removing {symbol} from watchlist: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+# Chat / RAG Endpoints
+
+@app.route('/api/chat/<symbol>/conversations', methods=['GET'])
+def list_conversations(symbol):
+    """List all conversations for a stock"""
+    try:
+        conversations = conversation_manager.list_conversations(symbol.upper())
+        return jsonify({'conversations': conversations})
+    except Exception as e:
+        print(f"Error listing conversations for {symbol}: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/chat/<symbol>/new', methods=['POST'])
+def create_conversation(symbol):
+    """Create a new conversation for a stock"""
+    try:
+        data = request.get_json() or {}
+        title = data.get('title')
+
+        conversation_id = conversation_manager.create_conversation(symbol.upper(), title)
+
+        return jsonify({
+            'conversation_id': conversation_id,
+            'symbol': symbol.upper(),
+            'title': title
+        })
+    except Exception as e:
+        print(f"Error creating conversation for {symbol}: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/chat/conversation/<int:conversation_id>/messages', methods=['GET'])
+def get_messages(conversation_id):
+    """Get all messages in a conversation"""
+    try:
+        messages = conversation_manager.get_messages(conversation_id)
+        conversation = conversation_manager.get_conversation(conversation_id)
+
+        return jsonify({
+            'conversation': conversation,
+            'messages': messages
+        })
+    except Exception as e:
+        print(f"Error getting messages for conversation {conversation_id}: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/chat/<symbol>/message', methods=['POST'])
+def send_message(symbol):
+    """
+    Send a message and get AI response.
+    Creates a new conversation if none exists, or uses the most recent one.
+    """
+    try:
+        data = request.get_json()
+        if not data or 'message' not in data:
+            return jsonify({'error': 'Message required'}), 400
+
+        user_message = data['message']
+        conversation_id = data.get('conversation_id')
+
+        # Get or create conversation
+        if not conversation_id:
+            conversation_id = conversation_manager.get_or_create_conversation(symbol.upper())
+
+        # Send message and get response
+        result = conversation_manager.send_message(conversation_id, user_message)
+
+        return jsonify({
+            'conversation_id': conversation_id,
+            'user_message': user_message,
+            'assistant_message': result['message'],
+            'sources': result['sources'],
+            'message_id': result['message_id']
+        })
+
+    except Exception as e:
+        print(f"Error sending message: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/chat/<symbol>/message/stream', methods=['POST'])
+def send_message_stream(symbol):
+    """
+    Send a message and stream AI response using Server-Sent Events.
+    Creates a new conversation if none exists, or uses the most recent one.
+    """
+    try:
+        data = request.get_json()
+        if not data or 'message' not in data:
+            return jsonify({'error': 'Message required'}), 400
+
+        user_message = data['message']
+        conversation_id = data.get('conversation_id')
+
+        # Get or create conversation
+        if not conversation_id:
+            conversation_id = conversation_manager.get_or_create_conversation(symbol.upper())
+
+        def generate():
+            """Generate Server-Sent Events"""
+            # Send conversation ID first
+            yield f"data: {json.dumps({'type': 'conversation_id', 'data': conversation_id})}\n\n"
+
+            # Stream response from conversation manager
+            for event in conversation_manager.send_message_stream(conversation_id, user_message):
+                yield f"data: {json.dumps(event)}\n\n"
+
+        return Response(
+            stream_with_context(generate()),
+            mimetype='text/event-stream',
+            headers={
+                'Cache-Control': 'no-cache',
+                'X-Accel-Buffering': 'no'
+            }
+        )
+
+    except Exception as e:
+        print(f"Error streaming message: {e}")
+        import traceback
+        traceback.print_exc()
         return jsonify({'error': str(e)}), 500
 
 
