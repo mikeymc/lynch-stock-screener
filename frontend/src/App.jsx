@@ -1,4 +1,5 @@
 import { useState, useMemo, useEffect } from 'react'
+import { Routes, Route, useNavigate } from 'react-router-dom'
 import { Line } from 'react-chartjs-2'
 import {
   Chart as ChartJS,
@@ -12,6 +13,7 @@ import {
 } from 'chart.js'
 import LynchAnalysis from './components/LynchAnalysis'
 import ChatInterface from './components/ChatInterface'
+import StockDetail from './pages/StockDetail'
 import './App.css'
 
 ChartJS.register(
@@ -110,7 +112,8 @@ function FilingSections({ sections }) {
   )
 }
 
-function App() {
+function StockListView() {
+  const navigate = useNavigate()
   const [stocks, setStocks] = useState([])
   const [loading, setLoading] = useState(false)
   const [progress, setProgress] = useState('')
@@ -122,13 +125,6 @@ function App() {
   const [currentPage, setCurrentPage] = useState(1)
   const [searchQuery, setSearchQuery] = useState('')
   const itemsPerPage = 100
-  const [expandedSymbol, setExpandedSymbol] = useState(null)
-  const [historyData, setHistoryData] = useState(null)
-  const [loadingHistory, setLoadingHistory] = useState(false)
-  const [filingsData, setFilingsData] = useState(null)
-  const [loadingFilings, setLoadingFilings] = useState(false)
-  const [sectionsData, setSectionsData] = useState(null)
-  const [loadingSections, setLoadingSections] = useState(false)
   const [loadingSession, setLoadingSession] = useState(true)
   const [watchlist, setWatchlist] = useState(new Set())
 
@@ -354,70 +350,8 @@ function App() {
     }
   }
 
-  const fetchHistoryData = async (symbol) => {
-    setLoadingHistory(true)
-    try {
-      const response = await fetch(`${API_BASE}/stock/${symbol}/history`)
-      if (!response.ok) {
-        throw new Error(`Failed to fetch history for ${symbol}`)
-      }
-      const data = await response.json()
-      setHistoryData(data)
-    } catch (err) {
-      console.error('Error fetching history:', err)
-      setError(`Failed to load history: ${err.message}`)
-      setHistoryData(null)
-    } finally {
-      setLoadingHistory(false)
-    }
-  }
-
-  const fetchFilingsData = async (symbol) => {
-    setLoadingFilings(true)
-    try {
-      const response = await fetch(`${API_BASE}/stock/${symbol}/filings`)
-      if (!response.ok) {
-        throw new Error(`Failed to fetch filings for ${symbol}`)
-      }
-      const data = await response.json()
-      setFilingsData(data)
-    } catch (err) {
-      console.error('Error fetching filings:', err)
-      setFilingsData(null)
-    } finally {
-      setLoadingFilings(false)
-    }
-  }
-
-  const fetchSectionsData = async (symbol) => {
-    setLoadingSections(true)
-    try {
-      const response = await fetch(`${API_BASE}/stock/${symbol}/sections`)
-      if (!response.ok) {
-        throw new Error(`Failed to fetch sections for ${symbol}`)
-      }
-      const data = await response.json()
-      setSectionsData(data.sections || null)
-    } catch (err) {
-      console.error('Error fetching sections:', err)
-      setSectionsData(null)
-    } finally {
-      setLoadingSections(false)
-    }
-  }
-
-  const toggleRowExpansion = (symbol) => {
-    if (expandedSymbol === symbol) {
-      setExpandedSymbol(null)
-      setHistoryData(null)
-      setFilingsData(null)
-      setSectionsData(null)
-    } else {
-      setExpandedSymbol(symbol)
-      fetchHistoryData(symbol)
-      fetchFilingsData(symbol)
-      fetchSectionsData(symbol)
-    }
+  const handleStockClick = (symbol) => {
+    navigate(`/stock/${symbol}`)
   }
 
   return (
@@ -524,11 +458,10 @@ function App() {
               </thead>
               <tbody>
                 {paginatedStocks.map(stock => (
-                  <>
                     <tr
                       key={stock.symbol}
-                      onClick={() => toggleRowExpansion(stock.symbol)}
-                      className={`stock-row ${expandedSymbol === stock.symbol ? 'expanded' : ''}`}
+                      onClick={() => handleStockClick(stock.symbol)}
+                      className="stock-row"
                     >
                       <td className="watchlist-cell" onClick={(e) => { e.stopPropagation(); toggleWatchlist(stock.symbol); }}>
                         <span className={`watchlist-star ${watchlist.has(stock.symbol) ? 'checked' : ''}`}>
@@ -574,237 +507,6 @@ function App() {
                         {stock.overall_status}
                       </td>
                     </tr>
-                    {expandedSymbol === stock.symbol && (
-                      <tr key={`${stock.symbol}-details`} className="expanded-row">
-                        <td colSpan="19">
-                          <div className="charts-grid">
-                            {loadingHistory && <div className="loading">Loading historical data...</div>}
-                            {!loadingHistory && historyData && (
-                              <>
-                                <div className="chart-container">
-                                  <Line
-                                    data={{
-                                      labels: historyData.years,
-                                      datasets: [
-                                        {
-                                          label: 'Revenue (Billions)',
-                                          data: historyData.revenue.map(r => r / 1e9),
-                                          borderColor: 'rgb(75, 192, 192)',
-                                          backgroundColor: 'rgba(75, 192, 192, 0.2)',
-                                        }
-                                      ]
-                                    }}
-                                    options={{
-                                      responsive: true,
-                                      maintainAspectRatio: false,
-                                      plugins: {
-                                        title: {
-                                          display: true,
-                                          text: 'Revenue',
-                                          font: { size: 14 }
-                                        },
-                                        legend: {
-                                          display: false
-                                        }
-                                      },
-                                      scales: {
-                                        y: {
-                                          title: {
-                                            display: true,
-                                            text: 'Billions ($)'
-                                          }
-                                        }
-                                      }
-                                    }}
-                                  />
-                                </div>
-
-                                <div className="chart-container">
-                                  <Line
-                                    data={{
-                                      labels: historyData.years,
-                                      datasets: [
-                                        {
-                                          label: 'EPS',
-                                          data: historyData.eps,
-                                          borderColor: 'rgb(255, 99, 132)',
-                                          backgroundColor: 'rgba(255, 99, 132, 0.2)',
-                                          pointBackgroundColor: historyData.eps.map(eps => eps < 0 ? 'rgb(239, 68, 68)' : 'rgb(255, 99, 132)'),
-                                          pointBorderColor: historyData.eps.map(eps => eps < 0 ? 'rgb(239, 68, 68)' : 'rgb(255, 99, 132)'),
-                                          pointRadius: 4,
-                                          segment: {
-                                            borderColor: ctx => {
-                                              const value = ctx.p0.parsed.y;
-                                              return value < 0 ? 'rgb(239, 68, 68)' : 'rgb(255, 99, 132)';
-                                            }
-                                          }
-                                        }
-                                      ]
-                                    }}
-                                    options={{
-                                      responsive: true,
-                                      maintainAspectRatio: false,
-                                      plugins: {
-                                        title: {
-                                          display: true,
-                                          text: 'Earnings Per Share',
-                                          font: { size: 14 }
-                                        },
-                                        legend: {
-                                          display: false
-                                        }
-                                      },
-                                      scales: {
-                                        y: {
-                                          title: {
-                                            display: true,
-                                            text: 'EPS ($)'
-                                          },
-                                          grid: {
-                                            color: (context) => {
-                                              if (context.tick.value === 0) {
-                                                return 'rgba(255, 255, 255, 0.3)';
-                                              }
-                                              return 'rgba(255, 255, 255, 0.1)';
-                                            },
-                                            lineWidth: (context) => {
-                                              if (context.tick.value === 0) {
-                                                return 2;
-                                              }
-                                              return 1;
-                                            }
-                                          }
-                                        }
-                                      }
-                                    }}
-                                  />
-                                </div>
-
-                                <div className="chart-container">
-                                  <Line
-                                    data={{
-                                      labels: historyData.years,
-                                      datasets: [
-                                        {
-                                          label: 'P/E Ratio',
-                                          data: historyData.pe_ratio,
-                                          borderColor: 'rgb(153, 102, 255)',
-                                          backgroundColor: 'rgba(153, 102, 255, 0.2)',
-                                        }
-                                      ]
-                                    }}
-                                    options={{
-                                      responsive: true,
-                                      maintainAspectRatio: false,
-                                      plugins: {
-                                        title: {
-                                          display: true,
-                                          text: 'Price-to-Earnings Ratio',
-                                          font: { size: 14 }
-                                        },
-                                        legend: {
-                                          display: false
-                                        }
-                                      },
-                                      scales: {
-                                        y: {
-                                          title: {
-                                            display: true,
-                                            text: 'P/E Ratio'
-                                          }
-                                        }
-                                      }
-                                    }}
-                                  />
-                                </div>
-
-                                <div className="chart-container">
-                                  <Line
-                                    data={{
-                                      labels: historyData.years,
-                                      datasets: [
-                                        {
-                                          label: 'Debt-to-Equity',
-                                          data: historyData.debt_to_equity,
-                                          borderColor: 'rgb(255, 159, 64)',
-                                          backgroundColor: 'rgba(255, 159, 64, 0.2)',
-                                        }
-                                      ]
-                                    }}
-                                    options={{
-                                      responsive: true,
-                                      maintainAspectRatio: false,
-                                      plugins: {
-                                        title: {
-                                          display: true,
-                                          text: 'Debt-to-Equity Ratio',
-                                          font: { size: 14 }
-                                        },
-                                        legend: {
-                                          display: false
-                                        }
-                                      },
-                                      scales: {
-                                        y: {
-                                          title: {
-                                            display: true,
-                                            text: 'D/E Ratio'
-                                          }
-                                        }
-                                      }
-                                    }}
-                                  />
-                                </div>
-                              </>
-                            )}
-                          </div>
-
-                          {!loadingFilings && filingsData && (Object.keys(filingsData).length > 0) && (
-                            <div className="filings-container">
-                              <h3>SEC Filings</h3>
-                              <div className="filings-links">
-                                {filingsData['10-K'] && (
-                                  <div className="filing-item">
-                                    <a href={filingsData['10-K'].url} target="_blank" rel="noopener noreferrer">
-                                      📄 10-K Annual Report (Filed: {filingsData['10-K'].filed_date})
-                                    </a>
-                                  </div>
-                                )}
-                                {filingsData['10-Q']?.map((filing, idx) => (
-                                  <div key={idx} className="filing-item">
-                                    <a href={filing.url} target="_blank" rel="noopener noreferrer">
-                                      📄 10-Q Quarterly Report (Filed: {filing.filed_date})
-                                    </a>
-                                  </div>
-                                ))}
-                              </div>
-                            </div>
-                          )}
-
-                          {loadingSections && (
-                            <div className="sections-container">
-                              <div className="sections-loading">Loading filing sections...</div>
-                            </div>
-                          )}
-
-                          {!loadingSections && sectionsData && Object.keys(sectionsData).length > 0 && (
-                            <FilingSections sections={sectionsData} />
-                          )}
-
-                          {!loadingHistory && historyData && (
-                            <LynchAnalysis
-                              symbol={stock.symbol}
-                              stockName={stock.company_name}
-                            />
-                          )}
-
-                          {!loadingHistory && historyData && (
-                            <ChatInterface symbol={stock.symbol} />
-                          )}
-                        </td>
-                      </tr>
-                    )}
-                  </>
                 ))}
               </tbody>
           </table>
@@ -856,6 +558,15 @@ function App() {
         </div>
       )}
     </div>
+  )
+}
+
+function App() {
+  return (
+    <Routes>
+      <Route path="/" element={<StockListView />} />
+      <Route path="/stock/:symbol" element={<StockDetail />} />
+    </Routes>
   )
 }
 

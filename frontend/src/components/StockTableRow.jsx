@@ -1,0 +1,84 @@
+// ABOUTME: Reusable stock table row component displaying all stock metrics
+// ABOUTME: Supports both clickable (in table view) and read-only (in detail view) modes
+
+import StatusBar from './StatusBar'
+
+function getStatusColor(status) {
+  switch (status) {
+    case 'PASS':
+      return '#90EE90' // light green
+    case 'CLOSE':
+      return '#FFD700' // gold/yellow
+    case 'FAIL':
+      return '#FFB6C1' // light red/pink
+    default:
+      return '#FFFFFF' // white
+  }
+}
+
+export default function StockTableRow({ stock, watchlist, onToggleWatchlist, onClick, readOnly = false }) {
+  const handleClick = () => {
+    if (!readOnly && onClick) {
+      onClick(stock.symbol)
+    }
+  }
+
+  const handleWatchlistClick = (e) => {
+    e.stopPropagation()
+    if (onToggleWatchlist) {
+      onToggleWatchlist(stock.symbol)
+    }
+  }
+
+  const getCursorStyle = () => {
+    return readOnly ? {} : { cursor: 'pointer' }
+  }
+
+  return (
+    <tr onClick={handleClick} style={getCursorStyle()} className="stock-row">
+      <td className="watchlist-cell" onClick={handleWatchlistClick}>
+        <span className={`watchlist-star ${watchlist && watchlist.has(stock.symbol) ? 'checked' : ''}`}>
+          ⭐
+        </span>
+      </td>
+      <td><strong>{stock.symbol}</strong></td>
+      <td>{stock.company_name || 'N/A'}</td>
+      <td>{stock.country || 'N/A'}</td>
+      <td>{typeof stock.market_cap === 'number' ? `$${(stock.market_cap / 1e9).toFixed(2)}B` : 'N/A'}</td>
+      <td>{stock.sector || 'N/A'}</td>
+      <td>{typeof stock.ipo_year === 'number' ? new Date().getFullYear() - stock.ipo_year : 'N/A'}</td>
+      <td>{typeof stock.price === 'number' ? `$${stock.price.toFixed(2)}` : 'N/A'}</td>
+      <td>{typeof stock.peg_ratio === 'number' ? stock.peg_ratio.toFixed(2) : 'N/A'}</td>
+      <td>{typeof stock.pe_ratio === 'number' ? stock.pe_ratio.toFixed(2) : 'N/A'}</td>
+      <td>{typeof stock.debt_to_equity === 'number' ? stock.debt_to_equity.toFixed(2) : 'N/A'}</td>
+      <td>{typeof stock.institutional_ownership === 'number' ? `${(stock.institutional_ownership * 100).toFixed(1)}%` : 'N/A'}</td>
+      <td>{typeof stock.dividend_yield === 'number' ? `${stock.dividend_yield.toFixed(1)}%` : 'N/A'}</td>
+      <td>{typeof stock.earnings_cagr === 'number' ? `${stock.earnings_cagr.toFixed(1)}%` : 'N/A'}</td>
+      <td>{typeof stock.revenue_cagr === 'number' ? `${stock.revenue_cagr.toFixed(1)}%` : 'N/A'}</td>
+      <td>
+        <StatusBar
+          status={stock.peg_status}
+          score={stock.peg_score || 0}
+          value={stock.peg_ratio}
+        />
+      </td>
+      <td>
+        <StatusBar
+          status={stock.debt_status}
+          score={stock.debt_score || 0}
+          value={stock.debt_to_equity}
+        />
+      </td>
+      <td>
+        <StatusBar
+          status={stock.institutional_ownership_status}
+          score={stock.institutional_ownership_score || 0}
+          value={stock.institutional_ownership}
+        />
+      </td>
+      <td style={{ backgroundColor: getStatusColor(stock.overall_status), color: '#000', fontWeight: 'bold' }}>
+        {stock.overall_status}
+      </td>
+    </tr>
+  )
+}
