@@ -1074,67 +1074,22 @@ td strong {
   padding: 20px 0;
 }
 
-/* Analysis & Chat Combined Tab */
-.analysis-chat-container {
+/* Unified Analysis & Chat Flow */
+.unified-analysis-chat {
   display: flex;
   flex-direction: column;
-  gap: 1rem;
 }
 
-.analysis-panel {
-  background-color: #1e293b;
-  border: 1px solid #475569;
-  border-radius: 0.5rem;
-  overflow: hidden;
-  transition: all 0.3s ease;
+.unified-analysis-chat .lynch-analysis-container {
+  margin-bottom: 0;
+  border-bottom-left-radius: 0;
+  border-bottom-right-radius: 0;
+  border-bottom: none;
 }
 
-.analysis-panel.collapsed {
-  max-height: 60px;
-}
-
-.analysis-panel.expanded {
-  max-height: none;
-}
-
-.analysis-toggle-button {
-  width: 100%;
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-  padding: 1rem 1.5rem;
-  background-color: #0f172a;
-  color: #e2e8f0;
-  border: none;
-  cursor: pointer;
-  font-size: 1rem;
-  font-weight: 600;
-  text-align: left;
-  transition: background-color 0.2s;
-}
-
-.analysis-toggle-button:hover {
-  background-color: #1e293b;
-}
-
-.analysis-loaded-indicator {
-  margin-left: auto;
-  color: #4ade80;
-  font-size: 1.25rem;
-}
-
-.analysis-panel-content {
-  border-top: 1px solid #475569;
-}
-
-.chat-panel {
-  transition: all 0.3s ease;
-}
-
-.chat-panel.full-height {
-  flex: 1;
-}
-
-.chat-panel.with-analysis {
-  flex: 1;
+.unified-analysis-chat .chat-container {
+  border-top-left-radius: 0;
+  border-top-right-radius: 0;
+  margin-top: 0;
+  border-top: 2px solid #475569;
 }
