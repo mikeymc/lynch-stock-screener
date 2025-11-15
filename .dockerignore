@@ -1,0 +1,67 @@
+# Git
+.git
+.gitignore
+.gitattributes
+
+# Python
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.so
+*.egg
+*.egg-info
+dist
+build
+.pytest_cache
+.coverage
+htmlcov
+
+# Virtual environments
+venv
+env
+ENV
+.venv
+
+# Node.js
+frontend/node_modules
+frontend/dist
+frontend/.vite
+node_modules
+
+# IDE
+.vscode
+.idea
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Local databases and tokens
+*.db
+backend/stocks.db
+backend/tokens
+
+# Environment files (secrets should be set via fly secrets)
+.env
+.env.local
+.env.*.local
+
+# Fly.io
+.fly
+
+# Documentation
+README.md
+docs
+
+# CI/CD
+.github
+
+# Test files
+backend/tests
+*test*.py
+
+# Logs
+*.log
+logs

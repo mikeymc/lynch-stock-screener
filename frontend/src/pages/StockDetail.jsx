@@ -8,8 +8,7 @@ import StockTableRow from '../components/StockTableRow'
 import StockCharts from '../components/StockCharts'
 import StockReports from '../components/StockReports'
 import AnalysisChat from '../components/AnalysisChat'
-
-const API_BASE = 'http://localhost:5001/api'
+import { API_BASE } from '../config'
 
 export default function StockDetail() {
   const { symbol } = useParams()

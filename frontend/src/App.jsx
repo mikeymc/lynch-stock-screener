@@ -15,6 +15,7 @@ import LynchAnalysis from './components/LynchAnalysis'
 import ChatInterface from './components/ChatInterface'
 import StockDetail from './pages/StockDetail'
 import './App.css'
+import { API_BASE } from './config'
 
 ChartJS.register(
   CategoryScale,
@@ -25,8 +26,6 @@ ChartJS.register(
   Tooltip,
   Legend
 )
-
-const API_BASE = 'http://localhost:5001/api'
 
 function StatusBar({ status, score, value }) {
   const displayValue = typeof value === 'number' ? value.toFixed(2) : 'N/A'

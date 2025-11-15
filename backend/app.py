@@ -1,11 +1,12 @@
 # ABOUTME: Flask REST API for Lynch stock screener
 # ABOUTME: Provides endpoints for screening stocks and retrieving stock analysis
 
-from flask import Flask, jsonify, request, Response, stream_with_context
+from flask import Flask, jsonify, request, Response, stream_with_context, send_from_directory
 from flask_cors import CORS
 import json
 import time
 import yfinance as yf
+import os
 from datetime import datetime
 from database import Database
 from data_fetcher import DataFetcher
@@ -15,10 +16,18 @@ from schwab_client import SchwabClient
 from lynch_analyst import LynchAnalyst
 from conversation_manager import ConversationManager
 
-app = Flask(__name__)
+# Configure static file serving for production
+static_folder = os.path.join(os.path.dirname(__file__), 'static')
+if os.path.exists(static_folder):
+    app = Flask(__name__, static_folder='static', static_url_path='')
+else:
+    app = Flask(__name__)
+
 CORS(app)
 
-db = Database("stocks.db")
+# Use DATABASE_PATH environment variable if set, otherwise default to stocks.db
+database_path = os.environ.get('DATABASE_PATH', 'stocks.db')
+db = Database(database_path)
 fetcher = DataFetcher(db)
 analyzer = EarningsAnalyzer(db)
 criteria = LynchCriteria(db, analyzer)
@@ -680,6 +689,29 @@ def send_message_stream(symbol):
         import traceback
         traceback.print_exc()
         return jsonify({'error': str(e)}), 500
+
+
+@app.route('/', defaults={'path': ''})
+@app.route('/<path:path>')
+def serve_frontend(path):
+    """
+    Serve the React frontend.
+    For API routes, return 404. For all other routes, serve index.html (SPA routing).
+    """
+    # API routes should not be handled here
+    if path.startswith('api/'):
+        return jsonify({'error': 'Not found'}), 404
+
+    # If static folder doesn't exist, we're in development mode
+    if not os.path.exists(static_folder):
+        return jsonify({'error': 'Frontend not built. Run in development mode or build frontend first.'}), 503
+
+    # Try to serve the requested file
+    if path and os.path.exists(os.path.join(static_folder, path)):
+        return send_from_directory(static_folder, path)
+
+    # Fall back to index.html for SPA routing
+    return send_from_directory(static_folder, 'index.html')
 
 
 if __name__ == '__main__':

@@ -1,6 +1,5 @@
 import { useState } from 'react'
-
-const API_BASE = 'http://localhost:5001/api'
+import { API_BASE } from '../config'
 
 function LynchAnalysis({ symbol, stockName, onAnalysisLoaded }) {
   const [analysis, setAnalysis] = useState(null)
