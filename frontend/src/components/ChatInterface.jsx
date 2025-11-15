@@ -2,8 +2,7 @@
 // ABOUTME: Displays message history and handles user input with streaming API integration
 
 import { useState, useEffect, useRef } from 'react'
-
-const API_BASE = 'http://localhost:5001/api'
+import { API_BASE } from '../config'
 
 function SourceCitation({ sources }) {
   const [expanded, setExpanded] = useState(false)
