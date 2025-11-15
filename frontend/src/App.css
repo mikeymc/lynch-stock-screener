@@ -386,6 +386,10 @@ td strong {
   border: 1px solid #334155;
 }
 
+.chart-container-wide {
+  grid-column: span 2;
+}
+
 .filings-container {
   background-color: #1e293b;
   border-radius: 0.5rem;

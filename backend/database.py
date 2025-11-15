@@ -60,6 +60,18 @@ class Database:
         """)
 
         cursor.execute("""
+            CREATE TABLE IF NOT EXISTS dividend_history (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                symbol TEXT,
+                year INTEGER,
+                dividend_per_share REAL,
+                last_updated TIMESTAMP,
+                FOREIGN KEY (symbol) REFERENCES stocks(symbol),
+                UNIQUE(symbol, year)
+            )
+        """)
+
+        cursor.execute("""
             CREATE TABLE IF NOT EXISTS lynch_analyses (
                 symbol TEXT PRIMARY KEY,
                 analysis_text TEXT,
@@ -317,6 +329,38 @@ class Database:
                 'debt_to_equity': row[4],
                 'period': row[5],
                 'last_updated': row[6]
+            }
+            for row in rows
+        ]
+
+    def save_dividend_history(self, symbol: str, year: int, dividend_per_share: float):
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        cursor.execute("""
+            INSERT OR REPLACE INTO dividend_history
+            (symbol, year, dividend_per_share, last_updated)
+            VALUES (?, ?, ?, ?)
+        """, (symbol, year, dividend_per_share, datetime.now().isoformat()))
+        conn.commit()
+        conn.close()
+
+    def get_dividend_history(self, symbol: str) -> List[Dict[str, Any]]:
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT year, dividend_per_share, last_updated
+            FROM dividend_history
+            WHERE symbol = ?
+            ORDER BY year DESC
+        """, (symbol,))
+        rows = cursor.fetchall()
+        conn.close()
+
+        return [
+            {
+                'year': row[0],
+                'dividend_per_share': row[1],
+                'last_updated': row[2]
             }
             for row in rows
         ]

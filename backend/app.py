@@ -169,7 +169,7 @@ def get_latest_session():
 
 @app.route('/api/stock/<symbol>/history', methods=['GET'])
 def get_stock_history(symbol):
-    """Get historical earnings, revenue, price, and P/E ratio data for charting"""
+    """Get historical earnings, revenue, price, P/E ratio, and dividend data for charting"""
 
     # Get earnings history from database
     earnings_history = db.get_earnings_history(symbol.upper())
@@ -177,8 +177,14 @@ def get_stock_history(symbol):
     if not earnings_history:
         return jsonify({'error': f'No historical data found for {symbol}'}), 404
 
+    # Get dividend history from database
+    dividend_history = db.get_dividend_history(symbol.upper())
+
     # Sort by year ascending for charting
     earnings_history.sort(key=lambda x: x['year'])
+
+    # Create a mapping of year to dividend for easy lookup
+    dividend_by_year = {entry['year']: entry['dividend_per_share'] for entry in dividend_history}
 
     years = []
     eps_values = []
@@ -186,6 +192,7 @@ def get_stock_history(symbol):
     pe_ratios = []
     prices = []
     debt_to_equity_values = []
+    dividend_values = []
 
     # Get yfinance ticker for fallback
     ticker = yf.Ticker(symbol.upper())
@@ -201,6 +208,7 @@ def get_stock_history(symbol):
         eps_values.append(eps)
         revenue_values.append(revenue)
         debt_to_equity_values.append(debt_to_equity)
+        dividend_values.append(dividend_by_year.get(year))
 
         price = None
 
@@ -262,7 +270,8 @@ def get_stock_history(symbol):
         'revenue': revenue_values,
         'price': prices,
         'pe_ratio': pe_ratios,
-        'debt_to_equity': debt_to_equity_values
+        'debt_to_equity': debt_to_equity_values,
+        'dividends': dividend_values
     })
 
 

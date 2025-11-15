@@ -101,6 +101,9 @@ class DataFetcher:
                     logger.info(f"[{symbol}] EDGAR fetch failed. Using yfinance")
                 self._fetch_and_store_earnings(symbol, stock)
 
+            # Fetch and store dividend history from yfinance
+            self._fetch_and_store_dividends(symbol, stock)
+
             return self.db.get_stock_metrics(symbol)
 
         except Exception as e:
@@ -295,6 +298,35 @@ class DataFetcher:
 
         except Exception as e:
             logger.error(f"[{symbol}] Error fetching earnings from yfinance: {type(e).__name__}: {e}")
+            import traceback
+            traceback.print_exc()
+
+    def _fetch_and_store_dividends(self, symbol: str, stock):
+        """Fetch and store dividend history from yfinance"""
+        try:
+            # Get dividend history
+            dividends = stock.dividends
+
+            if dividends is None or dividends.empty:
+                logger.info(f"[{symbol}] No dividend history available")
+                return
+
+            # Group by year and sum dividends for each year
+            dividend_by_year = {}
+            for date, dividend_amount in dividends.items():
+                year = date.year
+                if year not in dividend_by_year:
+                    dividend_by_year[year] = 0
+                dividend_by_year[year] += dividend_amount
+
+            # Store in database
+            for year, total_dividend in dividend_by_year.items():
+                self.db.save_dividend_history(symbol, year, float(total_dividend))
+
+            logger.info(f"[{symbol}] Stored {len(dividend_by_year)} years of dividend history")
+
+        except Exception as e:
+            logger.error(f"[{symbol}] Error fetching dividends from yfinance: {type(e).__name__}: {e}")
             import traceback
             traceback.print_exc()
 
