@@ -188,6 +188,48 @@ export default function StockCharts({ historyData, loading }) {
           }}
         />
       </div>
+
+      {historyData.dividends && historyData.dividends.some(d => d !== null) && (
+        <div className="chart-container chart-container-wide">
+          <Line
+            data={{
+              labels: historyData.years,
+              datasets: [
+                {
+                  label: 'Dividend per Share',
+                  data: historyData.dividends,
+                  borderColor: 'rgb(34, 197, 94)',
+                  backgroundColor: 'rgba(34, 197, 94, 0.2)',
+                  spanGaps: true,
+                }
+              ]
+            }}
+            options={{
+              responsive: true,
+              maintainAspectRatio: false,
+              plugins: {
+                title: {
+                  display: true,
+                  text: 'Dividend per Share',
+                  font: { size: 14 }
+                },
+                legend: {
+                  display: false
+                }
+              },
+              scales: {
+                y: {
+                  title: {
+                    display: true,
+                    text: 'Dividend ($)'
+                  },
+                  beginAtZero: true
+                }
+              }
+            }}
+          />
+        </div>
+      )}
     </div>
   )
 }

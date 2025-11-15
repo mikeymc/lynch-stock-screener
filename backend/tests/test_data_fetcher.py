@@ -643,3 +643,190 @@ def test_hybrid_falls_back_when_insufficient_edgar_years(mock_ticker, test_db):
         # Should use yfinance (4 years) instead of EDGAR (3 years)
         earnings = test_db.get_earnings_history("TEST")
         assert len(earnings) >= 4  # yfinance should provide 4 years
+
+
+# Dividend History Tests
+
+@patch('data_fetcher.yf.Ticker')
+def test_fetch_and_store_dividends(mock_ticker, fetcher, test_db):
+    """Test that dividend history is fetched and stored correctly"""
+    from edgar_fetcher import EdgarFetcher
+    import pandas as pd
+
+    with patch.object(EdgarFetcher, 'fetch_stock_fundamentals', return_value=None):
+        mock_stock = MagicMock()
+        mock_stock.info = {
+            'symbol': 'AAPL',
+            'longName': 'Apple Inc.',
+            'exchange': 'NASDAQ',
+            'sector': 'Technology',
+            'currentPrice': 180.50,
+            'trailingPE': 29.5,
+            'marketCap': 2800000000000,
+            'heldPercentInstitutions': 0.60,
+            'totalRevenue': 383000000000
+        }
+
+        # Mock dividend data - quarterly dividends for multiple years
+        dividend_dates_and_values = {
+            pd.Timestamp('2020-02-07'): 0.1925,
+            pd.Timestamp('2020-05-08'): 0.205,
+            pd.Timestamp('2020-08-07'): 0.205,
+            pd.Timestamp('2020-11-06'): 0.205,
+            pd.Timestamp('2021-02-05'): 0.205,
+            pd.Timestamp('2021-05-07'): 0.22,
+            pd.Timestamp('2021-08-06'): 0.22,
+            pd.Timestamp('2021-11-05'): 0.22,
+            pd.Timestamp('2022-02-04'): 0.22,
+            pd.Timestamp('2022-05-06'): 0.23,
+            pd.Timestamp('2022-08-05'): 0.23,
+            pd.Timestamp('2022-11-04'): 0.23,
+            pd.Timestamp('2023-02-10'): 0.23,
+            pd.Timestamp('2023-05-12'): 0.24,
+            pd.Timestamp('2023-08-11'): 0.24,
+            pd.Timestamp('2023-11-10'): 0.24
+        }
+
+        mock_dividends = pd.Series(dividend_dates_and_values)
+        mock_stock.dividends = mock_dividends
+        mock_stock.financials = MagicMock()
+        mock_stock.financials.empty = True
+        mock_ticker.return_value = mock_stock
+
+        result = fetcher.fetch_stock_data("AAPL")
+
+        assert result is not None
+
+        # Verify dividends were stored
+        dividend_history = test_db.get_dividend_history("AAPL")
+        assert len(dividend_history) == 4  # 4 years
+
+        # Verify yearly aggregation
+        # 2020: 0.1925 + 0.205 + 0.205 + 0.205 = 0.8075
+        # 2021: 0.205 + 0.22 + 0.22 + 0.22 = 0.865
+        # 2022: 0.22 + 0.23 + 0.23 + 0.23 = 0.91
+        # 2023: 0.23 + 0.24 + 0.24 + 0.24 = 0.95
+        year_2023 = next(d for d in dividend_history if d['year'] == 2023)
+        assert abs(year_2023['dividend_per_share'] - 0.95) < 0.01
+
+        year_2022 = next(d for d in dividend_history if d['year'] == 2022)
+        assert abs(year_2022['dividend_per_share'] - 0.91) < 0.01
+
+
+@patch('data_fetcher.yf.Ticker')
+def test_fetch_stock_with_no_dividends(mock_ticker, fetcher, test_db):
+    """Test that stocks without dividends are handled correctly"""
+    from edgar_fetcher import EdgarFetcher
+    import pandas as pd
+
+    with patch.object(EdgarFetcher, 'fetch_stock_fundamentals', return_value=None):
+        mock_stock = MagicMock()
+        mock_stock.info = {
+            'symbol': 'TSLA',
+            'longName': 'Tesla Inc.',
+            'exchange': 'NASDAQ',
+            'sector': 'Automotive',
+            'currentPrice': 250.50,
+            'trailingPE': 45.2,
+            'marketCap': 800000000000,
+            'heldPercentInstitutions': 0.40,
+            'totalRevenue': 81000000000
+        }
+
+        # Mock empty dividends series (growth stock)
+        mock_stock.dividends = pd.Series([])
+        mock_stock.financials = MagicMock()
+        mock_stock.financials.empty = True
+        mock_ticker.return_value = mock_stock
+
+        result = fetcher.fetch_stock_data("TSLA")
+
+        assert result is not None
+
+        # Verify no dividend history was stored
+        dividend_history = test_db.get_dividend_history("TSLA")
+        assert len(dividend_history) == 0
+
+
+@patch('data_fetcher.yf.Ticker')
+def test_fetch_dividends_aggregates_by_year(mock_ticker, fetcher, test_db):
+    """Test that multiple dividends in a year are summed correctly"""
+    from edgar_fetcher import EdgarFetcher
+    import pandas as pd
+
+    with patch.object(EdgarFetcher, 'fetch_stock_fundamentals', return_value=None):
+        mock_stock = MagicMock()
+        mock_stock.info = {
+            'symbol': 'JNJ',
+            'longName': 'Johnson & Johnson',
+            'exchange': 'NYSE',
+            'sector': 'Healthcare',
+            'currentPrice': 155.00,
+            'trailingPE': 24.5,
+            'marketCap': 400000000000,
+            'heldPercentInstitutions': 0.70,
+            'totalRevenue': 93000000000
+        }
+
+        # Four quarterly dividends in 2023
+        dividend_dates_and_values = {
+            pd.Timestamp('2023-03-07'): 1.13,
+            pd.Timestamp('2023-06-06'): 1.13,
+            pd.Timestamp('2023-09-05'): 1.13,
+            pd.Timestamp('2023-12-05'): 1.19
+        }
+
+        mock_dividends = pd.Series(dividend_dates_and_values)
+        mock_stock.dividends = mock_dividends
+        mock_stock.financials = MagicMock()
+        mock_stock.financials.empty = True
+        mock_ticker.return_value = mock_stock
+
+        result = fetcher.fetch_stock_data("JNJ")
+
+        assert result is not None
+
+        # Verify dividends were aggregated for the year
+        dividend_history = test_db.get_dividend_history("JNJ")
+        assert len(dividend_history) == 1
+        assert dividend_history[0]['year'] == 2023
+        # 1.13 + 1.13 + 1.13 + 1.19 = 4.58
+        assert abs(dividend_history[0]['dividend_per_share'] - 4.58) < 0.01
+
+
+@patch('data_fetcher.yf.Ticker')
+def test_fetch_dividends_handles_errors_gracefully(mock_ticker, fetcher, test_db):
+    """Test that dividend fetch errors don't break stock data fetch"""
+    from edgar_fetcher import EdgarFetcher
+
+    with patch.object(EdgarFetcher, 'fetch_stock_fundamentals', return_value=None):
+        mock_stock = MagicMock()
+        mock_stock.info = {
+            'symbol': 'TEST',
+            'longName': 'Test Corp.',
+            'exchange': 'NASDAQ',
+            'sector': 'Technology',
+            'currentPrice': 50.0,
+            'trailingPE': 15.0,
+            'marketCap': 500000000000,
+            'heldPercentInstitutions': 0.40,
+            'totalRevenue': 50000000000
+        }
+
+        # Mock dividends to raise an exception
+        mock_stock.dividends = MagicMock()
+        mock_stock.dividends.__iter__ = MagicMock(side_effect=Exception("API Error"))
+        mock_stock.financials = MagicMock()
+        mock_stock.financials.empty = True
+        mock_ticker.return_value = mock_stock
+
+        # Should not raise exception - should handle gracefully
+        result = fetcher.fetch_stock_data("TEST")
+
+        # Stock data should still be fetched successfully
+        assert result is not None
+        assert result['symbol'] == 'TEST'
+
+        # Dividend history should be empty due to error
+        dividend_history = test_db.get_dividend_history("TEST")
+        assert len(dividend_history) == 0

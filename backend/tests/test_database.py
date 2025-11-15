@@ -468,3 +468,76 @@ def test_cleanup_cascades_to_results(test_db):
     conn.close()
 
     assert count == 0
+
+
+# Dividend History Tests
+
+def test_dividend_history_table_exists(test_db):
+    """Test that dividend_history table is created"""
+    conn = test_db.get_connection()
+    cursor = conn.cursor()
+
+    cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='dividend_history'")
+    assert cursor.fetchone() is not None
+
+    conn.close()
+
+
+def test_save_and_retrieve_dividend_history(test_db):
+    """Test saving and retrieving dividend history"""
+    test_db.save_stock_basic("AAPL", "Apple Inc.", "NASDAQ", "Technology")
+
+    # Save dividend history for multiple years
+    test_db.save_dividend_history("AAPL", 2020, 0.82)
+    test_db.save_dividend_history("AAPL", 2021, 0.85)
+    test_db.save_dividend_history("AAPL", 2022, 0.90)
+    test_db.save_dividend_history("AAPL", 2023, 0.94)
+
+    history = test_db.get_dividend_history("AAPL")
+
+    assert len(history) == 4
+    # Should be in descending order by year
+    assert history[0]['year'] == 2023
+    assert history[0]['dividend_per_share'] == 0.94
+    assert history[3]['year'] == 2020
+    assert history[3]['dividend_per_share'] == 0.82
+
+
+def test_get_dividend_history_empty(test_db):
+    """Test getting dividend history for stock with no dividends"""
+    test_db.save_stock_basic("TSLA", "Tesla Inc.", "NASDAQ", "Automotive")
+    history = test_db.get_dividend_history("TSLA")
+    assert history == []
+
+
+def test_update_dividend_history(test_db):
+    """Test updating existing dividend history"""
+    test_db.save_stock_basic("MSFT", "Microsoft Corp.", "NASDAQ", "Technology")
+
+    # Save initial dividend
+    test_db.save_dividend_history("MSFT", 2023, 2.50)
+
+    # Update the same year with corrected value
+    test_db.save_dividend_history("MSFT", 2023, 2.72)
+
+    history = test_db.get_dividend_history("MSFT")
+    assert len(history) == 1
+    assert history[0]['dividend_per_share'] == 2.72
+
+
+def test_dividend_history_has_timestamp(test_db):
+    """Test that dividend history includes last_updated timestamp"""
+    test_db.save_stock_basic("JNJ", "Johnson & Johnson", "NYSE", "Healthcare")
+
+    before_save = datetime.now()
+    test_db.save_dividend_history("JNJ", 2023, 4.52)
+    after_save = datetime.now()
+
+    history = test_db.get_dividend_history("JNJ")
+
+    assert len(history) == 1
+    assert 'last_updated' in history[0]
+    last_updated = datetime.fromisoformat(history[0]['last_updated'])
+
+    # Check that timestamp is between before and after save
+    assert before_save <= last_updated <= after_save
