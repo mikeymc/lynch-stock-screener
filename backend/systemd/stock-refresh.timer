@@ -1,0 +1,16 @@
+[Unit]
+Description=Lynch Stock Screener - Nightly Data Refresh Timer
+Requires=stock-refresh.service
+
+[Timer]
+# Run daily at 2:00 AM
+OnCalendar=*-*-* 02:00:00
+
+# Run immediately if the system was off during scheduled time
+Persistent=true
+
+# Randomize start time by up to 5 minutes to avoid exact-time load spikes
+RandomizedDelaySec=300
+
+[Install]
+WantedBy=timers.target
