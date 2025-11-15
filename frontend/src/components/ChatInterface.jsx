@@ -47,13 +47,6 @@ export default function ChatInterface({ symbol, lynchAnalysis }) {
   const messagesEndRef = useRef(null)
   const eventSourceRef = useRef(null)
 
-  const SUGGESTED_PROMPTS = [
-    "What does this company do?",
-    "What are the main risks?",
-    "How has revenue grown over time?",
-    "Is this a good investment?"
-  ]
-
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }
@@ -110,14 +103,6 @@ export default function ChatInterface({ symbol, lynchAnalysis }) {
     setInputMessage('')
     setStreamingMessage('')
     setStreamingSources([])
-  }
-
-  const sendPrompt = (prompt) => {
-    setInputMessage(prompt)
-    // Use setTimeout to ensure the input is set before sending
-    setTimeout(() => {
-      sendMessage(prompt)
-    }, 0)
   }
 
   const sendMessage = async (messageText = null) => {
@@ -222,8 +207,8 @@ export default function ChatInterface({ symbol, lynchAnalysis }) {
       <div className="chat-header">
         <div className="chat-header-content">
           <div>
-            <h3>💬 Chat with Peter Lynch about {symbol}</h3>
-            <p className="chat-subtitle">Ask questions about the company's business, financials, and filings</p>
+            <h3>💬 Ask Questions</h3>
+            <p className="chat-subtitle">Discuss the analysis with Peter Lynch</p>
           </div>
           {messages.length > 0 && (
             <button
@@ -241,26 +226,6 @@ export default function ChatInterface({ symbol, lynchAnalysis }) {
         {loadingHistory && (
           <div className="chat-loading-history">
             <div className="loading">Loading conversation history...</div>
-          </div>
-        )}
-
-        {!loadingHistory && messages.length === 0 && !loading && (
-          <div className="chat-empty-state">
-            <p>👋 Hello! I'm Peter Lynch. Ask me anything about {symbol}.</p>
-            <div className="suggested-questions">
-              <strong>Try asking:</strong>
-              <div className="suggested-prompts">
-                {SUGGESTED_PROMPTS.map((prompt, idx) => (
-                  <button
-                    key={idx}
-                    className="suggested-prompt"
-                    onClick={() => sendPrompt(prompt)}
-                  >
-                    {prompt}
-                  </button>
-                ))}
-              </div>
-            </div>
           </div>
         )}
 
