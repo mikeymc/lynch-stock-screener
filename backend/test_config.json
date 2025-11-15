@@ -1,0 +1,53 @@
+{
+  "enabled": true,
+  "description": "Test configuration for batch process tests",
+
+  "scheduling": {
+    "run_time": "02:00",
+    "timezone": "America/New_York"
+  },
+
+  "processing": {
+    "batch_size": 10,
+    "delay_between_batches_seconds": 0,
+    "max_workers": 1,
+    "force_refresh": true
+  },
+
+  "rate_limiting": {
+    "edgar_requests_per_second": 9,
+    "yfinance_delay_seconds": 0
+  },
+
+  "logging": {
+    "log_directory": "test_logs",
+    "log_file": "test_batch_refresh.log",
+    "max_log_size_mb": 10,
+    "backup_count": 3,
+    "log_level": "DEBUG",
+    "console_output": false
+  },
+
+  "notifications": {
+    "enabled": false
+  },
+
+  "database": {
+    "path": ":memory:",
+    "backup_before_run": false,
+    "backup_directory": "test_backups"
+  },
+
+  "error_handling": {
+    "max_consecutive_failures": 5,
+    "retry_failed_stocks": false,
+    "max_retries_per_stock": 1,
+    "continue_on_error": true
+  },
+
+  "reporting": {
+    "generate_summary": true,
+    "summary_directory": "test_reports",
+    "keep_last_n_reports": 5
+  }
+}

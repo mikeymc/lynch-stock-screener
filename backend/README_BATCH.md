@@ -78,10 +78,13 @@ backend/
 ├── batch_refresh.py          # Main script
 ├── batch_config.json         # Configuration
 ├── setup_scheduler.sh        # Easy setup
+├── test_batch_refresh.py     # Test suite (40+ tests)
+├── test_config.json          # Test configuration
 ├── logs/                     # Logs (auto-rotated)
 ├── backups/                  # Database backups
 ├── reports/                  # Summary reports
-└── BATCH_PROCESS.md         # Full documentation
+├── BATCH_PROCESS.md         # Full documentation
+└── TESTING.md               # Test documentation
 ```
 
 ## Configuration Highlights
@@ -102,6 +105,20 @@ Edit `batch_config.json` to customize:
   }
 }
 ```
+
+## Running Tests
+
+The batch process includes comprehensive tests (40+ test cases):
+
+```bash
+# Run all tests
+pytest test_batch_refresh.py -v
+
+# Run with coverage
+pytest test_batch_refresh.py --cov=batch_refresh
+```
+
+See [TESTING.md](TESTING.md) for complete test documentation.
 
 ## Troubleshooting
 
@@ -128,9 +145,15 @@ systemctl --user restart stock-refresh.timer
 
 ## Need More Help?
 
-See [BATCH_PROCESS.md](BATCH_PROCESS.md) for complete documentation including:
-- Advanced configuration
-- Performance tuning
-- Email notifications
-- Multiple schedules
-- Architecture details
+**Documentation:**
+- [BATCH_PROCESS.md](BATCH_PROCESS.md) - Complete documentation including:
+  - Advanced configuration
+  - Performance tuning
+  - Email notifications
+  - Multiple schedules
+  - Architecture details
+- [TESTING.md](TESTING.md) - Test documentation:
+  - Running tests
+  - Writing new tests
+  - Coverage reports
+  - CI/CD integration
