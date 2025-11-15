@@ -556,3 +556,166 @@ def test_get_latest_session_returns_404_when_no_sessions(client, test_db, monkey
     assert response.status_code == 404
     data = json.loads(response.data)
     assert 'error' in data
+
+
+# Dividend History Tests
+
+def test_stock_history_includes_dividend_data(client, test_db, monkeypatch):
+    """Test that /api/stock/<symbol>/history includes dividend data"""
+    import app as app_module
+    monkeypatch.setattr(app_module, 'db', test_db)
+
+    symbol = "AAPL"
+    test_db.save_stock_basic(symbol, "Apple Inc.", "NASDAQ", "Technology")
+
+    # Add earnings history
+    earnings_data = [
+        (2020, 3.28, 274515000000),
+        (2021, 5.61, 365817000000),
+        (2022, 6.11, 394328000000),
+        (2023, 6.13, 383285000000)
+    ]
+
+    for year, eps, revenue in earnings_data:
+        test_db.save_earnings_history(symbol, year, eps, revenue)
+
+    # Add dividend history
+    dividend_data = [
+        (2020, 0.8075),
+        (2021, 0.865),
+        (2022, 0.91),
+        (2023, 0.95)
+    ]
+
+    for year, dividend in dividend_data:
+        test_db.save_dividend_history(symbol, year, dividend)
+
+    # Mock yfinance for price data
+    mock_ticker = MagicMock()
+
+    def mock_get_history(start, end):
+        year = int(start.split('-')[0])
+        prices = {2020: 132.69, 2021: 177.57, 2022: 129.93, 2023: 191.45}
+        mock_df = MagicMock()
+        mock_df.empty = False
+        mock_df.iloc = MagicMock()
+        mock_df.iloc.__getitem__ = MagicMock(return_value={'Close': prices.get(year, 100.0)})
+        return mock_df
+
+    mock_ticker.history.side_effect = mock_get_history
+
+    with patch('yfinance.Ticker', return_value=mock_ticker):
+        response = client.get(f'/api/stock/{symbol}/history')
+
+    assert response.status_code == 200
+    data = json.loads(response.data)
+
+    # Verify response includes dividends
+    assert 'dividends' in data
+    assert len(data['dividends']) == 4
+
+    # Verify dividend values match what we stored
+    assert data['dividends'][0] == 0.8075
+    assert data['dividends'][1] == 0.865
+    assert data['dividends'][2] == 0.91
+    assert data['dividends'][3] == 0.95
+
+
+def test_stock_history_handles_missing_dividend_years(client, test_db, monkeypatch):
+    """Test that /api/stock/<symbol>/history handles years without dividends"""
+    import app as app_module
+    monkeypatch.setattr(app_module, 'db', test_db)
+
+    symbol = "MSFT"
+    test_db.save_stock_basic(symbol, "Microsoft Corp.", "NASDAQ", "Technology")
+
+    # Add earnings history for 4 years
+    earnings_data = [
+        (2020, 5.76, 143015000000),
+        (2021, 8.05, 168088000000),
+        (2022, 9.21, 198270000000),
+        (2023, 9.68, 211915000000)
+    ]
+
+    for year, eps, revenue in earnings_data:
+        test_db.save_earnings_history(symbol, year, eps, revenue)
+
+    # Add dividend history for only 2 years (missing 2020 and 2021)
+    test_db.save_dividend_history(symbol, 2022, 2.48)
+    test_db.save_dividend_history(symbol, 2023, 2.72)
+
+    # Mock yfinance
+    mock_ticker = MagicMock()
+
+    def mock_get_history(start, end):
+        year = int(start.split('-')[0])
+        prices = {2020: 222.42, 2021: 336.32, 2022: 256.83, 2023: 374.58}
+        mock_df = MagicMock()
+        mock_df.empty = False
+        mock_df.iloc = MagicMock()
+        mock_df.iloc.__getitem__ = MagicMock(return_value={'Close': prices.get(year, 100.0)})
+        return mock_df
+
+    mock_ticker.history.side_effect = mock_get_history
+
+    with patch('yfinance.Ticker', return_value=mock_ticker):
+        response = client.get(f'/api/stock/{symbol}/history')
+
+    assert response.status_code == 200
+    data = json.loads(response.data)
+
+    # Verify response includes dividends array
+    assert 'dividends' in data
+    assert len(data['dividends']) == 4
+
+    # Verify None for years without dividends
+    assert data['dividends'][0] is None  # 2020
+    assert data['dividends'][1] is None  # 2021
+    assert data['dividends'][2] == 2.48  # 2022
+    assert data['dividends'][3] == 2.72  # 2023
+
+
+def test_stock_history_for_non_dividend_stock(client, test_db, monkeypatch):
+    """Test that /api/stock/<symbol>/history works for stocks without any dividends"""
+    import app as app_module
+    monkeypatch.setattr(app_module, 'db', test_db)
+
+    symbol = "TSLA"
+    test_db.save_stock_basic(symbol, "Tesla Inc.", "NASDAQ", "Automotive")
+
+    # Add earnings history
+    earnings_data = [
+        (2021, 1.87, 53823000000),
+        (2022, 4.07, 81462000000),
+        (2023, 3.12, 96773000000)
+    ]
+
+    for year, eps, revenue in earnings_data:
+        test_db.save_earnings_history(symbol, year, eps, revenue)
+
+    # No dividend history (growth stock)
+
+    # Mock yfinance
+    mock_ticker = MagicMock()
+
+    def mock_get_history(start, end):
+        year = int(start.split('-')[0])
+        prices = {2021: 381.59, 2022: 123.18, 2023: 248.48}
+        mock_df = MagicMock()
+        mock_df.empty = False
+        mock_df.iloc = MagicMock()
+        mock_df.iloc.__getitem__ = MagicMock(return_value={'Close': prices.get(year, 100.0)})
+        return mock_df
+
+    mock_ticker.history.side_effect = mock_get_history
+
+    with patch('yfinance.Ticker', return_value=mock_ticker):
+        response = client.get(f'/api/stock/{symbol}/history')
+
+    assert response.status_code == 200
+    data = json.loads(response.data)
+
+    # Verify response includes dividends array (all None)
+    assert 'dividends' in data
+    assert len(data['dividends']) == 3
+    assert all(d is None for d in data['dividends'])
