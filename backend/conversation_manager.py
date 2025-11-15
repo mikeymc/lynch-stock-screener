@@ -230,13 +230,14 @@ class ConversationManager:
             'message_id': assistant_msg_id
         }
 
-    def send_message_stream(self, conversation_id: int, user_message: str):
+    def send_message_stream(self, conversation_id: int, user_message: str, lynch_analysis: Optional[str] = None):
         """
         Send a message and stream AI response
 
         Args:
             conversation_id: Conversation ID
             user_message: User's message
+            lynch_analysis: Optional Peter Lynch analysis to include as context
 
         Yields:
             Dict with type ('token', 'sources', 'done', 'error') and data
@@ -265,7 +266,7 @@ class ConversationManager:
             yield {'type': 'sources', 'data': sources}
 
             # Format prompt for LLM
-            prompt = self.rag_context.format_for_llm(context, user_message, conversation_history)
+            prompt = self.rag_context.format_for_llm(context, user_message, conversation_history, lynch_analysis)
 
             # Stream response from Gemini
             response = self.model.generate_content(prompt, stream=True)

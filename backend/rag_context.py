@@ -219,7 +219,7 @@ class RAGContext:
 
         return selected
 
-    def format_for_llm(self, context: Dict[str, Any], user_query: str, conversation_history: Optional[List[Dict[str, str]]] = None) -> str:
+    def format_for_llm(self, context: Dict[str, Any], user_query: str, conversation_history: Optional[List[Dict[str, str]]] = None, lynch_analysis: Optional[str] = None) -> str:
         """
         Format assembled context into a prompt for the LLM
 
@@ -227,6 +227,7 @@ class RAGContext:
             context: Context dict from get_stock_context()
             user_query: Current user question
             conversation_history: Optional list of previous messages
+            lynch_analysis: Optional Peter Lynch analysis text to include as context
 
         Returns:
             Formatted prompt string
@@ -301,6 +302,11 @@ class RAGContext:
 
                 prompt_parts.append(f"#### {label} ({filing_type}, filed {filing_date})\n\n")
                 prompt_parts.append(f"{content}\n\n")
+
+        # Peter Lynch Analysis (if provided)
+        if lynch_analysis:
+            prompt_parts.append("### Peter Lynch Analysis\n\n")
+            prompt_parts.append(f"{lynch_analysis}\n\n")
 
         # Conversation history
         if conversation_history:

@@ -2,7 +2,7 @@ import { useState } from 'react'
 
 const API_BASE = 'http://localhost:5001/api'
 
-function LynchAnalysis({ symbol, stockName }) {
+function LynchAnalysis({ symbol, stockName, onAnalysisLoaded }) {
   const [analysis, setAnalysis] = useState(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
@@ -37,6 +37,11 @@ function LynchAnalysis({ symbol, stockName }) {
       setAnalysis(data.analysis)
       setGeneratedAt(data.generated_at)
       setCached(data.cached)
+
+      // Notify parent component that analysis has been loaded
+      if (onAnalysisLoaded && data.analysis) {
+        onAnalysisLoaded(data.analysis)
+      }
     } catch (err) {
       console.error('Error fetching Lynch analysis:', err)
       setError(err.message)

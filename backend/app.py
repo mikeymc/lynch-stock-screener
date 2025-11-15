@@ -651,6 +651,7 @@ def send_message_stream(symbol):
 
         user_message = data['message']
         conversation_id = data.get('conversation_id')
+        lynch_analysis = data.get('lynch_analysis')
 
         # Get or create conversation
         if not conversation_id:
@@ -662,7 +663,7 @@ def send_message_stream(symbol):
             yield f"data: {json.dumps({'type': 'conversation_id', 'data': conversation_id})}\n\n"
 
             # Stream response from conversation manager
-            for event in conversation_manager.send_message_stream(conversation_id, user_message):
+            for event in conversation_manager.send_message_stream(conversation_id, user_message, lynch_analysis):
                 yield f"data: {json.dumps(event)}\n\n"
 
         return Response(

@@ -36,7 +36,7 @@ function SourceCitation({ sources }) {
   )
 }
 
-export default function ChatInterface({ symbol }) {
+export default function ChatInterface({ symbol, lynchAnalysis }) {
   const [messages, setMessages] = useState([])
   const [inputMessage, setInputMessage] = useState('')
   const [loading, setLoading] = useState(false)
@@ -138,7 +138,8 @@ export default function ChatInterface({ symbol }) {
         },
         body: JSON.stringify({
           message: userMessage,
-          conversation_id: conversationId
+          conversation_id: conversationId,
+          lynch_analysis: lynchAnalysis || null
         })
       })
 

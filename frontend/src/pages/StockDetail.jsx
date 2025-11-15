@@ -7,8 +7,7 @@ import StockTableHeader from '../components/StockTableHeader'
 import StockTableRow from '../components/StockTableRow'
 import StockCharts from '../components/StockCharts'
 import StockReports from '../components/StockReports'
-import LynchAnalysis from '../components/LynchAnalysis'
-import ChatInterface from '../components/ChatInterface'
+import AnalysisChat from '../components/AnalysisChat'
 
 const API_BASE = 'http://localhost:5001/api'
 
@@ -214,13 +213,7 @@ export default function StockDetail() {
               className={`tab-button ${activeTab === 'analysis' ? 'active' : ''}`}
               onClick={() => setActiveTab('analysis')}
             >
-              🎯 Analysis
-            </button>
-            <button
-              className={`tab-button ${activeTab === 'chat' ? 'active' : ''}`}
-              onClick={() => setActiveTab('chat')}
-            >
-              💬 Chat
+              🎯 Analysis & Chat
             </button>
           </div>
 
@@ -238,15 +231,11 @@ export default function StockDetail() {
               />
             )}
 
-            {activeTab === 'analysis' && historyData && (
-              <LynchAnalysis
+            {activeTab === 'analysis' && (
+              <AnalysisChat
                 symbol={stock.symbol}
                 stockName={stock.company_name}
               />
-            )}
-
-            {activeTab === 'chat' && historyData && (
-              <ChatInterface symbol={stock.symbol} />
             )}
           </div>
         </div>
