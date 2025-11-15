@@ -10,7 +10,7 @@ from datetime import datetime
 from database import Database
 from data_fetcher import DataFetcher
 from earnings_analyzer import EarningsAnalyzer
-from lynch_criteria import LynchCriteria
+from lynch_criteria import LynchCriteria, ALGORITHM_METADATA
 from schwab_client import SchwabClient
 from lynch_analyst import LynchAnalyst
 from conversation_manager import ConversationManager
@@ -32,15 +32,22 @@ def health():
     return jsonify({'status': 'healthy'})
 
 
+@app.route('/api/algorithms', methods=['GET'])
+def get_algorithms():
+    """Return metadata for all available scoring algorithms."""
+    return jsonify(ALGORITHM_METADATA)
+
+
 @app.route('/api/stock/<symbol>', methods=['GET'])
 def get_stock(symbol):
     force_refresh = request.args.get('refresh', 'false').lower() == 'true'
+    algorithm = request.args.get('algorithm', 'weighted')
 
     stock_data = fetcher.fetch_stock_data(symbol.upper(), force_refresh)
     if not stock_data:
         return jsonify({'error': f'Stock {symbol} not found'}), 404
 
-    evaluation = criteria.evaluate_stock(symbol.upper())
+    evaluation = criteria.evaluate_stock(symbol.upper(), algorithm=algorithm)
 
     return jsonify({
         'stock_data': stock_data,
@@ -53,6 +60,7 @@ def screen_stocks():
     limit_param = request.args.get('limit')
     limit = int(limit_param) if limit_param else None
     force_refresh = request.args.get('refresh', 'false').lower() == 'true'
+    algorithm = request.args.get('algorithm', 'weighted')
 
     def generate():
         session_id = None
@@ -84,7 +92,7 @@ def screen_stocks():
                         print(f"No stock data returned for {symbol}")
                         continue
 
-                    evaluation = criteria.evaluate_stock(symbol)
+                    evaluation = criteria.evaluate_stock(symbol, algorithm=algorithm)
                     if not evaluation:
                         print(f"No evaluation returned for {symbol}")
                         continue
@@ -103,27 +111,72 @@ def screen_stocks():
                     traceback.print_exc()
                     continue
 
-            results_by_status = {
-                'pass': [r for r in results if r['overall_status'] == 'PASS'],
-                'close': [r for r in results if r['overall_status'] == 'CLOSE'],
-                'fail': [r for r in results if r['overall_status'] == 'FAIL']
-            }
+            # Group results by status - support both old and new status formats
+            results_by_status = {}
+            if algorithm == 'classic':
+                results_by_status = {
+                    'pass': [r for r in results if r['overall_status'] == 'PASS'],
+                    'close': [r for r in results if r['overall_status'] == 'CLOSE'],
+                    'fail': [r for r in results if r['overall_status'] == 'FAIL']
+                }
+            else:
+                # New algorithms use different statuses
+                results_by_status = {
+                    'strong_buy': [r for r in results if r['overall_status'] == 'STRONG_BUY'],
+                    'buy': [r for r in results if r['overall_status'] == 'BUY'],
+                    'hold': [r for r in results if r['overall_status'] == 'HOLD'],
+                    'caution': [r for r in results if r['overall_status'] == 'CAUTION'],
+                    'avoid': [r for r in results if r['overall_status'] == 'AVOID']
+                }
 
             # Update session with final counts
             conn = db.get_connection()
             cursor = conn.cursor()
-            cursor.execute("""
-                UPDATE screening_sessions
-                SET total_analyzed = ?, pass_count = ?, close_count = ?, fail_count = ?
-                WHERE id = ?
-            """, (len(results), len(results_by_status['pass']), len(results_by_status['close']), len(results_by_status['fail']), session_id))
+            if algorithm == 'classic':
+                cursor.execute("""
+                    UPDATE screening_sessions
+                    SET total_analyzed = ?, pass_count = ?, close_count = ?, fail_count = ?
+                    WHERE id = ?
+                """, (len(results), len(results_by_status['pass']), len(results_by_status['close']), len(results_by_status['fail']), session_id))
+            else:
+                # For new algorithms, map to old schema for backward compatibility
+                pass_count = len(results_by_status.get('strong_buy', [])) + len(results_by_status.get('buy', []))
+                close_count = len(results_by_status.get('hold', []))
+                fail_count = len(results_by_status.get('caution', [])) + len(results_by_status.get('avoid', []))
+                cursor.execute("""
+                    UPDATE screening_sessions
+                    SET total_analyzed = ?, pass_count = ?, close_count = ?, fail_count = ?
+                    WHERE id = ?
+                """, (len(results), pass_count, close_count, fail_count, session_id))
             conn.commit()
             conn.close()
 
             # Cleanup old sessions, keeping only the 2 most recent
             db.cleanup_old_sessions(keep_count=2)
 
-            yield f"data: {json.dumps({'type': 'complete', 'total_analyzed': len(results), 'pass_count': len(results_by_status['pass']), 'close_count': len(results_by_status['close']), 'fail_count': len(results_by_status['fail']), 'results': results_by_status})}\n\n"
+            # Build completion payload based on algorithm
+            completion_payload = {
+                'type': 'complete',
+                'total_analyzed': len(results),
+                'results': results_by_status,
+                'algorithm': algorithm
+            }
+            if algorithm == 'classic':
+                completion_payload.update({
+                    'pass_count': len(results_by_status['pass']),
+                    'close_count': len(results_by_status['close']),
+                    'fail_count': len(results_by_status['fail'])
+                })
+            else:
+                completion_payload.update({
+                    'strong_buy_count': len(results_by_status.get('strong_buy', [])),
+                    'buy_count': len(results_by_status.get('buy', [])),
+                    'hold_count': len(results_by_status.get('hold', [])),
+                    'caution_count': len(results_by_status.get('caution', [])),
+                    'avoid_count': len(results_by_status.get('avoid', []))
+                })
+
+            yield f"data: {json.dumps(completion_payload)}\n\n"
 
         except Exception as e:
             yield f"data: {json.dumps({'type': 'error', 'message': str(e)})}\n\n"

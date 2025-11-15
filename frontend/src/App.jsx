@@ -14,6 +14,7 @@ import {
 import LynchAnalysis from './components/LynchAnalysis'
 import ChatInterface from './components/ChatInterface'
 import StockDetail from './pages/StockDetail'
+import AlgorithmSelector from './components/AlgorithmSelector'
 import './App.css'
 
 ChartJS.register(
@@ -127,6 +128,7 @@ function StockListView() {
   const itemsPerPage = 100
   const [loadingSession, setLoadingSession] = useState(true)
   const [watchlist, setWatchlist] = useState(new Set())
+  const [algorithm, setAlgorithm] = useState('weighted')
 
   // Load watchlist on mount
   useEffect(() => {
@@ -195,7 +197,9 @@ function StockListView() {
     setCurrentPage(1)
 
     try {
-      const url = limit ? `${API_BASE}/screen?limit=${limit}` : `${API_BASE}/screen`
+      const params = new URLSearchParams({ algorithm })
+      if (limit) params.append('limit', limit)
+      const url = `${API_BASE}/screen?${params.toString()}`
       const response = await fetch(url)
 
       if (!response.ok) {
@@ -357,6 +361,11 @@ function StockListView() {
   return (
     <div className="app">
       <div className="controls">
+        <AlgorithmSelector
+          selectedAlgorithm={algorithm}
+          onAlgorithmChange={setAlgorithm}
+        />
+
         <button onClick={() => screenStocks(null)} disabled={loading}>
           Screen All Stocks
         </button>

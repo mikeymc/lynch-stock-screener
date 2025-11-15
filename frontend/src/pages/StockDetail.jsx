@@ -8,6 +8,7 @@ import StockTableRow from '../components/StockTableRow'
 import StockCharts from '../components/StockCharts'
 import StockReports from '../components/StockReports'
 import AnalysisChat from '../components/AnalysisChat'
+import AlgorithmSelector from '../components/AlgorithmSelector'
 
 const API_BASE = 'http://localhost:5001/api'
 
@@ -18,6 +19,7 @@ export default function StockDetail() {
   const [loading, setLoading] = useState(true)
   const [watchlist, setWatchlist] = useState(new Set())
   const [activeTab, setActiveTab] = useState('charts')
+  const [algorithm, setAlgorithm] = useState('weighted')
 
   // Data state
   const [historyData, setHistoryData] = useState(null)
@@ -48,18 +50,12 @@ export default function StockDetail() {
     const fetchStockData = async () => {
       setLoading(true)
       try {
-        // First try to get from latest session results
-        const sessionResponse = await fetch(`${API_BASE}/sessions/latest`)
-        if (sessionResponse.ok) {
-          const sessionData = await sessionResponse.json()
-          const results = sessionData.results || []
-          const foundStock = results.find(s => s.symbol === symbol.toUpperCase())
-
-          if (foundStock) {
-            setStock(foundStock)
-          } else {
-            // Stock not found in session, could fetch individually or show error
-            console.error(`Stock ${symbol} not found in latest session`)
+        // Fetch stock with selected algorithm
+        const response = await fetch(`${API_BASE}/stock/${symbol.toUpperCase()}?algorithm=${algorithm}`)
+        if (response.ok) {
+          const data = await response.json()
+          if (data.evaluation) {
+            setStock(data.evaluation)
           }
         }
       } catch (err) {
@@ -70,7 +66,7 @@ export default function StockDetail() {
     }
 
     fetchStockData()
-  }, [symbol])
+  }, [symbol, algorithm])
 
   // Fetch history data
   useEffect(() => {
@@ -180,6 +176,11 @@ export default function StockDetail() {
         <button className="back-button" onClick={() => navigate('/')}>
           ← Back to Stock List
         </button>
+
+        <AlgorithmSelector
+          selectedAlgorithm={algorithm}
+          onAlgorithmChange={setAlgorithm}
+        />
 
         <div className="sticky-header">
           <table className="stocks-table">
