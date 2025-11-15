@@ -547,20 +547,65 @@ td strong {
   flex-shrink: 0;
 }
 
+/* Default zones (for backwards compatibility) */
 .status-zone.pass {
-  background-color: #4ade80;
+  background-color: #6ee7b7;
   width: 50%;
   border-radius: 4px 0 0 4px;
 }
 
 .status-zone.close {
-  background-color: #fbbf24;
+  background-color: #fcd34d;
   width: 25%;
 }
 
 .status-zone.fail {
-  background-color: #f87171;
+  background-color: #fca5a5;
   width: 25%;
+  border-radius: 0 4px 4px 0;
+}
+
+/* PEG Ratio zones */
+.status-zone.excellent {
+  background-color: #86efac;
+  border-radius: 4px 0 0 4px;
+}
+
+.status-zone.good {
+  background-color: #60a5fa !important;
+}
+
+.status-zone.fair {
+  background-color: #fde047;
+}
+
+.status-zone.poor {
+  background-color: #fca5a5;
+  border-radius: 0 4px 4px 0;
+}
+
+/* Debt to Equity zones */
+.status-zone.moderate {
+  background-color: #fed7aa;
+}
+
+.status-zone.high {
+  background-color: #fca5a5;
+  border-radius: 0 4px 4px 0;
+}
+
+/* Institutional Ownership zones */
+.status-zone.too-low {
+  background-color: #fde047;
+  border-radius: 4px 0 0 4px;
+}
+
+.status-zone.ideal {
+  background-color: #86efac;
+}
+
+.status-zone.too-high {
+  background-color: #fde047;
   border-radius: 0 4px 4px 0;
 }
 

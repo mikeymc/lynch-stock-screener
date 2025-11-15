@@ -14,6 +14,7 @@ import {
 import LynchAnalysis from './components/LynchAnalysis'
 import ChatInterface from './components/ChatInterface'
 import StockDetail from './pages/StockDetail'
+import StatusBar from './components/StatusBar'
 import './App.css'
 
 ChartJS.register(
@@ -28,28 +29,7 @@ ChartJS.register(
 
 const API_BASE = 'http://localhost:5001/api'
 
-function StatusBar({ status, score, value }) {
-  const displayValue = typeof value === 'number' ? value.toFixed(2) : 'N/A'
-  const tooltipText = `${status}: ${displayValue}`
-
-  // Invert position: score 100 (best) = left (0%), score 0 (worst) = right (100%)
-  const markerPosition = `${100 - score}%`
-
-  return (
-    <div className="status-bar-container" title={tooltipText}>
-      <div className="status-bar">
-        <div className="status-zone pass"></div>
-        <div className="status-zone close"></div>
-        <div className="status-zone fail"></div>
-        <div
-          className="status-marker"
-          style={{ left: markerPosition }}
-        ></div>
-      </div>
-    </div>
-  )
-}
-
+// FilingSections component displays expandable filing content
 function FilingSections({ sections }) {
   const [expandedSections, setExpandedSections] = useState(new Set())
 
@@ -487,6 +467,7 @@ function StockListView() {
                           status={stock.peg_status}
                           score={stock.peg_score || 0}
                           value={stock.peg_ratio}
+                          metricType="peg"
                         />
                       </td>
                       <td>
@@ -494,6 +475,7 @@ function StockListView() {
                           status={stock.debt_status}
                           score={stock.debt_score || 0}
                           value={stock.debt_to_equity}
+                          metricType="debt"
                         />
                       </td>
                       <td>
@@ -501,6 +483,7 @@ function StockListView() {
                           status={stock.institutional_ownership_status}
                           score={stock.institutional_ownership_score || 0}
                           value={stock.institutional_ownership}
+                          metricType="institutional"
                         />
                       </td>
                       <td style={{ backgroundColor: getStatusColor(stock.overall_status), color: '#000', fontWeight: 'bold' }}>

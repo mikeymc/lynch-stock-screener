@@ -60,6 +60,7 @@ export default function StockTableRow({ stock, watchlist, onToggleWatchlist, onC
           status={stock.peg_status}
           score={stock.peg_score || 0}
           value={stock.peg_ratio}
+          metricType="peg"
         />
       </td>
       <td>
@@ -67,6 +68,7 @@ export default function StockTableRow({ stock, watchlist, onToggleWatchlist, onC
           status={stock.debt_status}
           score={stock.debt_score || 0}
           value={stock.debt_to_equity}
+          metricType="debt"
         />
       </td>
       <td>
@@ -74,6 +76,7 @@ export default function StockTableRow({ stock, watchlist, onToggleWatchlist, onC
           status={stock.institutional_ownership_status}
           score={stock.institutional_ownership_score || 0}
           value={stock.institutional_ownership}
+          metricType="institutional"
         />
       </td>
       <td style={{ backgroundColor: getStatusColor(stock.overall_status), color: '#000', fontWeight: 'bold' }}>

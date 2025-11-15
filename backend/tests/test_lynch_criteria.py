@@ -48,34 +48,109 @@ def test_calculate_peg_ratio_negative_growth(criteria):
     assert peg is None
 
 
-def test_evaluate_criterion_pass_lower_is_better(criteria):
-    result = criteria.evaluate_criterion(0.8, 1.0, 1.15, lower_is_better=True)
+def test_evaluate_peg_pass(criteria):
+    result = criteria.evaluate_peg(0.8)
     assert result == "PASS"
 
 
-def test_evaluate_criterion_close_lower_is_better(criteria):
-    result = criteria.evaluate_criterion(1.05, 1.0, 1.15, lower_is_better=True)
+def test_evaluate_peg_close(criteria):
+    result = criteria.evaluate_peg(1.3)
     assert result == "CLOSE"
 
 
-def test_evaluate_criterion_fail_lower_is_better(criteria):
-    result = criteria.evaluate_criterion(1.5, 1.0, 1.15, lower_is_better=True)
+def test_evaluate_peg_fail(criteria):
+    result = criteria.evaluate_peg(2.5)
     assert result == "FAIL"
 
 
-def test_evaluate_criterion_pass_higher_is_better(criteria):
-    result = criteria.evaluate_criterion(25.0, 15.0, 12.0, lower_is_better=False)
+def test_evaluate_debt_pass(criteria):
+    result = criteria.evaluate_debt(0.3)
     assert result == "PASS"
 
 
-def test_evaluate_criterion_close_higher_is_better(criteria):
-    result = criteria.evaluate_criterion(13.0, 15.0, 12.0, lower_is_better=False)
+def test_evaluate_debt_close(criteria):
+    result = criteria.evaluate_debt(0.8)
     assert result == "CLOSE"
 
 
-def test_evaluate_criterion_fail_higher_is_better(criteria):
-    result = criteria.evaluate_criterion(10.0, 15.0, 12.0, lower_is_better=False)
+def test_evaluate_debt_fail(criteria):
+    result = criteria.evaluate_debt(2.5)
     assert result == "FAIL"
+
+
+def test_evaluate_institutional_ownership_pass(criteria):
+    result = criteria.evaluate_institutional_ownership(0.40)
+    assert result == "PASS"
+
+
+def test_evaluate_institutional_ownership_too_low_fail(criteria):
+    result = criteria.evaluate_institutional_ownership(0.10)
+    assert result == "FAIL"
+
+
+def test_evaluate_institutional_ownership_too_high_fail(criteria):
+    result = criteria.evaluate_institutional_ownership(0.80)
+    assert result == "FAIL"
+
+
+def test_calculate_peg_score_excellent(criteria):
+    score = criteria.calculate_peg_score(0.5)
+    assert score == 100.0
+
+
+def test_calculate_peg_score_good(criteria):
+    score = criteria.calculate_peg_score(1.25)
+    assert 75.0 <= score <= 100.0
+
+
+def test_calculate_peg_score_fair(criteria):
+    score = criteria.calculate_peg_score(1.75)
+    assert 25.0 <= score <= 75.0
+
+
+def test_calculate_peg_score_poor(criteria):
+    score = criteria.calculate_peg_score(3.0)
+    assert 0.0 <= score <= 25.0
+
+
+def test_calculate_debt_score_excellent(criteria):
+    score = criteria.calculate_debt_score(0.3)
+    assert score == 100.0
+
+
+def test_calculate_debt_score_good(criteria):
+    score = criteria.calculate_debt_score(0.75)
+    assert 75.0 <= score <= 100.0
+
+
+def test_calculate_debt_score_moderate(criteria):
+    score = criteria.calculate_debt_score(1.5)
+    assert 25.0 <= score <= 75.0
+
+
+def test_calculate_debt_score_high(criteria):
+    score = criteria.calculate_debt_score(3.0)
+    assert 0.0 <= score <= 25.0
+
+
+def test_calculate_institutional_ownership_score_ideal_center(criteria):
+    score = criteria.calculate_institutional_ownership_score(0.40)
+    assert score == 100.0
+
+
+def test_calculate_institutional_ownership_score_ideal_range(criteria):
+    score = criteria.calculate_institutional_ownership_score(0.30)
+    assert 75.0 <= score <= 100.0
+
+
+def test_calculate_institutional_ownership_score_too_low(criteria):
+    score = criteria.calculate_institutional_ownership_score(0.10)
+    assert 0.0 <= score <= 75.0
+
+
+def test_calculate_institutional_ownership_score_too_high(criteria):
+    score = criteria.calculate_institutional_ownership_score(0.80)
+    assert 0.0 <= score <= 75.0
 
 
 def test_evaluate_stock_all_pass(criteria, test_db):
@@ -111,7 +186,7 @@ def test_evaluate_stock_some_close(criteria, test_db):
         'price': 100.0,
         'pe_ratio': 22.0,
         'market_cap': 1000000000000,
-        'debt_to_equity': 0.55,
+        'debt_to_equity': 0.8,  # In CLOSE range (0.5-1.0)
         'institutional_ownership': 0.48,
         'revenue': 500000000000
     }
@@ -126,6 +201,8 @@ def test_evaluate_stock_some_close(criteria, test_db):
 
     assert result is not None
     assert "CLOSE" in [result['peg_status'], result['debt_status'], result['institutional_ownership_status']]
+    # Debt should be CLOSE with 0.8 (between 0.5 and 1.0)
+    assert result['debt_status'] == "CLOSE"
 
 
 def test_evaluate_stock_failing_peg(criteria, test_db):
