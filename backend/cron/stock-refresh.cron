@@ -1,0 +1,11 @@
+# Lynch Stock Screener - Nightly Data Refresh
+# Runs daily at 2:00 AM ET
+#
+# To install this cron job:
+#   crontab -e
+# Then add the following line (adjust paths as needed):
+#
+# 0 2 * * * cd /home/user/lynch-stock-screener/backend && /usr/bin/python3 batch_refresh.py --config batch_config.json >> logs/cron.log 2>&1
+#
+# For testing (runs every 5 minutes):
+# */5 * * * * cd /home/user/lynch-stock-screener/backend && /usr/bin/python3 batch_refresh.py --config batch_config.json --limit 10 >> logs/cron.log 2>&1
