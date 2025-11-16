@@ -175,6 +175,7 @@ function StockListView() {
       const params = new URLSearchParams({ algorithm })
       if (limit) params.append('limit', limit)
       const url = `${API_BASE}/screen?${params.toString()}`
+      console.log('Screening with URL:', url, 'Algorithm:', algorithm)
       const response = await fetch(url)
 
       if (!response.ok) {
@@ -201,6 +202,16 @@ function StockListView() {
             if (data.type === 'progress') {
               setProgress(data.message)
             } else if (data.type === 'stock_result') {
+              // Debug: Log first few stocks to see what we're getting
+              if (data.stock) {
+                console.log('Stock received:', {
+                  symbol: data.stock.symbol,
+                  algorithm: data.stock.algorithm,
+                  overall_status: data.stock.overall_status,
+                  overall_score: data.stock.overall_score,
+                  rating_label: data.stock.rating_label
+                })
+              }
               setStocks(prevStocks => [...prevStocks, data.stock])
             } else if (data.type === 'complete') {
               // Handle both classic and new algorithm summary formats
