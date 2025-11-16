@@ -73,6 +73,9 @@ class DataFetcher:
             }
             self.db.save_stock_metrics(symbol, metrics)
 
+            # Fetch and store stock split history
+            self.fetch_stock_splits(symbol)
+
             # Use EDGAR earnings history if available, otherwise fall back to yfinance
             if edgar_data and edgar_data.get('eps_history') and edgar_data.get('revenue_history'):
                 eps_count = len(edgar_data.get('eps_history', []))
@@ -108,6 +111,72 @@ class DataFetcher:
             import traceback
             traceback.print_exc()
             return None
+
+    def fetch_stock_splits(self, symbol: str) -> list:
+        """
+        Fetch historical stock splits from yfinance
+
+        Returns list of dicts: [{'date': '2020-08-31', 'ratio': 4.0}, ...]
+        """
+        try:
+            ticker = yf.Ticker(symbol)
+            splits = ticker.splits
+
+            if splits.empty:
+                return []
+
+            split_list = []
+            for date, ratio in splits.items():
+                split_list.append({
+                    'date': date.strftime('%Y-%m-%d'),
+                    'ratio': float(ratio)
+                })
+
+            # Store splits in database
+            if split_list:
+                self.db.save_stock_splits(symbol, split_list)
+                logger.info(f"[{symbol}] Stored {len(split_list)} stock splits")
+
+            return split_list
+
+        except Exception as e:
+            logger.error(f"Error fetching stock splits for {symbol}: {e}")
+            return []
+
+    def get_split_adjustment_factor(self, symbol: str, target_date: str) -> float:
+        """
+        Calculate cumulative split adjustment factor from target_date to present
+
+        For a 2:1 split in 2020 and 4:1 split in 2024:
+        - Data from 2018: factor = 2.0 * 4.0 = 8.0 (divide EPS by 8)
+        - Data from 2022: factor = 4.0 (divide EPS by 4)
+        - Data from 2024: factor = 1.0 (no adjustment needed)
+
+        Returns: float (cumulative split ratio)
+        """
+        from datetime import datetime
+
+        # Get splits from database (or fetch if not available)
+        splits = self.db.get_stock_splits(symbol)
+
+        # If no splits in database, try fetching from yfinance
+        if not splits:
+            splits = self.fetch_stock_splits(symbol)
+
+        if not splits:
+            return 1.0  # No splits, no adjustment needed
+
+        target = datetime.strptime(target_date, '%Y-%m-%d')
+        factor = 1.0
+
+        for split in splits:
+            split_date = datetime.strptime(split['date'], '%Y-%m-%d')
+
+            # If split occurred AFTER the target date, we need to adjust
+            if split_date > target:
+                factor *= split['ratio']
+
+        return factor
 
     def _store_edgar_earnings(self, symbol: str, edgar_data: Dict[str, Any]):
         """Store earnings history from EDGAR data"""
