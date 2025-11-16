@@ -130,6 +130,18 @@ function StockListView() {
   const [watchlist, setWatchlist] = useState(new Set())
   const [algorithm, setAlgorithm] = useState('weighted')
 
+  // Clear stocks when algorithm changes
+  useEffect(() => {
+    // Only clear if we actually have stocks displayed
+    if (stocks.length > 0) {
+      setStocks([])
+      setSummary(null)
+      setProgress('Algorithm changed. Click "Screen All Stocks" to re-evaluate.')
+    }
+    // Reset filter to 'all' when algorithm changes
+    setFilter('all')
+  }, [algorithm])
+
   // Load watchlist on mount
   useEffect(() => {
     const loadWatchlist = async () => {
@@ -146,46 +158,9 @@ function StockListView() {
     loadWatchlist()
   }, [])
 
-  // Load latest session on mount
+  // Start with empty state (don't load cached session since algorithm may have changed)
   useEffect(() => {
-    const loadLatestSession = async () => {
-      try {
-        const response = await fetch(`${API_BASE}/sessions/latest`)
-
-        if (response.ok) {
-          const sessionData = await response.json()
-          const results = sessionData.results || []
-          setStocks(results)
-
-          // Calculate counts from actual results instead of trusting stored metadata
-          const passCount = results.filter(s => s.overall_status === 'PASS').length
-          const closeCount = results.filter(s => s.overall_status === 'CLOSE').length
-          const failCount = results.filter(s => s.overall_status === 'FAIL').length
-
-          setSummary({
-            totalAnalyzed: results.length,
-            passCount,
-            closeCount,
-            failCount
-          })
-        } else if (response.status === 404) {
-          // No sessions yet, this is okay
-          setStocks([])
-          setSummary(null)
-        } else {
-          throw new Error(`Failed to load session: ${response.status}`)
-        }
-      } catch (err) {
-        console.error('Error loading latest session:', err)
-        // Don't show error to user on initial load, just start with empty state
-        setStocks([])
-        setSummary(null)
-      } finally {
-        setLoadingSession(false)
-      }
-    }
-
-    loadLatestSession()
+    setLoadingSession(false)
   }, [])
 
   const screenStocks = async (limit) => {
@@ -228,12 +203,25 @@ function StockListView() {
             } else if (data.type === 'stock_result') {
               setStocks(prevStocks => [...prevStocks, data.stock])
             } else if (data.type === 'complete') {
-              setSummary({
+              // Handle both classic and new algorithm summary formats
+              const summaryData = {
                 totalAnalyzed: data.total_analyzed,
-                passCount: data.pass_count,
-                closeCount: data.close_count,
-                failCount: data.fail_count
-              })
+                algorithm: data.algorithm
+              }
+
+              if (data.algorithm === 'classic') {
+                summaryData.passCount = data.pass_count
+                summaryData.closeCount = data.close_count
+                summaryData.failCount = data.fail_count
+              } else {
+                summaryData.strong_buy_count = data.strong_buy_count
+                summaryData.buy_count = data.buy_count
+                summaryData.hold_count = data.hold_count
+                summaryData.caution_count = data.caution_count
+                summaryData.avoid_count = data.avoid_count
+              }
+
+              setSummary(summaryData)
               setProgress('')
             } else if (data.type === 'error') {
               setError(data.message)
@@ -416,18 +404,42 @@ function StockListView() {
           <select value={filter} onChange={(e) => setFilter(e.target.value)}>
             <option value="all">All</option>
             <option value="watchlist">⭐ Watchlist</option>
-            <option value="PASS">Pass Only</option>
-            <option value="CLOSE">Close Only</option>
-            <option value="FAIL">Fail Only</option>
+            {algorithm === 'classic' ? (
+              <>
+                <option value="PASS">Pass Only</option>
+                <option value="CLOSE">Close Only</option>
+                <option value="FAIL">Fail Only</option>
+              </>
+            ) : (
+              <>
+                <option value="STRONG_BUY">Strong Buy</option>
+                <option value="BUY">Buy</option>
+                <option value="HOLD">Hold</option>
+                <option value="CAUTION">Caution</option>
+                <option value="AVOID">Avoid</option>
+              </>
+            )}
           </select>
         </div>
 
         {summary && (
           <div className="summary-stats">
             <strong>Analyzed {summary.totalAnalyzed} stocks:</strong>
-            <span className="summary-stat pass">{summary.passCount} PASS</span>
-            <span className="summary-stat close">{summary.closeCount} CLOSE</span>
-            <span className="summary-stat fail">{summary.failCount} FAIL</span>
+            {algorithm === 'classic' ? (
+              <>
+                <span className="summary-stat pass">{summary.passCount || 0} PASS</span>
+                <span className="summary-stat close">{summary.closeCount || 0} CLOSE</span>
+                <span className="summary-stat fail">{summary.failCount || 0} FAIL</span>
+              </>
+            ) : (
+              <>
+                <span className="summary-stat strong-buy">{summary.strong_buy_count || 0} Strong Buy</span>
+                <span className="summary-stat buy">{summary.buy_count || 0} Buy</span>
+                <span className="summary-stat hold">{summary.hold_count || 0} Hold</span>
+                <span className="summary-stat caution">{summary.caution_count || 0} Caution</span>
+                <span className="summary-stat avoid">{summary.avoid_count || 0} Avoid</span>
+              </>
+            )}
           </div>
         )}
 
