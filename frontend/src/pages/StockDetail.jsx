@@ -18,6 +18,7 @@ export default function StockDetail() {
   const [loading, setLoading] = useState(true)
   const [watchlist, setWatchlist] = useState(new Set())
   const [activeTab, setActiveTab] = useState('charts')
+  const [periodType, setPeriodType] = useState('annual')
 
   // Data state
   const [historyData, setHistoryData] = useState(null)
@@ -79,7 +80,7 @@ export default function StockDetail() {
     const fetchHistoryData = async () => {
       setLoadingHistory(true)
       try {
-        const response = await fetch(`${API_BASE}/stock/${symbol}/history`)
+        const response = await fetch(`${API_BASE}/stock/${symbol}/history?period_type=${periodType}`)
         if (response.ok) {
           const data = await response.json()
           setHistoryData(data)
@@ -93,7 +94,7 @@ export default function StockDetail() {
     }
 
     fetchHistoryData()
-  }, [stock, symbol])
+  }, [stock, symbol, periodType])
 
   // Fetch filings data
   useEffect(() => {
@@ -219,7 +220,29 @@ export default function StockDetail() {
 
           <div className="tabs-content">
             {activeTab === 'charts' && (
-              <StockCharts historyData={historyData} loading={loadingHistory} />
+              <>
+                <div className="period-toggle">
+                  <button
+                    className={`period-button ${periodType === 'annual' ? 'active' : ''}`}
+                    onClick={() => setPeriodType('annual')}
+                  >
+                    Annual
+                  </button>
+                  <button
+                    className={`period-button ${periodType === 'quarterly' ? 'active' : ''}`}
+                    onClick={() => setPeriodType('quarterly')}
+                  >
+                    Quarterly
+                  </button>
+                  <button
+                    className={`period-button ${periodType === 'both' ? 'active' : ''}`}
+                    onClick={() => setPeriodType('both')}
+                  >
+                    Both
+                  </button>
+                </div>
+                <StockCharts historyData={historyData} loading={loadingHistory} />
+              </>
             )}
 
             {activeTab === 'reports' && (

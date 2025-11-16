@@ -171,16 +171,41 @@ def get_latest_session():
 def get_stock_history(symbol):
     """Get historical earnings, revenue, price, and P/E ratio data for charting"""
 
+    # Get period_type parameter (default to 'annual' for backward compatibility)
+    period_type = request.args.get('period_type', 'annual').lower()
+    if period_type not in ['annual', 'quarterly', 'both']:
+        return jsonify({'error': f'Invalid period_type: {period_type}. Must be annual, quarterly, or both'}), 400
+
     # Get earnings history from database
     earnings_history = db.get_earnings_history(symbol.upper())
 
     if not earnings_history:
         return jsonify({'error': f'No historical data found for {symbol}'}), 404
 
-    # Sort by year ascending for charting
-    earnings_history.sort(key=lambda x: x['year'])
+    # Filter based on period_type
+    if period_type == 'annual':
+        earnings_history = [e for e in earnings_history if e.get('period') == 'annual']
+    elif period_type == 'quarterly':
+        earnings_history = [e for e in earnings_history if e.get('period') and e.get('period') != 'annual']
+    # If period_type == 'both', keep all data
 
-    years = []
+    # Sort by year ascending, then by quarter for charting
+    def sort_key(entry):
+        year = entry['year']
+        period = entry.get('period', 'annual')
+        # Sort quarterly data by quarter number
+        if period and period.startswith('Q'):
+            try:
+                quarter = int(period[1])
+                return (year, quarter)
+            except (ValueError, IndexError):
+                return (year, 0)
+        # Annual data comes after all quarters for the same year
+        return (year, 5)
+
+    earnings_history.sort(key=sort_key)
+
+    labels = []
     eps_values = []
     revenue_values = []
     pe_ratios = []
@@ -196,8 +221,16 @@ def get_stock_history(symbol):
         revenue = entry['revenue']
         fiscal_end = entry.get('fiscal_end')
         debt_to_equity = entry.get('debt_to_equity')
+        period = entry.get('period', 'annual')
 
-        years.append(year)
+        # Create label based on period type
+        if period == 'annual':
+            label = str(year)
+        else:
+            # Quarterly data: format as "2023 Q1"
+            label = f"{year} {period}"
+
+        labels.append(label)
         eps_values.append(eps)
         revenue_values.append(revenue)
         debt_to_equity_values.append(debt_to_equity)
@@ -257,7 +290,7 @@ def get_stock_history(symbol):
             prices.append(None)
 
     return jsonify({
-        'years': years,
+        'labels': labels,
         'eps': eps_values,
         'revenue': revenue_values,
         'price': prices,

@@ -12,12 +12,14 @@ export default function StockCharts({ historyData, loading }) {
     return null
   }
 
+  const labels = historyData.labels || historyData.years || []
+
   return (
     <div className="charts-grid">
       <div className="chart-container">
         <Line
           data={{
-            labels: historyData.years,
+            labels: labels,
             datasets: [
               {
                 label: 'Revenue (Billions)',
@@ -55,7 +57,7 @@ export default function StockCharts({ historyData, loading }) {
       <div className="chart-container">
         <Line
           data={{
-            labels: historyData.years,
+            labels: labels,
             datasets: [
               {
                 label: 'EPS',
@@ -116,7 +118,7 @@ export default function StockCharts({ historyData, loading }) {
       <div className="chart-container">
         <Line
           data={{
-            labels: historyData.years,
+            labels: labels,
             datasets: [
               {
                 label: 'P/E Ratio',
@@ -154,7 +156,7 @@ export default function StockCharts({ historyData, loading }) {
       <div className="chart-container">
         <Line
           data={{
-            labels: historyData.years,
+            labels: labels,
             datasets: [
               {
                 label: 'Debt-to-Equity',
