@@ -5,6 +5,5 @@ pandas
 requests
 pytest
 python-dotenv
-schwab-py
 google-generativeai
 edgartools
