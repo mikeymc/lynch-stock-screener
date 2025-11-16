@@ -8,7 +8,6 @@ import StockTableRow from '../components/StockTableRow'
 import StockCharts from '../components/StockCharts'
 import StockReports from '../components/StockReports'
 import AnalysisChat from '../components/AnalysisChat'
-import AlgorithmSelector from '../components/AlgorithmSelector'
 
 const API_BASE = 'http://localhost:5001/api'
 
@@ -19,7 +18,6 @@ export default function StockDetail() {
   const [loading, setLoading] = useState(true)
   const [watchlist, setWatchlist] = useState(new Set())
   const [activeTab, setActiveTab] = useState('charts')
-  const [algorithm, setAlgorithm] = useState('weighted')
 
   // Data state
   const [historyData, setHistoryData] = useState(null)
@@ -50,8 +48,8 @@ export default function StockDetail() {
     const fetchStockData = async () => {
       setLoading(true)
       try {
-        // Fetch stock with selected algorithm
-        const response = await fetch(`${API_BASE}/stock/${symbol.toUpperCase()}?algorithm=${algorithm}`)
+        // Fetch stock with weighted algorithm (default)
+        const response = await fetch(`${API_BASE}/stock/${symbol.toUpperCase()}?algorithm=weighted`)
         if (response.ok) {
           const data = await response.json()
           if (data.evaluation) {
@@ -66,7 +64,7 @@ export default function StockDetail() {
     }
 
     fetchStockData()
-  }, [symbol, algorithm])
+  }, [symbol])
 
   // Fetch history data
   useEffect(() => {
@@ -176,11 +174,6 @@ export default function StockDetail() {
         <button className="back-button" onClick={() => navigate('/')}>
           ← Back to Stock List
         </button>
-
-        <AlgorithmSelector
-          selectedAlgorithm={algorithm}
-          onAlgorithmChange={setAlgorithm}
-        />
 
         <div className="sticky-header">
           <table className="stocks-table">
