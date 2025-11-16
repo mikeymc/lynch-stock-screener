@@ -89,6 +89,9 @@ class DataFetcher:
                 if matched_years >= 5:
                     logger.info(f"[{symbol}] Using EDGAR data ({matched_years} years)")
                     self._store_edgar_earnings(symbol, edgar_data)
+                    # Always fetch quarterly data from yfinance (EDGAR doesn't provide quarterly easily)
+                    logger.info(f"[{symbol}] Fetching quarterly data from yfinance")
+                    self._fetch_quarterly_earnings(symbol, stock)
                 else:
                     logger.info(f"[{symbol}] EDGAR has insufficient matched years ({matched_years} < 5). Falling back to yfinance")
                     self._fetch_and_store_earnings(symbol, stock)
@@ -295,6 +298,49 @@ class DataFetcher:
 
         except Exception as e:
             logger.error(f"[{symbol}] Error fetching earnings from yfinance: {type(e).__name__}: {e}")
+            import traceback
+            traceback.print_exc()
+
+    def _fetch_quarterly_earnings(self, symbol: str, stock):
+        """Fetch and store ONLY quarterly earnings data from yfinance"""
+        try:
+            # Fetch quarterly data only
+            quarterly_financials = stock.quarterly_financials
+            quarterly_balance_sheet = stock.quarterly_balance_sheet
+
+            if quarterly_financials is not None and not quarterly_financials.empty:
+                quarter_count = len(quarterly_financials.columns)
+                logger.info(f"[{symbol}] yfinance returned {quarter_count} quarters of data")
+
+                for col in quarterly_financials.columns:
+                    year = col.year if hasattr(col, 'year') else None
+                    quarter = col.quarter if hasattr(col, 'quarter') else None
+
+                    if not year or not quarter:
+                        continue
+
+                    revenue = None
+                    if 'Total Revenue' in quarterly_financials.index:
+                        revenue = quarterly_financials.loc['Total Revenue', col]
+
+                    eps = None
+                    if 'Diluted EPS' in quarterly_financials.index:
+                        eps = quarterly_financials.loc['Diluted EPS', col]
+
+                    # Calculate debt-to-equity from quarterly balance sheet
+                    debt_to_equity = None
+                    if quarterly_balance_sheet is not None and not quarterly_balance_sheet.empty and col in quarterly_balance_sheet.columns:
+                        debt_to_equity = self._calculate_debt_to_equity(quarterly_balance_sheet, col)
+
+                    if year and quarter and pd.notna(revenue) and pd.notna(eps):
+                        period = f'Q{quarter}'
+                        self.db.save_earnings_history(symbol, year, float(eps), float(revenue),
+                                                     debt_to_equity=debt_to_equity, period=period)
+            else:
+                logger.warning(f"[{symbol}] No quarterly financial data available from yfinance")
+
+        except Exception as e:
+            logger.error(f"[{symbol}] Error fetching quarterly earnings from yfinance: {type(e).__name__}: {e}")
             import traceback
             traceback.print_exc()
 

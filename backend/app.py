@@ -186,7 +186,12 @@ def get_stock_history(symbol):
     if period_type == 'annual':
         earnings_history = [e for e in earnings_history if e.get('period') == 'annual']
     elif period_type == 'quarterly':
-        earnings_history = [e for e in earnings_history if e.get('period') and e.get('period') != 'annual']
+        quarterly_data = [e for e in earnings_history if e.get('period') and e.get('period') != 'annual']
+        # Fall back to annual data if no quarterly data is available
+        if not quarterly_data:
+            earnings_history = [e for e in earnings_history if e.get('period') == 'annual']
+        else:
+            earnings_history = quarterly_data
     # If period_type == 'both', keep all data
 
     # Sort by year ascending, then by quarter for charting
