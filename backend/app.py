@@ -286,9 +286,23 @@ def get_stock_history(symbol):
 
         # Calculate P/E ratio if we have price and positive EPS
         if price is not None and eps > 0:
-            pe_ratio = price / eps
+            # ADJUSTMENT FOR STOCK SPLITS
+            # Get the fiscal year end date or default to Dec 31
+            fiscal_date = fiscal_end if fiscal_end else f"{year}-12-31"
+
+            # Calculate split adjustment factor
+            adjustment_factor = fetcher.get_split_adjustment_factor(symbol.upper(), fiscal_date)
+
+            # Adjust EPS to match split-adjusted price
+            adjusted_eps = eps / adjustment_factor
+
+            # Calculate P/E with adjusted EPS
+            pe_ratio = price / adjusted_eps
             pe_ratios.append(pe_ratio)
             prices.append(price)
+
+            # Update eps_values to show adjusted EPS
+            eps_values[-1] = adjusted_eps
         else:
             # No price data or negative EPS
             pe_ratios.append(None)

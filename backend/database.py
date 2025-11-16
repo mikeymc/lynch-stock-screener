@@ -176,6 +176,28 @@ class Database:
             )
         """)
 
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS stock_splits (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                symbol TEXT NOT NULL,
+                split_date TEXT NOT NULL,
+                split_ratio REAL NOT NULL,
+                last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (symbol) REFERENCES stocks(symbol),
+                UNIQUE(symbol, split_date)
+            )
+        """)
+
+        cursor.execute("""
+            CREATE INDEX IF NOT EXISTS idx_stock_splits_symbol
+            ON stock_splits(symbol)
+        """)
+
+        cursor.execute("""
+            CREATE INDEX IF NOT EXISTS idx_stock_splits_date
+            ON stock_splits(split_date)
+        """)
+
         # Migration: Add fiscal_end column if it doesn't exist
         cursor.execute("PRAGMA table_info(earnings_history)")
         columns = [row[1] for row in cursor.fetchall()]
@@ -326,6 +348,40 @@ class Database:
             }
             for row in rows
         ]
+
+    def save_stock_splits(self, symbol: str, splits: list):
+        """Save stock split history"""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+
+        for split in splits:
+            cursor.execute('''
+                INSERT OR REPLACE INTO stock_splits
+                (symbol, split_date, split_ratio, last_updated)
+                VALUES (?, ?, ?, ?)
+            ''', (symbol, split['date'], split['ratio'], datetime.now().isoformat()))
+
+        conn.commit()
+        conn.close()
+
+    def get_stock_splits(self, symbol: str) -> list:
+        """Get stock split history, ordered by date ascending"""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        cursor.execute('''
+            SELECT split_date, split_ratio
+            FROM stock_splits
+            WHERE symbol = ?
+            ORDER BY split_date ASC
+        ''', (symbol,))
+
+        splits = [
+            {'date': row[0], 'ratio': row[1]}
+            for row in cursor.fetchall()
+        ]
+
+        conn.close()
+        return splits
 
     def is_cache_valid(self, symbol: str, max_age_hours: int = 24) -> bool:
         conn = self.get_connection()
