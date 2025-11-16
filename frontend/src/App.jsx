@@ -130,16 +130,70 @@ function StockListView() {
   const [watchlist, setWatchlist] = useState(new Set())
   const [algorithm, setAlgorithm] = useState('weighted')
 
-  // Clear stocks when algorithm changes
+  // Re-evaluate existing stocks when algorithm changes
   useEffect(() => {
-    // Only clear if we actually have stocks displayed
-    if (stocks.length > 0) {
-      setStocks([])
-      setSummary(null)
-      setProgress('Algorithm changed. Click "Screen All Stocks" to re-evaluate.')
+    const reEvaluateStocks = async () => {
+      if (stocks.length === 0) return
+
+      setLoading(true)
+      setProgress('Re-evaluating stocks with new algorithm...')
+      setFilter('all')
+
+      try {
+        // Fetch re-evaluation for all existing stocks
+        const reEvaluatedStocks = await Promise.all(
+          stocks.map(async (stock) => {
+            try {
+              const response = await fetch(`${API_BASE}/stock/${stock.symbol}?algorithm=${algorithm}`)
+              if (response.ok) {
+                const data = await response.json()
+                return data.stock
+              }
+              return stock // Keep original if fetch fails
+            } catch (err) {
+              console.error(`Error re-evaluating ${stock.symbol}:`, err)
+              return stock // Keep original if fetch fails
+            }
+          })
+        )
+
+        setStocks(reEvaluatedStocks)
+
+        // Recalculate summary stats
+        const statusCounts = {}
+        reEvaluatedStocks.forEach(stock => {
+          const status = stock.overall_status
+          statusCounts[status] = (statusCounts[status] || 0) + 1
+        })
+
+        const summaryData = {
+          totalAnalyzed: reEvaluatedStocks.length,
+          algorithm: algorithm
+        }
+
+        if (algorithm === 'classic') {
+          summaryData.passCount = statusCounts['PASS'] || 0
+          summaryData.closeCount = statusCounts['CLOSE'] || 0
+          summaryData.failCount = statusCounts['FAIL'] || 0
+        } else {
+          summaryData.strong_buy_count = statusCounts['STRONG_BUY'] || 0
+          summaryData.buy_count = statusCounts['BUY'] || 0
+          summaryData.hold_count = statusCounts['HOLD'] || 0
+          summaryData.caution_count = statusCounts['CAUTION'] || 0
+          summaryData.avoid_count = statusCounts['AVOID'] || 0
+        }
+
+        setSummary(summaryData)
+        setProgress('')
+      } catch (err) {
+        console.error('Error re-evaluating stocks:', err)
+        setError(`Failed to re-evaluate stocks: ${err.message}`)
+      } finally {
+        setLoading(false)
+      }
     }
-    // Reset filter to 'all' when algorithm changes
-    setFilter('all')
+
+    reEvaluateStocks()
   }, [algorithm])
 
   // Load watchlist on mount
@@ -175,7 +229,6 @@ function StockListView() {
       const params = new URLSearchParams({ algorithm })
       if (limit) params.append('limit', limit)
       const url = `${API_BASE}/screen?${params.toString()}`
-      console.log('Screening with URL:', url, 'Algorithm:', algorithm)
       const response = await fetch(url)
 
       if (!response.ok) {
@@ -202,16 +255,6 @@ function StockListView() {
             if (data.type === 'progress') {
               setProgress(data.message)
             } else if (data.type === 'stock_result') {
-              // Debug: Log first few stocks to see what we're getting
-              if (data.stock) {
-                console.log('Stock received:', {
-                  symbol: data.stock.symbol,
-                  algorithm: data.stock.algorithm,
-                  overall_status: data.stock.overall_status,
-                  overall_score: data.stock.overall_score,
-                  rating_label: data.stock.rating_label
-                })
-              }
               setStocks(prevStocks => [...prevStocks, data.stock])
             } else if (data.type === 'complete') {
               // Handle both classic and new algorithm summary formats
@@ -302,7 +345,6 @@ function StockListView() {
   }
 
   const sortedStocks = useMemo(() => {
-    console.log('sortedStocks useMemo running with sortBy:', sortBy, 'sortDir:', sortDir)
     const filtered = stocks.filter(stock => {
       // Apply watchlist filter
       if (filter === 'watchlist' && !watchlist.has(stock.symbol)) {
@@ -350,13 +392,8 @@ function StockListView() {
           'CLOSE': 2,
           'FAIL': 3
         }
-        const origA = aVal
-        const origB = bVal
         aVal = ranks[aVal] || 999
         bVal = ranks[bVal] || 999
-        if (a.symbol === 'AAPL' || b.symbol === 'AAPL') {
-          console.log(`Comparing ${a.symbol}(${origA}=${aVal}) vs ${b.symbol}(${origB}=${bVal}), sortDir=${sortDir}`)
-        }
       } else if (typeof aVal === 'string') {
         aVal = aVal.toLowerCase()
         bVal = (bVal || '').toLowerCase()
@@ -368,7 +405,6 @@ function StockListView() {
         return aVal > bVal ? -1 : aVal < bVal ? 1 : 0
       }
     })
-    console.log('First 5 sorted stocks:', sorted.slice(0, 5).map(s => `${s.symbol}:${s.overall_status}`))
     return sorted
   }, [stocks, filter, sortBy, sortDir, searchQuery, watchlist])
 
@@ -378,13 +414,9 @@ function StockListView() {
   const paginatedStocks = sortedStocks.slice(startIndex, endIndex)
 
   const toggleSort = (column) => {
-    console.log('toggleSort called with column:', column, 'current sortBy:', sortBy, 'current sortDir:', sortDir)
     if (sortBy === column) {
-      const newDir = sortDir === 'asc' ? 'desc' : 'asc'
-      console.log('Toggling direction to:', newDir)
-      setSortDir(newDir)
+      setSortDir(sortDir === 'asc' ? 'desc' : 'asc')
     } else {
-      console.log('Setting new column:', column, 'direction: asc')
       setSortBy(column)
       setSortDir('asc')
     }
