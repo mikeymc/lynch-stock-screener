@@ -27,7 +27,9 @@ const AlgorithmSelector = ({ selectedAlgorithm, onAlgorithmChange }) => {
   return (
     <>
       <div className="algorithm-selector">
-        <label htmlFor="algorithm-select">Scoring Algorithm:</label>
+        <label htmlFor="algorithm-select">
+          Scoring Algo <sup onClick={() => setShowHelp(true)} style={{ cursor: 'pointer' }} title="Learn about scoring algorithms">i</sup>:
+        </label>
         <select
           id="algorithm-select"
           value={selectedAlgorithm}
@@ -44,18 +46,6 @@ const AlgorithmSelector = ({ selectedAlgorithm, onAlgorithmChange }) => {
             </option>
           ))}
         </select>
-        <button
-          className="help-button"
-          onClick={() => setShowHelp(true)}
-          title="Learn about scoring algorithms"
-        >
-          ?
-        </button>
-        {algorithms[selectedAlgorithm] && (
-          <div className="algorithm-tooltip">
-            {algorithms[selectedAlgorithm].short_desc}
-          </div>
-        )}
       </div>
 
       {showHelp && (

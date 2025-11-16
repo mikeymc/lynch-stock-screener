@@ -289,6 +289,7 @@ function StockListView() {
   }
 
   const sortedStocks = useMemo(() => {
+    console.log('sortedStocks useMemo running with sortBy:', sortBy, 'sortDir:', sortDir)
     const filtered = stocks.filter(stock => {
       // Apply watchlist filter
       if (filter === 'watchlist' && !watchlist.has(stock.symbol)) {
@@ -314,7 +315,7 @@ function StockListView() {
       return true
     })
 
-    return [...filtered].sort((a, b) => {
+    const sorted = [...filtered].sort((a, b) => {
       let aVal = a[sortBy]
       let bVal = b[sortBy]
 
@@ -325,20 +326,38 @@ function StockListView() {
 
       // Special handling for status columns - use rank instead of alphabetical
       if (sortBy.endsWith('_status') || sortBy === 'overall_status') {
-        aVal = getStatusRank(aVal)
-        bVal = getStatusRank(bVal)
+        const ranks = {
+          'STRONG_BUY': 1,
+          'BUY': 2,
+          'HOLD': 3,
+          'CAUTION': 4,
+          'AVOID': 5,
+          'SELL': 6,
+          'PASS': 1,
+          'CLOSE': 2,
+          'FAIL': 3
+        }
+        const origA = aVal
+        const origB = bVal
+        aVal = ranks[aVal] || 999
+        bVal = ranks[bVal] || 999
+        if (a.symbol === 'AAPL' || b.symbol === 'AAPL') {
+          console.log(`Comparing ${a.symbol}(${origA}=${aVal}) vs ${b.symbol}(${origB}=${bVal}), sortDir=${sortDir}`)
+        }
       } else if (typeof aVal === 'string') {
         aVal = aVal.toLowerCase()
         bVal = (bVal || '').toLowerCase()
       }
 
       if (sortDir === 'asc') {
-        return aVal < bVal ? -1 : 1
+        return aVal < bVal ? -1 : aVal > bVal ? 1 : 0
       } else {
-        return aVal > bVal ? -1 : 1
+        return aVal > bVal ? -1 : aVal < bVal ? 1 : 0
       }
     })
-  }, [stocks, filter, sortBy, sortDir, searchQuery])
+    console.log('First 5 sorted stocks:', sorted.slice(0, 5).map(s => `${s.symbol}:${s.overall_status}`))
+    return sorted
+  }, [stocks, filter, sortBy, sortDir, searchQuery, watchlist])
 
   const totalPages = Math.ceil(sortedStocks.length / itemsPerPage)
   const startIndex = (currentPage - 1) * itemsPerPage
@@ -346,9 +365,13 @@ function StockListView() {
   const paginatedStocks = sortedStocks.slice(startIndex, endIndex)
 
   const toggleSort = (column) => {
+    console.log('toggleSort called with column:', column, 'current sortBy:', sortBy, 'current sortDir:', sortDir)
     if (sortBy === column) {
-      setSortDir(sortDir === 'asc' ? 'desc' : 'asc')
+      const newDir = sortDir === 'asc' ? 'desc' : 'asc'
+      console.log('Toggling direction to:', newDir)
+      setSortDir(newDir)
     } else {
+      console.log('Setting new column:', column, 'direction: asc')
       setSortBy(column)
       setSortDir('asc')
     }
@@ -361,11 +384,6 @@ function StockListView() {
   return (
     <div className="app">
       <div className="controls">
-        <AlgorithmSelector
-          selectedAlgorithm={algorithm}
-          onAlgorithmChange={setAlgorithm}
-        />
-
         <button onClick={() => screenStocks(null)} disabled={loading}>
           Screen All Stocks
         </button>
@@ -412,6 +430,11 @@ function StockListView() {
             <span className="summary-stat fail">{summary.failCount} FAIL</span>
           </div>
         )}
+
+        <AlgorithmSelector
+          selectedAlgorithm={algorithm}
+          onAlgorithmChange={setAlgorithm}
+        />
       </div>
 
       {loading && (

@@ -362,7 +362,7 @@ class LynchCriteria:
 
         # Calculate category-specific scores
         peg_category_score = 100 if peg_ratio and peg_ratio <= peg_threshold else (base_data['peg_score'] * 0.8)
-        debt_category_score = 100 if debt_to_equity <= debt_threshold else (base_data['debt_score'] * 0.8)
+        debt_category_score = 100 if debt_to_equity and debt_to_equity <= debt_threshold else (base_data['debt_score'] * 0.8)
         consistency_score = base_data.get('consistency_score', 50) if base_data.get('consistency_score') is not None else 50
 
         overall_score = (
