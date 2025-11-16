@@ -263,12 +263,12 @@ button:disabled {
   border-radius: 0.5rem;
   padding: 1rem;
   margin-top: 1rem;
+  overflow-x: auto;
 }
 
 table {
   width: 100%;
   border-collapse: collapse;
-  min-width: 1200px;
 }
 
 th {
@@ -1226,4 +1226,31 @@ td strong {
 
 .chat-panel.with-analysis {
   flex: 1;
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+  .controls {
+    padding: 0.75rem 1rem;
+  }
+
+  .search-container {
+    min-width: 200px;
+  }
+
+  .table-container {
+    padding: 0.5rem;
+  }
+}
+
+@media (max-width: 480px) {
+  .controls {
+    padding: 0.5rem;
+    gap: 0.5rem;
+  }
+
+  .search-container {
+    min-width: 150px;
+    flex: 1;
+  }
 }
