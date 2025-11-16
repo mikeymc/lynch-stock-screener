@@ -556,3 +556,81 @@ def test_parse_eps_history_ifrs_filters_20f_forms(edgar_fetcher):
     assert all(entry["year"] in [2023, 2022] for entry in eps_history)
     # Q2 entry should be excluded
     assert not any(entry.get("fp") == "Q2" for entry in eps_history)
+
+
+@pytest.mark.integration
+@pytest.mark.slow
+def test_fetch_real_eps_data_integration():
+    """
+    Integration test: Fetch real EPS data from SEC EDGAR API for Apple Inc.
+
+    Tests end-to-end flow with actual API calls (no mocks):
+    - Ticker-to-CIK mapping
+    - Company facts API call
+    - EPS data parsing
+    - Data structure and content validation
+
+    This test makes real network calls to SEC EDGAR and may take several seconds.
+    Run with: pytest -m integration
+    Skip with: pytest -m "not integration"
+    """
+    # Arrange
+    fetcher = EdgarFetcher(user_agent="Lynch Stock Screener test@example.com")
+    ticker = "AAPL"
+
+    # Act
+    fundamentals = fetcher.fetch_stock_fundamentals(ticker)
+
+    # Assert - Overall structure
+    assert fundamentals is not None, "Should successfully fetch fundamentals data"
+    assert "eps_history" in fundamentals, "Response should contain eps_history"
+    assert isinstance(fundamentals["eps_history"], list), "eps_history should be a list"
+    assert len(fundamentals["eps_history"]) >= 5, "Should have at least 5 years of EPS data"
+
+    # Assert - Company metadata
+    assert fundamentals["ticker"] == ticker, f"Ticker should match requested {ticker}"
+    assert fundamentals["cik"] == "0000320193", "Apple's CIK should be 0000320193"
+    assert "Apple" in fundamentals["company_name"], f"Company name should contain 'Apple', got: {fundamentals['company_name']}"
+
+    # Assert - EPS data quality
+    eps_history = fundamentals["eps_history"]
+
+    for entry in eps_history:
+        # Structure - required fields present
+        assert "year" in entry, "Each EPS entry should have 'year' field"
+        assert "eps" in entry, "Each EPS entry should have 'eps' field"
+        assert "fiscal_end" in entry, "Each EPS entry should have 'fiscal_end' field"
+
+        # Types - correct data types
+        assert isinstance(entry["year"], int), f"Year should be int, got {type(entry['year'])}"
+        assert isinstance(entry["eps"], (int, float)), f"EPS should be numeric, got {type(entry['eps'])}"
+        assert isinstance(entry["fiscal_end"], str), f"fiscal_end should be string, got {type(entry['fiscal_end'])}"
+
+        # Values - reasonable ranges
+        assert entry["eps"] > 0, f"Apple should have positive EPS, got {entry['eps']} for FY{entry['year']}"
+        assert entry["eps"] < 100, f"Apple EPS should be reasonable (<100), got {entry['eps']} for FY{entry['year']}"
+        assert entry["year"] >= 2009, f"Should have historical data (>=2009), got FY{entry['year']}"
+        assert entry["year"] <= 2030, f"Year should be reasonable, got FY{entry['year']}"
+
+        # Fiscal end date validation
+        assert len(entry["fiscal_end"]) == 10, f"fiscal_end should be YYYY-MM-DD format, got {entry['fiscal_end']}"
+        assert entry["fiscal_end"][4] == "-" and entry["fiscal_end"][7] == "-", f"fiscal_end should be YYYY-MM-DD format, got {entry['fiscal_end']}"
+
+        # Apple's fiscal year typically ends on the last Saturday of September
+        # Accept dates from Sept 24-30 to account for this
+        month_day = entry["fiscal_end"][5:]  # Extract MM-DD
+        assert month_day.startswith("09-"), f"Apple fiscal year should end in September, got {entry['fiscal_end']}"
+        day = int(month_day.split("-")[1])
+        assert 24 <= day <= 30, f"Apple fiscal year should end in late September (24-30), got day {day}"
+
+        # Fiscal end should be a historical date (not in the future)
+        from datetime import datetime
+        fiscal_end_date = datetime.strptime(entry["fiscal_end"], "%Y-%m-%d")
+        assert fiscal_end_date <= datetime.now(), f"Fiscal end date should not be in the future: {entry['fiscal_end']}"
+
+    # Assert - Chronological ordering
+    years = [entry["year"] for entry in eps_history]
+    assert years == sorted(years, reverse=True), "EPS history should be sorted by year descending (newest first)"
+
+    # Assert - No duplicate years
+    assert len(years) == len(set(years)), f"Should not have duplicate years, got: {years}"
