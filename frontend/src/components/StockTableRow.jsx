@@ -5,12 +5,24 @@ import StatusBar from './StatusBar'
 
 function getStatusColor(status) {
   switch (status) {
+    // Classic algorithm statuses
     case 'PASS':
       return '#90EE90' // light green
     case 'CLOSE':
       return '#FFD700' // gold/yellow
     case 'FAIL':
       return '#FFB6C1' // light red/pink
+    // New algorithm statuses
+    case 'STRONG_BUY':
+      return '#22c55e' // strong green
+    case 'BUY':
+      return '#4ade80' // light green
+    case 'HOLD':
+      return '#fbbf24' // yellow/gold
+    case 'CAUTION':
+      return '#fb923c' // orange
+    case 'AVOID':
+      return '#f87171' // red
     default:
       return '#FFFFFF' // white
   }

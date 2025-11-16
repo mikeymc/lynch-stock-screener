@@ -240,19 +240,33 @@ function StockListView() {
 
   const getStatusColor = (status) => {
     switch (status) {
+      // Classic algorithm statuses
       case 'PASS': return '#4ade80'
       case 'CLOSE': return '#fbbf24'
       case 'FAIL': return '#f87171'
+      // New algorithm statuses
+      case 'STRONG_BUY': return '#22c55e'
+      case 'BUY': return '#4ade80'
+      case 'HOLD': return '#fbbf24'
+      case 'CAUTION': return '#fb923c'
+      case 'AVOID': return '#f87171'
       default: return '#gray'
     }
   }
 
   const getStatusRank = (status) => {
     switch (status) {
+      // Classic algorithm statuses
       case 'PASS': return 1
       case 'CLOSE': return 2
       case 'FAIL': return 3
-      default: return 4
+      // New algorithm statuses
+      case 'STRONG_BUY': return 1
+      case 'BUY': return 2
+      case 'HOLD': return 3
+      case 'CAUTION': return 4
+      case 'AVOID': return 5
+      default: return 6
     }
   }
 
