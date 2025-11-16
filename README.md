@@ -13,8 +13,7 @@ A full-stack stock screening application that filters NYSE and NASDAQ stocks usi
 - **Historical Price Data**: Fetch stock prices at fiscal year-end dates to calculate historical P/E ratios
 - **Hybrid Data Sources**:
   - SEC EDGAR API for 10-20 years of fundamental data (EPS, revenue)
-  - Schwab API for accurate historical stock prices (optional)
-  - Automatic fallback to yfinance when Schwab unavailable
+  - yfinance for historical stock prices and supplemental data
 - **Fiscal Year Awareness**: Uses actual fiscal year-end dates (not calendar year) for accurate price/earnings alignment
 - **Smart Caching**: 24-hour cache validity for blazing fast subsequent runs
 - **Color-Coded Results**: Green (PASS), Yellow (CLOSE), Red (FAIL)
@@ -27,9 +26,8 @@ A full-stack stock screening application that filters NYSE and NASDAQ stocks usi
 - **Frontend**: React 18, Vite
 - **Data Sources**:
   - SEC EDGAR API (primary fundamentals source)
-  - Schwab Developer API (optional, for historical prices)
-  - yfinance (fallback for prices and supplemental data)
-- **Testing**: pytest (82 tests, all passing)
+  - yfinance (historical prices and supplemental data)
+- **Testing**: pytest
 
 ## Quick Start
 
@@ -53,31 +51,7 @@ python app.py
 
 Backend will run on `http://localhost:5000`
 
-### 2. Schwab API Setup (Optional)
-
-The app works without Schwab API, falling back to yfinance for historical prices. To enable Schwab:
-
-1. **Get API Credentials** from [Schwab Developer Portal](https://developer.schwab.com/)
-2. **Create `.env` file** in the `backend/` directory:
-
-```bash
-cp backend/.env.example backend/.env
-```
-
-3. **Add your credentials** to `backend/.env`:
-
-```bash
-SCHWAB_API_KEY=your_app_key_here
-SCHWAB_API_SECRET=your_app_secret_here
-SCHWAB_REDIRECT_URI=https://localhost
-SCHWAB_TOKEN_PATH=./tokens/schwab_tokens.json
-```
-
-4. **First-time OAuth**: On first run, schwab-py will open a browser for OAuth authorization. Follow the prompts and paste the redirect URL back into the terminal.
-
-5. **Token Refresh**: Tokens are automatically refreshed and stored in `./tokens/schwab_tokens.json`
-
-### 3. Frontend Setup
+### 2. Frontend Setup
 
 ```bash
 # Install dependencies
@@ -134,7 +108,6 @@ lynch-stock-screener/
 │   ├── database.py            # SQLite operations with fiscal year-end support
 │   ├── data_fetcher.py        # Hybrid EDGAR + yfinance data fetching
 │   ├── edgar_fetcher.py       # SEC EDGAR API client
-│   ├── schwab_client.py       # Schwab API client for historical prices
 │   ├── earnings_analyzer.py   # 5-year growth calculations
 │   ├── lynch_criteria.py      # Criteria evaluation logic
 │   ├── .env.example           # Environment variables template
@@ -163,12 +136,11 @@ npm run build
 
 ## Notes
 
-- **First run** will be slow (fetching data from SEC EDGAR and yfinance/Schwab)
+- **First run** will be slow (fetching data from SEC EDGAR and yfinance)
 - **Subsequent runs** use cached data (much faster)
 - **Cache expires** after 24 hours
 - **EDGAR data** provides 10-20 years of historical fundamentals for most stocks
 - **Fiscal year awareness**: Prices are fetched at each company's actual fiscal year-end (e.g., Apple's September 30, not December 31)
-- **Schwab API** is optional - the app works fine with yfinance fallback
 - **SEC EDGAR** enforces rate limiting (10 requests/second) - the app respects this automatically
 - Some stocks may not have sufficient historical data and will be filtered out
 - yfinance is unofficial and may occasionally be rate-limited

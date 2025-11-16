@@ -11,7 +11,6 @@ from database import Database
 from data_fetcher import DataFetcher
 from earnings_analyzer import EarningsAnalyzer
 from lynch_criteria import LynchCriteria
-from schwab_client import SchwabClient
 from lynch_analyst import LynchAnalyst
 from conversation_manager import ConversationManager
 
@@ -22,7 +21,6 @@ db = Database("stocks.db")
 fetcher = DataFetcher(db)
 analyzer = EarningsAnalyzer(db)
 criteria = LynchCriteria(db, analyzer)
-schwab_client = SchwabClient()
 lynch_analyst = LynchAnalyst(db)
 conversation_manager = ConversationManager(db)
 
@@ -244,32 +242,23 @@ def get_stock_history(symbol):
 
         # Fetch historical price for this year's fiscal year-end
         if fiscal_end:
-            # Try Schwab API first if available
-            if schwab_client.is_available():
-                try:
-                    price = schwab_client.get_historical_price(symbol.upper(), fiscal_end)
-                except Exception as e:
-                    print(f"Schwab API error for {symbol} on {fiscal_end}: {e}")
-                    price = None
+            # Use yfinance to get historical price
+            try:
+                # Use fiscal year-end date for yfinance
+                # Fetch a few days before and after to handle weekends/holidays
+                from datetime import datetime, timedelta
+                fiscal_date = datetime.strptime(fiscal_end, '%Y-%m-%d')
+                start_date = (fiscal_date - timedelta(days=7)).strftime('%Y-%m-%d')
+                end_date = (fiscal_date + timedelta(days=3)).strftime('%Y-%m-%d')
 
-            # Fall back to yfinance if Schwab failed or unavailable
-            if price is None:
-                try:
-                    # Use fiscal year-end date for yfinance
-                    # Fetch a few days before and after to handle weekends/holidays
-                    from datetime import datetime, timedelta
-                    fiscal_date = datetime.strptime(fiscal_end, '%Y-%m-%d')
-                    start_date = (fiscal_date - timedelta(days=7)).strftime('%Y-%m-%d')
-                    end_date = (fiscal_date + timedelta(days=3)).strftime('%Y-%m-%d')
+                hist = ticker.history(start=start_date, end=end_date)
 
-                    hist = ticker.history(start=start_date, end=end_date)
-
-                    if not hist.empty:
-                        # Get closing price from the last available day
-                        price = hist.iloc[-1]['Close']
-                except Exception as e:
-                    print(f"yfinance error for {symbol} on {fiscal_end}: {e}")
-                    price = None
+                if not hist.empty:
+                    # Get closing price from the last available day
+                    price = hist.iloc[-1]['Close']
+            except Exception as e:
+                print(f"yfinance error for {symbol} on {fiscal_end}: {e}")
+                price = None
         else:
             # No fiscal_end date, fall back to December 31
             try:
