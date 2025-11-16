@@ -218,6 +218,12 @@ class Database:
         if 'institutional_ownership_score' not in results_columns:
             cursor.execute("ALTER TABLE screening_results ADD COLUMN institutional_ownership_score REAL")
 
+        # Migration: Add period column to earnings_history table
+        cursor.execute("PRAGMA table_info(earnings_history)")
+        earnings_columns = [row[1] for row in cursor.fetchall()]
+        if 'period' not in earnings_columns:
+            cursor.execute("ALTER TABLE earnings_history ADD COLUMN period TEXT DEFAULT 'annual'")
+
         conn.commit()
         conn.close()
 
