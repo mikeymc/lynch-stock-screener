@@ -59,7 +59,8 @@ def screen_stocks():
         try:
             yield f"data: {json.dumps({'type': 'progress', 'message': 'Fetching stock list...'})}\n\n"
 
-            symbols = fetcher.get_nyse_nasdaq_symbols()
+            # symbols = fetcher.get_nyse_nasdaq_symbols()
+            symbols = ['AAPL', 'MSFT', 'GOOG', 'AMD', 'F', 'NVDA', 'ABNB', 'AMD']
 
             if not symbols:
                 yield f"data: {json.dumps({'type': 'error', 'message': 'Unable to fetch stock symbols'})}\n\n"

@@ -127,8 +127,8 @@ class DataFetcher:
         debt_to_equity_history = edgar_data.get('debt_to_equity_history', [])
         calculated_eps_history = edgar_data.get('calculated_eps_history', [])
 
-        # Create mapping of year to revenue and fiscal_end for easy lookup
-        revenue_by_year = {entry['year']: {'revenue': entry['revenue'], 'fiscal_end': entry.get('fiscal_end')} for entry in revenue_history}
+        # Create mapping of year to net income for easy lookup
+        net_income_by_year = {entry['year']: {'net_income': entry['net_income'], 'fiscal_end': entry.get('fiscal_end')} for entry in net_income_annual}
 
         # Create mapping of year to debt_to_equity for easy lookup
         debt_to_equity_by_year = {entry['year']: entry['debt_to_equity'] for entry in debt_to_equity_history}
@@ -139,25 +139,27 @@ class DataFetcher:
         # Track years that need D/E data
         years_needing_de = []
 
-        # Store each year's data using Net Income
-        for ni_entry in net_income_annual:
-            year = ni_entry['year']
-            net_income = ni_entry.get('net_income')
-            fiscal_end = ni_entry.get('fiscal_end')
-            revenue_data = revenue_by_year.get(year)
+        # Store all revenue years (with or without net income)
+        for rev_entry in revenue_history:
+            year = rev_entry['year']
+            revenue = rev_entry['revenue']
+            fiscal_end = rev_entry.get('fiscal_end')
             debt_to_equity = debt_to_equity_by_year.get(year)
             eps = eps_by_year.get(year)
 
-            if year and net_income and revenue_data:
-                revenue = revenue_data['revenue']
-                # Prefer revenue's fiscal_end if available, otherwise use NI's fiscal_end
-                final_fiscal_end = revenue_data.get('fiscal_end') or fiscal_end
-                self.db.save_earnings_history(symbol, year, float(eps) if eps else None, float(revenue), fiscal_end=final_fiscal_end, debt_to_equity=debt_to_equity, net_income=float(net_income))
-                logger.debug(f"[{symbol}] Stored EDGAR Net Income for {year}: ${net_income:,.0f}, Revenue: ${revenue:,.0f}")
+            # Get net income if available for this year
+            ni_data = net_income_by_year.get(year)
+            net_income = ni_data['net_income'] if ni_data else None
+            # Prefer revenue's fiscal_end, fall back to NI's fiscal_end if available
+            if not fiscal_end and ni_data:
+                fiscal_end = ni_data.get('fiscal_end')
 
-                # Track years missing D/E data
-                if debt_to_equity is None:
-                    years_needing_de.append(year)
+            self.db.save_earnings_history(symbol, year, float(eps) if eps else None, float(revenue), fiscal_end=fiscal_end, debt_to_equity=debt_to_equity, net_income=float(net_income) if net_income else None)
+            logger.debug(f"[{symbol}] Stored EDGAR for {year}: Revenue: ${revenue:,.0f}" + (f", NI: ${net_income:,.0f}" if net_income else " (no NI)"))
+
+            # Track years missing D/E data
+            if debt_to_equity is None:
+                years_needing_de.append(year)
 
         # If EDGAR didn't provide D/E data, try to get it from yfinance
         if years_needing_de:

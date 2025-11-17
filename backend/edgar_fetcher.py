@@ -155,25 +155,27 @@ class EdgarFetcher:
             return []
 
         # Filter for annual reports (10-K for US, 20-F for foreign)
-        annual_eps = []
-        seen_years = set()
+        # Use dict to keep only the latest fiscal_end for each year
+        annual_eps_by_year = {}
 
         for entry in eps_data_list:
             if entry.get('form') in ['10-K', '20-F']:
-                year = entry.get('fy')
-                eps = entry.get('val')
                 fiscal_end = entry.get('end')
+                # Extract year from fiscal_end date (more reliable than fy field)
+                year = int(fiscal_end[:4]) if fiscal_end else entry.get('fy')
+                eps = entry.get('val')
 
-                # Avoid duplicates, keep only one entry per fiscal year
-                if year and eps and year not in seen_years:
-                    annual_eps.append({
-                        'year': year,
-                        'eps': eps,
-                        'fiscal_end': fiscal_end
-                    })
-                    seen_years.add(year)
+                if year and eps and fiscal_end:
+                    # Keep the entry with the latest fiscal_end for each year
+                    if year not in annual_eps_by_year or fiscal_end > annual_eps_by_year[year]['fiscal_end']:
+                        annual_eps_by_year[year] = {
+                            'year': year,
+                            'eps': eps,
+                            'fiscal_end': fiscal_end
+                        }
 
-        # Sort by year descending
+        # Convert dict to list and sort by year descending
+        annual_eps = list(annual_eps_by_year.values())
         annual_eps.sort(key=lambda x: x['year'], reverse=True)
         logger.info(f"Successfully parsed {len(annual_eps)} years of EPS data from EDGAR")
         return annual_eps
@@ -225,10 +227,11 @@ class EdgarFetcher:
 
         for entry in eps_data_list:
             if entry.get('form') in ['10-Q', '6-K']:
-                year = entry.get('fy')
+                fiscal_end = entry.get('end')
+                # Extract year from fiscal_end date (more reliable than fy field)
+                year = int(fiscal_end[:4]) if fiscal_end else entry.get('fy')
                 quarter = entry.get('fp')  # Fiscal period: Q1, Q2, Q3
                 eps = entry.get('val')
-                fiscal_end = entry.get('end')
 
                 # Only include entries with fiscal period (Q1, Q2, Q3)
                 # Avoid duplicates using (year, quarter) tuple
@@ -298,25 +301,27 @@ class EdgarFetcher:
             return []
 
         # Filter for annual reports (10-K for US, 20-F for foreign)
-        annual_net_income = []
-        seen_years = set()
+        # Use dict to keep only the latest fiscal_end for each year
+        annual_net_income_by_year = {}
 
         for entry in net_income_data_list:
             if entry.get('form') in ['10-K', '20-F']:
-                year = entry.get('fy')
-                net_income = entry.get('val')
                 fiscal_end = entry.get('end')
+                # Extract year from fiscal_end date (more reliable than fy field)
+                year = int(fiscal_end[:4]) if fiscal_end else entry.get('fy')
+                net_income = entry.get('val')
 
-                # Avoid duplicates, keep only one entry per fiscal year
-                if year and net_income is not None and year not in seen_years:
-                    annual_net_income.append({
-                        'year': year,
-                        'net_income': net_income,
-                        'fiscal_end': fiscal_end
-                    })
-                    seen_years.add(year)
+                if year and net_income is not None and fiscal_end:
+                    # Keep the entry with the latest fiscal_end for each year
+                    if year not in annual_net_income_by_year or fiscal_end > annual_net_income_by_year[year]['fiscal_end']:
+                        annual_net_income_by_year[year] = {
+                            'year': year,
+                            'net_income': net_income,
+                            'fiscal_end': fiscal_end
+                        }
 
-        # Sort by year descending
+        # Convert dict to list and sort by year descending
+        annual_net_income = list(annual_net_income_by_year.values())
         annual_net_income.sort(key=lambda x: x['year'], reverse=True)
         logger.info(f"Successfully parsed {len(annual_net_income)} years of Net Income data from EDGAR")
         return annual_net_income
@@ -374,10 +379,11 @@ class EdgarFetcher:
 
         for entry in net_income_data_list:
             if entry.get('form') in ['10-Q', '6-K']:
-                year = entry.get('fy')
+                fiscal_end = entry.get('end')
+                # Extract year from fiscal_end date (more reliable than fy field)
+                year = int(fiscal_end[:4]) if fiscal_end else entry.get('fy')
                 quarter = entry.get('fp')  # Fiscal period: Q1, Q2, Q3
                 net_income = entry.get('val')
-                fiscal_end = entry.get('end')
 
                 # Only include entries with fiscal period (Q1, Q2, Q3)
                 # Avoid duplicates using (year, quarter) tuple
@@ -531,25 +537,27 @@ class EdgarFetcher:
             return []
 
         # Filter for annual reports (10-K for US, 20-F for foreign)
-        annual_shares = []
-        seen_years = set()
+        # Use dict to keep only the latest fiscal_end for each year
+        annual_shares_by_year = {}
 
         for entry in shares_data_list:
             if entry.get('form') in ['10-K', '20-F']:
-                year = entry.get('fy')
-                shares = entry.get('val')
                 fiscal_end = entry.get('end')
+                # Extract year from fiscal_end date (more reliable than fy field)
+                year = int(fiscal_end[:4]) if fiscal_end else entry.get('fy')
+                shares = entry.get('val')
 
-                # Avoid duplicates, keep only one entry per fiscal year
-                if year and shares is not None and year not in seen_years:
-                    annual_shares.append({
-                        'year': year,
-                        'shares': shares,
-                        'fiscal_end': fiscal_end
-                    })
-                    seen_years.add(year)
+                if year and shares is not None and fiscal_end:
+                    # Keep the entry with the latest fiscal_end for each year
+                    if year not in annual_shares_by_year or fiscal_end > annual_shares_by_year[year]['fiscal_end']:
+                        annual_shares_by_year[year] = {
+                            'year': year,
+                            'shares': shares,
+                            'fiscal_end': fiscal_end
+                        }
 
-        # Sort by year descending
+        # Convert dict to list and sort by year descending
+        annual_shares = list(annual_shares_by_year.values())
         annual_shares.sort(key=lambda x: x['year'], reverse=True)
         logger.info(f"Successfully parsed {len(annual_shares)} years of shares outstanding data from EDGAR")
         return annual_shares
@@ -599,10 +607,11 @@ class EdgarFetcher:
 
         for entry in shares_data_list:
             if entry.get('form') in ['10-Q', '6-K']:
-                year = entry.get('fy')
+                fiscal_end = entry.get('end')
+                # Extract year from fiscal_end date (more reliable than fy field)
+                year = int(fiscal_end[:4]) if fiscal_end else entry.get('fy')
                 quarter = entry.get('fp')  # Fiscal period: Q1, Q2, Q3
                 shares = entry.get('val')
-                fiscal_end = entry.get('end')
 
                 # Only include entries with fiscal period (Q1, Q2, Q3)
                 # Avoid duplicates using (year, quarter) tuple
@@ -622,9 +631,10 @@ class EdgarFetcher:
 
         for entry in shares_data_list:
             if entry.get('form') in ['10-K', '20-F']:
-                year = entry.get('fy')
-                shares = entry.get('val')
                 fiscal_end = entry.get('end')
+                # Extract year from fiscal_end date (more reliable than fy field)
+                year = int(fiscal_end[:4]) if fiscal_end else entry.get('fy')
+                shares = entry.get('val')
 
                 if year and shares is not None and year not in seen_annual_years:
                     annual_shares.append({
@@ -679,12 +689,15 @@ class EdgarFetcher:
         shares_annual = self.parse_shares_outstanding_history(company_facts)
 
         # Create lookup dict for shares by year
+        # Note: Now that we extract year from fiscal_end consistently, years should match
         shares_by_year = {entry['year']: entry for entry in shares_annual}
 
         # Calculate EPS for each year
         eps_history = []
         for ni_entry in net_income_annual:
             year = ni_entry['year']
+            fiscal_end = ni_entry['fiscal_end']
+
             if year in shares_by_year:
                 net_income = ni_entry['net_income']
                 shares = shares_by_year[year]['shares']
@@ -696,7 +709,7 @@ class EdgarFetcher:
                         'eps': eps,
                         'net_income': net_income,
                         'shares': shares,
-                        'fiscal_end': ni_entry['fiscal_end']
+                        'fiscal_end': fiscal_end
                     })
 
         # Sort by year descending
@@ -769,8 +782,8 @@ class EdgarFetcher:
         Returns:
             List of dictionaries with year, revenue, and fiscal_end values
         """
-        annual_revenue = []
-        seen_years = set()
+        # Use dict to keep only the latest fiscal_end for each year
+        annual_revenue_by_year = {}
         fields_found = []
 
         # Try US-GAAP first (domestic companies)
@@ -799,18 +812,33 @@ class EdgarFetcher:
                     # Filter for 10-K annual reports
                     for entry in revenue_data:
                         if entry.get('form') == '10-K':
-                            year = entry.get('fy')
-                            revenue = entry.get('val')
                             fiscal_end = entry.get('end')
+                            # Extract year from fiscal_end date (more reliable than fy field)
+                            year = int(fiscal_end[:4]) if fiscal_end else entry.get('fy')
+                            revenue = entry.get('val')
 
-                            # Avoid duplicates across all fields
-                            if year and revenue and year not in seen_years:
-                                annual_revenue.append({
-                                    'year': year,
-                                    'revenue': revenue,
-                                    'fiscal_end': fiscal_end
-                                })
-                                seen_years.add(year)
+                            if year and revenue and fiscal_end:
+                                # Keep the entry with the latest fiscal_end for each year
+                                # If same fiscal_end, prefer the highest value (full year vs quarterly fragments)
+                                if year not in annual_revenue_by_year:
+                                    annual_revenue_by_year[year] = {
+                                        'year': year,
+                                        'revenue': revenue,
+                                        'fiscal_end': fiscal_end
+                                    }
+                                elif fiscal_end > annual_revenue_by_year[year]['fiscal_end']:
+                                    annual_revenue_by_year[year] = {
+                                        'year': year,
+                                        'revenue': revenue,
+                                        'fiscal_end': fiscal_end
+                                    }
+                                elif fiscal_end == annual_revenue_by_year[year]['fiscal_end'] and revenue > annual_revenue_by_year[year]['revenue']:
+                                    # Same fiscal_end - keep the higher value
+                                    annual_revenue_by_year[year] = {
+                                        'year': year,
+                                        'revenue': revenue,
+                                        'fiscal_end': fiscal_end
+                                    }
 
                 except KeyError:
                     logger.debug(f"Revenue field '{field}' not found, trying next...")
@@ -820,7 +848,7 @@ class EdgarFetcher:
             pass
 
         # Fall back to IFRS if no US-GAAP data found (foreign companies filing 20-F)
-        if not annual_revenue:
+        if not annual_revenue_by_year:
             try:
                 ifrs_revenue_fields = ['Revenue', 'RevenueFromSaleOfGoods']
 
@@ -845,18 +873,33 @@ class EdgarFetcher:
                             # Filter for 20-F annual reports
                             for entry in revenue_data:
                                 if entry.get('form') == '20-F':
-                                    year = entry.get('fy')
-                                    revenue = entry.get('val')
                                     fiscal_end = entry.get('end')
+                                    # Extract year from fiscal_end date (more reliable than fy field)
+                                    year = int(fiscal_end[:4]) if fiscal_end else entry.get('fy')
+                                    revenue = entry.get('val')
 
-                                    # Avoid duplicates
-                                    if year and revenue and year not in seen_years:
-                                        annual_revenue.append({
-                                            'year': year,
-                                            'revenue': revenue,
-                                            'fiscal_end': fiscal_end
-                                        })
-                                        seen_years.add(year)
+                                    if year and revenue and fiscal_end:
+                                        # Keep the entry with the latest fiscal_end for each year
+                                        # If same fiscal_end, prefer the highest value (full year vs quarterly fragments)
+                                        if year not in annual_revenue_by_year:
+                                            annual_revenue_by_year[year] = {
+                                                'year': year,
+                                                'revenue': revenue,
+                                                'fiscal_end': fiscal_end
+                                            }
+                                        elif fiscal_end > annual_revenue_by_year[year]['fiscal_end']:
+                                            annual_revenue_by_year[year] = {
+                                                'year': year,
+                                                'revenue': revenue,
+                                                'fiscal_end': fiscal_end
+                                            }
+                                        elif fiscal_end == annual_revenue_by_year[year]['fiscal_end'] and revenue > annual_revenue_by_year[year]['revenue']:
+                                            # Same fiscal_end - keep the higher value
+                                            annual_revenue_by_year[year] = {
+                                                'year': year,
+                                                'revenue': revenue,
+                                                'fiscal_end': fiscal_end
+                                            }
 
                     except KeyError:
                         logger.debug(f"IFRS revenue field '{field}' not found, trying next...")
@@ -865,11 +908,12 @@ class EdgarFetcher:
             except (KeyError, TypeError):
                 pass
 
-        if not annual_revenue:
+        if not annual_revenue_by_year:
             logger.warning(f"No revenue data found in us-gaap or ifrs-full")
             return []
 
-        # Sort by year descending
+        # Convert dict to list and sort by year descending
+        annual_revenue = list(annual_revenue_by_year.values())
         annual_revenue.sort(key=lambda x: x['year'], reverse=True)
         logger.info(f"Successfully parsed {len(annual_revenue)} years of revenue data from {len(fields_found)} field(s): {', '.join(fields_found)}")
         return annual_revenue
