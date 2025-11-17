@@ -751,9 +751,10 @@ def test_quarterly_net_income_with_calculated_q4():
         assert entry["quarter"] in valid_quarters, f"Quarter should be Q1-Q4, got {entry['quarter']}"
         assert isinstance(entry["net_income"], (int, float)), f"Net Income should be numeric, got {type(entry['net_income'])}"
 
-        # Apple should have positive quarterly Net Income
-        assert entry["net_income"] > 0, \
-            f"Apple should have positive quarterly Net Income in FY{entry['year']} {entry['quarter']}, got ${entry['net_income']:,.0f}"
+        # Net Income can be negative (legitimate quarterly losses)
+        # Apple's Net Income should be in reasonable range (not trillions)
+        assert abs(entry["net_income"]) < 500e9, \
+            f"Net Income should be in reasonable range (-500B to +500B), got ${entry['net_income']:,.0f} for FY{entry['year']} {entry['quarter']}"
 
     # Assert - No duplicate (year, quarter) combinations
     quarter_tuples = [(entry["year"], entry["quarter"]) for entry in quarterly_ni]
@@ -851,13 +852,10 @@ def test_calculate_split_adjusted_eps_from_net_income():
         ni = entry['net_income']
         shares = entry['shares']
 
-        # Verify it's reasonable (positive and within reasonable bounds)
-        assert calculated_eps > 0, \
-            f"FY{year} {quarter}: Calculated EPS should be positive, got ${calculated_eps:.2f}"
-
-        # Quarterly EPS should be less than $50 (sanity check for Apple)
-        assert calculated_eps < 50, \
-            f"FY{year} {quarter}: Quarterly EPS (${calculated_eps:.2f}) should be reasonable (<$50)"
+        # EPS can be negative (legitimate quarterly losses)
+        # Verify absolute value is reasonable (within bounds for Apple)
+        assert abs(calculated_eps) < 50, \
+            f"FY{year} {quarter}: Quarterly EPS (${calculated_eps:.2f}) should be reasonable (-$50 to +$50)"
 
         quarterly_calculations.append({
             'year': year,
@@ -1010,3 +1008,95 @@ def test_fetch_real_eps_data_integration():
     # Assert - No duplicate (year, quarter) combinations
     quarter_tuples = [(entry["year"], entry["quarter"]) for entry in quarterly_eps]
     assert len(quarter_tuples) == len(set(quarter_tuples)), f"Should not have duplicate (year, quarter) combinations"
+
+
+def test_parse_quarterly_net_income_includes_losses(edgar_fetcher):
+    """Test that quarterly Net Income parsing includes quarters with legitimate losses"""
+    company_facts = {
+        "facts": {
+            "us-gaap": {
+                "NetIncomeLoss": {
+                    "units": {
+                        "USD": [
+                            # FY2020 Annual: Total $500M
+                            {"end": "2020-12-31", "val": 500000000, "fy": 2020, "form": "10-K"},
+                            # Q1 2020: $300M (cumulative)
+                            {"end": "2020-03-31", "val": 300000000, "fy": 2020, "fp": "Q1", "form": "10-Q"},
+                            # Q2 2020: $250M (cumulative) - Q2 had a loss!
+                            {"end": "2020-06-30", "val": 250000000, "fy": 2020, "fp": "Q2", "form": "10-Q"},
+                            # Q3 2020: $400M (cumulative) - recovery
+                            {"end": "2020-09-30", "val": 400000000, "fy": 2020, "fp": "Q3", "form": "10-Q"},
+                        ]
+                    }
+                }
+            }
+        }
+    }
+
+    quarterly_ni = edgar_fetcher.parse_quarterly_net_income_history(company_facts)
+
+    # Should have all 4 quarters despite Q2 being negative
+    assert len(quarterly_ni) == 4, f"Should have all 4 quarters including loss quarter, got {len(quarterly_ni)}"
+
+    # Convert to dict for easy lookup
+    quarters_dict = {entry['quarter']: entry['net_income'] for entry in quarterly_ni if entry['year'] == 2020}
+
+    # Individual quarter calculations:
+    # Q1 = 300M (cumulative)
+    # Q2 = 250M - 300M = -50M (LOSS)
+    # Q3 = 400M - 250M = 150M
+    # Q4 = 500M - 400M = 100M
+    # Sum = 300M + (-50M) + 150M + 100M = 500M ✓
+
+    assert quarters_dict['Q1'] == 300000000, f"Q1 should be $300M, got ${quarters_dict['Q1']:,.0f}"
+    assert quarters_dict['Q2'] == -50000000, f"Q2 should be -$50M (loss), got ${quarters_dict['Q2']:,.0f}"
+    assert quarters_dict['Q3'] == 150000000, f"Q3 should be $150M, got ${quarters_dict['Q3']:,.0f}"
+    assert quarters_dict['Q4'] == 100000000, f"Q4 should be $100M, got ${quarters_dict['Q4']:,.0f}"
+
+    # Verify sum equals annual
+    total = sum(quarters_dict.values())
+    assert total == 500000000, f"Quarterly sum should equal annual $500M, got ${total:,.0f}"
+
+
+def test_parse_quarterly_net_income_accepts_all_mathematically_valid_data(edgar_fetcher):
+    """Test that quarterly Net Income parsing accepts data even with large swings"""
+    # Test case where Q3 cumulative is very large, creating a large negative Q4
+    company_facts = {
+        "facts": {
+            "us-gaap": {
+                "NetIncomeLoss": {
+                    "units": {
+                        "USD": [
+                            # FY2020 Annual: Total $500M
+                            {"end": "2020-12-31", "val": 500000000, "fy": 2020, "form": "10-K"},
+                            # Q1 2020: $100M (cumulative)
+                            {"end": "2020-03-31", "val": 100000000, "fy": 2020, "fp": "Q1", "form": "10-Q"},
+                            # Q2 2020: $300M (cumulative) - big Q2!
+                            {"end": "2020-06-30", "val": 300000000, "fy": 2020, "fp": "Q2", "form": "10-Q"},
+                            # Q3 2020: $700M (cumulative) - huge Q3!
+                            {"end": "2020-09-30", "val": 700000000, "fy": 2020, "fp": "Q3", "form": "10-Q"},
+                            # This creates Q4 = 500M - 700M = -200M (big loss in Q4)
+                            # Q1=100M, Q2=200M, Q3=400M, Q4=-200M -> Sum = 500M ✓
+                        ]
+                    }
+                }
+            }
+        }
+    }
+
+    quarterly_ni = edgar_fetcher.parse_quarterly_net_income_history(company_facts)
+
+    # Should accept this data - the math is valid
+    assert len(quarterly_ni) == 4, "Should accept mathematically valid data"
+
+    quarters_dict = {entry['quarter']: entry['net_income'] for entry in quarterly_ni if entry['year'] == 2020}
+
+    # Verify the calculations
+    assert quarters_dict['Q1'] == 100000000
+    assert quarters_dict['Q2'] == 200000000  # 300M - 100M
+    assert quarters_dict['Q3'] == 400000000  # 700M - 300M
+    assert quarters_dict['Q4'] == -200000000  # 500M - 700M (loss)
+
+    # Sum should equal annual
+    total = sum(quarters_dict.values())
+    assert total == 500000000

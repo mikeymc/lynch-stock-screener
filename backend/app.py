@@ -173,26 +173,14 @@ def get_stock_history(symbol):
 
     # Get period_type parameter (default to 'annual' for backward compatibility)
     period_type = request.args.get('period_type', 'annual').lower()
-    if period_type not in ['annual', 'quarterly', 'both']:
-        return jsonify({'error': f'Invalid period_type: {period_type}. Must be annual, quarterly, or both'}), 400
+    if period_type not in ['annual', 'quarterly']:
+        return jsonify({'error': f'Invalid period_type: {period_type}. Must be annual or quarterly'}), 400
 
-    # Get earnings history from database
-    earnings_history = db.get_earnings_history(symbol.upper())
+    # Get earnings history from database (filtered by period_type)
+    earnings_history = db.get_earnings_history(symbol.upper(), period_type)
 
     if not earnings_history:
         return jsonify({'error': f'No historical data found for {symbol}'}), 404
-
-    # Filter based on period_type
-    if period_type == 'annual':
-        earnings_history = [e for e in earnings_history if e.get('period') == 'annual']
-    elif period_type == 'quarterly':
-        quarterly_data = [e for e in earnings_history if e.get('period') and e.get('period') != 'annual']
-        # Fall back to annual data if no quarterly data is available
-        if not quarterly_data:
-            earnings_history = [e for e in earnings_history if e.get('period') == 'annual']
-        else:
-            earnings_history = quarterly_data
-    # If period_type == 'both', keep all data
 
     # Sort by year ascending, then by quarter for charting
     def sort_key(entry):
@@ -216,6 +204,7 @@ def get_stock_history(symbol):
     pe_ratios = []
     prices = []
     debt_to_equity_values = []
+    net_income_values = []
 
     # Get yfinance ticker for fallback
     ticker = yf.Ticker(symbol.upper())
@@ -226,6 +215,7 @@ def get_stock_history(symbol):
         revenue = entry['revenue']
         fiscal_end = entry.get('fiscal_end')
         debt_to_equity = entry.get('debt_to_equity')
+        net_income = entry.get('net_income')
         period = entry.get('period', 'annual')
 
         # Create label based on period type
@@ -239,6 +229,7 @@ def get_stock_history(symbol):
         eps_values.append(eps)
         revenue_values.append(revenue)
         debt_to_equity_values.append(debt_to_equity)
+        net_income_values.append(net_income)
 
         price = None
 
@@ -283,9 +274,9 @@ def get_stock_history(symbol):
             except Exception as e:
                 print(f"Error fetching historical price for {symbol} year {year}: {e}")
                 price = None
-
+        # todo: switch pe ratio to market cap / net income
         # Calculate P/E ratio if we have price and positive EPS
-        if price is not None and eps > 0:
+        if price is not None and eps is not None and eps > 0:
             pe_ratio = price / eps
             pe_ratios.append(pe_ratio)
             prices.append(price)
@@ -300,7 +291,8 @@ def get_stock_history(symbol):
         'revenue': revenue_values,
         'price': prices,
         'pe_ratio': pe_ratios,
-        'debt_to_equity': debt_to_equity_values
+        'debt_to_equity': debt_to_equity_values,
+        'net_income': net_income_values
     })
 
 

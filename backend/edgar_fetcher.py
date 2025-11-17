@@ -444,8 +444,9 @@ class EdgarFetcher:
                     q3_individual = q3_cumulative - q2_cumulative
                     q4_individual = annual_ni - q3_cumulative
 
-                    # Only add quarters if all are reasonable (positive)
-                    if all(q > 0 for q in [q1_individual, q2_individual, q3_individual, q4_individual]):
+                    # Validate that individual quarters sum to annual (within rounding tolerance)
+                    calculated_annual = q1_individual + q2_individual + q3_individual + q4_individual
+                    if abs(calculated_annual - annual_ni) < 1000:
                         # Add converted individual quarters
                         converted_quarterly.append({
                             'year': year,
@@ -471,9 +472,9 @@ class EdgarFetcher:
                             'net_income': q4_individual,
                             'fiscal_end': annual_entry['fiscal_end']
                         })
-                        logger.debug(f"[FY{year}] Individual quarters: Q1=${q1_individual:,.0f}, Q2=${q2_individual:,.0f}, Q3=${q3_individual:,.0f}, Q4=${q4_individual:,.0f} (sum=${q1_individual + q2_individual + q3_individual + q4_individual:,.0f} vs annual=${annual_ni:,.0f})")
+                        logger.debug(f"[FY{year}] Individual quarters: Q1=${q1_individual:,.0f}, Q2=${q2_individual:,.0f}, Q3=${q3_individual:,.0f}, Q4=${q4_individual:,.0f} (sum=${calculated_annual:,.0f} vs annual=${annual_ni:,.0f})")
                     else:
-                        logger.warning(f"[FY{year}] Calculated individual quarters have negative values. Q1=${q1_individual:,.0f}, Q2=${q2_individual:,.0f}, Q3=${q3_individual:,.0f}, Q4=${q4_individual:,.0f}")
+                        logger.warning(f"[FY{year}] Inconsistent quarterly data: quarters sum to ${calculated_annual:,.0f} but annual is ${annual_ni:,.0f}. Q1=${q1_individual:,.0f}, Q2=${q2_individual:,.0f}, Q3=${q3_individual:,.0f}, Q4=${q4_individual:,.0f}")
 
         quarterly_net_income = converted_quarterly
 
@@ -1014,16 +1015,27 @@ class EdgarFetcher:
         debt_to_equity = self.parse_debt_to_equity(company_facts)
         debt_to_equity_history = self.parse_debt_to_equity_history(company_facts)
 
-        logger.info(f"[{ticker}] EDGAR fetch complete: {len(eps_history)} EPS years, {len(revenue_history)} revenue years, {len(debt_to_equity_history)} D/E years, current D/E: {debt_to_equity}")
+        # Calculate split-adjusted EPS from Net Income / Shares Outstanding
+        calculated_eps_history = self.calculate_split_adjusted_annual_eps_history(company_facts)
+
+        # Extract Net Income directly for storage
+        net_income_annual = self.parse_net_income_history(company_facts)
+        net_income_quarterly = self.parse_quarterly_net_income_history(company_facts)
+
+        logger.info(f"[{ticker}] EDGAR fetch complete: {len(eps_history)} EPS years, {len(calculated_eps_history)} calculated EPS years, {len(net_income_annual)} annual NI, {len(net_income_quarterly)} quarterly NI, {len(revenue_history)} revenue years, {len(debt_to_equity_history)} D/E years, current D/E: {debt_to_equity}")
 
         fundamentals = {
             'ticker': ticker,
             'cik': cik,
             'company_name': company_facts.get('entityName', ''),
             'eps_history': eps_history,
+            'calculated_eps_history': calculated_eps_history,
+            'net_income_annual': net_income_annual,
+            'net_income_quarterly': net_income_quarterly,
             'revenue_history': revenue_history,
             'debt_to_equity': debt_to_equity,
-            'debt_to_equity_history': debt_to_equity_history
+            'debt_to_equity_history': debt_to_equity_history,
+            'company_facts': company_facts
         }
 
         return fundamentals

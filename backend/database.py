@@ -53,9 +53,12 @@ class Database:
                 earnings_per_share REAL,
                 revenue REAL,
                 fiscal_end TEXT,
+                debt_to_equity REAL,
+                period TEXT DEFAULT 'annual',
+                net_income REAL,
                 last_updated TIMESTAMP,
                 FOREIGN KEY (symbol) REFERENCES stocks(symbol),
-                UNIQUE(symbol, year)
+                UNIQUE(symbol, year, period)
             )
         """)
 
@@ -224,6 +227,43 @@ class Database:
         if 'period' not in earnings_columns:
             cursor.execute("ALTER TABLE earnings_history ADD COLUMN period TEXT DEFAULT 'annual'")
 
+        # Migration: Add net_income column to earnings_history table
+        cursor.execute("PRAGMA table_info(earnings_history)")
+        earnings_columns = [row[1] for row in cursor.fetchall()]
+        if 'net_income' not in earnings_columns:
+            cursor.execute("ALTER TABLE earnings_history ADD COLUMN net_income REAL")
+
+        # Migration: Update UNIQUE constraint to include period
+        # Check if old constraint exists (symbol, year only)
+        cursor.execute("SELECT sql FROM sqlite_master WHERE type='table' AND name='earnings_history'")
+        table_def = cursor.fetchone()
+        if table_def and 'UNIQUE(symbol, year, period)' not in table_def[0]:
+            # Recreate table with new constraint
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS earnings_history_new (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    symbol TEXT,
+                    year INTEGER,
+                    earnings_per_share REAL,
+                    revenue REAL,
+                    fiscal_end TEXT,
+                    debt_to_equity REAL,
+                    period TEXT DEFAULT 'annual',
+                    net_income REAL,
+                    last_updated TIMESTAMP,
+                    FOREIGN KEY (symbol) REFERENCES stocks(symbol),
+                    UNIQUE(symbol, year, period)
+                )
+            """)
+            # Copy data from old table
+            cursor.execute("""
+                INSERT INTO earnings_history_new
+                SELECT * FROM earnings_history
+            """)
+            # Drop old table and rename new one
+            cursor.execute("DROP TABLE earnings_history")
+            cursor.execute("ALTER TABLE earnings_history_new RENAME TO earnings_history")
+
         conn.commit()
         conn.close()
 
@@ -259,14 +299,14 @@ class Database:
         conn.commit()
         conn.close()
 
-    def save_earnings_history(self, symbol: str, year: int, eps: float, revenue: float, fiscal_end: Optional[str] = None, debt_to_equity: Optional[float] = None, period: str = 'annual'):
+    def save_earnings_history(self, symbol: str, year: int, eps: float, revenue: float, fiscal_end: Optional[str] = None, debt_to_equity: Optional[float] = None, period: str = 'annual', net_income: Optional[float] = None):
         conn = self.get_connection()
         cursor = conn.cursor()
         cursor.execute("""
             INSERT OR REPLACE INTO earnings_history
-            (symbol, year, earnings_per_share, revenue, fiscal_end, debt_to_equity, period, last_updated)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        """, (symbol, year, eps, revenue, fiscal_end, debt_to_equity, period, datetime.now().isoformat()))
+            (symbol, year, earnings_per_share, revenue, fiscal_end, debt_to_equity, period, net_income, last_updated)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (symbol, year, eps, revenue, fiscal_end, debt_to_equity, period, net_income, datetime.now().isoformat()))
         conn.commit()
         conn.close()
 
@@ -302,14 +342,21 @@ class Database:
             'ipo_year': row[13]
         }
 
-    def get_earnings_history(self, symbol: str) -> List[Dict[str, Any]]:
+    def get_earnings_history(self, symbol: str, period_type: str = 'annual') -> List[Dict[str, Any]]:
         conn = self.get_connection()
         cursor = conn.cursor()
-        cursor.execute("""
-            SELECT year, earnings_per_share, revenue, fiscal_end, debt_to_equity, period, last_updated
+
+        # Build WHERE clause based on period_type
+        if period_type == 'quarterly':
+            where_clause = "WHERE symbol = ? AND period IN ('Q1', 'Q2', 'Q3', 'Q4')"
+        else:  # default to annual
+            where_clause = "WHERE symbol = ? AND period = 'annual'"
+
+        cursor.execute(f"""
+            SELECT year, earnings_per_share, revenue, fiscal_end, debt_to_equity, period, net_income, last_updated
             FROM earnings_history
-            WHERE symbol = ?
-            ORDER BY year DESC
+            {where_clause}
+            ORDER BY year DESC, period
         """, (symbol,))
         rows = cursor.fetchall()
         conn.close()
@@ -322,7 +369,8 @@ class Database:
                 'fiscal_end': row[3],
                 'debt_to_equity': row[4],
                 'period': row[5],
-                'last_updated': row[6]
+                'net_income': row[6],
+                'last_updated': row[7]
             }
             for row in rows
         ]

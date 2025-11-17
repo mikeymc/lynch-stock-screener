@@ -45,7 +45,7 @@ export default function StockTableHeader({ sortBy, sortDir, onSort, readOnly = f
         <th
           onClick={() => handleSort('peg_ratio')}
           style={getCursorStyle()}
-          title="PEG Ratio = P/E Ratio / 5-Year Earnings Growth Rate. A value under 1.0 is ideal. e.g., A company with a P/E of 20 and 25% earnings growth has a PEG of 0.8 (20 / 25)."
+          title="PEG Ratio = P/E Ratio / 5-Year Net Income Growth Rate. A value under 1.0 is ideal. e.g., A company with a P/E of 20 and 25% Net Income growth has a PEG of 0.8 (20 / 25)."
         >
           PEG <sup>i</sup>{getSortIndicator('peg_ratio')}
         </th>
@@ -70,7 +70,7 @@ export default function StockTableHeader({ sortBy, sortDir, onSort, readOnly = f
           Div Yield{getSortIndicator('dividend_yield')}
         </th>
         <th onClick={() => handleSort('earnings_cagr')} style={getCursorStyle()}>
-          5Y EPS Growth{getSortIndicator('earnings_cagr')}
+          5Y Net Income Growth{getSortIndicator('earnings_cagr')}
         </th>
         <th onClick={() => handleSort('revenue_cagr')} style={getCursorStyle()}>
           5Y Rev Growth{getSortIndicator('revenue_cagr')}

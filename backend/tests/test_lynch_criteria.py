@@ -165,10 +165,12 @@ def test_evaluate_stock_all_pass(criteria, test_db):
     }
     test_db.save_stock_metrics("PASS", metrics)
 
-    for year, eps, revenue in [(2019, 3.0, 400000000000), (2020, 3.5, 425000000000),
-                                (2021, 4.0, 450000000000), (2022, 4.5, 475000000000),
-                                (2023, 5.0, 500000000000)]:
-        test_db.save_earnings_history("PASS", year, eps, revenue)
+    for year, eps, revenue, net_income in [(2019, 3.0, 400000000000, 30000000000),
+                                             (2020, 3.5, 425000000000, 35000000000),
+                                             (2021, 4.0, 450000000000, 40000000000),
+                                             (2022, 4.5, 475000000000, 45000000000),
+                                             (2023, 5.0, 500000000000, 50000000000)]:
+        test_db.save_earnings_history("PASS", year, eps, revenue, net_income=net_income)
 
     result = criteria.evaluate_stock("PASS")
 
@@ -192,10 +194,12 @@ def test_evaluate_stock_some_close(criteria, test_db):
     }
     test_db.save_stock_metrics("CLOSE", metrics)
 
-    for year, eps, revenue in [(2019, 3.0, 400000000000), (2020, 3.5, 425000000000),
-                                (2021, 4.2, 450000000000), (2022, 4.6, 475000000000),
-                                (2023, 5.2, 500000000000)]:
-        test_db.save_earnings_history("CLOSE", year, eps, revenue)
+    for year, eps, revenue, net_income in [(2019, 3.0, 400000000000, 30000000000),
+                                             (2020, 3.5, 425000000000, 35000000000),
+                                             (2021, 4.2, 450000000000, 42000000000),
+                                             (2022, 4.6, 475000000000, 46000000000),
+                                             (2023, 5.2, 500000000000, 52000000000)]:
+        test_db.save_earnings_history("CLOSE", year, eps, revenue, net_income=net_income)
 
     result = criteria.evaluate_stock("CLOSE")
 
@@ -217,10 +221,12 @@ def test_evaluate_stock_failing_peg(criteria, test_db):
     }
     test_db.save_stock_metrics("FAIL", metrics)
 
-    for year, eps, revenue in [(2019, 3.0, 400000000000), (2020, 3.2, 420000000000),
-                                (2021, 3.4, 440000000000), (2022, 3.6, 460000000000),
-                                (2023, 3.8, 480000000000)]:
-        test_db.save_earnings_history("FAIL", year, eps, revenue)
+    for year, eps, revenue, net_income in [(2019, 3.0, 400000000000, 30000000000),
+                                             (2020, 3.2, 420000000000, 32000000000),
+                                             (2021, 3.4, 440000000000, 34000000000),
+                                             (2022, 3.6, 460000000000, 36000000000),
+                                             (2023, 3.8, 480000000000, 38000000000)]:
+        test_db.save_earnings_history("FAIL", year, eps, revenue, net_income=net_income)
 
     result = criteria.evaluate_stock("FAIL")
 
@@ -268,9 +274,9 @@ def test_evaluate_stock_no_pe_ratio(criteria, test_db):
         'revenue': 500000000000
     }
     test_db.save_stock_metrics("NOPE", metrics)
-    test_db.save_earnings_history("NOPE", 2023, 2.0, 500000000000)
-    test_db.save_earnings_history("NOPE", 2022, 1.8, 480000000000)
-    test_db.save_earnings_history("NOPE", 2021, 1.5, 450000000000)
+    test_db.save_earnings_history("NOPE", 2023, 2.0, 500000000000, net_income=20000000000)
+    test_db.save_earnings_history("NOPE", 2022, 1.8, 480000000000, net_income=18000000000)
+    test_db.save_earnings_history("NOPE", 2021, 1.5, 450000000000, net_income=15000000000)
 
     result = criteria.evaluate_stock("NOPE")
 

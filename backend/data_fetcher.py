@@ -72,34 +72,39 @@ class DataFetcher:
                 'dividend_yield': dividend_yield
             }
             self.db.save_stock_metrics(symbol, metrics)
-
-            # Use EDGAR earnings history if available, otherwise fall back to yfinance
-            if edgar_data and edgar_data.get('eps_history') and edgar_data.get('revenue_history'):
-                eps_count = len(edgar_data.get('eps_history', []))
+            # todo: this code seems to complicated. do we really need to count calculated eps?
+            # Use EDGAR calculated EPS if available (≥5 years), otherwise fall back to yfinance
+            if edgar_data and edgar_data.get('calculated_eps_history') and edgar_data.get('revenue_history'):
+                calculated_eps_count = len(edgar_data.get('calculated_eps_history', []))
                 rev_count = len(edgar_data.get('revenue_history', []))
 
-                # Calculate how many matched years we'll get
-                eps_years = {entry['year'] for entry in edgar_data.get('eps_history', [])}
+                # calculated_eps_history already has matched years (Net Income / Shares)
+                # Just check that we have revenue for those years
+                calc_eps_years = {entry['year'] for entry in edgar_data.get('calculated_eps_history', [])}
                 rev_years = {entry['year'] for entry in edgar_data.get('revenue_history', [])}
-                matched_years = len(eps_years & rev_years)
+                matched_years = len(calc_eps_years & rev_years)
 
-                logger.info(f"[{symbol}] EDGAR returned {eps_count} EPS years, {rev_count} revenue years, {matched_years} matched")
+                logger.info(f"[{symbol}] EDGAR returned {calculated_eps_count} calculated EPS years, {rev_count} revenue years, {matched_years} matched")
 
                 # Use EDGAR only if we have >= 5 matched years, otherwise fall back to yfinance
                 if matched_years >= 5:
-                    logger.info(f"[{symbol}] Using EDGAR data ({matched_years} years)")
+                    logger.info(f"[{symbol}] Using EDGAR Net Income ({matched_years} years)")
                     self._store_edgar_earnings(symbol, edgar_data)
-                    # Always fetch quarterly data from yfinance (EDGAR doesn't provide quarterly easily)
-                    logger.info(f"[{symbol}] Fetching quarterly data from yfinance")
-                    self._fetch_quarterly_earnings(symbol, stock)
+                    # Fetch quarterly data from EDGAR
+                    if edgar_data.get('net_income_quarterly'):
+                        logger.info(f"[{symbol}] Fetching quarterly Net Income from EDGAR")
+                        self._store_edgar_quarterly_earnings(symbol, edgar_data)
+                    else:
+                        logger.warning(f"[{symbol}] No quarterly Net Income available, falling back to yfinance for quarterly data")
+                        self._fetch_quarterly_earnings(symbol, stock)
                 else:
                     logger.info(f"[{symbol}] EDGAR has insufficient matched years ({matched_years} < 5). Falling back to yfinance")
                     self._fetch_and_store_earnings(symbol, stock)
             else:
                 if edgar_data:
-                    eps_count = len(edgar_data.get('eps_history', []))
+                    calculated_eps_count = len(edgar_data.get('calculated_eps_history', []))
                     rev_count = len(edgar_data.get('revenue_history', []))
-                    logger.info(f"[{symbol}] Partial EDGAR data: {eps_count} EPS years, {rev_count} revenue years. Falling back to yfinance")
+                    logger.info(f"[{symbol}] Partial EDGAR data: {calculated_eps_count} calculated EPS years, {rev_count} revenue years. Falling back to yfinance")
                 else:
                     logger.info(f"[{symbol}] EDGAR fetch failed. Using yfinance")
                 self._fetch_and_store_earnings(symbol, stock)
@@ -112,11 +117,15 @@ class DataFetcher:
             traceback.print_exc()
             return None
 
+    # todo: do we need calcualted_eps_history? can we ditch eps altogether?
+    # todo: rename to _store_edgar_annual_earnings
     def _store_edgar_earnings(self, symbol: str, edgar_data: Dict[str, Any]):
-        """Store earnings history from EDGAR data"""
-        eps_history = edgar_data.get('eps_history', [])
+        """Store earnings history from EDGAR data using Net Income"""
+        # Use net_income_annual (raw Net Income from EDGAR)
+        net_income_annual = edgar_data.get('net_income_annual', [])
         revenue_history = edgar_data.get('revenue_history', [])
         debt_to_equity_history = edgar_data.get('debt_to_equity_history', [])
+        calculated_eps_history = edgar_data.get('calculated_eps_history', [])
 
         # Create mapping of year to revenue and fiscal_end for easy lookup
         revenue_by_year = {entry['year']: {'revenue': entry['revenue'], 'fiscal_end': entry.get('fiscal_end')} for entry in revenue_history}
@@ -124,22 +133,27 @@ class DataFetcher:
         # Create mapping of year to debt_to_equity for easy lookup
         debt_to_equity_by_year = {entry['year']: entry['debt_to_equity'] for entry in debt_to_equity_history}
 
+        # Create mapping of year to EPS for easy lookup (for backward compatibility)
+        eps_by_year = {entry['year']: entry['eps'] for entry in calculated_eps_history}
+
         # Track years that need D/E data
         years_needing_de = []
 
-        # Store each year's data
-        for eps_entry in eps_history:
-            year = eps_entry['year']
-            eps = eps_entry['eps']
-            fiscal_end = eps_entry.get('fiscal_end')
+        # Store each year's data using Net Income
+        for ni_entry in net_income_annual:
+            year = ni_entry['year']
+            net_income = ni_entry.get('net_income')
+            fiscal_end = ni_entry.get('fiscal_end')
             revenue_data = revenue_by_year.get(year)
             debt_to_equity = debt_to_equity_by_year.get(year)
+            eps = eps_by_year.get(year)
 
-            if year and eps and revenue_data:
+            if year and net_income and revenue_data:
                 revenue = revenue_data['revenue']
-                # Prefer revenue's fiscal_end if available, otherwise use EPS's fiscal_end
+                # Prefer revenue's fiscal_end if available, otherwise use NI's fiscal_end
                 final_fiscal_end = revenue_data.get('fiscal_end') or fiscal_end
-                self.db.save_earnings_history(symbol, year, float(eps), float(revenue), fiscal_end=final_fiscal_end, debt_to_equity=debt_to_equity)
+                self.db.save_earnings_history(symbol, year, float(eps) if eps else None, float(revenue), fiscal_end=final_fiscal_end, debt_to_equity=debt_to_equity, net_income=float(net_income))
+                logger.debug(f"[{symbol}] Stored EDGAR Net Income for {year}: ${net_income:,.0f}, Revenue: ${revenue:,.0f}")
 
                 # Track years missing D/E data
                 if debt_to_equity is None:
@@ -149,6 +163,39 @@ class DataFetcher:
         if years_needing_de:
             logger.info(f"[{symbol}] EDGAR missing D/E for {len(years_needing_de)} years. Fetching from yfinance balance sheet")
             self._backfill_debt_to_equity(symbol, years_needing_de)
+
+    # todo: can this be collapsed with _store_edgar_earnings?
+    def _store_edgar_quarterly_earnings(self, symbol: str, edgar_data: Dict[str, Any]):
+        """Store quarterly earnings history from EDGAR data using Net Income"""
+        # Use net_income_quarterly (raw quarterly Net Income from EDGAR)
+        net_income_quarterly = edgar_data.get('net_income_quarterly', [])
+
+        if not net_income_quarterly:
+            logger.warning(f"[{symbol}] No quarterly Net Income data available from EDGAR")
+            return
+
+        quarters_stored = 0
+        for entry in net_income_quarterly:
+            year = entry['year']
+            quarter = entry['quarter']
+            net_income = entry.get('net_income')
+            fiscal_end = entry.get('fiscal_end')
+
+            if year and quarter and net_income:
+                # Store with period like 'Q1', 'Q2', 'Q3', 'Q4'
+                self.db.save_earnings_history(
+                    symbol,
+                    year,
+                    None,  # No EPS for quarterly data
+                    None,  # No revenue for quarterly data
+                    fiscal_end=fiscal_end,
+                    debt_to_equity=None,  # No D/E for quarterly data
+                    period=quarter,
+                    net_income=float(net_income)
+                )
+                quarters_stored += 1
+
+        logger.info(f"[{symbol}] Stored {quarters_stored} quarters of EDGAR Net Income data")
 
     def _backfill_debt_to_equity(self, symbol: str, years: List[int]):
         """
@@ -254,6 +301,11 @@ class DataFetcher:
                     if 'Diluted EPS' in financials.index:
                         eps = financials.loc['Diluted EPS', col]
 
+                    # Extract Net Income from yfinance financials
+                    net_income = None
+                    if 'Net Income' in financials.index:
+                        net_income = financials.loc['Net Income', col]
+
                     # Calculate debt-to-equity from balance sheet
                     debt_to_equity = None
                     if balance_sheet is not None and not balance_sheet.empty and col in balance_sheet.columns:
@@ -261,7 +313,8 @@ class DataFetcher:
 
                     if year and pd.notna(revenue) and pd.notna(eps):
                         self.db.save_earnings_history(symbol, year, float(eps), float(revenue),
-                                                     debt_to_equity=debt_to_equity, period='annual')
+                                                     debt_to_equity=debt_to_equity, period='annual',
+                                                     net_income=float(net_income) if pd.notna(net_income) else None)
 
             # Fetch quarterly data
             quarterly_financials = stock.quarterly_financials
@@ -286,6 +339,11 @@ class DataFetcher:
                     if 'Diluted EPS' in quarterly_financials.index:
                         eps = quarterly_financials.loc['Diluted EPS', col]
 
+                    # Extract Net Income from quarterly financials
+                    net_income = None
+                    if 'Net Income' in quarterly_financials.index:
+                        net_income = quarterly_financials.loc['Net Income', col]
+
                     # Calculate debt-to-equity from quarterly balance sheet
                     debt_to_equity = None
                     if quarterly_balance_sheet is not None and not quarterly_balance_sheet.empty and col in quarterly_balance_sheet.columns:
@@ -294,7 +352,8 @@ class DataFetcher:
                     if year and quarter and pd.notna(revenue) and pd.notna(eps):
                         period = f'Q{quarter}'
                         self.db.save_earnings_history(symbol, year, float(eps), float(revenue),
-                                                     debt_to_equity=debt_to_equity, period=period)
+                                                     debt_to_equity=debt_to_equity, period=period,
+                                                     net_income=float(net_income) if pd.notna(net_income) else None)
 
         except Exception as e:
             logger.error(f"[{symbol}] Error fetching earnings from yfinance: {type(e).__name__}: {e}")
@@ -327,6 +386,11 @@ class DataFetcher:
                     if 'Diluted EPS' in quarterly_financials.index:
                         eps = quarterly_financials.loc['Diluted EPS', col]
 
+                    # Extract Net Income from quarterly financials
+                    net_income = None
+                    if 'Net Income' in quarterly_financials.index:
+                        net_income = quarterly_financials.loc['Net Income', col]
+
                     # Calculate debt-to-equity from quarterly balance sheet
                     debt_to_equity = None
                     if quarterly_balance_sheet is not None and not quarterly_balance_sheet.empty and col in quarterly_balance_sheet.columns:
@@ -335,7 +399,8 @@ class DataFetcher:
                     if year and quarter and pd.notna(revenue) and pd.notna(eps):
                         period = f'Q{quarter}'
                         self.db.save_earnings_history(symbol, year, float(eps), float(revenue),
-                                                     debt_to_equity=debt_to_equity, period=period)
+                                                     debt_to_equity=debt_to_equity, period=period,
+                                                     net_income=float(net_income) if pd.notna(net_income) else None)
             else:
                 logger.warning(f"[{symbol}] No quarterly financial data available from yfinance")
 

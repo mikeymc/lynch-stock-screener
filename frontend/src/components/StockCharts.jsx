@@ -1,5 +1,5 @@
 // ABOUTME: Stock charts component displaying 4 financial metrics over time
-// ABOUTME: Shows Revenue, EPS, P/E Ratio, and Debt-to-Equity charts in a grid layout
+// ABOUTME: Shows Revenue, Net Income, P/E Ratio, and Debt-to-Equity charts in a grid layout
 
 import { Line } from 'react-chartjs-2'
 
@@ -60,12 +60,12 @@ export default function StockCharts({ historyData, loading }) {
             labels: labels,
             datasets: [
               {
-                label: 'EPS',
-                data: historyData.eps,
+                label: 'Net Income (Billions)',
+                data: historyData.net_income ? historyData.net_income.map(ni => ni ? ni / 1e9 : null) : [],
                 borderColor: 'rgb(255, 99, 132)',
                 backgroundColor: 'rgba(255, 99, 132, 0.2)',
-                pointBackgroundColor: historyData.eps.map(eps => eps < 0 ? 'rgb(239, 68, 68)' : 'rgb(255, 99, 132)'),
-                pointBorderColor: historyData.eps.map(eps => eps < 0 ? 'rgb(239, 68, 68)' : 'rgb(255, 99, 132)'),
+                pointBackgroundColor: historyData.net_income ? historyData.net_income.map(ni => ni && ni < 0 ? 'rgb(239, 68, 68)' : 'rgb(255, 99, 132)') : [],
+                pointBorderColor: historyData.net_income ? historyData.net_income.map(ni => ni && ni < 0 ? 'rgb(239, 68, 68)' : 'rgb(255, 99, 132)') : [],
                 pointRadius: 4,
                 segment: {
                   borderColor: ctx => {
@@ -82,7 +82,7 @@ export default function StockCharts({ historyData, loading }) {
             plugins: {
               title: {
                 display: true,
-                text: 'Earnings Per Share',
+                text: 'Net Income',
                 font: { size: 14 }
               },
               legend: {
@@ -93,7 +93,7 @@ export default function StockCharts({ historyData, loading }) {
               y: {
                 title: {
                   display: true,
-                  text: 'EPS ($)'
+                  text: 'Billions ($)'
                 },
                 grid: {
                   color: (context) => {

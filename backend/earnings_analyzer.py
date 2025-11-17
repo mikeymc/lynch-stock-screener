@@ -18,21 +18,26 @@ class EarningsAnalyzer:
 
         history_sorted = sorted(history, key=lambda x: x['year'])
 
-        eps_values = [h['eps'] for h in history_sorted]
+        # Use Net Income instead of EPS for growth calculations
+        net_income_values = [h.get('net_income') for h in history_sorted]
         revenue_values = [h['revenue'] for h in history_sorted]
 
-        if any(v <= 0 for v in eps_values[:1]):
+        # Filter out entries without net_income data
+        if not all(ni is not None for ni in net_income_values):
             return None
 
-        start_eps = eps_values[0]
-        end_eps = eps_values[-1]
+        if any(v <= 0 for v in net_income_values[:1]):
+            return None
+
+        start_net_income = net_income_values[0]
+        end_net_income = net_income_values[-1]
         start_revenue = revenue_values[0]
         end_revenue = revenue_values[-1]
         years = len(history_sorted) - 1
 
-        earnings_cagr = self.calculate_cagr(start_eps, end_eps, years)
+        earnings_cagr = self.calculate_cagr(start_net_income, end_net_income, years)
         revenue_cagr = self.calculate_cagr(start_revenue, end_revenue, years)
-        consistency_score = self.calculate_growth_consistency(eps_values)
+        consistency_score = self.calculate_growth_consistency(net_income_values)
 
         return {
             'earnings_cagr': earnings_cagr,

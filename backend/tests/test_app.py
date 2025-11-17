@@ -91,19 +91,19 @@ def test_stock_history_endpoint_returns_historical_data(client, test_db, monkeyp
     data = json.loads(response.data)
 
     # Verify response structure
-    assert 'years' in data
+    assert 'labels' in data
     assert 'eps' in data
     assert 'revenue' in data
     assert 'pe_ratio' in data
 
     # Verify data length matches
-    assert len(data['years']) == 4
+    assert len(data['labels']) == 4
     assert len(data['eps']) == 4
     assert len(data['revenue']) == 4
     assert len(data['pe_ratio']) == 4
 
-    # Verify years are sorted in ascending order for charting
-    assert data['years'] == [2020, 2021, 2022, 2023]
+    # Verify labels are sorted in ascending order for charting
+    assert data['labels'] == ['2020', '2021', '2022', '2023']
 
     # Verify EPS values
     assert data['eps'][0] == 3.28
@@ -223,7 +223,7 @@ def test_stock_history_uses_schwab_api_when_available(client, test_db, monkeypat
     data = json.loads(response.data)
 
     # Verify response structure
-    assert 'years' in data
+    assert 'labels' in data
     assert 'eps' in data
     assert 'revenue' in data
     assert 'pe_ratio' in data
