@@ -178,6 +178,78 @@ class EdgarFetcher:
         logger.info(f"Successfully parsed {len(annual_eps)} years of EPS data from EDGAR")
         return annual_eps
 
+    def parse_quarterly_eps_history(self, company_facts: Dict[str, Any]) -> List[Dict[str, Any]]:
+        """
+        Extract quarterly EPS history from company facts (supports both US-GAAP and IFRS)
+
+        Args:
+            company_facts: Company facts data from EDGAR API
+
+        Returns:
+            List of dictionaries with year, quarter, eps, and fiscal_end values
+        """
+        eps_data_list = None
+
+        # Try US-GAAP first (domestic companies)
+        try:
+            eps_units = company_facts['facts']['us-gaap']['EarningsPerShareDiluted']['units']
+            if 'USD/shares' in eps_units:
+                eps_data_list = eps_units['USD/shares']
+        except (KeyError, TypeError):
+            pass
+
+        # Fall back to IFRS (foreign companies filing 6-K)
+        if eps_data_list is None:
+            try:
+                eps_units = company_facts['facts']['ifrs-full']['DilutedEarningsLossPerShare']['units']
+
+                # Prefer USD if available, otherwise use any currency
+                if 'USD/shares' in eps_units:
+                    eps_data_list = eps_units['USD/shares']
+                else:
+                    # Find first unit matching */shares pattern
+                    share_units = [u for u in eps_units.keys() if u.endswith('/shares')]
+                    if share_units:
+                        eps_data_list = eps_units[share_units[0]]
+            except (KeyError, TypeError):
+                pass
+
+        # If we still don't have data, return empty
+        if eps_data_list is None:
+            logger.warning("Could not parse quarterly EPS history from EDGAR: No us-gaap or ifrs-full data found")
+            return []
+
+        # Filter for quarterly reports (10-Q for US, 6-K for foreign)
+        quarterly_eps = []
+        seen_quarters = set()
+
+        for entry in eps_data_list:
+            if entry.get('form') in ['10-Q', '6-K']:
+                year = entry.get('fy')
+                quarter = entry.get('fp')  # Fiscal period: Q1, Q2, Q3
+                eps = entry.get('val')
+                fiscal_end = entry.get('end')
+
+                # Only include entries with fiscal period (Q1, Q2, Q3)
+                # Avoid duplicates using (year, quarter) tuple
+                if year and quarter and eps and (year, quarter) not in seen_quarters:
+                    quarterly_eps.append({
+                        'year': year,
+                        'quarter': quarter,
+                        'eps': eps,
+                        'fiscal_end': fiscal_end
+                    })
+                    seen_quarters.add((year, quarter))
+
+        # Sort by year descending, then by quarter
+        def quarter_sort_key(entry):
+            quarter_order = {'Q1': 1, 'Q2': 2, 'Q3': 3, 'Q4': 4}
+            return (-entry['year'], quarter_order.get(entry['quarter'], 0))
+
+        quarterly_eps.sort(key=quarter_sort_key)
+        logger.info(f"Successfully parsed {len(quarterly_eps)} quarters of EPS data from EDGAR")
+        return quarterly_eps
+
     def parse_revenue_history(self, company_facts: Dict[str, Any]) -> List[Dict[str, Any]]:
         """
         Extract revenue history from company facts (supports both US-GAAP and IFRS)

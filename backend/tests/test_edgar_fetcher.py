@@ -581,6 +581,11 @@ def test_fetch_real_eps_data_integration():
     # Act
     fundamentals = fetcher.fetch_stock_fundamentals(ticker)
 
+    # Also fetch quarterly EPS data
+    cik = fetcher.get_cik_for_ticker(ticker)
+    company_facts = fetcher.fetch_company_facts(cik)
+    quarterly_eps = fetcher.parse_quarterly_eps_history(company_facts)
+
     # Assert - Overall structure
     assert fundamentals is not None, "Should successfully fetch fundamentals data"
     assert "eps_history" in fundamentals, "Response should contain eps_history"
@@ -634,3 +639,52 @@ def test_fetch_real_eps_data_integration():
 
     # Assert - No duplicate years
     assert len(years) == len(set(years)), f"Should not have duplicate years, got: {years}"
+
+    # ===== Quarterly EPS Assertions =====
+
+    # Assert - Quarterly structure
+    assert quarterly_eps is not None, "Should successfully parse quarterly EPS data"
+    assert isinstance(quarterly_eps, list), "Quarterly EPS should be a list"
+    assert len(quarterly_eps) >= 12, f"Should have at least 12 quarters of data (3+ years), got {len(quarterly_eps)}"
+
+    # Assert - Quarterly data quality
+    valid_quarters = ['Q1', 'Q2', 'Q3']  # Q4 is typically in annual 10-K, not 10-Q
+
+    for entry in quarterly_eps:
+        # Structure - required fields present
+        assert "year" in entry, "Each quarterly entry should have 'year' field"
+        assert "quarter" in entry, "Each quarterly entry should have 'quarter' field"
+        assert "eps" in entry, "Each quarterly entry should have 'eps' field"
+        assert "fiscal_end" in entry, "Each quarterly entry should have 'fiscal_end' field"
+
+        # Types - correct data types
+        assert isinstance(entry["year"], int), f"Year should be int, got {type(entry['year'])}"
+        assert isinstance(entry["quarter"], str), f"Quarter should be string, got {type(entry['quarter'])}"
+        assert isinstance(entry["eps"], (int, float)), f"EPS should be numeric, got {type(entry['eps'])}"
+        assert isinstance(entry["fiscal_end"], str), f"fiscal_end should be string, got {type(entry['fiscal_end'])}"
+
+        # Values - reasonable ranges
+        assert entry["quarter"] in valid_quarters, f"Quarter should be Q1, Q2, or Q3, got {entry['quarter']}"
+        assert entry["eps"] > 0, f"Apple should have positive quarterly EPS, got {entry['eps']} for FY{entry['year']} {entry['quarter']}"
+        assert entry["eps"] < 50, f"Apple quarterly EPS should be reasonable (<50), got {entry['eps']} for FY{entry['year']} {entry['quarter']}"
+        assert entry["year"] >= 2009, f"Should have historical data (>=2009), got FY{entry['year']}"
+        assert entry["year"] <= 2030, f"Year should be reasonable, got FY{entry['year']}"
+
+        # Fiscal end date format
+        assert len(entry["fiscal_end"]) == 10, f"fiscal_end should be YYYY-MM-DD format, got {entry['fiscal_end']}"
+        assert entry["fiscal_end"][4] == "-" and entry["fiscal_end"][7] == "-", f"fiscal_end should be YYYY-MM-DD format, got {entry['fiscal_end']}"
+
+    # Assert - Quarterly ordering (year descending, quarter ascending within year)
+    for i in range(len(quarterly_eps) - 1):
+        current = quarterly_eps[i]
+        next_entry = quarterly_eps[i + 1]
+
+        # If same year, quarters should be in order (Q1, Q2, Q3)
+        if current["year"] == next_entry["year"]:
+            quarter_order = {'Q1': 1, 'Q2': 2, 'Q3': 3}
+            assert quarter_order[current["quarter"]] <= quarter_order[next_entry["quarter"]], \
+                f"Within same year, quarters should be ordered: {current} before {next_entry}"
+
+    # Assert - No duplicate (year, quarter) combinations
+    quarter_tuples = [(entry["year"], entry["quarter"]) for entry in quarterly_eps]
+    assert len(quarter_tuples) == len(set(quarter_tuples)), f"Should not have duplicate (year, quarter) combinations"
