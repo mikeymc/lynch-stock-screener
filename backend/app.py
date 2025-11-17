@@ -5,6 +5,7 @@ from flask import Flask, jsonify, request, Response, stream_with_context
 from flask_cors import CORS
 import json
 import time
+import os
 import yfinance as yf
 from datetime import datetime
 from database import Database
@@ -721,4 +722,5 @@ def send_message_stream(symbol):
 
 
 if __name__ == '__main__':
-    app.run(debug=True, port=5001)
+    port = int(os.environ.get('PORT', 5001))
+    app.run(debug=False, host='0.0.0.0', port=port)

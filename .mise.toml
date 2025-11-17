@@ -1,0 +1,6 @@
+[settings]
+# Compile Python from source instead of using precompiled binaries
+python_compile = true
+
+[tools]
+python = "3.12"
