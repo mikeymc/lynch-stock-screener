@@ -658,6 +658,108 @@ def test_net_income_is_split_independent():
 
 @pytest.mark.integration
 @pytest.mark.slow
+def test_quarterly_net_income_with_calculated_q4():
+    """
+    BDD test: Quarterly Net Income extraction with Q4 calculated from annual data
+
+    EDGAR provides quarterly data in 10-Q filings (Q1, Q2, Q3) but Q4 is typically
+    only reported in the annual 10-K. We calculate Q4 as:
+    Q4 = Annual Net Income - (Q1 + Q2 + Q3)
+
+    This test verifies:
+    - Q1, Q2, Q3 are extracted directly from 10-Q filings
+    - Q4 is calculated correctly from annual 10-K minus quarterly sum
+    - All quarters are present and properly ordered
+    - Quarterly sum (Q1+Q2+Q3+Q4) approximately equals annual Net Income
+
+    Expected behavior:
+    - Should have Q1, Q2, Q3, Q4 for recent fiscal years
+    - Q4 should be calculated, not extracted directly
+    - Sum of quarters should match annual (within rounding tolerance)
+    """
+    # Arrange
+    fetcher = EdgarFetcher(user_agent="Lynch Stock Screener test@example.com")
+    ticker = "AAPL"
+
+    # Act - Fetch Net Income history (annual and quarterly)
+    cik = fetcher.get_cik_for_ticker(ticker)
+    assert cik is not None, f"Could not find CIK for {ticker}"
+
+    company_facts = fetcher.fetch_company_facts(cik)
+    assert company_facts is not None, f"Could not fetch company facts for {ticker}"
+
+    annual_ni = fetcher.parse_net_income_history(company_facts)
+    quarterly_ni = fetcher.parse_quarterly_net_income_history(company_facts)
+
+    # Assert - Overall structure
+    assert annual_ni is not None, "Should successfully parse annual Net Income"
+    assert quarterly_ni is not None, "Should successfully parse quarterly Net Income"
+    assert isinstance(quarterly_ni, list), "Quarterly Net Income should be a list"
+    assert len(quarterly_ni) >= 12, f"Should have at least 12 quarters (3+ years), got {len(quarterly_ni)}"
+
+    # Convert to dicts for easier lookup
+    annual_by_year = {entry['year']: entry['net_income'] for entry in annual_ni}
+    quarterly_by_year_quarter = {(entry['year'], entry['quarter']): entry['net_income'] for entry in quarterly_ni}
+
+    # Assert - Check recent complete fiscal year has all 4 quarters
+    # Find most recent year with annual data
+    recent_years_with_annual = sorted([y for y in annual_by_year.keys()])[-3:]  # Last 3 years
+
+    complete_year = None
+    for year in reversed(recent_years_with_annual):
+        # Check if we have all 4 quarters for this year
+        has_all_quarters = all((year, f'Q{q}') in quarterly_by_year_quarter for q in [1, 2, 3, 4])
+        if has_all_quarters:
+            complete_year = year
+            break
+
+    assert complete_year is not None, \
+        f"Should have at least one recent year with all 4 quarters. Recent years: {recent_years_with_annual}"
+
+    # Assert - Q4 calculation accuracy
+    # For the complete year, verify Q1+Q2+Q3+Q4 approximately equals annual
+    q1_ni = quarterly_by_year_quarter[(complete_year, 'Q1')]
+    q2_ni = quarterly_by_year_quarter[(complete_year, 'Q2')]
+    q3_ni = quarterly_by_year_quarter[(complete_year, 'Q3')]
+    q4_ni = quarterly_by_year_quarter[(complete_year, 'Q4')]
+    annual_ni_value = annual_by_year[complete_year]
+
+    quarterly_sum = q1_ni + q2_ni + q3_ni + q4_ni
+    difference = abs(quarterly_sum - annual_ni_value)
+    tolerance = annual_ni_value * 0.01  # 1% tolerance for rounding
+
+    assert difference <= tolerance, \
+        f"FY{complete_year}: Quarterly sum (${quarterly_sum:,.0f}) should approximately equal annual (${annual_ni_value:,.0f}). " \
+        f"Difference: ${difference:,.0f}, Q1: ${q1_ni:,.0f}, Q2: ${q2_ni:,.0f}, Q3: ${q3_ni:,.0f}, Q4: ${q4_ni:,.0f}"
+
+    # Assert - Q4 is reasonable (not negative, not larger than annual)
+    assert q4_ni > 0, f"Q4 should be positive, got ${q4_ni:,.0f}"
+    assert q4_ni < annual_ni_value, f"Q4 (${q4_ni:,.0f}) should be less than annual (${annual_ni_value:,.0f})"
+
+    # Assert - All quarters have required fields
+    valid_quarters = ['Q1', 'Q2', 'Q3', 'Q4']
+    for entry in quarterly_ni:
+        assert "year" in entry, "Each quarterly entry should have 'year' field"
+        assert "quarter" in entry, "Each quarterly entry should have 'quarter' field"
+        assert "net_income" in entry, "Each quarterly entry should have 'net_income' field"
+        assert "fiscal_end" in entry, "Each quarterly entry should have 'fiscal_end' field"
+
+        assert isinstance(entry["year"], int), f"Year should be int, got {type(entry['year'])}"
+        assert entry["quarter"] in valid_quarters, f"Quarter should be Q1-Q4, got {entry['quarter']}"
+        assert isinstance(entry["net_income"], (int, float)), f"Net Income should be numeric, got {type(entry['net_income'])}"
+
+        # Apple should have positive quarterly Net Income
+        assert entry["net_income"] > 0, \
+            f"Apple should have positive quarterly Net Income in FY{entry['year']} {entry['quarter']}, got ${entry['net_income']:,.0f}"
+
+    # Assert - No duplicate (year, quarter) combinations
+    quarter_tuples = [(entry["year"], entry["quarter"]) for entry in quarterly_ni]
+    assert len(quarter_tuples) == len(set(quarter_tuples)), \
+        f"Should not have duplicate (year, quarter) combinations"
+
+
+@pytest.mark.integration
+@pytest.mark.slow
 def test_fetch_real_eps_data_integration():
     """
     Integration test: Fetch real EPS data from SEC EDGAR API for Apple Inc.

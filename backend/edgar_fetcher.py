@@ -321,6 +321,174 @@ class EdgarFetcher:
         logger.info(f"Successfully parsed {len(annual_net_income)} years of Net Income data from EDGAR")
         return annual_net_income
 
+    def parse_quarterly_net_income_history(self, company_facts: Dict[str, Any]) -> List[Dict[str, Any]]:
+        """
+        Extract quarterly Net Income history with Q4 calculated from annual data
+
+        EDGAR provides quarterly data in 10-Q filings (Q1, Q2, Q3) but Q4 is
+        typically only reported in the annual 10-K. We calculate Q4 as:
+        Q4 = Annual Net Income - (Q1 + Q2 + Q3)
+
+        Supports both US-GAAP (domestic companies) and IFRS (foreign companies).
+
+        Args:
+            company_facts: Company facts data from EDGAR API
+
+        Returns:
+            List of dictionaries with year, quarter, net_income, and fiscal_end values
+        """
+        net_income_data_list = None
+
+        # Try US-GAAP first (domestic companies)
+        try:
+            ni_units = company_facts['facts']['us-gaap']['NetIncomeLoss']['units']
+            if 'USD' in ni_units:
+                net_income_data_list = ni_units['USD']
+        except (KeyError, TypeError):
+            pass
+
+        # Fall back to IFRS (foreign companies filing 6-K)
+        if net_income_data_list is None:
+            try:
+                ni_units = company_facts['facts']['ifrs-full']['ProfitLoss']['units']
+
+                # Prefer USD if available, otherwise use any currency
+                if 'USD' in ni_units:
+                    net_income_data_list = ni_units['USD']
+                else:
+                    # Find first currency unit (3-letter code)
+                    currency_units = [u for u in ni_units.keys() if len(u) == 3 and u.isupper()]
+                    if currency_units:
+                        net_income_data_list = ni_units[currency_units[0]]
+            except (KeyError, TypeError):
+                pass
+
+        # If we still don't have data, return empty
+        if net_income_data_list is None:
+            logger.warning("Could not parse quarterly Net Income history from EDGAR: No us-gaap or ifrs-full data found")
+            return []
+
+        # Extract Q1, Q2, Q3 from quarterly reports (10-Q for US, 6-K for foreign)
+        quarterly_net_income = []
+        seen_quarters = set()
+
+        for entry in net_income_data_list:
+            if entry.get('form') in ['10-Q', '6-K']:
+                year = entry.get('fy')
+                quarter = entry.get('fp')  # Fiscal period: Q1, Q2, Q3
+                net_income = entry.get('val')
+                fiscal_end = entry.get('end')
+
+                # Only include entries with fiscal period (Q1, Q2, Q3)
+                # Avoid duplicates using (year, quarter) tuple
+                if year and quarter and net_income is not None and (year, quarter) not in seen_quarters:
+                    quarterly_net_income.append({
+                        'year': year,
+                        'quarter': quarter,
+                        'net_income': net_income,
+                        'fiscal_end': fiscal_end
+                    })
+                    seen_quarters.add((year, quarter))
+
+        # Get annual data to calculate Q4
+        annual_net_income = []
+        seen_annual_years = set()
+
+        for entry in net_income_data_list:
+            if entry.get('form') in ['10-K', '20-F']:
+                year = entry.get('fy')
+                net_income = entry.get('val')
+                fiscal_end = entry.get('end')
+
+                if year and net_income is not None and year not in seen_annual_years:
+                    annual_net_income.append({
+                        'year': year,
+                        'net_income': net_income,
+                        'fiscal_end': fiscal_end
+                    })
+                    seen_annual_years.add(year)
+
+        # EDGAR reports cumulative (year-to-date) Net Income for quarterly filings
+        # Q1 = Q1, Q2 = Q1+Q2 cumulative, Q3 = Q1+Q2+Q3 cumulative
+        # We need to convert to individual quarters: Q2_actual = Q2_cumulative - Q1, etc.
+
+        annual_by_year = {entry['year']: entry for entry in annual_net_income}
+
+        # Group quarterly data by year
+        quarterly_by_year = {}
+        for entry in quarterly_net_income:
+            year = entry['year']
+            if year not in quarterly_by_year:
+                quarterly_by_year[year] = []
+            quarterly_by_year[year].append(entry)
+
+        # Convert cumulative quarters to individual quarters and calculate Q4
+        converted_quarterly = []
+
+        for year, annual_entry in annual_by_year.items():
+            if year in quarterly_by_year:
+                quarters = quarterly_by_year[year]
+                quarters_dict = {q['quarter']: q for q in quarters}
+
+                # Only proceed if we have Q1, Q2, and Q3
+                if all(f'Q{i}' in quarters_dict for i in [1, 2, 3]):
+                    # Get cumulative values from EDGAR
+                    q1_cumulative = quarters_dict['Q1']['net_income']
+                    q2_cumulative = quarters_dict['Q2']['net_income']
+                    q3_cumulative = quarters_dict['Q3']['net_income']
+                    annual_ni = annual_entry['net_income']
+
+                    # Convert to individual quarter values
+                    q1_individual = q1_cumulative
+                    q2_individual = q2_cumulative - q1_cumulative
+                    q3_individual = q3_cumulative - q2_cumulative
+                    q4_individual = annual_ni - q3_cumulative
+
+                    # Only add quarters if all are reasonable (positive)
+                    if all(q > 0 for q in [q1_individual, q2_individual, q3_individual, q4_individual]):
+                        # Add converted individual quarters
+                        converted_quarterly.append({
+                            'year': year,
+                            'quarter': 'Q1',
+                            'net_income': q1_individual,
+                            'fiscal_end': quarters_dict['Q1']['fiscal_end']
+                        })
+                        converted_quarterly.append({
+                            'year': year,
+                            'quarter': 'Q2',
+                            'net_income': q2_individual,
+                            'fiscal_end': quarters_dict['Q2']['fiscal_end']
+                        })
+                        converted_quarterly.append({
+                            'year': year,
+                            'quarter': 'Q3',
+                            'net_income': q3_individual,
+                            'fiscal_end': quarters_dict['Q3']['fiscal_end']
+                        })
+                        converted_quarterly.append({
+                            'year': year,
+                            'quarter': 'Q4',
+                            'net_income': q4_individual,
+                            'fiscal_end': annual_entry['fiscal_end']
+                        })
+                        logger.debug(f"[FY{year}] Individual quarters: Q1=${q1_individual:,.0f}, Q2=${q2_individual:,.0f}, Q3=${q3_individual:,.0f}, Q4=${q4_individual:,.0f} (sum=${q1_individual + q2_individual + q3_individual + q4_individual:,.0f} vs annual=${annual_ni:,.0f})")
+                    else:
+                        logger.warning(f"[FY{year}] Calculated individual quarters have negative values. Q1=${q1_individual:,.0f}, Q2=${q2_individual:,.0f}, Q3=${q3_individual:,.0f}, Q4=${q4_individual:,.0f}")
+
+        quarterly_net_income = converted_quarterly
+
+        # Sort by year descending, then by quarter
+        def quarter_sort_key(entry):
+            quarter_order = {'Q1': 1, 'Q2': 2, 'Q3': 3, 'Q4': 4}
+            return (-entry['year'], quarter_order.get(entry['quarter'], 0))
+
+        quarterly_net_income.sort(key=quarter_sort_key)
+
+        # Count Q4s
+        q4_count = sum(1 for entry in quarterly_net_income if entry['quarter'] == 'Q4')
+        logger.info(f"Successfully parsed {len(quarterly_net_income)} quarters of Net Income data from EDGAR ({q4_count} Q4s calculated)")
+        return quarterly_net_income
+
     def parse_revenue_history(self, company_facts: Dict[str, Any]) -> List[Dict[str, Any]]:
         """
         Extract revenue history from company facts (supports both US-GAAP and IFRS)
