@@ -489,6 +489,275 @@ class EdgarFetcher:
         logger.info(f"Successfully parsed {len(quarterly_net_income)} quarters of Net Income data from EDGAR ({q4_count} Q4s calculated)")
         return quarterly_net_income
 
+    def parse_shares_outstanding_history(self, company_facts: Dict[str, Any]) -> List[Dict[str, Any]]:
+        """
+        Extract weighted average shares outstanding history (split-adjusted)
+
+        EDGAR reports WeightedAverageNumberOfDilutedSharesOutstanding which is
+        already split-adjusted. Combined with Net Income, this allows calculation
+        of split-adjusted EPS.
+
+        Supports both US-GAAP (domestic companies) and IFRS (foreign companies).
+
+        Args:
+            company_facts: Company facts data from EDGAR API
+
+        Returns:
+            List of dictionaries with year, shares, and fiscal_end values
+        """
+        shares_data_list = None
+
+        # Try US-GAAP first (domestic companies)
+        try:
+            shares_units = company_facts['facts']['us-gaap']['WeightedAverageNumberOfDilutedSharesOutstanding']['units']
+            if 'shares' in shares_units:
+                shares_data_list = shares_units['shares']
+        except (KeyError, TypeError):
+            pass
+
+        # Fall back to IFRS (foreign companies filing 20-F)
+        if shares_data_list is None:
+            try:
+                shares_units = company_facts['facts']['ifrs-full']['WeightedAverageNumberOfSharesOutstandingDiluted']['units']
+                if 'shares' in shares_units:
+                    shares_data_list = shares_units['shares']
+            except (KeyError, TypeError):
+                pass
+
+        # If we still don't have data, return empty
+        if shares_data_list is None:
+            logger.warning("Could not parse shares outstanding history from EDGAR: No us-gaap or ifrs-full data found")
+            return []
+
+        # Filter for annual reports (10-K for US, 20-F for foreign)
+        annual_shares = []
+        seen_years = set()
+
+        for entry in shares_data_list:
+            if entry.get('form') in ['10-K', '20-F']:
+                year = entry.get('fy')
+                shares = entry.get('val')
+                fiscal_end = entry.get('end')
+
+                # Avoid duplicates, keep only one entry per fiscal year
+                if year and shares is not None and year not in seen_years:
+                    annual_shares.append({
+                        'year': year,
+                        'shares': shares,
+                        'fiscal_end': fiscal_end
+                    })
+                    seen_years.add(year)
+
+        # Sort by year descending
+        annual_shares.sort(key=lambda x: x['year'], reverse=True)
+        logger.info(f"Successfully parsed {len(annual_shares)} years of shares outstanding data from EDGAR")
+        return annual_shares
+
+    def parse_quarterly_shares_outstanding_history(self, company_facts: Dict[str, Any]) -> List[Dict[str, Any]]:
+        """
+        Extract quarterly weighted average shares outstanding (split-adjusted)
+
+        Unlike Net Income, shares outstanding are typically NOT cumulative in quarterly
+        filings - each quarter reports the weighted average shares for that specific quarter.
+
+        Supports both US-GAAP (domestic companies) and IFRS (foreign companies).
+
+        Args:
+            company_facts: Company facts data from EDGAR API
+
+        Returns:
+            List of dictionaries with year, quarter, shares, and fiscal_end values
+        """
+        shares_data_list = None
+
+        # Try US-GAAP first (domestic companies)
+        try:
+            shares_units = company_facts['facts']['us-gaap']['WeightedAverageNumberOfDilutedSharesOutstanding']['units']
+            if 'shares' in shares_units:
+                shares_data_list = shares_units['shares']
+        except (KeyError, TypeError):
+            pass
+
+        # Fall back to IFRS (foreign companies filing 6-K)
+        if shares_data_list is None:
+            try:
+                shares_units = company_facts['facts']['ifrs-full']['WeightedAverageNumberOfSharesOutstandingDiluted']['units']
+                if 'shares' in shares_units:
+                    shares_data_list = shares_units['shares']
+            except (KeyError, TypeError):
+                pass
+
+        # If we still don't have data, return empty
+        if shares_data_list is None:
+            logger.warning("Could not parse quarterly shares outstanding history from EDGAR: No us-gaap or ifrs-full data found")
+            return []
+
+        # Extract quarterly reports (10-Q for US, 6-K for foreign)
+        quarterly_shares = []
+        seen_quarters = set()
+
+        for entry in shares_data_list:
+            if entry.get('form') in ['10-Q', '6-K']:
+                year = entry.get('fy')
+                quarter = entry.get('fp')  # Fiscal period: Q1, Q2, Q3
+                shares = entry.get('val')
+                fiscal_end = entry.get('end')
+
+                # Only include entries with fiscal period (Q1, Q2, Q3)
+                # Avoid duplicates using (year, quarter) tuple
+                if year and quarter and shares is not None and (year, quarter) not in seen_quarters:
+                    quarterly_shares.append({
+                        'year': year,
+                        'quarter': quarter,
+                        'shares': shares,
+                        'fiscal_end': fiscal_end
+                    })
+                    seen_quarters.add((year, quarter))
+
+        # Get annual data for Q4
+        # Q4 shares are typically reported in the 10-K
+        annual_shares = []
+        seen_annual_years = set()
+
+        for entry in shares_data_list:
+            if entry.get('form') in ['10-K', '20-F']:
+                year = entry.get('fy')
+                shares = entry.get('val')
+                fiscal_end = entry.get('end')
+
+                if year and shares is not None and year not in seen_annual_years:
+                    annual_shares.append({
+                        'year': year,
+                        'shares': shares,
+                        'fiscal_end': fiscal_end
+                    })
+                    seen_annual_years.add(year)
+
+        # Add Q4 from annual reports
+        annual_by_year = {entry['year']: entry for entry in annual_shares}
+
+        for year, annual_entry in annual_by_year.items():
+            # Add Q4 if we don't already have it from a 10-Q
+            if (year, 'Q4') not in seen_quarters:
+                quarterly_shares.append({
+                    'year': year,
+                    'quarter': 'Q4',
+                    'shares': annual_entry['shares'],
+                    'fiscal_end': annual_entry['fiscal_end']
+                })
+
+        # Sort by year descending, then by quarter
+        def quarter_sort_key(entry):
+            quarter_order = {'Q1': 1, 'Q2': 2, 'Q3': 3, 'Q4': 4}
+            return (-entry['year'], quarter_order.get(entry['quarter'], 0))
+
+        quarterly_shares.sort(key=quarter_sort_key)
+        logger.info(f"Successfully parsed {len(quarterly_shares)} quarters of shares outstanding data from EDGAR")
+        return quarterly_shares
+
+    def calculate_split_adjusted_annual_eps_history(self, company_facts: Dict[str, Any]) -> List[Dict[str, Any]]:
+        """
+        Calculate split-adjusted annual EPS from Net Income and shares outstanding
+
+        This combines split-independent Net Income with split-adjusted weighted average
+        shares outstanding to produce accurate EPS values that remain consistent across
+        stock split events.
+
+        Formula: EPS = Net Income / Weighted Average Shares Outstanding
+
+        Args:
+            company_facts: Company facts data from EDGAR API
+
+        Returns:
+            List of dictionaries with year, eps, net_income, shares, and fiscal_end values
+        """
+        # Get Net Income (split-independent)
+        net_income_annual = self.parse_net_income_history(company_facts)
+
+        # Get shares outstanding (split-adjusted)
+        shares_annual = self.parse_shares_outstanding_history(company_facts)
+
+        # Create lookup dict for shares by year
+        shares_by_year = {entry['year']: entry for entry in shares_annual}
+
+        # Calculate EPS for each year
+        eps_history = []
+        for ni_entry in net_income_annual:
+            year = ni_entry['year']
+            if year in shares_by_year:
+                net_income = ni_entry['net_income']
+                shares = shares_by_year[year]['shares']
+
+                if shares > 0:
+                    eps = net_income / shares
+                    eps_history.append({
+                        'year': year,
+                        'eps': eps,
+                        'net_income': net_income,
+                        'shares': shares,
+                        'fiscal_end': ni_entry['fiscal_end']
+                    })
+
+        # Sort by year descending
+        eps_history.sort(key=lambda x: x['year'], reverse=True)
+        logger.info(f"Successfully calculated {len(eps_history)} years of split-adjusted EPS")
+        return eps_history
+
+    def calculate_split_adjusted_quarterly_eps_history(self, company_facts: Dict[str, Any]) -> List[Dict[str, Any]]:
+        """
+        Calculate split-adjusted quarterly EPS from Net Income and shares outstanding
+
+        This combines split-independent quarterly Net Income with split-adjusted weighted
+        average shares outstanding to produce accurate quarterly EPS values.
+
+        Formula: EPS = Net Income / Weighted Average Shares Outstanding
+
+        Args:
+            company_facts: Company facts data from EDGAR API
+
+        Returns:
+            List of dictionaries with year, quarter, eps, net_income, shares, and fiscal_end values
+        """
+        # Get quarterly Net Income (individual quarters, not cumulative)
+        net_income_quarterly = self.parse_quarterly_net_income_history(company_facts)
+
+        # Get quarterly shares outstanding
+        shares_quarterly = self.parse_quarterly_shares_outstanding_history(company_facts)
+
+        # Create lookup dict for shares by (year, quarter)
+        shares_by_quarter = {(entry['year'], entry['quarter']): entry for entry in shares_quarterly}
+
+        # Calculate EPS for each quarter
+        eps_history = []
+        for ni_entry in net_income_quarterly:
+            year = ni_entry['year']
+            quarter = ni_entry['quarter']
+            key = (year, quarter)
+
+            if key in shares_by_quarter:
+                net_income = ni_entry['net_income']
+                shares = shares_by_quarter[key]['shares']
+
+                if shares > 0:
+                    eps = net_income / shares
+                    eps_history.append({
+                        'year': year,
+                        'quarter': quarter,
+                        'eps': eps,
+                        'net_income': net_income,
+                        'shares': shares,
+                        'fiscal_end': ni_entry['fiscal_end']
+                    })
+
+        # Sort by year descending, then by quarter
+        def quarter_sort_key(entry):
+            quarter_order = {'Q1': 1, 'Q2': 2, 'Q3': 3, 'Q4': 4}
+            return (-entry['year'], quarter_order.get(entry['quarter'], 0))
+
+        eps_history.sort(key=quarter_sort_key)
+        logger.info(f"Successfully calculated {len(eps_history)} quarters of split-adjusted EPS")
+        return eps_history
+
     def parse_revenue_history(self, company_facts: Dict[str, Any]) -> List[Dict[str, Any]]:
         """
         Extract revenue history from company facts (supports both US-GAAP and IFRS)

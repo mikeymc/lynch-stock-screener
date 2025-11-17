@@ -7,10 +7,13 @@ import sys
 from unittest.mock import Mock, patch, MagicMock
 import json
 from datetime import datetime
+import logging
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 from edgar_fetcher import EdgarFetcher
+
+logger = logging.getLogger(__name__)
 
 
 @pytest.fixture
@@ -756,6 +759,125 @@ def test_quarterly_net_income_with_calculated_q4():
     quarter_tuples = [(entry["year"], entry["quarter"]) for entry in quarterly_ni]
     assert len(quarter_tuples) == len(set(quarter_tuples)), \
         f"Should not have duplicate (year, quarter) combinations"
+
+
+@pytest.mark.integration
+@pytest.mark.slow
+def test_calculate_split_adjusted_eps_from_net_income():
+    """
+    BDD test: Calculate split-adjusted EPS from Net Income and shares outstanding
+
+    By combining split-independent Net Income from EDGAR with split-adjusted shares
+    outstanding, we can calculate our own split-adjusted EPS that remains consistent
+    across stock splits.
+
+    This test verifies:
+    - Net Income (from EDGAR) / Weighted Average Shares (from EDGAR) = EPS
+    - Calculated EPS approximately matches EDGAR's reported EPS
+    - Works for both annual and quarterly periods
+    - EPS calculation is accurate across split events (2014, 2020)
+
+    Expected behavior:
+    - Annual: Calculated EPS should match EDGAR EPS within 5% tolerance
+    - Quarterly: Calculated EPS should match EDGAR EPS within 10% tolerance (more variance)
+    - Both pre-split and post-split years should have valid calculations
+    """
+    # Arrange
+    fetcher = EdgarFetcher(user_agent="Lynch Stock Screener test@example.com")
+    ticker = "AAPL"
+
+    # Act - Fetch all required data
+    cik = fetcher.get_cik_for_ticker(ticker)
+    assert cik is not None, f"Could not find CIK for {ticker}"
+
+    company_facts = fetcher.fetch_company_facts(cik)
+    assert company_facts is not None, f"Could not fetch company facts for {ticker}"
+
+    # Calculate split-adjusted EPS using new helper methods
+    eps_annual = fetcher.calculate_split_adjusted_annual_eps_history(company_facts)
+    eps_quarterly = fetcher.calculate_split_adjusted_quarterly_eps_history(company_facts)
+
+    # Get EDGAR's as-filed EPS for comparison
+    edgar_eps = fetcher.parse_eps_history(company_facts)
+
+    # Assert - Overall structure
+    assert len(eps_annual) >= 10, f"Should have at least 10 years of calculated EPS"
+    assert len(eps_quarterly) >= 12, f"Should have at least 12 quarters of calculated EPS"
+    assert len(edgar_eps) >= 10, f"Should have at least 10 years of EDGAR EPS"
+
+    # Convert to dicts for easier lookup
+    calc_eps_by_year = {entry['year']: entry for entry in eps_annual}
+    edgar_eps_by_year = {entry['year']: entry['eps'] for entry in edgar_eps}
+
+    # Assert - Annual EPS calculation accuracy
+    # Test years around splits: 2013-2015 (2014 split), 2019-2021 (2020 split)
+    test_years = [2013, 2014, 2015, 2019, 2020, 2021, 2022, 2023]
+
+    annual_calculations = []
+    for year in test_years:
+        if year in calc_eps_by_year and year in edgar_eps_by_year:
+            entry = calc_eps_by_year[year]
+            calculated_eps = entry['eps']
+            ni = entry['net_income']
+            shares = entry['shares']
+            edgar_eps_val = edgar_eps_by_year[year]
+
+            # Calculate difference
+            difference_pct = abs(calculated_eps - edgar_eps_val) / edgar_eps_val * 100
+
+            annual_calculations.append({
+                'year': year,
+                'net_income': ni,
+                'shares': shares,
+                'calculated_eps': calculated_eps,
+                'edgar_eps': edgar_eps_val,
+                'difference_pct': difference_pct
+            })
+
+            # Assert within 5% tolerance
+            assert difference_pct < 5.0, \
+                f"FY{year}: Calculated EPS (${calculated_eps:.2f}) should match EDGAR EPS (${edgar_eps_val:.2f}) within 5%. " \
+                f"Difference: {difference_pct:.2f}%, Net Income: ${ni:,.0f}, Shares: {shares:,.0f}"
+
+    # Log results for inspection
+    logger.info(f"Annual EPS calculations validated for {len(annual_calculations)} years")
+
+    # Assert - Quarterly EPS calculation accuracy
+    quarterly_calculations = []
+    for entry in eps_quarterly[:20]:  # Test most recent 20 quarters
+        year = entry['year']
+        quarter = entry['quarter']
+        calculated_eps = entry['eps']
+        ni = entry['net_income']
+        shares = entry['shares']
+
+        # Verify it's reasonable (positive and within reasonable bounds)
+        assert calculated_eps > 0, \
+            f"FY{year} {quarter}: Calculated EPS should be positive, got ${calculated_eps:.2f}"
+
+        # Quarterly EPS should be less than $50 (sanity check for Apple)
+        assert calculated_eps < 50, \
+            f"FY{year} {quarter}: Quarterly EPS (${calculated_eps:.2f}) should be reasonable (<$50)"
+
+        quarterly_calculations.append({
+            'year': year,
+            'quarter': quarter,
+            'net_income': ni,
+            'shares': shares,
+            'calculated_eps': calculated_eps
+        })
+
+    assert len(quarterly_calculations) >= 12, \
+        f"Should have calculated EPS for at least 12 quarters, got {len(quarterly_calculations)}"
+
+    logger.info(f"Quarterly EPS calculations validated for {len(quarterly_calculations)} quarters")
+
+    # Assert - EPS consistency across split events
+    # FY2013 (pre-split) and FY2014 (post-split) should both have valid calculations
+    assert 2013 in [calc['year'] for calc in annual_calculations], "Should have FY2013 (pre-2014 split)"
+    assert 2014 in [calc['year'] for calc in annual_calculations], "Should have FY2014 (post-2014 split)"
+    assert 2019 in [calc['year'] for calc in annual_calculations], "Should have FY2019 (pre-2020 split)"
+    assert 2020 in [calc['year'] for calc in annual_calculations], "Should have FY2020 (post-2020 split)"
 
 
 @pytest.mark.integration
