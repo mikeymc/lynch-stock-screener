@@ -560,6 +560,104 @@ def test_parse_eps_history_ifrs_filters_20f_forms(edgar_fetcher):
 
 @pytest.mark.integration
 @pytest.mark.slow
+def test_net_income_is_split_independent():
+    """
+    BDD test: Net Income from EDGAR is NOT affected by stock splits
+
+    EDGAR reports "as-filed" data that is NOT retroactively adjusted for splits.
+    This means EPS drops artificially at split events, but Net Income (total
+    earnings in USD) remains consistent and reflects actual business performance.
+
+    This test verifies Net Income extraction shows no artificial drops at Apple's
+    split events:
+    - June 9, 2014: 7-for-1 split (FY2014 10-K filed Sept 30, 2014)
+    - August 31, 2020: 4-for-1 split (FY2020 10-K filed Sept 26, 2020)
+
+    Expected behavior:
+    - Net Income should grow or decline based on business performance
+    - Net Income should NOT drop ~77% in FY2014 (like EPS did)
+    - Net Income should NOT drop ~75% in FY2020 (like EPS did)
+
+    This validates that we're extracting the correct split-independent metric
+    for later calculation of our own split-adjusted EPS.
+    """
+    # Arrange
+    fetcher = EdgarFetcher(user_agent="Lynch Stock Screener test@example.com")
+    ticker = "AAPL"
+
+    # Act - Fetch Net Income history from EDGAR
+    cik = fetcher.get_cik_for_ticker(ticker)
+    assert cik is not None, f"Could not find CIK for {ticker}"
+
+    company_facts = fetcher.fetch_company_facts(cik)
+    assert company_facts is not None, f"Could not fetch company facts for {ticker}"
+
+    net_income_history = fetcher.parse_net_income_history(company_facts)
+
+    # Assert - Overall structure
+    assert net_income_history is not None, "Should successfully parse Net Income history"
+    assert isinstance(net_income_history, list), "Net Income history should be a list"
+    assert len(net_income_history) >= 10, "Should have at least 10 years of Net Income data"
+
+    # Convert to dict for easier lookup
+    net_income_by_year = {entry['year']: entry['net_income'] for entry in net_income_history}
+
+    # Assert - Data quality around 2014 split (7:1 on June 9, 2014)
+    # FY2013 ended Sept 28, 2013 (before split)
+    # FY2014 ended Sept 27, 2014 (after split in same fiscal year)
+    assert 2013 in net_income_by_year, "Should have FY2013 Net Income (pre-split)"
+    assert 2014 in net_income_by_year, "Should have FY2014 Net Income (post-split)"
+
+    ni_2013 = net_income_by_year[2013]
+    ni_2014 = net_income_by_year[2014]
+
+    # Net Income should NOT drop 77% like EPS did
+    # In fact, Apple's Net Income grew from $37B (FY2013) to $39B (FY2014)
+    year_over_year_change_2014 = (ni_2014 - ni_2013) / ni_2013
+    assert year_over_year_change_2014 > -0.5, \
+        f"Net Income should not drop >50% at 2014 split. FY2013: ${ni_2013:,.0f}, FY2014: ${ni_2014:,.0f} (change: {year_over_year_change_2014:.1%})"
+
+    # Assert - Data quality around 2020 split (4:1 on August 31, 2020)
+    # FY2019 ended Sept 28, 2019 (before split)
+    # FY2020 ended Sept 26, 2020 (after split in same fiscal year)
+    assert 2019 in net_income_by_year, "Should have FY2019 Net Income (pre-split)"
+    assert 2020 in net_income_by_year, "Should have FY2020 Net Income (post-split)"
+
+    ni_2019 = net_income_by_year[2019]
+    ni_2020 = net_income_by_year[2020]
+
+    # Net Income should NOT drop 75% like EPS did
+    # In fact, Apple's Net Income grew from $55B (FY2019) to $57B (FY2020)
+    year_over_year_change_2020 = (ni_2020 - ni_2019) / ni_2019
+    assert year_over_year_change_2020 > -0.5, \
+        f"Net Income should not drop >50% at 2020 split. FY2019: ${ni_2019:,.0f}, FY2020: ${ni_2020:,.0f} (change: {year_over_year_change_2020:.1%})"
+
+    # Assert - All Net Income values are positive and reasonable
+    for entry in net_income_history:
+        year = entry['year']
+        net_income = entry['net_income']
+
+        # Apple should have positive Net Income
+        assert net_income > 0, f"Apple should have positive Net Income in FY{year}, got ${net_income:,.0f}"
+
+        # Apple's Net Income should be in reasonable range (billions, not trillions or millions)
+        # Historical range: ~$14B (FY2010) to ~$100B (FY2023)
+        assert 1e9 < net_income < 200e9, \
+            f"Apple Net Income should be in billions range (1B-200B), got ${net_income:,.0f} for FY{year}"
+
+    # Assert - Net Income should generally trend upward (Apple is a growth company)
+    # Allow for occasional dips, but overall trend should be positive
+    recent_years = sorted([y for y in net_income_by_year.keys() if y >= 2015])[-5:]
+    if len(recent_years) >= 2:
+        earliest_recent = recent_years[0]
+        latest_recent = recent_years[-1]
+        growth = (net_income_by_year[latest_recent] - net_income_by_year[earliest_recent]) / net_income_by_year[earliest_recent]
+        assert growth > -0.2, \
+            f"Apple's Net Income should not decline >20% over recent 5-year period. FY{earliest_recent}: ${net_income_by_year[earliest_recent]:,.0f}, FY{latest_recent}: ${net_income_by_year[latest_recent]:,.0f}"
+
+
+@pytest.mark.integration
+@pytest.mark.slow
 def test_fetch_real_eps_data_integration():
     """
     Integration test: Fetch real EPS data from SEC EDGAR API for Apple Inc.

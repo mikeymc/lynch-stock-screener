@@ -250,6 +250,77 @@ class EdgarFetcher:
         logger.info(f"Successfully parsed {len(quarterly_eps)} quarters of EPS data from EDGAR")
         return quarterly_eps
 
+    def parse_net_income_history(self, company_facts: Dict[str, Any]) -> List[Dict[str, Any]]:
+        """
+        Extract Net Income history from company facts (split-independent metric)
+
+        Net Income (total earnings in USD) is NOT affected by stock splits,
+        unlike EPS which drops artificially at split events. This makes Net Income
+        the correct base metric for calculating our own split-adjusted EPS.
+
+        Supports both US-GAAP (domestic companies) and IFRS (foreign companies).
+
+        Args:
+            company_facts: Company facts data from EDGAR API
+
+        Returns:
+            List of dictionaries with year, net_income, and fiscal_end values
+        """
+        net_income_data_list = None
+
+        # Try US-GAAP first (domestic companies)
+        try:
+            ni_units = company_facts['facts']['us-gaap']['NetIncomeLoss']['units']
+            if 'USD' in ni_units:
+                net_income_data_list = ni_units['USD']
+        except (KeyError, TypeError):
+            pass
+
+        # Fall back to IFRS (foreign companies filing 20-F)
+        if net_income_data_list is None:
+            try:
+                ni_units = company_facts['facts']['ifrs-full']['ProfitLoss']['units']
+
+                # Prefer USD if available, otherwise use any currency
+                if 'USD' in ni_units:
+                    net_income_data_list = ni_units['USD']
+                else:
+                    # Find first currency unit (3-letter code)
+                    currency_units = [u for u in ni_units.keys() if len(u) == 3 and u.isupper()]
+                    if currency_units:
+                        net_income_data_list = ni_units[currency_units[0]]
+            except (KeyError, TypeError):
+                pass
+
+        # If we still don't have data, return empty
+        if net_income_data_list is None:
+            logger.warning("Could not parse Net Income history from EDGAR: No us-gaap or ifrs-full data found")
+            return []
+
+        # Filter for annual reports (10-K for US, 20-F for foreign)
+        annual_net_income = []
+        seen_years = set()
+
+        for entry in net_income_data_list:
+            if entry.get('form') in ['10-K', '20-F']:
+                year = entry.get('fy')
+                net_income = entry.get('val')
+                fiscal_end = entry.get('end')
+
+                # Avoid duplicates, keep only one entry per fiscal year
+                if year and net_income is not None and year not in seen_years:
+                    annual_net_income.append({
+                        'year': year,
+                        'net_income': net_income,
+                        'fiscal_end': fiscal_end
+                    })
+                    seen_years.add(year)
+
+        # Sort by year descending
+        annual_net_income.sort(key=lambda x: x['year'], reverse=True)
+        logger.info(f"Successfully parsed {len(annual_net_income)} years of Net Income data from EDGAR")
+        return annual_net_income
+
     def parse_revenue_history(self, company_facts: Dict[str, Any]) -> List[Dict[str, Any]]:
         """
         Extract revenue history from company facts (supports both US-GAAP and IFRS)
