@@ -221,14 +221,14 @@ export default function StockDetail() {
           <div className="tabs-content">
             {activeTab === 'charts' && (
               <>
-                <div className="period-toggle">
-                  <button
+                {/* <div className="period-toggle"> */}
+                  {/* <button
                     className={`period-button ${periodType === 'annual' ? 'active' : ''}`}
                     onClick={() => setPeriodType('annual')}
                   >
                     Annual
-                  </button>
-                  <button
+                  </button> */}
+                  {/* <button
                     className={`period-button ${periodType === 'quarterly' ? 'active' : ''}`}
                     onClick={() => setPeriodType('quarterly')}
                   >
@@ -239,8 +239,8 @@ export default function StockDetail() {
                     onClick={() => setPeriodType('both')}
                   >
                     Both
-                  </button>
-                </div>
+                  </button> */}
+                {/* </div> */}
                 <StockCharts historyData={historyData} loading={loadingHistory} />
               </>
             )}
