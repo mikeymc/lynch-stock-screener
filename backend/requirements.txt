@@ -8,3 +8,4 @@ python-dotenv
 schwab-py
 google-generativeai
 edgartools
+gunicorn
