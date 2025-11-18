@@ -1,6 +1,6 @@
 # fly.toml app configuration file
 
-app = "your-app-name" # Change this to your actual app name
+app = "lynch-stock-screener"
 
 [build]
   dockerfile = "Dockerfile"
@@ -18,3 +18,7 @@ app = "your-app-name" # Change this to your actual app name
 
 [env]
   PORT = "8080"
+
+[mounts]
+  source = "lynch_data"
+  destination = "/data"

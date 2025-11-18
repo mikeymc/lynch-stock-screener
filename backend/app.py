@@ -1,7 +1,7 @@
 # ABOUTME: Flask REST API for Lynch stock screener
 # ABOUTME: Provides endpoints for screening stocks and retrieving stock analysis
 
-from flask import Flask, jsonify, request, Response, stream_with_context
+from flask import Flask, jsonify, request, Response, stream_with_context, send_from_directory
 from flask_cors import CORS
 import json
 import time
@@ -16,10 +16,12 @@ from schwab_client import SchwabClient
 from lynch_analyst import LynchAnalyst
 from conversation_manager import ConversationManager
 
-app = Flask(__name__)
+app = Flask(__name__, static_folder='static', static_url_path='')
 CORS(app)
 
-db = Database("stocks.db")
+# Use /data volume for database in production, local path in development
+db_path = os.environ.get('DB_PATH', '/data/stocks.db' if os.path.exists('/data') else 'stocks.db')
+db = Database(db_path)
 fetcher = DataFetcher(db)
 analyzer = EarningsAnalyzer(db)
 criteria = LynchCriteria(db, analyzer)
@@ -719,6 +721,17 @@ def send_message_stream(symbol):
         import traceback
         traceback.print_exc()
         return jsonify({'error': str(e)}), 500
+
+
+# Serve React static files
+@app.route('/', defaults={'path': ''})
+@app.route('/<path:path>')
+def serve_react_app(path):
+    """Serve React app for all non-API routes"""
+    if path != "" and os.path.exists(os.path.join(app.static_folder, path)):
+        return send_from_directory(app.static_folder, path)
+    else:
+        return send_from_directory(app.static_folder, 'index.html')
 
 
 if __name__ == '__main__':
