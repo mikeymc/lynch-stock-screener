@@ -7,7 +7,7 @@ import google.generativeai as genai
 
 
 class LynchAnalyst:
-    def __init__(self, db, api_key: Optional[str] = None, prompt_template_path: str = "lynch_prompt.md", checklist_path: str = "lynch_checklist.md"):
+    def __init__(self, db, api_key: Optional[str] = None, prompt_template_path: Optional[str] = None, checklist_path: Optional[str] = None):
         """
         Initialize the LynchAnalyst with database and Gemini API key
 
@@ -19,20 +19,23 @@ class LynchAnalyst:
         """
         self.db = db
         self.model_version = "gemini-2.5-flash"
-        self.prompt_template_path = prompt_template_path
-        self.checklist_path = checklist_path
+
+        # Use absolute paths relative to this file's location
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        self.prompt_template_path = prompt_template_path or os.path.join(script_dir, "lynch_prompt.md")
+        self.checklist_path = checklist_path or os.path.join(script_dir, "lynch_checklist.md")
 
         try:
-            with open(prompt_template_path, 'r') as f:
+            with open(self.prompt_template_path, 'r') as f:
                 main_prompt = f.read()
         except FileNotFoundError as e:
-            raise FileNotFoundError(f"Prompt template file not found at: {prompt_template_path}") from e
+            raise FileNotFoundError(f"Prompt template file not found at: {self.prompt_template_path}") from e
 
         try:
-            with open(checklist_path, 'r') as f:
+            with open(self.checklist_path, 'r') as f:
                 checklist_content = f.read()
         except FileNotFoundError as e:
-            raise FileNotFoundError(f"Checklist file not found at: {checklist_path}") from e
+            raise FileNotFoundError(f"Checklist file not found at: {self.checklist_path}") from e
 
         self.prompt_template = f"{main_prompt}\n\n---\n\n## Reference: Peter Lynch's Checklist\n\n{checklist_content}"
 

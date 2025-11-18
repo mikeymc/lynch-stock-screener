@@ -464,9 +464,9 @@ def get_lynch_analysis(symbol):
     evaluation = criteria.evaluate_stock(symbol)
     stock_data = {
         **stock_metrics,
-        'peg_ratio': evaluation.get('peg_ratio'),
-        'earnings_cagr': evaluation.get('earnings_cagr'),
-        'revenue_cagr': evaluation.get('revenue_cagr')
+        'peg_ratio': evaluation.get('peg_ratio') if evaluation else None,
+        'earnings_cagr': evaluation.get('earnings_cagr') if evaluation else None,
+        'revenue_cagr': evaluation.get('revenue_cagr') if evaluation else None
     }
 
     # Get filing sections if available (for US stocks only)
@@ -525,9 +525,9 @@ def refresh_lynch_analysis(symbol):
     evaluation = criteria.evaluate_stock(symbol)
     stock_data = {
         **stock_metrics,
-        'peg_ratio': evaluation.get('peg_ratio'),
-        'earnings_cagr': evaluation.get('earnings_cagr'),
-        'revenue_cagr': evaluation.get('revenue_cagr')
+        'peg_ratio': evaluation.get('peg_ratio') if evaluation else None,
+        'earnings_cagr': evaluation.get('earnings_cagr') if evaluation else None,
+        'revenue_cagr': evaluation.get('revenue_cagr') if evaluation else None
     }
 
     # Get filing sections if available (for US stocks only)

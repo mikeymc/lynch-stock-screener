@@ -102,10 +102,10 @@ def test_format_prompt_includes_lynch_principles(analyst, sample_stock_data, sam
 
 
 def test_format_prompt_requests_specific_length(analyst, sample_stock_data, sample_history):
-    """Test that the prompt requests 200-300 word analysis"""
+    """Test that the prompt requests 1000 word analysis"""
     prompt = analyst.format_prompt(sample_stock_data, sample_history)
 
-    assert '200' in prompt or '300' in prompt
+    assert '1000' in prompt
 
 
 @patch('google.generativeai.GenerativeModel')
