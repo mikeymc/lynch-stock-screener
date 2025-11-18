@@ -1,0 +1,46 @@
+# Python
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.so
+*.egg
+*.egg-info
+.pytest_cache
+
+# Virtual environments
+.env
+.venv
+venv
+env
+
+# Database files (will use volume)
+*.db
+
+# Git
+.git
+.gitignore
+
+# Frontend
+frontend/node_modules
+frontend/dist
+frontend/.vite
+
+# Backend tests
+backend/tests/
+backend/test_*.py
+
+# Documentation
+*.md
+README.md
+
+# IDE
+.vscode
+.idea
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
