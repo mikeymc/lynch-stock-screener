@@ -3,7 +3,7 @@
 
 import { useState, useEffect, useRef } from 'react'
 
-const API_BASE = 'http://localhost:5001/api'
+const API_BASE = '/api'
 
 function SourceCitation({ sources }) {
   const [expanded, setExpanded] = useState(false)
