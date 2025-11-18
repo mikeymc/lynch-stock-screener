@@ -105,7 +105,7 @@ class EdgarFetcher:
 
         url = self.COMPANY_FACTS_URL.format(cik=cik)
         try:
-            response = requests.get(url, headers=self.headers)
+            response = requests.get(url, headers=self.headers, timeout=30)
             response.raise_for_status()
             logger.info(f"[CIK {cik}] Successfully fetched company facts from EDGAR")
             return response.json()
