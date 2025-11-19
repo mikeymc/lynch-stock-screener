@@ -12,6 +12,15 @@ app = "lynch-stock-screener"
   auto_start_machines = true
   min_machines_running = 0
 
+  [http_service.concurrency]
+    type = "requests"
+    hard_limit = 25
+    soft_limit = 20
+
+  # Increase HTTP timeout for long-running screening operations
+  # SSE streaming can take several minutes for multiple stocks
+  http_request_timeout = "5m"
+
 [[vm]]
   size = "shared-cpu-1x"
   memory = "1gb"

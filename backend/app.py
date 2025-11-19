@@ -88,6 +88,9 @@ def screen_stocks():
                         print(f"No stock data returned for {symbol}")
                         continue
 
+                    # Send heartbeat after data fetch to keep connection alive
+                    yield f": heartbeat\n\n"
+
                     evaluation = criteria.evaluate_stock(symbol)
                     if not evaluation:
                         print(f"No evaluation returned for {symbol}")

@@ -6,6 +6,7 @@ import logging
 from typing import Dict, Any, Optional, List
 from database import Database
 from edgar_fetcher import EdgarFetcher
+from timeout_utils import call_with_timeout
 import pandas as pd
 
 logger = logging.getLogger(__name__)
@@ -16,6 +17,41 @@ class DataFetcher:
         self.db = db
         self.edgar_fetcher = EdgarFetcher(user_agent="Lynch Stock Screener mikey@example.com")
 
+    def _get_yf_info(self, symbol: str) -> Optional[Dict[str, Any]]:
+        """Fetch yfinance info with timeout protection"""
+        def fetch_info():
+            stock = yf.Ticker(symbol)
+            return stock.info
+        return call_with_timeout(fetch_info, 10, default=None)
+
+    def _get_yf_financials(self, symbol: str):
+        """Fetch yfinance financials with timeout protection"""
+        def fetch_financials():
+            stock = yf.Ticker(symbol)
+            return stock.financials
+        return call_with_timeout(fetch_financials, 15, default=None)
+
+    def _get_yf_balance_sheet(self, symbol: str):
+        """Fetch yfinance balance sheet with timeout protection"""
+        def fetch_balance_sheet():
+            stock = yf.Ticker(symbol)
+            return stock.balance_sheet
+        return call_with_timeout(fetch_balance_sheet, 15, default=None)
+
+    def _get_yf_quarterly_financials(self, symbol: str):
+        """Fetch yfinance quarterly financials with timeout protection"""
+        def fetch_quarterly():
+            stock = yf.Ticker(symbol)
+            return stock.quarterly_financials
+        return call_with_timeout(fetch_quarterly, 15, default=None)
+
+    def _get_yf_quarterly_balance_sheet(self, symbol: str):
+        """Fetch yfinance quarterly balance sheet with timeout protection"""
+        def fetch_quarterly_bs():
+            stock = yf.Ticker(symbol)
+            return stock.quarterly_balance_sheet
+        return call_with_timeout(fetch_quarterly_bs, 15, default=None)
+
     def fetch_stock_data(self, symbol: str, force_refresh: bool = False) -> Optional[Dict[str, Any]]:
         if not force_refresh and self.db.is_cache_valid(symbol):
             return self.db.get_stock_metrics(symbol)
@@ -25,11 +61,11 @@ class DataFetcher:
             logger.info(f"[{symbol}] Attempting EDGAR fetch")
             edgar_data = self.edgar_fetcher.fetch_stock_fundamentals(symbol)
 
-            # Fetch current market data from yfinance
-            stock = yf.Ticker(symbol)
-            info = stock.info
+            # Fetch current market data from yfinance with timeout
+            info = self._get_yf_info(symbol)
 
             if not info or 'symbol' not in info:
+                logger.warning(f"[{symbol}] Failed to fetch yfinance info (timeout or error)")
                 return None
 
             company_name = info.get('longName', '')
@@ -96,10 +132,10 @@ class DataFetcher:
                         self._store_edgar_quarterly_earnings(symbol, edgar_data)
                     else:
                         logger.warning(f"[{symbol}] No quarterly Net Income available, falling back to yfinance for quarterly data")
-                        self._fetch_quarterly_earnings(symbol, stock)
+                        self._fetch_quarterly_earnings(symbol)
                 else:
                     logger.info(f"[{symbol}] EDGAR has insufficient matched years ({matched_years} < 5). Falling back to yfinance")
-                    self._fetch_and_store_earnings(symbol, stock)
+                    self._fetch_and_store_earnings(symbol)
             else:
                 if edgar_data:
                     calculated_eps_count = len(edgar_data.get('calculated_eps_history', []))
@@ -107,7 +143,7 @@ class DataFetcher:
                     logger.info(f"[{symbol}] Partial EDGAR data: {calculated_eps_count} calculated EPS years, {rev_count} revenue years. Falling back to yfinance")
                 else:
                     logger.info(f"[{symbol}] EDGAR fetch failed. Using yfinance")
-                self._fetch_and_store_earnings(symbol, stock)
+                self._fetch_and_store_earnings(symbol)
 
             return self.db.get_stock_metrics(symbol)
 
@@ -208,8 +244,7 @@ class DataFetcher:
             years: List of years that need D/E data
         """
         try:
-            stock = yf.Ticker(symbol)
-            balance_sheet = stock.balance_sheet
+            balance_sheet = self._get_yf_balance_sheet(symbol)
 
             if balance_sheet is None or balance_sheet.empty:
                 logger.warning(f"[{symbol}] No balance sheet data available from yfinance")
@@ -277,11 +312,11 @@ class DataFetcher:
             logger.debug(f"Error calculating D/E ratio: {e}")
             return None
 
-    def _fetch_and_store_earnings(self, symbol: str, stock):
+    def _fetch_and_store_earnings(self, symbol: str):
         try:
-            # Fetch annual data
-            financials = stock.financials
-            balance_sheet = stock.balance_sheet
+            # Fetch annual data with timeout protection
+            financials = self._get_yf_financials(symbol)
+            balance_sheet = self._get_yf_balance_sheet(symbol)
 
             if financials is not None and not financials.empty:
                 year_count = len(financials.columns)
@@ -318,9 +353,9 @@ class DataFetcher:
                                                      debt_to_equity=debt_to_equity, period='annual',
                                                      net_income=float(net_income) if pd.notna(net_income) else None)
 
-            # Fetch quarterly data
-            quarterly_financials = stock.quarterly_financials
-            quarterly_balance_sheet = stock.quarterly_balance_sheet
+            # Fetch quarterly data with timeout protection
+            quarterly_financials = self._get_yf_quarterly_financials(symbol)
+            quarterly_balance_sheet = self._get_yf_quarterly_balance_sheet(symbol)
 
             if quarterly_financials is not None and not quarterly_financials.empty:
                 quarter_count = len(quarterly_financials.columns)
@@ -362,12 +397,12 @@ class DataFetcher:
             import traceback
             traceback.print_exc()
 
-    def _fetch_quarterly_earnings(self, symbol: str, stock):
+    def _fetch_quarterly_earnings(self, symbol: str):
         """Fetch and store ONLY quarterly earnings data from yfinance"""
         try:
-            # Fetch quarterly data only
-            quarterly_financials = stock.quarterly_financials
-            quarterly_balance_sheet = stock.quarterly_balance_sheet
+            # Fetch quarterly data only with timeout protection
+            quarterly_financials = self._get_yf_quarterly_financials(symbol)
+            quarterly_balance_sheet = self._get_yf_quarterly_balance_sheet(symbol)
 
             if quarterly_financials is not None and not quarterly_financials.empty:
                 quarter_count = len(quarterly_financials.columns)
