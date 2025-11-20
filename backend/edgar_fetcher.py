@@ -1065,8 +1065,11 @@ class EdgarFetcher:
         # Extract Net Income directly for storage
         net_income_annual = self.parse_net_income_history(company_facts)
         net_income_quarterly = self.parse_quarterly_net_income_history(company_facts)
+        
+        # Parse dividend history
+        dividend_history = self.parse_dividend_history(company_facts)
 
-        logger.info(f"[{ticker}] EDGAR fetch complete: {len(eps_history)} EPS years, {len(calculated_eps_history)} calculated EPS years, {len(net_income_annual)} annual NI, {len(net_income_quarterly)} quarterly NI, {len(revenue_history)} revenue years, {len(debt_to_equity_history)} D/E years, current D/E: {debt_to_equity}")
+        logger.info(f"[{ticker}] EDGAR fetch complete: {len(eps_history)} EPS years, {len(calculated_eps_history)} calculated EPS years, {len(net_income_annual)} annual NI, {len(net_income_quarterly)} quarterly NI, {len(revenue_history)} revenue years, {len(debt_to_equity_history)} D/E years, {len(dividend_history)} dividend entries, current D/E: {debt_to_equity}")
 
         fundamentals = {
             'ticker': ticker,
@@ -1079,6 +1082,7 @@ class EdgarFetcher:
             'revenue_history': revenue_history,
             'debt_to_equity': debt_to_equity,
             'debt_to_equity_history': debt_to_equity_history,
+            'dividend_history': dividend_history,
             'company_facts': company_facts
         }
 
@@ -1254,3 +1258,115 @@ class EdgarFetcher:
             import traceback
             traceback.print_exc()
             return {}
+    def parse_dividend_history(self, company_facts: Dict[str, Any]) -> List[Dict[str, Any]]:
+        """
+        Extract dividend history from company facts
+
+        Prioritizes CommonStockDividendsPerShareCashPaid, falls back to CommonStockDividendsPerShareDeclared.
+        Supports both US-GAAP and IFRS.
+
+        Args:
+            company_facts: Company facts data from EDGAR API
+
+        Returns:
+            List of dictionaries with year, quarter (optional), amount, and fiscal_end values
+        """
+        dividend_data_list = None
+        
+        # Priority 1: Cash Paid (Actual)
+        keys_to_try = [
+            'CommonStockDividendsPerShareCashPaid',
+            'CommonStockDividendsPerShareDeclared',
+            'DividendsPayableAmountPerShare'
+        ]
+
+        # Try US-GAAP first
+        try:
+            us_gaap = company_facts['facts']['us-gaap']
+            for key in keys_to_try:
+                if key in us_gaap:
+                    units = us_gaap[key]['units']
+                    if 'USD/shares' in units:
+                        dividend_data_list = units['USD/shares']
+                        logger.info(f"Found dividend data using US-GAAP key: {key}")
+                        break
+        except (KeyError, TypeError):
+            pass
+
+        # Fall back to IFRS
+        if dividend_data_list is None:
+            try:
+                ifrs = company_facts['facts']['ifrs-full']
+                # IFRS keys might differ, try generic search or specific known keys
+                ifrs_keys = [
+                    'DividendsRecognisedAsDistributionsToOwnersPerShare',
+                    'DividendsProposedOrDeclaredBeforeFinancialStatementsAuthorisedForIssuePerShare'
+                ]
+                for key in ifrs_keys:
+                    if key in ifrs:
+                        units = ifrs[key]['units']
+                        # Find USD/shares or similar
+                        for unit_name, entries in units.items():
+                            if 'shares' in unit_name:
+                                dividend_data_list = entries
+                                logger.info(f"Found dividend data using IFRS key: {key}")
+                                break
+                        if dividend_data_list:
+                            break
+            except (KeyError, TypeError):
+                pass
+
+        if dividend_data_list is None:
+            logger.warning("Could not parse dividend history from EDGAR")
+            return []
+
+        dividends = []
+        seen_entries = set()
+
+        for entry in dividend_data_list:
+            fiscal_end = entry.get('end')
+            # Extract year from fiscal_end date
+            year = int(fiscal_end[:4]) if fiscal_end else entry.get('fy')
+            form = entry.get('form')
+            amount = entry.get('val')
+            
+            if not year or amount is None:
+                continue
+
+            # Determine period
+            period = 'annual'
+            quarter = None
+            
+            if form in ['10-Q', '6-K']:
+                fp = entry.get('fp')
+                if fp in ['Q1', 'Q2', 'Q3']:
+                    period = 'quarterly'
+                    quarter = fp
+            elif form in ['10-K', '20-F']:
+                period = 'annual'
+            
+            # Create a unique key to avoid duplicates
+            # (year, period, quarter, amount)
+            entry_key = (year, period, quarter)
+            
+            # For annual data, we want the latest filing
+            if period == 'annual':
+                # If we already have an entry for this year, check if this one is newer/better
+                # Simple approach: just store all and filter later or rely on database constraints
+                # But here we return a list. Let's deduplicate by keeping the one with latest filed date
+                pass
+
+            dividends.append({
+                'year': year,
+                'period': period,
+                'quarter': quarter,
+                'amount': amount,
+                'fiscal_end': fiscal_end,
+                'filed': entry.get('filed')
+            })
+
+        # Sort by year descending
+        dividends.sort(key=lambda x: x['year'], reverse=True)
+        
+        logger.info(f"Successfully parsed {len(dividends)} dividend entries from EDGAR")
+        return dividends

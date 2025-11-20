@@ -56,6 +56,8 @@ class Database:
                 debt_to_equity REAL,
                 period TEXT DEFAULT 'annual',
                 net_income REAL,
+                dividend_amount REAL,
+                dividend_yield REAL,
                 last_updated TIMESTAMP,
                 FOREIGN KEY (symbol) REFERENCES stocks(symbol),
                 UNIQUE(symbol, year, period)
@@ -250,6 +252,8 @@ class Database:
                     debt_to_equity REAL,
                     period TEXT DEFAULT 'annual',
                     net_income REAL,
+                    dividend_amount REAL,
+                    dividend_yield REAL,
                     last_updated TIMESTAMP,
                     FOREIGN KEY (symbol) REFERENCES stocks(symbol),
                     UNIQUE(symbol, year, period)
@@ -263,6 +267,18 @@ class Database:
             # Drop old table and rename new one
             cursor.execute("DROP TABLE earnings_history")
             cursor.execute("ALTER TABLE earnings_history_new RENAME TO earnings_history")
+
+        # Migration: Add dividend_amount column to earnings_history table
+        cursor.execute("PRAGMA table_info(earnings_history)")
+        earnings_columns = [row[1] for row in cursor.fetchall()]
+        if 'dividend_amount' not in earnings_columns:
+            cursor.execute("ALTER TABLE earnings_history ADD COLUMN dividend_amount REAL")
+
+        # Migration: Add dividend_yield column to earnings_history table
+        cursor.execute("PRAGMA table_info(earnings_history)")
+        earnings_columns = [row[1] for row in cursor.fetchall()]
+        if 'dividend_yield' not in earnings_columns:
+            cursor.execute("ALTER TABLE earnings_history ADD COLUMN dividend_yield REAL")
 
         conn.commit()
         conn.close()
@@ -299,14 +315,14 @@ class Database:
         conn.commit()
         conn.close()
 
-    def save_earnings_history(self, symbol: str, year: int, eps: float, revenue: float, fiscal_end: Optional[str] = None, debt_to_equity: Optional[float] = None, period: str = 'annual', net_income: Optional[float] = None):
+    def save_earnings_history(self, symbol: str, year: int, eps: float, revenue: float, fiscal_end: Optional[str] = None, debt_to_equity: Optional[float] = None, period: str = 'annual', net_income: Optional[float] = None, dividend_amount: Optional[float] = None, dividend_yield: Optional[float] = None):
         conn = self.get_connection()
         cursor = conn.cursor()
         cursor.execute("""
             INSERT OR REPLACE INTO earnings_history
-            (symbol, year, earnings_per_share, revenue, fiscal_end, debt_to_equity, period, net_income, last_updated)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """, (symbol, year, eps, revenue, fiscal_end, debt_to_equity, period, net_income, datetime.now().isoformat()))
+            (symbol, year, earnings_per_share, revenue, fiscal_end, debt_to_equity, period, net_income, dividend_amount, dividend_yield, last_updated)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (symbol, year, eps, revenue, fiscal_end, debt_to_equity, period, net_income, dividend_amount, dividend_yield, datetime.now().isoformat()))
         conn.commit()
         conn.close()
 
@@ -353,7 +369,7 @@ class Database:
             where_clause = "WHERE symbol = ? AND period = 'annual'"
 
         cursor.execute(f"""
-            SELECT year, earnings_per_share, revenue, fiscal_end, debt_to_equity, period, net_income, last_updated
+            SELECT year, earnings_per_share, revenue, fiscal_end, debt_to_equity, period, net_income, dividend_amount, dividend_yield, last_updated
             FROM earnings_history
             {where_clause}
             ORDER BY year DESC, period
@@ -370,7 +386,9 @@ class Database:
                 'debt_to_equity': row[4],
                 'period': row[5],
                 'net_income': row[6],
-                'last_updated': row[7]
+                'dividend_amount': row[7],
+                'dividend_yield': row[8],
+                'last_updated': row[9]
             }
             for row in rows
         ]

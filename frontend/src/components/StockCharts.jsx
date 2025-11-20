@@ -200,6 +200,58 @@ export default function StockCharts({ historyData, loading }) {
           }}
         />
       </div>
+
+      <div className="chart-container">
+        <Line
+          data={{
+            labels: labels,
+            datasets: [
+              {
+                label: 'Dividend Yield (%)',
+                data: historyData.dividend_yield,
+                borderColor: 'rgb(54, 162, 235)',
+                backgroundColor: 'rgba(54, 162, 235, 0.2)',
+              }
+            ]
+          }}
+          options={{
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+              title: {
+                display: true,
+                text: 'Dividend Yield',
+                font: { size: 14 }
+              },
+              legend: {
+                display: false
+              },
+              tooltip: {
+                callbacks: {
+                  label: function (context) {
+                    let label = context.dataset.label || '';
+                    if (label) {
+                      label += ': ';
+                    }
+                    if (context.parsed.y !== null) {
+                      label += context.parsed.y.toFixed(2) + '%';
+                    }
+                    return label;
+                  }
+                }
+              }
+            },
+            scales: {
+              y: {
+                title: {
+                  display: true,
+                  text: 'Yield (%)'
+                }
+              }
+            }
+          }}
+        />
+      </div>
     </div>
   )
 }

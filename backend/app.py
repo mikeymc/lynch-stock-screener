@@ -212,6 +212,8 @@ def get_stock_history(symbol):
     prices = []
     debt_to_equity_values = []
     net_income_values = []
+    dividend_values = []
+    dividend_yield_values = []
 
     # Get yfinance ticker for fallback
     ticker = yf.Ticker(symbol.upper())
@@ -223,6 +225,8 @@ def get_stock_history(symbol):
         fiscal_end = entry.get('fiscal_end')
         debt_to_equity = entry.get('debt_to_equity')
         net_income = entry.get('net_income')
+        dividend = entry.get('dividend_amount')
+        dividend_yield = entry.get('dividend_yield')
         period = entry.get('period', 'annual')
 
         # Create label based on period type
@@ -237,6 +241,8 @@ def get_stock_history(symbol):
         revenue_values.append(revenue)
         debt_to_equity_values.append(debt_to_equity)
         net_income_values.append(net_income)
+        dividend_values.append(dividend)
+        dividend_yield_values.append(dividend_yield)
 
         price = None
 
@@ -299,7 +305,9 @@ def get_stock_history(symbol):
         'price': prices,
         'pe_ratio': pe_ratios,
         'debt_to_equity': debt_to_equity_values,
-        'net_income': net_income_values
+        'net_income': net_income_values,
+        'dividend_amount': dividend_values,
+        'dividend_yield': dividend_yield_values
     })
 
 
