@@ -125,6 +125,16 @@ export default function StockCharts({ historyData, loading }) {
                 data: historyData.pe_ratio,
                 borderColor: 'rgb(153, 102, 255)',
                 backgroundColor: 'rgba(153, 102, 255, 0.2)',
+              },
+              {
+                label: 'Zero Baseline',
+                data: labels.map(() => 0),
+                borderColor: 'rgba(255, 255, 255, 0.3)',
+                borderDash: [5, 5],
+                pointRadius: 0,
+                borderWidth: 1,
+                fill: false,
+                order: 1
               }
             ]
           }}
