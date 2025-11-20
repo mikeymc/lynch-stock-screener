@@ -92,40 +92,29 @@ function FilingSections({ sections }) {
   )
 }
 
-function StockListView() {
+function StockListView({
+  stocks, setStocks,
+  summary, setSummary,
+  filter, setFilter,
+  searchQuery, setSearchQuery,
+  currentPage, setCurrentPage,
+  sortBy, setSortBy,
+  sortDir, setSortDir,
+  watchlist, toggleWatchlist
+}) {
   const navigate = useNavigate()
-  const [stocks, setStocks] = useState([])
   const [loading, setLoading] = useState(false)
   const [progress, setProgress] = useState('')
   const [error, setError] = useState(null)
-  const [filter, setFilter] = useState('all')
-  const [sortBy, setSortBy] = useState('symbol')
-  const [sortDir, setSortDir] = useState('asc')
-  const [summary, setSummary] = useState(null)
-  const [currentPage, setCurrentPage] = useState(1)
-  const [searchQuery, setSearchQuery] = useState('')
   const itemsPerPage = 100
-  const [loadingSession, setLoadingSession] = useState(true)
-  const [watchlist, setWatchlist] = useState(new Set())
-
-  // Load watchlist on mount
-  useEffect(() => {
-    const loadWatchlist = async () => {
-      try {
-        const response = await fetch(`${API_BASE}/watchlist`)
-        if (response.ok) {
-          const data = await response.json()
-          setWatchlist(new Set(data.symbols))
-        }
-      } catch (err) {
-        console.error('Error loading watchlist:', err)
-      }
-    }
-    loadWatchlist()
-  }, [])
-
+  const [loadingSession, setLoadingSession] = useState(stocks.length === 0 && !summary)
   // Load latest session on mount
   useEffect(() => {
+    if (stocks.length > 0 || summary) {
+      setLoadingSession(false)
+      return
+    }
+
     const loadLatestSession = async () => {
       try {
         const response = await fetch(`${API_BASE}/sessions/latest`)
@@ -241,26 +230,6 @@ function StockListView() {
       case 'CLOSE': return 2
       case 'FAIL': return 3
       default: return 4
-    }
-  }
-
-  const toggleWatchlist = async (symbol) => {
-    const isInWatchlist = watchlist.has(symbol)
-
-    try {
-      if (isInWatchlist) {
-        await fetch(`${API_BASE}/watchlist/${symbol}`, { method: 'DELETE' })
-        setWatchlist(prev => {
-          const newSet = new Set(prev)
-          newSet.delete(symbol)
-          return newSet
-        })
-      } else {
-        await fetch(`${API_BASE}/watchlist/${symbol}`, { method: 'POST' })
-        setWatchlist(prev => new Set([...prev, symbol]))
-      }
-    } catch (err) {
-      console.error('Error toggling watchlist:', err)
     }
   }
 
@@ -438,86 +407,86 @@ function StockListView() {
               </thead>
               <tbody>
                 {paginatedStocks.map(stock => (
-                    <tr
-                      key={stock.symbol}
-                      onClick={() => handleStockClick(stock.symbol)}
-                      className="stock-row"
-                    >
-                      <td className="watchlist-cell" onClick={(e) => { e.stopPropagation(); toggleWatchlist(stock.symbol); }}>
-                        <span className={`watchlist-star ${watchlist.has(stock.symbol) ? 'checked' : ''}`}>
-                          ⭐
-                        </span>
-                      </td>
-                      <td><strong>{stock.symbol}</strong></td>
-                      <td>{stock.company_name || 'N/A'}</td>
-                      <td>{stock.country || 'N/A'}</td>
-                      <td>{typeof stock.market_cap === 'number' ? `$${(stock.market_cap / 1e9).toFixed(2)}B` : 'N/A'}</td>
-                      <td>{stock.sector || 'N/A'}</td>
-                      <td>{typeof stock.ipo_year === 'number' ? new Date().getFullYear() - stock.ipo_year : 'N/A'}</td>
-                      <td>{typeof stock.price === 'number' ? `$${stock.price.toFixed(2)}` : 'N/A'}</td>
-                      <td>{typeof stock.peg_ratio === 'number' ? stock.peg_ratio.toFixed(2) : 'N/A'}</td>
-                      <td>{typeof stock.pe_ratio === 'number' ? stock.pe_ratio.toFixed(2) : 'N/A'}</td>
-                      <td>{typeof stock.debt_to_equity === 'number' ? stock.debt_to_equity.toFixed(2) : 'N/A'}</td>
-                      <td>{typeof stock.institutional_ownership === 'number' ? `${(stock.institutional_ownership * 100).toFixed(1)}%` : 'N/A'}</td>
-                      <td>{typeof stock.dividend_yield === 'number' ? `${stock.dividend_yield.toFixed(1)}%` : 'N/A'}</td>
-                      <td>{typeof stock.earnings_cagr === 'number' ? `${stock.earnings_cagr.toFixed(1)}%` : 'N/A'}</td>
-                      <td>{typeof stock.revenue_cagr === 'number' ? `${stock.revenue_cagr.toFixed(1)}%` : 'N/A'}</td>
-                      <td>
-                        <StatusBar
-                          status={stock.peg_status}
-                          score={stock.peg_score || 0}
-                          value={stock.peg_ratio}
-                          metricType="peg"
-                        />
-                      </td>
-                      <td>
-                        <StatusBar
-                          status={stock.debt_status}
-                          score={stock.debt_score || 0}
-                          value={stock.debt_to_equity}
-                          metricType="debt"
-                        />
-                      </td>
-                      <td>
-                        <StatusBar
-                          status={stock.institutional_ownership_status}
-                          score={stock.institutional_ownership_score || 0}
-                          value={stock.institutional_ownership}
-                          metricType="institutional"
-                        />
-                      </td>
-                      <td style={{ backgroundColor: getStatusColor(stock.overall_status), color: '#000', fontWeight: 'bold' }}>
-                        {stock.overall_status}
-                      </td>
-                    </tr>
+                  <tr
+                    key={stock.symbol}
+                    onClick={() => handleStockClick(stock.symbol)}
+                    className="stock-row"
+                  >
+                    <td className="watchlist-cell" onClick={(e) => { e.stopPropagation(); toggleWatchlist(stock.symbol); }}>
+                      <span className={`watchlist-star ${watchlist.has(stock.symbol) ? 'checked' : ''}`}>
+                        ⭐
+                      </span>
+                    </td>
+                    <td><strong>{stock.symbol}</strong></td>
+                    <td>{stock.company_name || 'N/A'}</td>
+                    <td>{stock.country || 'N/A'}</td>
+                    <td>{typeof stock.market_cap === 'number' ? `$${(stock.market_cap / 1e9).toFixed(2)}B` : 'N/A'}</td>
+                    <td>{stock.sector || 'N/A'}</td>
+                    <td>{typeof stock.ipo_year === 'number' ? new Date().getFullYear() - stock.ipo_year : 'N/A'}</td>
+                    <td>{typeof stock.price === 'number' ? `$${stock.price.toFixed(2)}` : 'N/A'}</td>
+                    <td>{typeof stock.peg_ratio === 'number' ? stock.peg_ratio.toFixed(2) : 'N/A'}</td>
+                    <td>{typeof stock.pe_ratio === 'number' ? stock.pe_ratio.toFixed(2) : 'N/A'}</td>
+                    <td>{typeof stock.debt_to_equity === 'number' ? stock.debt_to_equity.toFixed(2) : 'N/A'}</td>
+                    <td>{typeof stock.institutional_ownership === 'number' ? `${(stock.institutional_ownership * 100).toFixed(1)}%` : 'N/A'}</td>
+                    <td>{typeof stock.dividend_yield === 'number' ? `${stock.dividend_yield.toFixed(1)}%` : 'N/A'}</td>
+                    <td>{typeof stock.earnings_cagr === 'number' ? `${stock.earnings_cagr.toFixed(1)}%` : 'N/A'}</td>
+                    <td>{typeof stock.revenue_cagr === 'number' ? `${stock.revenue_cagr.toFixed(1)}%` : 'N/A'}</td>
+                    <td>
+                      <StatusBar
+                        status={stock.peg_status}
+                        score={stock.peg_score || 0}
+                        value={stock.peg_ratio}
+                        metricType="peg"
+                      />
+                    </td>
+                    <td>
+                      <StatusBar
+                        status={stock.debt_status}
+                        score={stock.debt_score || 0}
+                        value={stock.debt_to_equity}
+                        metricType="debt"
+                      />
+                    </td>
+                    <td>
+                      <StatusBar
+                        status={stock.institutional_ownership_status}
+                        score={stock.institutional_ownership_score || 0}
+                        value={stock.institutional_ownership}
+                        metricType="institutional"
+                      />
+                    </td>
+                    <td style={{ backgroundColor: getStatusColor(stock.overall_status), color: '#000', fontWeight: 'bold' }}>
+                      {stock.overall_status}
+                    </td>
+                  </tr>
                 ))}
               </tbody>
-          </table>
-        </div>
-
-        <div className="pagination-info">
-          Showing {startIndex + 1}-{Math.min(endIndex, sortedStocks.length)} of {sortedStocks.length} stocks
-        </div>
-
-        {totalPages > 1 && (
-          <div className="pagination">
-            <button
-              onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
-              disabled={currentPage === 1}
-            >
-              Previous
-            </button>
-            <span className="page-info">
-              Page {currentPage} of {totalPages}
-            </span>
-            <button
-              onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
-              disabled={currentPage === totalPages}
-            >
-              Next
-            </button>
+            </table>
           </div>
-        )}
+
+          <div className="pagination-info">
+            Showing {startIndex + 1}-{Math.min(endIndex, sortedStocks.length)} of {sortedStocks.length} stocks
+          </div>
+
+          {totalPages > 1 && (
+            <div className="pagination">
+              <button
+                onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                disabled={currentPage === 1}
+              >
+                Previous
+              </button>
+              <span className="page-info">
+                Page {currentPage} of {totalPages}
+              </span>
+              <button
+                onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                disabled={currentPage === totalPages}
+              >
+                Next
+              </button>
+            </div>
+          )}
         </>
       )}
 
@@ -545,10 +514,79 @@ function StockListView() {
 }
 
 function App() {
+  const [stocks, setStocks] = useState([])
+  const [summary, setSummary] = useState(null)
+  const [filter, setFilter] = useState('all')
+  const [searchQuery, setSearchQuery] = useState('')
+  const [currentPage, setCurrentPage] = useState(1)
+  const [sortBy, setSortBy] = useState('symbol')
+  const [sortDir, setSortDir] = useState('asc')
+  const [watchlist, setWatchlist] = useState(new Set())
+
+  // Load watchlist on mount
+  useEffect(() => {
+    const loadWatchlist = async () => {
+      try {
+        const response = await fetch(`${API_BASE}/watchlist`)
+        if (response.ok) {
+          const data = await response.json()
+          setWatchlist(new Set(data.symbols))
+        }
+      } catch (err) {
+        console.error('Error loading watchlist:', err)
+      }
+    }
+    loadWatchlist()
+  }, [])
+
+  const toggleWatchlist = async (symbol) => {
+    const isInWatchlist = watchlist.has(symbol)
+
+    try {
+      if (isInWatchlist) {
+        await fetch(`${API_BASE}/watchlist/${symbol}`, { method: 'DELETE' })
+        setWatchlist(prev => {
+          const newSet = new Set(prev)
+          newSet.delete(symbol)
+          return newSet
+        })
+      } else {
+        await fetch(`${API_BASE}/watchlist/${symbol}`, { method: 'POST' })
+        setWatchlist(prev => new Set([...prev, symbol]))
+      }
+    } catch (err) {
+      console.error('Error toggling watchlist:', err)
+    }
+  }
+
   return (
     <Routes>
-      <Route path="/" element={<StockListView />} />
-      <Route path="/stock/:symbol" element={<StockDetail />} />
+      <Route path="/" element={
+        <StockListView
+          stocks={stocks}
+          setStocks={setStocks}
+          summary={summary}
+          setSummary={setSummary}
+          filter={filter}
+          setFilter={setFilter}
+          searchQuery={searchQuery}
+          setSearchQuery={setSearchQuery}
+          currentPage={currentPage}
+          setCurrentPage={setCurrentPage}
+          sortBy={sortBy}
+          setSortBy={setSortBy}
+          sortDir={sortDir}
+          setSortDir={setSortDir}
+          watchlist={watchlist}
+          toggleWatchlist={toggleWatchlist}
+        />
+      } />
+      <Route path="/stock/:symbol" element={
+        <StockDetail
+          watchlist={watchlist}
+          toggleWatchlist={toggleWatchlist}
+        />
+      } />
     </Routes>
   )
 }

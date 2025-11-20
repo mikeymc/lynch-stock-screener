@@ -11,12 +11,11 @@ import AnalysisChat from '../components/AnalysisChat'
 
 const API_BASE = '/api'
 
-export default function StockDetail() {
+export default function StockDetail({ watchlist, toggleWatchlist }) {
   const { symbol } = useParams()
   const navigate = useNavigate()
   const [stock, setStock] = useState(null)
   const [loading, setLoading] = useState(true)
-  const [watchlist, setWatchlist] = useState(new Set())
   const [activeTab, setActiveTab] = useState('charts')
   const [periodType, setPeriodType] = useState('annual')
 
@@ -28,21 +27,7 @@ export default function StockDetail() {
   const [sectionsData, setSectionsData] = useState(null)
   const [loadingSections, setLoadingSections] = useState(false)
 
-  // Load watchlist
-  useEffect(() => {
-    const loadWatchlist = async () => {
-      try {
-        const response = await fetch(`${API_BASE}/watchlist`)
-        if (response.ok) {
-          const data = await response.json()
-          setWatchlist(new Set(data.symbols))
-        }
-      } catch (err) {
-        console.error('Error loading watchlist:', err)
-      }
-    }
-    loadWatchlist()
-  }, [])
+
 
   // Load stock data
   useEffect(() => {
@@ -142,25 +127,7 @@ export default function StockDetail() {
     fetchSectionsData()
   }, [stock, symbol])
 
-  const toggleWatchlist = async (stockSymbol) => {
-    const isInWatchlist = watchlist.has(stockSymbol)
 
-    try {
-      if (isInWatchlist) {
-        await fetch(`${API_BASE}/watchlist/${stockSymbol}`, { method: 'DELETE' })
-        setWatchlist(prev => {
-          const newSet = new Set(prev)
-          newSet.delete(stockSymbol)
-          return newSet
-        })
-      } else {
-        await fetch(`${API_BASE}/watchlist/${stockSymbol}`, { method: 'POST' })
-        setWatchlist(prev => new Set([...prev, stockSymbol]))
-      }
-    } catch (err) {
-      console.error('Error toggling watchlist:', err)
-    }
-  }
 
   const handleRefresh = async () => {
     setLoading(true)
