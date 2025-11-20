@@ -162,6 +162,27 @@ export default function StockDetail() {
     }
   }
 
+  const handleRefresh = async () => {
+    setLoading(true)
+    try {
+      const response = await fetch(`${API_BASE}/stock/${symbol}?refresh=true`)
+      if (response.ok) {
+        const data = await response.json()
+        if (data.evaluation) {
+          setStock(data.evaluation)
+          // Reset other data states to trigger re-fetch via useEffects
+          setHistoryData(null)
+          setFilingsData(null)
+          setSectionsData(null)
+        }
+      }
+    } catch (err) {
+      console.error('Error refreshing stock data:', err)
+    } finally {
+      setLoading(false)
+    }
+  }
+
   if (loading) {
     return <div className="app"><div className="loading">Loading stock data...</div></div>
   }
@@ -180,6 +201,9 @@ export default function StockDetail() {
       <div className="stock-detail-container">
         <button className="back-button" onClick={() => navigate('/')}>
           ← Back to Stock List
+        </button>
+        <button className="refresh-button" onClick={handleRefresh} style={{ margin: '20px 0 20px 10px' }}>
+          🔄 Refresh Data
         </button>
 
         <div className="sticky-header">
