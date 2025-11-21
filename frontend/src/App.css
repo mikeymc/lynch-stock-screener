@@ -1365,3 +1365,135 @@ td strong {
 .dcf-panel table th[align="center"] {
   text-align: center;
 }
+
+/* DCF Historical Chart */
+.dcf-historical-chart {
+  margin-bottom: 1.5rem;
+}
+
+/* Base Year Selector */
+.base-year-selector {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+}
+
+.base-year-selector label {
+  display: flex;
+  align-items: center;
+  padding: 0.5rem;
+  background-color: #0f172a;
+  border: 1px solid #334155;
+  border-radius: 0.375rem;
+  cursor: pointer;
+  transition: all 0.2s;
+  color: #cbd5e1;
+  font-size: 0.9rem;
+}
+
+.base-year-selector label:hover {
+  background-color: #1e293b;
+  border-color: #475569;
+}
+
+.base-year-selector label.active {
+  background-color: rgba(59, 130, 246, 0.1);
+  border-color: #3b82f6;
+  color: #60a5fa;
+}
+
+.base-year-selector input[type="radio"] {
+  margin-right: 0.5rem;
+  accent-color: #3b82f6;
+}
+
+/* Historical Growth Rates */
+.historical-growth-rates {
+  margin-top: 0.5rem;
+  padding: 0.5rem;
+  background-color: #0f172a;
+  border-radius: 0.375rem;
+  color: #94a3b8;
+  font-size: 0.85rem;
+}
+
+.historical-growth-rates small {
+  margin-right: 0.25rem;
+}
+
+/* Sensitivity Analysis */
+.sensitivity-toggle {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  cursor: pointer;
+  padding: 0.5rem 0;
+  user-select: none;
+}
+
+.sensitivity-toggle:hover h3 {
+  color: #60a5fa;
+}
+
+.sensitivity-toggle span {
+  color: #60a5fa;
+  font-size: 0.875rem;
+}
+
+.sensitivity-toggle h3 {
+  margin: 0;
+  transition: color 0.2s;
+}
+
+.sensitivity-content {
+  margin-top: 1rem;
+}
+
+.sensitivity-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.sensitivity-table th,
+.sensitivity-table td {
+  padding: 0.75rem;
+  border: 1px solid #334155;
+}
+
+.sensitivity-table th {
+  background-color: #0f172a;
+  font-weight: 600;
+  position: static;
+}
+
+.sensitivity-table td {
+  font-size: 0.9rem;
+}
+
+/* Sensitivity color coding */
+.sens-high {
+  background-color: rgba(74, 222, 128, 0.15);
+  color: #4ade80;
+}
+
+.sens-medium {
+  background-color: rgba(96, 165, 250, 0.15);
+  color: #60a5fa;
+}
+
+.sens-low {
+  background-color: rgba(251, 191, 36, 0.15);
+  color: #fbbf24;
+}
+
+.sens-very-low {
+  background-color: rgba(248, 113, 113, 0.15);
+  color: #f87171;
+}
+
+.sens-current {
+  border: 2px solid #3b82f6;
+  font-weight: 600;
+  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2);
+}
