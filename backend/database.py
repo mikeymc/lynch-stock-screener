@@ -41,9 +41,55 @@ class Database:
                 revenue REAL,
                 dividend_yield REAL,
                 last_updated TIMESTAMP,
+                beta REAL,
+                total_debt REAL,
+                interest_expense REAL,
+                effective_tax_rate REAL,
                 FOREIGN KEY (symbol) REFERENCES stocks(symbol)
             )
         """)
+
+        # Run migrations to ensure existing tables have all columns
+        self._migrate_schema(cursor)
+
+    def _migrate_schema(self, cursor):
+        """Checks for missing columns and adds them if necessary."""
+        # Check stock_metrics columns
+        cursor.execute("PRAGMA table_info(stock_metrics)")
+        columns = {row[1] for row in cursor.fetchall()}
+        
+        new_columns = [
+            ('beta', 'REAL'),
+            ('total_debt', 'REAL'),
+            ('interest_expense', 'REAL'),
+            ('effective_tax_rate', 'REAL')
+        ]
+        
+        for col_name, col_type in new_columns:
+            if col_name not in columns:
+                try:
+                    cursor.execute(f"ALTER TABLE stock_metrics ADD COLUMN {col_name} {col_type}")
+                    print(f"Migrated stock_metrics: Added {col_name}")
+                except Exception as e:
+                    print(f"Migration error for {col_name}: {e}")
+
+        # Check earnings_history columns (for consistency)
+        cursor.execute("PRAGMA table_info(earnings_history)")
+        eh_columns = {row[1] for row in cursor.fetchall()}
+        
+        eh_new_columns = [
+            ('operating_cash_flow', 'REAL'),
+            ('capital_expenditures', 'REAL'),
+            ('free_cash_flow', 'REAL')
+        ]
+        
+        for col_name, col_type in eh_new_columns:
+            if col_name not in eh_columns:
+                try:
+                    cursor.execute(f"ALTER TABLE earnings_history ADD COLUMN {col_name} {col_type}")
+                    print(f"Migrated earnings_history: Added {col_name}")
+                except Exception as e:
+                    print(f"Migration error for {col_name}: {e}")
 
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS earnings_history (
