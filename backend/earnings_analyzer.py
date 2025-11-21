@@ -42,6 +42,9 @@ class EarningsAnalyzer:
         }
 
     def calculate_cagr(self, start_value: float, end_value: float, years: int) -> Optional[float]:
+        # Check for None values before comparison
+        if start_value is None or end_value is None or years is None:
+            return None
         if start_value <= 0 or end_value <= 0 or years <= 0:
             return None
 
@@ -50,6 +53,9 @@ class EarningsAnalyzer:
 
     def calculate_growth_consistency(self, values: List[float]) -> Optional[float]:
         if len(values) < 2:
+            return None
+        # Check if the first value is None or <= 0, as it's used as a denominator in growth rate calculation
+        if values[0] is None or values[0] <= 0:
             return None
 
         growth_rates = []
