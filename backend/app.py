@@ -20,7 +20,9 @@ app = Flask(__name__, static_folder='static', static_url_path='')
 CORS(app)
 
 # Use /data volume for database in production, local path in development
-db_path = os.environ.get('DB_PATH', '/data/stocks.db' if os.path.exists('/data') else 'stocks.db')
+# Use /data volume for database in production, local path in development
+base_dir = os.path.dirname(os.path.abspath(__file__))
+db_path = os.environ.get('DB_PATH', '/data/stocks.db' if os.path.exists('/data') else os.path.join(base_dir, 'stocks.db'))
 db = Database(db_path)
 fetcher = DataFetcher(db)
 analyzer = EarningsAnalyzer(db)
@@ -307,7 +309,8 @@ def get_stock_history(symbol):
         'debt_to_equity': debt_to_equity_values,
         'net_income': net_income_values,
         'dividend_amount': dividend_values,
-        'dividend_yield': dividend_yield_values
+        'dividend_yield': dividend_yield_values,
+        'history': earnings_history
     })
 
 

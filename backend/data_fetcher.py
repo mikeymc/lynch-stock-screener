@@ -59,6 +59,13 @@ class DataFetcher:
             return stock.history(period="max")
         return call_with_timeout(fetch_history, 20, default=None)
 
+    def _get_yf_cashflow(self, symbol: str):
+        """Fetch yfinance cash flow with timeout protection"""
+        def fetch_cashflow():
+            stock = yf.Ticker(symbol)
+            return stock.cashflow
+        return call_with_timeout(fetch_cashflow, 15, default=None)
+
     def fetch_stock_data(self, symbol: str, force_refresh: bool = False) -> Optional[Dict[str, Any]]:
         if not force_refresh and self.db.is_cache_valid(symbol):
             return self.db.get_stock_metrics(symbol)
@@ -171,6 +178,7 @@ class DataFetcher:
         revenue_history = edgar_data.get('revenue_history', [])
         debt_to_equity_history = edgar_data.get('debt_to_equity_history', [])
         calculated_eps_history = edgar_data.get('calculated_eps_history', [])
+        cash_flow_history = edgar_data.get('cash_flow_history', [])
         
         # Parse dividend history
         dividend_history = edgar_data.get('dividend_history', [])
@@ -207,6 +215,9 @@ class DataFetcher:
 
         # Create mapping of year to EPS for easy lookup (for backward compatibility)
         eps_by_year = {entry['year']: entry['eps'] for entry in calculated_eps_history}
+
+        # Create mapping of year to Cash Flow for easy lookup
+        cash_flow_by_year = {entry['year']: entry for entry in cash_flow_history}
 
         # Track years that need D/E data
         years_needing_de = []
@@ -249,8 +260,14 @@ class DataFetcher:
                 except Exception as e:
                     logger.debug(f"[{symbol}] Error calculating yield for {year}: {e}")
 
-            self.db.save_earnings_history(symbol, year, float(eps) if eps else None, float(revenue), fiscal_end=fiscal_end, debt_to_equity=debt_to_equity, net_income=float(net_income) if net_income else None, dividend_amount=float(dividend) if dividend is not None else None, dividend_yield=dividend_yield)
-            logger.debug(f"[{symbol}] Stored EDGAR for {year}: Revenue: ${revenue:,.0f}" + (f", NI: ${net_income:,.0f}" if net_income else " (no NI)") + (f", Div: ${dividend:.2f}" if dividend else "") + (f", Yield: {dividend_yield:.2f}%" if dividend_yield else ""))
+            # Get cash flow data
+            cf_data = cash_flow_by_year.get(year, {})
+            operating_cash_flow = cf_data.get('operating_cash_flow')
+            capital_expenditures = cf_data.get('capital_expenditures')
+            free_cash_flow = cf_data.get('free_cash_flow')
+
+            self.db.save_earnings_history(symbol, year, float(eps) if eps else None, float(revenue), fiscal_end=fiscal_end, debt_to_equity=debt_to_equity, net_income=float(net_income) if net_income else None, dividend_amount=float(dividend) if dividend is not None else None, dividend_yield=dividend_yield, operating_cash_flow=float(operating_cash_flow) if operating_cash_flow is not None else None, capital_expenditures=float(capital_expenditures) if capital_expenditures is not None else None, free_cash_flow=float(free_cash_flow) if free_cash_flow is not None else None)
+            logger.debug(f"[{symbol}] Stored EDGAR for {year}: Revenue: ${revenue:,.0f}" + (f", NI: ${net_income:,.0f}" if net_income else " (no NI)") + (f", Div: ${dividend:.2f}" if dividend else "") + (f", Yield: {dividend_yield:.2f}%" if dividend_yield else "") + (f", FCF: ${free_cash_flow:,.0f}" if free_cash_flow else ""))
 
             # Track years missing D/E data
             if debt_to_equity is None:
@@ -416,6 +433,7 @@ class DataFetcher:
             # Fetch annual data with timeout protection
             financials = self._get_yf_financials(symbol)
             balance_sheet = self._get_yf_balance_sheet(symbol)
+            cashflow = self._get_yf_cashflow(symbol)
             dividends = self._get_yf_dividends(symbol)
             price_history = self._get_yf_history(symbol)
             
@@ -476,11 +494,47 @@ class DataFetcher:
                             logger.debug(f"[{symbol}] Error calculating yield for {year}: {e}")
 
                     if year and pd.notna(revenue) and pd.notna(eps):
+                        # Extract cash flow metrics
+                        operating_cash_flow = None
+                        capital_expenditures = None
+                        free_cash_flow = None
+
+                        if cashflow is not None and not cashflow.empty and col in cashflow.columns:
+                            if 'Operating Cash Flow' in cashflow.index:
+                                operating_cash_flow = cashflow.loc['Operating Cash Flow', col]
+                            elif 'Total Cash From Operating Activities' in cashflow.index:
+                                operating_cash_flow = cashflow.loc['Total Cash From Operating Activities', col]
+                            
+                            if 'Capital Expenditure' in cashflow.index:
+                                capital_expenditures = cashflow.loc['Capital Expenditure', col]
+                                # In yfinance, CapEx is usually negative. We want positive for storage (or consistent with EDGAR).
+                                # EDGAR usually reports "Payments to Acquire..." which is positive number representing outflow.
+                                # yfinance reports negative number. Let's flip it to positive to match "Payments..." concept?
+                                # Actually, let's check EDGAR. EDGAR "NetCashProvidedByUsedIn..." is signed.
+                                # "PaymentsToAcquire..." is usually positive in the tag, but contextually an outflow.
+                                # Let's store signed values as they come from source, but be careful with FCF calc.
+                                # yfinance: OCF is positive, CapEx is negative. FCF = OCF + CapEx.
+                                # EDGAR: OCF is positive/negative. CapEx we extracted as "Payments...", usually positive.
+                                # In parse_cash_flow_history we did FCF = OCF - CapEx.
+                                # So for yfinance, if CapEx is negative, we should probably flip it to positive to match "Payments" concept
+                                # OR just store it as is and handle it.
+                                # Let's try to standardize: Store CapEx as a positive number representing the cost.
+                                if capital_expenditures is not None and capital_expenditures < 0:
+                                    capital_expenditures = -capital_expenditures
+                            
+                            if 'Free Cash Flow' in cashflow.index:
+                                free_cash_flow = cashflow.loc['Free Cash Flow', col]
+                            elif operating_cash_flow is not None and capital_expenditures is not None:
+                                free_cash_flow = operating_cash_flow - capital_expenditures
+
                         self.db.save_earnings_history(symbol, year, float(eps), float(revenue),
                                                      debt_to_equity=debt_to_equity, period='annual',
                                                      net_income=float(net_income) if pd.notna(net_income) else None,
                                                      dividend_amount=float(dividend) if dividend is not None else None,
-                                                     dividend_yield=dividend_yield)
+                                                     dividend_yield=dividend_yield,
+                                                     operating_cash_flow=float(operating_cash_flow) if operating_cash_flow is not None else None,
+                                                     capital_expenditures=float(capital_expenditures) if capital_expenditures is not None else None,
+                                                     free_cash_flow=float(free_cash_flow) if free_cash_flow is not None else None)
 
             # Fetch quarterly data with timeout protection
             quarterly_financials = self._get_yf_quarterly_financials(symbol)

@@ -58,6 +58,9 @@ class Database:
                 net_income REAL,
                 dividend_amount REAL,
                 dividend_yield REAL,
+                operating_cash_flow REAL,
+                capital_expenditures REAL,
+                free_cash_flow REAL,
                 last_updated TIMESTAMP,
                 FOREIGN KEY (symbol) REFERENCES stocks(symbol),
                 UNIQUE(symbol, year, period)
@@ -274,11 +277,18 @@ class Database:
         if 'dividend_amount' not in earnings_columns:
             cursor.execute("ALTER TABLE earnings_history ADD COLUMN dividend_amount REAL")
 
-        # Migration: Add dividend_yield column to earnings_history table
-        cursor.execute("PRAGMA table_info(earnings_history)")
-        earnings_columns = [row[1] for row in cursor.fetchall()]
         if 'dividend_yield' not in earnings_columns:
             cursor.execute("ALTER TABLE earnings_history ADD COLUMN dividend_yield REAL")
+
+        # Migration: Add cash flow columns to earnings_history table
+        cursor.execute("PRAGMA table_info(earnings_history)")
+        earnings_columns = [row[1] for row in cursor.fetchall()]
+        if 'operating_cash_flow' not in earnings_columns:
+            cursor.execute("ALTER TABLE earnings_history ADD COLUMN operating_cash_flow REAL")
+        if 'capital_expenditures' not in earnings_columns:
+            cursor.execute("ALTER TABLE earnings_history ADD COLUMN capital_expenditures REAL")
+        if 'free_cash_flow' not in earnings_columns:
+            cursor.execute("ALTER TABLE earnings_history ADD COLUMN free_cash_flow REAL")
 
         conn.commit()
         conn.close()
@@ -315,14 +325,14 @@ class Database:
         conn.commit()
         conn.close()
 
-    def save_earnings_history(self, symbol: str, year: int, eps: float, revenue: float, fiscal_end: Optional[str] = None, debt_to_equity: Optional[float] = None, period: str = 'annual', net_income: Optional[float] = None, dividend_amount: Optional[float] = None, dividend_yield: Optional[float] = None):
+    def save_earnings_history(self, symbol: str, year: int, eps: float, revenue: float, fiscal_end: Optional[str] = None, debt_to_equity: Optional[float] = None, period: str = 'annual', net_income: Optional[float] = None, dividend_amount: Optional[float] = None, dividend_yield: Optional[float] = None, operating_cash_flow: Optional[float] = None, capital_expenditures: Optional[float] = None, free_cash_flow: Optional[float] = None):
         conn = self.get_connection()
         cursor = conn.cursor()
         cursor.execute("""
             INSERT OR REPLACE INTO earnings_history
-            (symbol, year, earnings_per_share, revenue, fiscal_end, debt_to_equity, period, net_income, dividend_amount, dividend_yield, last_updated)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """, (symbol, year, eps, revenue, fiscal_end, debt_to_equity, period, net_income, dividend_amount, dividend_yield, datetime.now().isoformat()))
+            (symbol, year, earnings_per_share, revenue, fiscal_end, debt_to_equity, period, net_income, dividend_amount, dividend_yield, operating_cash_flow, capital_expenditures, free_cash_flow, last_updated)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (symbol, year, eps, revenue, fiscal_end, debt_to_equity, period, net_income, dividend_amount, dividend_yield, operating_cash_flow, capital_expenditures, free_cash_flow, datetime.now().isoformat()))
         conn.commit()
         conn.close()
 
@@ -369,7 +379,7 @@ class Database:
             where_clause = "WHERE symbol = ? AND period = 'annual'"
 
         cursor.execute(f"""
-            SELECT year, earnings_per_share, revenue, fiscal_end, debt_to_equity, period, net_income, dividend_amount, dividend_yield, last_updated
+            SELECT year, earnings_per_share, revenue, fiscal_end, debt_to_equity, period, net_income, dividend_amount, dividend_yield, operating_cash_flow, capital_expenditures, free_cash_flow, last_updated
             FROM earnings_history
             {where_clause}
             ORDER BY year DESC, period
@@ -388,7 +398,10 @@ class Database:
                 'net_income': row[6],
                 'dividend_amount': row[7],
                 'dividend_yield': row[8],
-                'last_updated': row[9]
+                'operating_cash_flow': row[9],
+                'capital_expenditures': row[10],
+                'free_cash_flow': row[11],
+                'last_updated': row[12]
             }
             for row in rows
         ]

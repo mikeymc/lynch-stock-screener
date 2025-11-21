@@ -8,6 +8,7 @@ import StockTableRow from '../components/StockTableRow'
 import StockCharts from '../components/StockCharts'
 import StockReports from '../components/StockReports'
 import AnalysisChat from '../components/AnalysisChat'
+import DCFAnalysis from '../components/DCFAnalysis'
 
 const API_BASE = '/api'
 
@@ -196,6 +197,12 @@ export default function StockDetail({ watchlist, toggleWatchlist }) {
               📊 Charts
             </button>
             <button
+              className={`tab-button ${activeTab === 'dcf' ? 'active' : ''}`}
+              onClick={() => setActiveTab('dcf')}
+            >
+              💰 DCF Analysis
+            </button>
+            <button
               className={`tab-button ${activeTab === 'reports' ? 'active' : ''}`}
               onClick={() => setActiveTab('reports')}
             >
@@ -212,6 +219,10 @@ export default function StockDetail({ watchlist, toggleWatchlist }) {
           <div className="tabs-content">
             {activeTab === 'charts' && (
               <StockCharts historyData={historyData} loading={loadingHistory} />
+            )}
+
+            {activeTab === 'dcf' && (
+              <DCFAnalysis stockData={stock} earningsHistory={historyData} />
             )}
 
             {activeTab === 'reports' && (

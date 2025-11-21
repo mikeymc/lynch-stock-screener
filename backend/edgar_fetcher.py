@@ -326,6 +326,106 @@ class EdgarFetcher:
         logger.info(f"Successfully parsed {len(annual_net_income)} years of Net Income data from EDGAR")
         return annual_net_income
 
+    def parse_cash_flow_history(self, company_facts: Dict[str, Any]) -> List[Dict[str, Any]]:
+        """
+        Extract Cash Flow history (Operating Cash Flow and CapEx) from company facts.
+        Calculates Free Cash Flow (FCF) = OCF - CapEx.
+
+        Args:
+            company_facts: Company facts data from EDGAR API
+
+        Returns:
+            List of dictionaries with year, operating_cash_flow, capital_expenditures, free_cash_flow, and fiscal_end
+        """
+        # 1. Extract Operating Cash Flow (NetCashProvidedByUsedInOperatingActivities)
+        ocf_data = []
+        try:
+            # Try US-GAAP
+            if 'us-gaap' in company_facts['facts'] and 'NetCashProvidedByUsedInOperatingActivities' in company_facts['facts']['us-gaap']:
+                units = company_facts['facts']['us-gaap']['NetCashProvidedByUsedInOperatingActivities']['units']
+                if 'USD' in units:
+                    ocf_data = units['USD']
+            # Try IFRS if no US-GAAP
+            elif 'ifrs-full' in company_facts['facts'] and 'CashFlowsFromUsedInOperatingActivities' in company_facts['facts']['ifrs-full']:
+                 units = company_facts['facts']['ifrs-full']['CashFlowsFromUsedInOperatingActivities']['units']
+                 # Find USD or first currency
+                 if 'USD' in units:
+                     ocf_data = units['USD']
+                 else:
+                     currency_units = [u for u in units.keys() if len(u) == 3 and u.isupper()]
+                     if currency_units:
+                         ocf_data = units[currency_units[0]]
+        except (KeyError, TypeError):
+            pass
+
+        # 2. Extract Capital Expenditures (PaymentsToAcquirePropertyPlantAndEquipment)
+        capex_data = []
+        try:
+            # Try US-GAAP
+            if 'us-gaap' in company_facts['facts'] and 'PaymentsToAcquirePropertyPlantAndEquipment' in company_facts['facts']['us-gaap']:
+                units = company_facts['facts']['us-gaap']['PaymentsToAcquirePropertyPlantAndEquipment']['units']
+                if 'USD' in units:
+                    capex_data = units['USD']
+            # Try IFRS
+            elif 'ifrs-full' in company_facts['facts'] and 'CashFlowsUsedInObtainingControlOfSubsidiariesOrOtherBusinessesClassifiedAsInvestingActivities' in company_facts['facts']['ifrs-full']:
+                # Note: IFRS CapEx mapping is tricky, often PurchaseOfPropertyPlantAndEquipmentClassifiedAsInvestingActivities
+                # Let's try PurchaseOfPropertyPlantAndEquipment
+                if 'PurchaseOfPropertyPlantAndEquipmentClassifiedAsInvestingActivities' in company_facts['facts']['ifrs-full']:
+                     units = company_facts['facts']['ifrs-full']['PurchaseOfPropertyPlantAndEquipmentClassifiedAsInvestingActivities']['units']
+                     if 'USD' in units:
+                         capex_data = units['USD']
+                     else:
+                         currency_units = [u for u in units.keys() if len(u) == 3 and u.isupper()]
+                         if currency_units:
+                             capex_data = units[currency_units[0]]
+        except (KeyError, TypeError):
+            pass
+
+        # Helper to process annual data
+        def process_annual_data(data_list):
+            by_year = {}
+            for entry in data_list:
+                if entry.get('form') in ['10-K', '20-F']:
+                    fiscal_end = entry.get('end')
+                    year = int(fiscal_end[:4]) if fiscal_end else entry.get('fy')
+                    val = entry.get('val')
+                    if year and val is not None and fiscal_end:
+                        if year not in by_year or fiscal_end > by_year[year]['fiscal_end']:
+                            by_year[year] = {'val': val, 'fiscal_end': fiscal_end}
+            return by_year
+
+        ocf_by_year = process_annual_data(ocf_data)
+        capex_by_year = process_annual_data(capex_data)
+
+        # Combine into result
+        cash_flow_history = []
+        all_years = set(ocf_by_year.keys()) | set(capex_by_year.keys())
+
+        for year in all_years:
+            ocf = ocf_by_year.get(year, {}).get('val')
+            capex = capex_by_year.get(year, {}).get('val')
+            fiscal_end = ocf_by_year.get(year, {}).get('fiscal_end') or capex_by_year.get(year, {}).get('fiscal_end')
+
+            fcf = None
+            if ocf is not None and capex is not None:
+                fcf = ocf - capex
+            elif ocf is not None:
+                # If CapEx is missing, we can't calculate FCF accurately, but maybe we assume 0?
+                # Better to leave as None to indicate missing data
+                pass
+
+            cash_flow_history.append({
+                'year': year,
+                'operating_cash_flow': ocf,
+                'capital_expenditures': capex,
+                'free_cash_flow': fcf,
+                'fiscal_end': fiscal_end
+            })
+
+        cash_flow_history.sort(key=lambda x: x['year'], reverse=True)
+        logger.info(f"Successfully parsed {len(cash_flow_history)} years of Cash Flow data")
+        return cash_flow_history
+
     def parse_quarterly_net_income_history(self, company_facts: Dict[str, Any]) -> List[Dict[str, Any]]:
         """
         Extract quarterly Net Income history with Q4 calculated from annual data
@@ -1058,6 +1158,7 @@ class EdgarFetcher:
         revenue_history = self.parse_revenue_history(company_facts)
         debt_to_equity = self.parse_debt_to_equity(company_facts)
         debt_to_equity_history = self.parse_debt_to_equity_history(company_facts)
+        cash_flow_history = self.parse_cash_flow_history(company_facts)
 
         # Calculate split-adjusted EPS from Net Income / Shares Outstanding
         calculated_eps_history = self.calculate_split_adjusted_annual_eps_history(company_facts)
@@ -1069,7 +1170,7 @@ class EdgarFetcher:
         # Parse dividend history
         dividend_history = self.parse_dividend_history(company_facts)
 
-        logger.info(f"[{ticker}] EDGAR fetch complete: {len(eps_history)} EPS years, {len(calculated_eps_history)} calculated EPS years, {len(net_income_annual)} annual NI, {len(net_income_quarterly)} quarterly NI, {len(revenue_history)} revenue years, {len(debt_to_equity_history)} D/E years, {len(dividend_history)} dividend entries, current D/E: {debt_to_equity}")
+        logger.info(f"[{ticker}] EDGAR fetch complete: {len(eps_history)} EPS years, {len(calculated_eps_history)} calculated EPS years, {len(net_income_annual)} annual NI, {len(net_income_quarterly)} quarterly NI, {len(revenue_history)} revenue years, {len(debt_to_equity_history)} D/E years, {len(cash_flow_history)} cash flow years, {len(dividend_history)} dividend entries, current D/E: {debt_to_equity}")
 
         fundamentals = {
             'ticker': ticker,
@@ -1082,6 +1183,7 @@ class EdgarFetcher:
             'revenue_history': revenue_history,
             'debt_to_equity': debt_to_equity,
             'debt_to_equity_history': debt_to_equity_history,
+            'cash_flow_history': cash_flow_history,
             'dividend_history': dividend_history,
             'company_facts': company_facts
         }
