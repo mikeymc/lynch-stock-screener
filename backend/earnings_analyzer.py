@@ -21,7 +21,8 @@ class EarningsAnalyzer:
         eps_values = [h['eps'] for h in history_sorted]
         revenue_values = [h['revenue'] for h in history_sorted]
 
-        if any(v <= 0 for v in eps_values[:1]):
+        # Check if first EPS value is None or <= 0
+        if not eps_values or eps_values[0] is None or eps_values[0] <= 0:
             return None
 
         start_eps = eps_values[0]
@@ -53,7 +54,7 @@ class EarningsAnalyzer:
 
         growth_rates = []
         for i in range(1, len(values)):
-            if values[i-1] > 0:
+            if values[i] is not None and values[i-1] is not None and values[i-1] > 0:
                 growth_rate = ((values[i] - values[i-1]) / values[i-1]) * 100
                 growth_rates.append(growth_rate)
 

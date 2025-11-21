@@ -147,7 +147,7 @@ function StockListView() {
               const response = await fetch(`${API_BASE}/stock/${stock.symbol}?algorithm=${algorithm}`)
               if (response.ok) {
                 const data = await response.json()
-                return data.stock
+                return data.evaluation || stock // Use evaluation, fallback to original
               }
               return stock // Keep original if fetch fails
             } catch (err) {
@@ -559,83 +559,83 @@ function StockListView() {
               </thead>
               <tbody>
                 {paginatedStocks.map(stock => (
-                    <tr
-                      key={stock.symbol}
-                      onClick={() => handleStockClick(stock.symbol)}
-                      className="stock-row"
-                    >
-                      <td className="watchlist-cell" onClick={(e) => { e.stopPropagation(); toggleWatchlist(stock.symbol); }}>
-                        <span className={`watchlist-star ${watchlist.has(stock.symbol) ? 'checked' : ''}`}>
-                          ⭐
-                        </span>
-                      </td>
-                      <td><strong>{stock.symbol}</strong></td>
-                      <td>{stock.company_name || 'N/A'}</td>
-                      <td>{stock.country || 'N/A'}</td>
-                      <td>{typeof stock.market_cap === 'number' ? `$${(stock.market_cap / 1e9).toFixed(2)}B` : 'N/A'}</td>
-                      <td>{stock.sector || 'N/A'}</td>
-                      <td>{typeof stock.ipo_year === 'number' ? new Date().getFullYear() - stock.ipo_year : 'N/A'}</td>
-                      <td>{typeof stock.price === 'number' ? `$${stock.price.toFixed(2)}` : 'N/A'}</td>
-                      <td>{typeof stock.peg_ratio === 'number' ? stock.peg_ratio.toFixed(2) : 'N/A'}</td>
-                      <td>{typeof stock.pe_ratio === 'number' ? stock.pe_ratio.toFixed(2) : 'N/A'}</td>
-                      <td>{typeof stock.debt_to_equity === 'number' ? stock.debt_to_equity.toFixed(2) : 'N/A'}</td>
-                      <td>{typeof stock.institutional_ownership === 'number' ? `${(stock.institutional_ownership * 100).toFixed(1)}%` : 'N/A'}</td>
-                      <td>{typeof stock.dividend_yield === 'number' ? `${stock.dividend_yield.toFixed(1)}%` : 'N/A'}</td>
-                      <td>{typeof stock.earnings_cagr === 'number' ? `${stock.earnings_cagr.toFixed(1)}%` : 'N/A'}</td>
-                      <td>{typeof stock.revenue_cagr === 'number' ? `${stock.revenue_cagr.toFixed(1)}%` : 'N/A'}</td>
-                      <td>
-                        <StatusBar
-                          status={stock.peg_status}
-                          score={stock.peg_score || 0}
-                          value={stock.peg_ratio}
-                        />
-                      </td>
-                      <td>
-                        <StatusBar
-                          status={stock.debt_status}
-                          score={stock.debt_score || 0}
-                          value={stock.debt_to_equity}
-                        />
-                      </td>
-                      <td>
-                        <StatusBar
-                          status={stock.institutional_ownership_status}
-                          score={stock.institutional_ownership_score || 0}
-                          value={stock.institutional_ownership}
-                        />
-                      </td>
-                      <td style={{ backgroundColor: getStatusColor(stock.overall_status), color: '#000', fontWeight: 'bold' }}>
-                        {stock.overall_status}
-                      </td>
-                    </tr>
+                  <tr
+                    key={stock.symbol}
+                    onClick={() => handleStockClick(stock.symbol)}
+                    className="stock-row"
+                  >
+                    <td className="watchlist-cell" onClick={(e) => { e.stopPropagation(); toggleWatchlist(stock.symbol); }}>
+                      <span className={`watchlist-star ${watchlist.has(stock.symbol) ? 'checked' : ''}`}>
+                        ⭐
+                      </span>
+                    </td>
+                    <td><strong>{stock.symbol}</strong></td>
+                    <td>{stock.company_name || 'N/A'}</td>
+                    <td>{stock.country || 'N/A'}</td>
+                    <td>{typeof stock.market_cap === 'number' ? `$${(stock.market_cap / 1e9).toFixed(2)}B` : 'N/A'}</td>
+                    <td>{stock.sector || 'N/A'}</td>
+                    <td>{typeof stock.ipo_year === 'number' ? new Date().getFullYear() - stock.ipo_year : 'N/A'}</td>
+                    <td>{typeof stock.price === 'number' ? `$${stock.price.toFixed(2)}` : 'N/A'}</td>
+                    <td>{typeof stock.peg_ratio === 'number' ? stock.peg_ratio.toFixed(2) : 'N/A'}</td>
+                    <td>{typeof stock.pe_ratio === 'number' ? stock.pe_ratio.toFixed(2) : 'N/A'}</td>
+                    <td>{typeof stock.debt_to_equity === 'number' ? stock.debt_to_equity.toFixed(2) : 'N/A'}</td>
+                    <td>{typeof stock.institutional_ownership === 'number' ? `${(stock.institutional_ownership * 100).toFixed(1)}%` : 'N/A'}</td>
+                    <td>{typeof stock.dividend_yield === 'number' ? `${stock.dividend_yield.toFixed(1)}%` : 'N/A'}</td>
+                    <td>{typeof stock.earnings_cagr === 'number' ? `${stock.earnings_cagr.toFixed(1)}%` : 'N/A'}</td>
+                    <td>{typeof stock.revenue_cagr === 'number' ? `${stock.revenue_cagr.toFixed(1)}%` : 'N/A'}</td>
+                    <td>
+                      <StatusBar
+                        status={stock.peg_status}
+                        score={stock.peg_score || 0}
+                        value={stock.peg_ratio}
+                      />
+                    </td>
+                    <td>
+                      <StatusBar
+                        status={stock.debt_status}
+                        score={stock.debt_score || 0}
+                        value={stock.debt_to_equity}
+                      />
+                    </td>
+                    <td>
+                      <StatusBar
+                        status={stock.institutional_ownership_status}
+                        score={stock.institutional_ownership_score || 0}
+                        value={stock.institutional_ownership}
+                      />
+                    </td>
+                    <td style={{ backgroundColor: getStatusColor(stock.overall_status), color: '#000', fontWeight: 'bold' }}>
+                      {stock.overall_status}
+                    </td>
+                  </tr>
                 ))}
               </tbody>
-          </table>
-        </div>
-
-        <div className="pagination-info">
-          Showing {startIndex + 1}-{Math.min(endIndex, sortedStocks.length)} of {sortedStocks.length} stocks
-        </div>
-
-        {totalPages > 1 && (
-          <div className="pagination">
-            <button
-              onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
-              disabled={currentPage === 1}
-            >
-              Previous
-            </button>
-            <span className="page-info">
-              Page {currentPage} of {totalPages}
-            </span>
-            <button
-              onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
-              disabled={currentPage === totalPages}
-            >
-              Next
-            </button>
+            </table>
           </div>
-        )}
+
+          <div className="pagination-info">
+            Showing {startIndex + 1}-{Math.min(endIndex, sortedStocks.length)} of {sortedStocks.length} stocks
+          </div>
+
+          {totalPages > 1 && (
+            <div className="pagination">
+              <button
+                onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                disabled={currentPage === 1}
+              >
+                Previous
+              </button>
+              <span className="page-info">
+                Page {currentPage} of {totalPages}
+              </span>
+              <button
+                onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                disabled={currentPage === totalPages}
+              >
+                Next
+              </button>
+            </div>
+          )}
         </>
       )}
 

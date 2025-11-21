@@ -8,6 +8,8 @@ import StockTableRow from '../components/StockTableRow'
 import StockCharts from '../components/StockCharts'
 import StockReports from '../components/StockReports'
 import AnalysisChat from '../components/AnalysisChat'
+import AlgorithmSelector from '../components/AlgorithmSelector'
+import ErrorBoundary from '../components/ErrorBoundary'
 
 const API_BASE = 'http://localhost:5001/api'
 
@@ -18,6 +20,7 @@ export default function StockDetail() {
   const [loading, setLoading] = useState(true)
   const [watchlist, setWatchlist] = useState(new Set())
   const [activeTab, setActiveTab] = useState('charts')
+  const [algorithm, setAlgorithm] = useState('weighted')
 
   // Data state
   const [historyData, setHistoryData] = useState(null)
@@ -48,8 +51,8 @@ export default function StockDetail() {
     const fetchStockData = async () => {
       setLoading(true)
       try {
-        // Fetch stock with weighted algorithm (default)
-        const response = await fetch(`${API_BASE}/stock/${symbol.toUpperCase()}?algorithm=weighted`)
+        // Fetch stock with selected algorithm
+        const response = await fetch(`${API_BASE}/stock/${symbol.toUpperCase()}?algorithm=${algorithm}`)
         if (response.ok) {
           const data = await response.json()
           if (data.evaluation) {
@@ -64,7 +67,7 @@ export default function StockDetail() {
     }
 
     fetchStockData()
-  }, [symbol])
+  }, [symbol, algorithm])
 
   // Fetch history data
   useEffect(() => {
@@ -155,19 +158,6 @@ export default function StockDetail() {
     }
   }
 
-  if (loading) {
-    return <div className="app"><div className="loading">Loading stock data...</div></div>
-  }
-
-  if (!stock) {
-    return (
-      <div className="app">
-        <div className="error">Stock {symbol} not found</div>
-        <button onClick={() => navigate('/')}>Back to Stock List</button>
-      </div>
-    )
-  }
-
   return (
     <div className="app">
       <div className="stock-detail-container">
@@ -175,64 +165,80 @@ export default function StockDetail() {
           ← Back to Stock List
         </button>
 
-        <div className="sticky-header">
-          <table className="stocks-table">
-            <StockTableHeader readOnly={true} />
-            <tbody>
-              <StockTableRow
-                stock={stock}
-                watchlist={watchlist}
-                onToggleWatchlist={toggleWatchlist}
-                readOnly={true}
-              />
-            </tbody>
-          </table>
-        </div>
+        <AlgorithmSelector
+          selectedAlgorithm={algorithm}
+          onAlgorithmChange={setAlgorithm}
+        />
 
-        <div className="tabs-container">
-          <div className="tabs-header">
-            <button
-              className={`tab-button ${activeTab === 'charts' ? 'active' : ''}`}
-              onClick={() => setActiveTab('charts')}
-            >
-              📊 Charts
-            </button>
-            <button
-              className={`tab-button ${activeTab === 'reports' ? 'active' : ''}`}
-              onClick={() => setActiveTab('reports')}
-            >
-              📄 Reports
-            </button>
-            <button
-              className={`tab-button ${activeTab === 'analysis' ? 'active' : ''}`}
-              onClick={() => setActiveTab('analysis')}
-            >
-              🎯 Analysis & Chat
-            </button>
+        {loading ? (
+          <div className="loading">Loading stock data...</div>
+        ) : !stock ? (
+          <div className="error">
+            Stock {symbol} not found
+            <button onClick={() => navigate('/')} style={{ marginLeft: '10px' }}>Back to List</button>
           </div>
+        ) : (
+          <ErrorBoundary>
+            <div className="sticky-header">
+              <table className="stocks-table">
+                <StockTableHeader readOnly={true} />
+                <tbody>
+                  <StockTableRow
+                    stock={stock}
+                    watchlist={watchlist}
+                    onToggleWatchlist={toggleWatchlist}
+                    readOnly={true}
+                  />
+                </tbody>
+              </table>
+            </div>
 
-          <div className="tabs-content">
-            {activeTab === 'charts' && (
-              <StockCharts historyData={historyData} loading={loadingHistory} />
-            )}
+            <div className="tabs-container">
+              <div className="tabs-header">
+                <button
+                  className={`tab-button ${activeTab === 'charts' ? 'active' : ''}`}
+                  onClick={() => setActiveTab('charts')}
+                >
+                  📊 Charts
+                </button>
+                <button
+                  className={`tab-button ${activeTab === 'reports' ? 'active' : ''}`}
+                  onClick={() => setActiveTab('reports')}
+                >
+                  📄 Reports
+                </button>
+                <button
+                  className={`tab-button ${activeTab === 'analysis' ? 'active' : ''}`}
+                  onClick={() => setActiveTab('analysis')}
+                >
+                  🎯 Analysis & Chat
+                </button>
+              </div>
 
-            {activeTab === 'reports' && (
-              <StockReports
-                filingsData={filingsData}
-                loadingFilings={loadingFilings}
-                sectionsData={sectionsData}
-                loadingSections={loadingSections}
-              />
-            )}
+              <div className="tabs-content">
+                {activeTab === 'charts' && (
+                  <StockCharts historyData={historyData} loading={loadingHistory} />
+                )}
 
-            {activeTab === 'analysis' && (
-              <AnalysisChat
-                symbol={stock.symbol}
-                stockName={stock.company_name}
-              />
-            )}
-          </div>
-        </div>
+                {activeTab === 'reports' && (
+                  <StockReports
+                    filingsData={filingsData}
+                    loadingFilings={loadingFilings}
+                    sectionsData={sectionsData}
+                    loadingSections={loadingSections}
+                  />
+                )}
+
+                {activeTab === 'analysis' && (
+                  <AnalysisChat
+                    symbol={stock.symbol}
+                    stockName={stock.company_name}
+                  />
+                )}
+              </div>
+            </div>
+          </ErrorBoundary>
+        )}
       </div>
     </div>
   )

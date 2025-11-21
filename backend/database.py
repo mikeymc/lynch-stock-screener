@@ -26,9 +26,22 @@ class Database:
                 company_name TEXT,
                 exchange TEXT,
                 sector TEXT,
+                country TEXT,
+                ipo_year INTEGER,
                 last_updated TIMESTAMP
             )
         """)
+        
+        # Migration: Add country and ipo_year columns if they don't exist
+        try:
+            cursor.execute("ALTER TABLE stocks ADD COLUMN country TEXT")
+        except sqlite3.OperationalError:
+            pass  # Column already exists
+        
+        try:
+            cursor.execute("ALTER TABLE stocks ADD COLUMN ipo_year INTEGER")
+        except sqlite3.OperationalError:
+            pass  # Column already exists
 
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS stock_metrics (
@@ -279,6 +292,10 @@ class Database:
         if not row:
             return None
 
+        # stock_metrics columns: symbol, price, pe_ratio, market_cap, debt_to_equity, 
+        # institutional_ownership, revenue, dividend_yield, last_updated, beta, total_debt, 
+        # interest_expense, effective_tax_rate (13 columns total)
+        # Then joined stocks columns: company_name, exchange, sector, country, ipo_year
         return {
             'symbol': row[0],
             'price': row[1],
@@ -289,11 +306,12 @@ class Database:
             'revenue': row[6],
             'dividend_yield': row[7],
             'last_updated': row[8],
-            'company_name': row[9],
-            'exchange': row[10],
-            'sector': row[11],
-            'country': row[12],
-            'ipo_year': row[13]
+            # Skip beta (row[9]), total_debt (row[10]), interest_expense (row[11]), effective_tax_rate (row[12])
+            'company_name': row[13],
+            'exchange': row[14],
+            'sector': row[15],
+            'country': row[16],
+            'ipo_year': row[17]
         }
 
     def get_earnings_history(self, symbol: str) -> List[Dict[str, Any]]:
