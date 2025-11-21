@@ -15,6 +15,7 @@ from lynch_criteria import LynchCriteria
 from schwab_client import SchwabClient
 from lynch_analyst import LynchAnalyst
 from conversation_manager import ConversationManager
+from wacc_calculator import calculate_wacc
 
 app = Flask(__name__, static_folder='static', static_url_path='')
 CORS(app)
@@ -300,6 +301,10 @@ def get_stock_history(symbol):
             pe_ratios.append(None)
             prices.append(None)
 
+    # Calculate WACC
+    stock_metrics = db.get_stock_metrics(symbol.upper())
+    wacc_data = calculate_wacc(stock_metrics) if stock_metrics else None
+
     return jsonify({
         'labels': labels,
         'eps': eps_values,
@@ -310,7 +315,8 @@ def get_stock_history(symbol):
         'net_income': net_income_values,
         'dividend_amount': dividend_values,
         'dividend_yield': dividend_yield_values,
-        'history': earnings_history
+        'history': earnings_history,
+        'wacc': wacc_data
     })
 
 

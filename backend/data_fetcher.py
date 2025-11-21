@@ -111,6 +111,34 @@ class DataFetcher:
             # Use yfinance for current market data (price, P/E, market cap, institutional ownership)
             # yfinance returns dividendYield already as percentage (e.g., 2.79 for 2.79%)
             dividend_yield = info.get('dividendYield')
+            
+            # Fetch WACC-related data
+            beta = info.get('beta')
+            total_debt = info.get('totalDebt')
+            
+            # Get interest expense from financials
+            interest_expense = None
+            try:
+                financials = ticker.financials
+                if financials is not None and not financials.empty:
+                    if 'Interest Expense' in financials.index:
+                        # Get most recent value (first column)
+                        interest_expense = abs(financials.loc['Interest Expense'].iloc[0])
+            except Exception as e:
+                logger.debug(f"Could not fetch interest expense for {symbol}: {e}")
+            
+            # Calculate effective tax rate from income statement
+            effective_tax_rate = None
+            try:
+                financials = ticker.financials
+                if financials is not None and not financials.empty:
+                    if 'Tax Provision' in financials.index and 'Pretax Income' in financials.index:
+                        tax = financials.loc['Tax Provision'].iloc[0]
+                        pretax = financials.loc['Pretax Income'].iloc[0]
+                        if pretax and pretax > 0:
+                            effective_tax_rate = tax / pretax
+            except Exception as e:
+                logger.debug(f"Could not calculate tax rate for {symbol}: {e}")
 
             metrics = {
                 'price': info.get('currentPrice'),
@@ -119,7 +147,11 @@ class DataFetcher:
                 'debt_to_equity': debt_to_equity,
                 'institutional_ownership': info.get('heldPercentInstitutions'),
                 'revenue': info.get('totalRevenue'),
-                'dividend_yield': dividend_yield
+                'dividend_yield': dividend_yield,
+                'beta': beta,
+                'total_debt': total_debt,
+                'interest_expense': interest_expense,
+                'effective_tax_rate': effective_tax_rate
             }
             self.db.save_stock_metrics(symbol, metrics)
             # todo: this code seems to complicated. do we really need to count calculated eps?

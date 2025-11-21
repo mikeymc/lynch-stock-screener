@@ -51,6 +51,17 @@ const DCFAnalysis = ({ stockData, earningsHistory }) => {
   const [historicalMetrics, setHistoricalMetrics] = useState(null);
   const [showSensitivity, setShowSensitivity] = useState(false);
 
+  // Update discount rate when WACC becomes available
+  useEffect(() => {
+    if (earningsHistory?.wacc?.wacc && assumptions.discountRate === 10) {
+      // Only update if still at default value (10%)
+      setAssumptions(prev => ({
+        ...prev,
+        discountRate: earningsHistory.wacc.wacc
+      }));
+    }
+  }, [earningsHistory]);
+
   // Calculate historical metrics
   useEffect(() => {
     if (!earningsHistory || !earningsHistory.history || earningsHistory.history.length === 0) return;
@@ -466,6 +477,23 @@ const DCFAnalysis = ({ stockData, earningsHistory }) => {
               onChange={(e) => handleAssumptionChange('discountRate', e.target.value)}
               className="assumption-slider"
             />
+            {earningsHistory?.wacc && (
+              <div className="wacc-breakdown">
+                <small>
+                  <strong>Calculated WACC: {earningsHistory.wacc.wacc}%</strong>
+                  <span className="info-icon" title="Weighted Average Cost of Capital">ⓘ</span>
+                </small>
+                <small>
+                  • Cost of Equity: {earningsHistory.wacc.cost_of_equity}% (Beta: {earningsHistory.wacc.beta})
+                </small>
+                <small>
+                  • After-Tax Cost of Debt: {earningsHistory.wacc.after_tax_cost_of_debt}%
+                </small>
+                <small>
+                  • Capital Structure: {earningsHistory.wacc.equity_weight}% Equity / {earningsHistory.wacc.debt_weight}% Debt
+                </small>
+              </div>
+            )}
           </div>
 
           <div className="assumption-group">

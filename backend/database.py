@@ -309,8 +309,8 @@ class Database:
         cursor = conn.cursor()
         cursor.execute("""
             INSERT OR REPLACE INTO stock_metrics
-            (symbol, price, pe_ratio, market_cap, debt_to_equity, institutional_ownership, revenue, dividend_yield, last_updated)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            (symbol, price, pe_ratio, market_cap, debt_to_equity, institutional_ownership, revenue, dividend_yield, beta, total_debt, interest_expense, effective_tax_rate, last_updated)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
             symbol,
             metrics.get('price'),
@@ -320,6 +320,10 @@ class Database:
             metrics.get('institutional_ownership'),
             metrics.get('revenue'),
             metrics.get('dividend_yield'),
+            metrics.get('beta'),
+            metrics.get('total_debt'),
+            metrics.get('interest_expense'),
+            metrics.get('effective_tax_rate'),
             datetime.now().isoformat()
         ))
         conn.commit()
@@ -361,11 +365,15 @@ class Database:
             'revenue': row[6],
             'dividend_yield': row[7],
             'last_updated': row[8],
-            'company_name': row[9],
-            'exchange': row[10],
-            'sector': row[11],
-            'country': row[12],
-            'ipo_year': row[13]
+            'beta': row[9],
+            'total_debt': row[10],
+            'interest_expense': row[11],
+            'effective_tax_rate': row[12],
+            'company_name': row[13],
+            'exchange': row[14],
+            'sector': row[15],
+            'country': row[16],
+            'ipo_year': row[17]
         }
 
     def get_earnings_history(self, symbol: str, period_type: str = 'annual') -> List[Dict[str, Any]]:
