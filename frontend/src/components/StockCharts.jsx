@@ -252,6 +252,44 @@ export default function StockCharts({ historyData, loading }) {
           }}
         />
       </div>
+
+      <div className="chart-container">
+        <Line
+          data={{
+            labels: labels,
+            datasets: [
+              {
+                label: 'Stock Price ($)',
+                data: historyData.price,
+                borderColor: 'rgb(255, 159, 64)',
+                backgroundColor: 'rgba(255, 159, 64, 0.2)',
+              },
+            ],
+          }}
+          options={{
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+              title: {
+                display: true,
+                text: 'Stock Price History',
+                font: { size: 14 }
+              },
+              legend: {
+                display: false
+              }
+            },
+            scales: {
+              y: {
+                title: {
+                  display: true,
+                  text: 'Price ($)'
+                }
+              }
+            }
+          }}
+        />
+      </div>
     </div>
   )
 }
