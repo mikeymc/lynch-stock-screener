@@ -8,7 +8,7 @@ const AlgorithmSelector = ({ selectedAlgorithm, onAlgorithmChange }) => {
 
   useEffect(() => {
     // Fetch algorithm metadata from API
-    fetch('http://localhost:5001/api/algorithms')
+    fetch('/api/algorithms')
       .then(res => res.json())
       .then(data => {
         setAlgorithms(data)

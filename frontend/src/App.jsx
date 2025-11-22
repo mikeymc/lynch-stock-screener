@@ -108,7 +108,6 @@ function StockListView({
   const [progress, setProgress] = useState('')
   const [error, setError] = useState(null)
   const itemsPerPage = 100
-  const [watchlist, setWatchlist] = useState(new Set())
   const [algorithm, setAlgorithm] = useState('weighted')
 
   // Re-evaluate existing stocks when algorithm changes
@@ -340,26 +339,6 @@ function StockListView({
       case 'CLOSE': return 2
       case 'FAIL': return 3
       default: return 4
-    }
-  }
-
-  const toggleWatchlist = async (symbol) => {
-    const isInWatchlist = watchlist.has(symbol)
-
-    try {
-      if (isInWatchlist) {
-        await fetch(`${API_BASE}/watchlist/${symbol}`, { method: 'DELETE' })
-        setWatchlist(prev => {
-          const newSet = new Set(prev)
-          newSet.delete(symbol)
-          return newSet
-        })
-      } else {
-        await fetch(`${API_BASE}/watchlist/${symbol}`, { method: 'POST' })
-        setWatchlist(prev => new Set([...prev, symbol]))
-      }
-    } catch (err) {
-      console.error('Error toggling watchlist:', err)
     }
   }
 

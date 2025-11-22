@@ -63,9 +63,12 @@ class Database:
         """)
 
         # Run migrations to ensure existing tables have all columns
-        self._migrate_schema(cursor)
+        self._migrate_schema(cursor, conn)
+        
+        conn.commit()
+        conn.close()
 
-    def _migrate_schema(self, cursor):
+    def _migrate_schema(self, cursor, conn):
         """Checks for missing columns and adds them if necessary."""
         # Check stock_metrics columns
         cursor.execute("PRAGMA table_info(stock_metrics)")
@@ -349,8 +352,6 @@ class Database:
         if 'free_cash_flow' not in earnings_columns:
             cursor.execute("ALTER TABLE earnings_history ADD COLUMN free_cash_flow REAL")
 
-        conn.commit()
-        conn.close()
 
     def save_stock_basic(self, symbol: str, company_name: str, exchange: str, sector: str = None,
                         country: str = None, ipo_year: int = None):
