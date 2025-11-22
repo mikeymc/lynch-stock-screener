@@ -643,6 +643,49 @@ def refresh_lynch_analysis(symbol):
         return jsonify({'error': f'Failed to generate analysis: {str(e)}'}), 500
 
 
+@app.route('/api/stock/<symbol>/chart-analysis', methods=['POST'])
+def get_chart_analysis(symbol):
+    """
+    Get section-specific Peter Lynch-style analysis for a stock chart section.
+    """
+    symbol = symbol.upper()
+    data = request.get_json()
+    section = data.get('section')
+
+    if not section or section not in ['growth', 'cash', 'valuation']:
+        return jsonify({'error': 'Invalid or missing section parameter'}), 400
+
+    # Check if stock exists
+    stock_metrics = db.get_stock_metrics(symbol)
+    if not stock_metrics:
+        return jsonify({'error': f'Stock {symbol} not found'}), 404
+
+    # Get historical data
+    history = db.get_earnings_history(symbol)
+    if not history:
+        return jsonify({'error': f'No historical data for {symbol}'}), 404
+
+    # Prepare stock data for analysis
+    evaluation = criteria.evaluate_stock(symbol)
+    stock_data = {
+        **stock_metrics,
+        'peg_ratio': evaluation.get('peg_ratio') if evaluation else None,
+        'earnings_cagr': evaluation.get('earnings_cagr') if evaluation else None,
+        'revenue_cagr': evaluation.get('revenue_cagr') if evaluation else None
+    }
+
+    try:
+        analysis_text = lynch_analyst.generate_chart_analysis(
+            stock_data,
+            history,
+            section
+        )
+        return jsonify({'analysis': analysis_text})
+    except Exception as e:
+        print(f"Error generating chart analysis for {symbol} section {section}: {e}")
+        return jsonify({'error': f'Failed to generate analysis: {str(e)}'}), 500
+
+
 @app.route('/api/watchlist', methods=['GET'])
 def get_watchlist():
     try:

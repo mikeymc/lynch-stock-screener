@@ -228,7 +228,7 @@ export default function StockDetail({ watchlist, toggleWatchlist }) {
 
               <div className="tabs-content">
                 {activeTab === 'charts' && (
-                  <StockCharts historyData={historyData} loading={loadingHistory} />
+                  <StockCharts historyData={historyData} loading={loadingHistory} symbol={symbol} />
                 )}
 
                 {activeTab === 'dcf' && (

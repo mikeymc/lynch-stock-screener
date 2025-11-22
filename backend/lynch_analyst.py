@@ -56,14 +56,24 @@ class LynchAnalyst:
         Returns:
             Formatted prompt string
         """
+    def _prepare_template_vars(self, stock_data: Dict[str, Any], history: List[Dict[str, Any]]) -> Dict[str, Any]:
+        """Helper to prepare template variables from stock data and history"""
         # Format historical data for the prompt
         history_lines = []
         for h in sorted(history, key=lambda x: x['year']):
             eps = h.get('eps')
             revenue = h.get('revenue')
+            ocf = h.get('operating_cash_flow')
+            capex = h.get('capital_expenditures')
+            fcf = h.get('free_cash_flow')
+            
             eps_str = f"${eps:.2f}" if eps is not None else "N/A"
             revenue_str = f"${revenue/1e9:.2f}B" if revenue is not None else "N/A"
-            history_lines.append(f"  {h['year']}: EPS={eps_str}, Revenue={revenue_str}")
+            ocf_str = f"${ocf/1e9:.2f}B" if ocf is not None else "N/A"
+            capex_str = f"${abs(capex)/1e9:.2f}B" if capex is not None else "N/A"
+            fcf_str = f"${fcf/1e9:.2f}B" if fcf is not None else "N/A"
+            
+            history_lines.append(f"  {h['year']}: EPS={eps_str}, Revenue={revenue_str}, OCF={ocf_str}, CapEx={capex_str}, FCF={fcf_str}")
         history_text = "\n".join(history_lines)
 
         # Prepare a dictionary of values for formatting
@@ -92,6 +102,14 @@ class LynchAnalyst:
         for key, value in template_vars.items():
             if value is None:
                 template_vars[key] = 'N/A'
+                
+        return template_vars
+
+    def format_prompt(self, stock_data: Dict[str, Any], history: List[Dict[str, Any]], sections: Optional[Dict[str, Any]] = None) -> str:
+        """
+        Format a prompt for Gemini to generate a Peter Lynch-style analysis
+        """
+        template_vars = self._prepare_template_vars(stock_data, history)
         
         # Debug: print template vars to see what's None
         print(f"DEBUG: template_vars for {stock_data.get('symbol')}: {template_vars}")
@@ -158,7 +176,76 @@ class LynchAnalyst:
 
         model = genai.GenerativeModel(self.model_version)
         response = model.generate_content(prompt)
+        
+        return response.text
 
+    def generate_chart_analysis(self, stock_data: Dict[str, Any], history: List[Dict[str, Any]], section: str) -> str:
+        """
+        Generate a short (200 words) Peter Lynch-style analysis for a specific chart section.
+
+        Args:
+            stock_data: Dict containing current stock metrics
+            history: List of dicts containing historical earnings/revenue data
+            section: One of 'growth', 'cash', or 'valuation'
+
+        Returns:
+            Generated analysis text
+        """
+        # Prepare data
+        template_vars = self._prepare_template_vars(stock_data, history)
+
+        # Simplified prompt template for chart analysis
+        chart_prompt_template = """
+You are Peter Lynch. Analyze the following stock data for {company_name} ({symbol}).
+
+Current Metrics:
+Price: ${price}
+P/E Ratio: {pe_ratio}
+PEG Ratio: {peg_ratio}
+Debt-to-Equity: {debt_to_equity}
+Institutional Ownership: {institutional_ownership}%
+Market Cap: ${market_cap_billions:.2f}B
+Earnings CAGR (5y): {earnings_cagr}
+Revenue CAGR (5y): {revenue_cagr}
+
+Historical Data:
+{history_text}
+
+---
+
+**TASK:**
+{instruction}
+"""
+
+        # Section-specific instructions
+        section_instructions = {
+            'growth': """
+Focus ONLY on the **Growth & Profitability** metrics: **Revenue**, **Net Income**, and **Operating Cash Flow**.
+Analyze the trends. Is the company growing? Is it profitable? Is the cash flow from operations healthy and consistent with earnings?
+Write a ~200 word analysis in the style of Peter Lynch. Be conversational, insightful, and look for the story behind the numbers.
+""",
+            'cash': """
+Focus ONLY on the **Cash Management** metrics: **Capital Expenditures**, **Free Cash Flow**, and **Dividend Yield**.
+Analyze how the company uses its cash. Are they reinvesting heavily (high CapEx)? Do they have plenty of Free Cash Flow left over? Are they returning cash to shareholders via dividends?
+Write a ~200 word analysis in the style of Peter Lynch. Be conversational, insightful, and look for the story behind the numbers.
+""",
+            'valuation': """
+Focus ONLY on the **Market Valuation & Risk** metrics: **Stock Price**, **P/E Ratio**, and **Debt-to-Equity**.
+Analyze the valuation and financial health. Is the stock expensive relative to earnings? Is the debt load concerning? How has the price moved relative to fundamentals?
+Write a ~200 word analysis in the style of Peter Lynch. Be conversational, insightful, and look for the story behind the numbers.
+"""
+        }
+
+        instruction = section_instructions.get(section)
+        if not instruction:
+            raise ValueError(f"Invalid section: {section}. Must be one of 'growth', 'cash', 'valuation'.")
+
+        # Format the prompt
+        final_prompt = chart_prompt_template.format(instruction=instruction, **template_vars)
+
+        model = genai.GenerativeModel(self.model_version)
+        response = model.generate_content(final_prompt)
+        
         return response.text
 
     def get_or_generate_analysis(

@@ -2,8 +2,9 @@
 // ABOUTME: Top row: Growth & Profitability, Middle row: Cash Management, Bottom row: Market Valuation & Risk
 
 import { Line } from 'react-chartjs-2'
+import ChartAnalysis from './ChartAnalysis'
 
-export default function StockCharts({ historyData, loading }) {
+export default function StockCharts({ historyData, loading, symbol }) {
   if (loading) {
     return <div className="loading">Loading historical data...</div>
   }
@@ -131,6 +132,7 @@ export default function StockCharts({ historyData, loading }) {
             />
           </div>
         </div>
+        <ChartAnalysis symbol={symbol} section="growth" />
       </div>
 
       {/* SECTION 2: Cash Management */}
@@ -191,6 +193,7 @@ export default function StockCharts({ historyData, loading }) {
             />
           </div>
         </div>
+        <ChartAnalysis symbol={symbol} section="cash" />
       </div>
 
       {/* SECTION 3: Market Valuation & Risk */}
@@ -251,6 +254,7 @@ export default function StockCharts({ historyData, loading }) {
             />
           </div>
         </div>
+        <ChartAnalysis symbol={symbol} section="valuation" />
       </div>
     </div>
   )
