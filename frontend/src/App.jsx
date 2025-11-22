@@ -14,6 +14,7 @@ import {
 import LynchAnalysis from './components/LynchAnalysis'
 import ChatInterface from './components/ChatInterface'
 import StockDetail from './pages/StockDetail'
+import AlgorithmSelector from './components/AlgorithmSelector'
 import StatusBar from './components/StatusBar'
 import './App.css'
 
@@ -107,6 +108,92 @@ function StockListView({
   const [progress, setProgress] = useState('')
   const [error, setError] = useState(null)
   const itemsPerPage = 100
+  const [watchlist, setWatchlist] = useState(new Set())
+  const [algorithm, setAlgorithm] = useState('weighted')
+
+  // Re-evaluate existing stocks when algorithm changes
+  useEffect(() => {
+    const reEvaluateStocks = async () => {
+      if (stocks.length === 0) return
+
+      setLoading(true)
+      setProgress('Re-evaluating stocks with new algorithm...')
+      setFilter('all')
+
+      try {
+        // Fetch re-evaluation for all existing stocks
+        const reEvaluatedStocks = await Promise.all(
+          stocks.map(async (stock) => {
+            try {
+              const response = await fetch(`${API_BASE}/stock/${stock.symbol}?algorithm=${algorithm}`)
+              if (response.ok) {
+                const data = await response.json()
+                return data.evaluation || stock // Use evaluation, fallback to original
+              }
+              return stock // Keep original if fetch fails
+            } catch (err) {
+              console.error(`Error re-evaluating ${stock.symbol}:`, err)
+              return stock // Keep original if fetch fails
+            }
+          })
+        )
+
+        setStocks(reEvaluatedStocks)
+
+        // Recalculate summary stats
+        const statusCounts = {}
+        reEvaluatedStocks.forEach(stock => {
+          const status = stock.overall_status
+          statusCounts[status] = (statusCounts[status] || 0) + 1
+        })
+
+        const summaryData = {
+          totalAnalyzed: reEvaluatedStocks.length,
+          algorithm: algorithm
+        }
+
+        if (algorithm === 'classic') {
+          summaryData.passCount = statusCounts['PASS'] || 0
+          summaryData.closeCount = statusCounts['CLOSE'] || 0
+          summaryData.failCount = statusCounts['FAIL'] || 0
+        } else {
+          summaryData.strong_buy_count = statusCounts['STRONG_BUY'] || 0
+          summaryData.buy_count = statusCounts['BUY'] || 0
+          summaryData.hold_count = statusCounts['HOLD'] || 0
+          summaryData.caution_count = statusCounts['CAUTION'] || 0
+          summaryData.avoid_count = statusCounts['AVOID'] || 0
+        }
+
+        setSummary(summaryData)
+        setProgress('')
+      } catch (err) {
+        console.error('Error re-evaluating stocks:', err)
+        setError(`Failed to re-evaluate stocks: ${err.message}`)
+      } finally {
+        setLoading(false)
+      }
+    }
+
+    reEvaluateStocks()
+  }, [algorithm])
+
+  // Load watchlist on mount
+  useEffect(() => {
+    const loadWatchlist = async () => {
+      try {
+        const response = await fetch(`${API_BASE}/watchlist`)
+        if (response.ok) {
+          const data = await response.json()
+          setWatchlist(new Set(data.symbols))
+        }
+      } catch (err) {
+        console.error('Error loading watchlist:', err)
+      }
+    }
+    loadWatchlist()
+  }, [])
+
+  // Start with empty state (don't load cached session since algorithm may have changed)
   const [loadingSession, setLoadingSession] = useState(stocks.length === 0 && !summary)
   // Load latest session on mount
   useEffect(() => {
@@ -164,7 +251,9 @@ function StockListView({
     setCurrentPage(1)
 
     try {
-      const url = limit ? `${API_BASE}/screen?limit=${limit}` : `${API_BASE}/screen`
+      const params = new URLSearchParams({ algorithm })
+      if (limit) params.append('limit', limit)
+      const url = `${API_BASE}/screen?${params.toString()}`
       const response = await fetch(url)
 
       if (!response.ok) {
@@ -193,12 +282,25 @@ function StockListView({
             } else if (data.type === 'stock_result') {
               setStocks(prevStocks => [...prevStocks, data.stock])
             } else if (data.type === 'complete') {
-              setSummary({
+              // Handle both classic and new algorithm summary formats
+              const summaryData = {
                 totalAnalyzed: data.total_analyzed,
-                passCount: data.pass_count,
-                closeCount: data.close_count,
-                failCount: data.fail_count
-              })
+                algorithm: data.algorithm
+              }
+
+              if (data.algorithm === 'classic') {
+                summaryData.passCount = data.pass_count
+                summaryData.closeCount = data.close_count
+                summaryData.failCount = data.fail_count
+              } else {
+                summaryData.strong_buy_count = data.strong_buy_count
+                summaryData.buy_count = data.buy_count
+                summaryData.hold_count = data.hold_count
+                summaryData.caution_count = data.caution_count
+                summaryData.avoid_count = data.avoid_count
+              }
+
+              setSummary(summaryData)
               setProgress('')
             } else if (data.type === 'error') {
               setError(data.message)
@@ -217,19 +319,47 @@ function StockListView({
 
   const getStatusColor = (status) => {
     switch (status) {
+      // Classic algorithm statuses
       case 'PASS': return '#4ade80'
       case 'CLOSE': return '#fbbf24'
       case 'FAIL': return '#f87171'
+      // New algorithm statuses
+      case 'STRONG_BUY': return '#22c55e'
+      case 'BUY': return '#4ade80'
+      case 'HOLD': return '#fbbf24'
+      case 'CAUTION': return '#fb923c'
+      case 'AVOID': return '#f87171'
       default: return '#gray'
     }
   }
 
   const getStatusRank = (status) => {
     switch (status) {
+      // Classic algorithm statuses
       case 'PASS': return 1
       case 'CLOSE': return 2
       case 'FAIL': return 3
       default: return 4
+    }
+  }
+
+  const toggleWatchlist = async (symbol) => {
+    const isInWatchlist = watchlist.has(symbol)
+
+    try {
+      if (isInWatchlist) {
+        await fetch(`${API_BASE}/watchlist/${symbol}`, { method: 'DELETE' })
+        setWatchlist(prev => {
+          const newSet = new Set(prev)
+          newSet.delete(symbol)
+          return newSet
+        })
+      } else {
+        await fetch(`${API_BASE}/watchlist/${symbol}`, { method: 'POST' })
+        setWatchlist(prev => new Set([...prev, symbol]))
+      }
+    } catch (err) {
+      console.error('Error toggling watchlist:', err)
     }
   }
 
@@ -259,7 +389,7 @@ function StockListView({
       return true
     })
 
-    return [...filtered].sort((a, b) => {
+    const sorted = [...filtered].sort((a, b) => {
       let aVal = a[sortBy]
       let bVal = b[sortBy]
 
@@ -270,20 +400,32 @@ function StockListView({
 
       // Special handling for status columns - use rank instead of alphabetical
       if (sortBy.endsWith('_status') || sortBy === 'overall_status') {
-        aVal = getStatusRank(aVal)
-        bVal = getStatusRank(bVal)
+        const ranks = {
+          'STRONG_BUY': 1,
+          'BUY': 2,
+          'HOLD': 3,
+          'CAUTION': 4,
+          'AVOID': 5,
+          'SELL': 6,
+          'PASS': 1,
+          'CLOSE': 2,
+          'FAIL': 3
+        }
+        aVal = ranks[aVal] || 999
+        bVal = ranks[bVal] || 999
       } else if (typeof aVal === 'string') {
         aVal = aVal.toLowerCase()
         bVal = (bVal || '').toLowerCase()
       }
 
       if (sortDir === 'asc') {
-        return aVal < bVal ? -1 : 1
+        return aVal < bVal ? -1 : aVal > bVal ? 1 : 0
       } else {
-        return aVal > bVal ? -1 : 1
+        return aVal > bVal ? -1 : aVal < bVal ? 1 : 0
       }
     })
-  }, [stocks, filter, sortBy, sortDir, searchQuery])
+    return sorted
+  }, [stocks, filter, sortBy, sortDir, searchQuery, watchlist])
 
   const totalPages = Math.ceil(sortedStocks.length / itemsPerPage)
   const startIndex = (currentPage - 1) * itemsPerPage
@@ -338,20 +480,49 @@ function StockListView({
           <select value={filter} onChange={(e) => setFilter(e.target.value)}>
             <option value="all">All</option>
             <option value="watchlist">⭐ Watchlist</option>
-            <option value="PASS">Pass Only</option>
-            <option value="CLOSE">Close Only</option>
-            <option value="FAIL">Fail Only</option>
+            {algorithm === 'classic' ? (
+              <>
+                <option value="PASS">Pass Only</option>
+                <option value="CLOSE">Close Only</option>
+                <option value="FAIL">Fail Only</option>
+              </>
+            ) : (
+              <>
+                <option value="STRONG_BUY">Strong Buy</option>
+                <option value="BUY">Buy</option>
+                <option value="HOLD">Hold</option>
+                <option value="CAUTION">Caution</option>
+                <option value="AVOID">Avoid</option>
+              </>
+            )}
           </select>
         </div>
 
         {summary && (
           <div className="summary-stats">
             <strong>Analyzed {summary.totalAnalyzed} stocks:</strong>
-            <span className="summary-stat pass">{summary.passCount} PASS</span>
-            <span className="summary-stat close">{summary.closeCount} CLOSE</span>
-            <span className="summary-stat fail">{summary.failCount} FAIL</span>
+            {algorithm === 'classic' ? (
+              <>
+                <span className="summary-stat pass">{summary.passCount || 0} PASS</span>
+                <span className="summary-stat close">{summary.closeCount || 0} CLOSE</span>
+                <span className="summary-stat fail">{summary.failCount || 0} FAIL</span>
+              </>
+            ) : (
+              <>
+                <span className="summary-stat strong-buy">{summary.strong_buy_count || 0} Strong Buy</span>
+                <span className="summary-stat buy">{summary.buy_count || 0} Buy</span>
+                <span className="summary-stat hold">{summary.hold_count || 0} Hold</span>
+                <span className="summary-stat caution">{summary.caution_count || 0} Caution</span>
+                <span className="summary-stat avoid">{summary.avoid_count || 0} Avoid</span>
+              </>
+            )}
           </div>
         )}
+
+        <AlgorithmSelector
+          selectedAlgorithm={algorithm}
+          onAlgorithmChange={setAlgorithm}
+        />
       </div>
 
       {loading && (

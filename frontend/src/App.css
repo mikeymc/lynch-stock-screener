@@ -251,6 +251,32 @@ button:disabled {
   color: #000;
 }
 
+/* New algorithm status colors */
+.summary-stat.strong-buy {
+  background-color: #22c55e;
+  color: #fff;
+}
+
+.summary-stat.buy {
+  background-color: #4ade80;
+  color: #000;
+}
+
+.summary-stat.hold {
+  background-color: #fbbf24;
+  color: #000;
+}
+
+.summary-stat.caution {
+  background-color: #fb923c;
+  color: #000;
+}
+
+.summary-stat.avoid {
+  background-color: #f87171;
+  color: #000;
+}
+
 .empty-state {
   text-align: center;
   font-size: 1.1rem;
