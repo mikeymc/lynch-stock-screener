@@ -270,6 +270,9 @@ def get_stock_history(symbol):
     net_income_values = []
     dividend_values = []
     dividend_yield_values = []
+    operating_cash_flow_values = []
+    capital_expenditures_values = []
+    free_cash_flow_values = []
 
     # Get yfinance ticker for fallback
     ticker = yf.Ticker(symbol.upper())
@@ -283,6 +286,9 @@ def get_stock_history(symbol):
         net_income = entry.get('net_income')
         dividend = entry.get('dividend_amount')
         dividend_yield = entry.get('dividend_yield')
+        operating_cash_flow = entry.get('operating_cash_flow')
+        capital_expenditures = entry.get('capital_expenditures')
+        free_cash_flow = entry.get('free_cash_flow')
         period = entry.get('period', 'annual')
 
         # Create label based on period type
@@ -299,6 +305,9 @@ def get_stock_history(symbol):
         net_income_values.append(net_income)
         dividend_values.append(dividend)
         dividend_yield_values.append(dividend_yield)
+        operating_cash_flow_values.append(operating_cash_flow)
+        capital_expenditures_values.append(capital_expenditures)
+        free_cash_flow_values.append(free_cash_flow)
 
         price = None
 
@@ -368,6 +377,9 @@ def get_stock_history(symbol):
         'net_income': net_income_values,
         'dividend_amount': dividend_values,
         'dividend_yield': dividend_yield_values,
+        'operating_cash_flow': operating_cash_flow_values,
+        'capital_expenditures': capital_expenditures_values,
+        'free_cash_flow': free_cash_flow_values,
         'history': earnings_history,
         'wacc': wacc_data
     })

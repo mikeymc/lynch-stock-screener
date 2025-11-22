@@ -1,5 +1,5 @@
-// ABOUTME: Stock charts component displaying 4 financial metrics over time
-// ABOUTME: Shows Revenue, Net Income, P/E Ratio, and Debt-to-Equity charts in a grid layout
+// ABOUTME: Stock charts component displaying 8 financial metrics over time
+// ABOUTME: Shows Revenue, Net Income, P/E Ratio, Debt-to-Equity, Dividends, Stock Price, Free Cash Flow, and Capital Expenditures charts in a grid layout
 
 import { Line } from 'react-chartjs-2'
 
@@ -284,6 +284,82 @@ export default function StockCharts({ historyData, loading }) {
                 title: {
                   display: true,
                   text: 'Price ($)'
+                }
+              }
+            }
+          }}
+        />
+      </div>
+
+      <div className="chart-container">
+        <Line
+          data={{
+            labels: labels,
+            datasets: [
+              {
+                label: 'Free Cash Flow (Billions)',
+                data: historyData.free_cash_flow?.map(fcf => fcf ? fcf / 1e9 : null) || [],
+                borderColor: 'rgb(34, 197, 94)',
+                backgroundColor: 'rgba(34, 197, 94, 0.2)',
+              },
+            ],
+          }}
+          options={{
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+              title: {
+                display: true,
+                text: 'Free Cash Flow',
+                font: { size: 14 }
+              },
+              legend: {
+                display: false
+              }
+            },
+            scales: {
+              y: {
+                title: {
+                  display: true,
+                  text: 'Billions ($)'
+                }
+              }
+            }
+          }}
+        />
+      </div>
+
+      <div className="chart-container">
+        <Line
+          data={{
+            labels: labels,
+            datasets: [
+              {
+                label: 'Capital Expenditures (Billions)',
+                data: historyData.capital_expenditures?.map(capex => capex ? Math.abs(capex) / 1e9 : null) || [],
+                borderColor: 'rgb(239, 68, 68)',
+                backgroundColor: 'rgba(239, 68, 68, 0.2)',
+              },
+            ],
+          }}
+          options={{
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+              title: {
+                display: true,
+                text: 'Capital Expenditures',
+                font: { size: 14 }
+              },
+              legend: {
+                display: false
+              }
+            },
+            scales: {
+              y: {
+                title: {
+                  display: true,
+                  text: 'Billions ($)'
                 }
               }
             }
