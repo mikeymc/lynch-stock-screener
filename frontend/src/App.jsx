@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from 'react'
+import { useState, useMemo, useEffect, useRef } from 'react'
 import { Routes, Route, useNavigate } from 'react-router-dom'
 import { Line } from 'react-chartjs-2'
 import {
@@ -101,23 +101,28 @@ function StockListView({
   currentPage, setCurrentPage,
   sortBy, setSortBy,
   sortDir, setSortDir,
-  watchlist, toggleWatchlist
+  watchlist, toggleWatchlist,
+  algorithm, setAlgorithm
 }) {
   const navigate = useNavigate()
   const [loading, setLoading] = useState(false)
   const [progress, setProgress] = useState('')
   const [error, setError] = useState(null)
   const itemsPerPage = 100
-  const [algorithm, setAlgorithm] = useState('weighted')
 
   // Re-evaluate existing stocks when algorithm changes
+  const prevAlgorithmRef = useRef(algorithm)
   useEffect(() => {
     const reEvaluateStocks = async () => {
+      // Only re-evaluate if algorithm actually changed
+      if (prevAlgorithmRef.current === algorithm) {
+        return
+      }
+
       if (stocks.length === 0) return
 
       setLoading(true)
       setProgress('Re-evaluating stocks with new algorithm...')
-      setFilter('all')
 
       try {
         // Fetch re-evaluation for all existing stocks
@@ -165,6 +170,9 @@ function StockListView({
 
         setSummary(summaryData)
         setProgress('')
+
+        // Update the ref after successful re-evaluation
+        prevAlgorithmRef.current = algorithm
       } catch (err) {
         console.error('Error re-evaluating stocks:', err)
         setError(`Failed to re-evaluate stocks: ${err.message}`)
@@ -672,6 +680,7 @@ function App() {
   const [sortBy, setSortBy] = useState('symbol')
   const [sortDir, setSortDir] = useState('asc')
   const [watchlist, setWatchlist] = useState(new Set())
+  const [algorithm, setAlgorithm] = useState('weighted')
 
   // Load watchlist on mount
   useEffect(() => {
@@ -729,6 +738,8 @@ function App() {
           setSortDir={setSortDir}
           watchlist={watchlist}
           toggleWatchlist={toggleWatchlist}
+          algorithm={algorithm}
+          setAlgorithm={setAlgorithm}
         />
       } />
       <Route path="/stock/:symbol" element={
