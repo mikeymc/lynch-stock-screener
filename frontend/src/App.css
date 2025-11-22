@@ -396,12 +396,28 @@ td strong {
   padding: 2rem;
 }
 
-.charts-grid {
-  display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: 1.5rem;
+.charts-container {
   padding: 2rem;
   background-color: #0f172a;
+}
+
+.chart-section {
+  margin-bottom: 2rem;
+}
+
+.section-title {
+  color: #e2e8f0;
+  font-size: 1.25rem;
+  font-weight: 600;
+  margin-bottom: 1rem;
+  padding-bottom: 0.5rem;
+  border-bottom: 2px solid #334155;
+}
+
+.charts-row {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 1.5rem;
 }
 
 .chart-container {
