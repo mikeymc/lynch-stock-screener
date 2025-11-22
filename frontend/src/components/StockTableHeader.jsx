@@ -66,14 +66,14 @@ export default function StockTableHeader({ sortBy, sortDir, onSort, readOnly = f
         >
           Inst Own <sup>i</sup>{getSortIndicator('institutional_ownership')}
         </th>
-        <th onClick={() => handleSort('dividend_yield')} style={getCursorStyle()}>
-          Div Yield{getSortIndicator('dividend_yield')}
+        <th onClick={() => handleSort('revenue_cagr')} style={getCursorStyle()}>
+          5Y Rev Growth{getSortIndicator('revenue_cagr')}
         </th>
         <th onClick={() => handleSort('earnings_cagr')} style={getCursorStyle()}>
           5Y Net Income Growth{getSortIndicator('earnings_cagr')}
         </th>
-        <th onClick={() => handleSort('revenue_cagr')} style={getCursorStyle()}>
-          5Y Rev Growth{getSortIndicator('revenue_cagr')}
+        <th onClick={() => handleSort('dividend_yield')} style={getCursorStyle()}>
+          Div Yield{getSortIndicator('dividend_yield')}
         </th>
         <th>PEG Status</th>
         <th>Debt Status</th>
