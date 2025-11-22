@@ -57,23 +57,32 @@ class LynchAnalyst:
             Formatted prompt string
         """
         # Format historical data for the prompt
-        history_text = "\n".join([
-            f"  {h['year']}: EPS=${h['eps']:.2f}, Revenue=${h['revenue']/1e9:.2f}B"
-            for h in sorted(history, key=lambda x: x['year'])
-        ])
+        history_lines = []
+        for h in sorted(history, key=lambda x: x['year']):
+            eps = h.get('eps')
+            revenue = h.get('revenue')
+            eps_str = f"${eps:.2f}" if eps is not None else "N/A"
+            revenue_str = f"${revenue/1e9:.2f}B" if revenue is not None else "N/A"
+            history_lines.append(f"  {h['year']}: EPS={eps_str}, Revenue={revenue_str}")
+        history_text = "\n".join(history_lines)
 
         # Prepare a dictionary of values for formatting
+        # Ensure numeric values are never None to avoid format string errors
+        price = stock_data.get('price') or 0
+        institutional_ownership = stock_data.get('institutional_ownership') or 0
+        market_cap = stock_data.get('market_cap') or 0
+        
         template_vars = {
             'company_name': stock_data.get('company_name', 'N/A'),
             'symbol': stock_data.get('symbol', 'N/A'),
             'sector': stock_data.get('sector', 'N/A'),
             'exchange': stock_data.get('exchange', 'N/A'),
-            'price': stock_data.get('price', 0),
+            'price': price,
             'pe_ratio': stock_data.get('pe_ratio', 'N/A'),
             'peg_ratio': stock_data.get('peg_ratio', 'N/A'),
             'debt_to_equity': stock_data.get('debt_to_equity', 'N/A'),
-            'institutional_ownership': stock_data.get('institutional_ownership', 0) * 100,
-            'market_cap_billions': stock_data.get('market_cap', 0) / 1e9,
+            'institutional_ownership': institutional_ownership * 100,
+            'market_cap_billions': market_cap / 1e9,
             'earnings_cagr': stock_data.get('earnings_cagr', 'N/A'),
             'revenue_cagr': stock_data.get('revenue_cagr', 'N/A'),
             'history_text': history_text
@@ -83,9 +92,20 @@ class LynchAnalyst:
         for key, value in template_vars.items():
             if value is None:
                 template_vars[key] = 'N/A'
+        
+        # Debug: print template vars to see what's None
+        print(f"DEBUG: template_vars for {stock_data.get('symbol')}: {template_vars}")
 
         # Use str.format() with the loaded template
-        formatted_prompt = self.prompt_template.format(**template_vars)
+        try:
+            formatted_prompt = self.prompt_template.format(**template_vars)
+        except Exception as e:
+            import traceback
+            print(f"ERROR formatting prompt: {e}")
+            print(f"Template vars: {template_vars}")
+            print(f"Traceback:")
+            traceback.print_exc()
+            raise
 
         # Append SEC filing sections if available
         if sections:
