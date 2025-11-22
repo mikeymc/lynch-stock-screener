@@ -69,7 +69,7 @@ export default function ChartAnalysis({ symbol, section }) {
             )}
 
             {analysis && (
-                <div className="prose prose-invert max-w-none" style={{ fontSize: '0.95rem', lineHeight: '1.6', color: '#cbd5e1' }}>
+                <div className="markdown-content">
                     <ReactMarkdown>{analysis}</ReactMarkdown>
                 </div>
             )}

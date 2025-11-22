@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import ReactMarkdown from 'react-markdown'
 
 const API_BASE = '/api'
 
@@ -117,8 +118,8 @@ function LynchAnalysis({ symbol, stockName, onAnalysisLoaded }) {
           {refreshing ? 'Regenerating...' : '🔄 Regenerate'}
         </button>
       </div>
-      <div className="lynch-analysis-content">
-        <p>{analysis}</p>
+      <div className="lynch-analysis-content markdown-content">
+        <ReactMarkdown>{analysis}</ReactMarkdown>
       </div>
     </div>
   )

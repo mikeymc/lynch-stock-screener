@@ -2,6 +2,7 @@
 // ABOUTME: Displays message history and handles user input with streaming API integration
 
 import { useState, useEffect, useRef } from 'react'
+import ReactMarkdown from 'react-markdown'
 
 const API_BASE = '/api'
 
@@ -234,8 +235,8 @@ export default function ChatInterface({ symbol, lynchAnalysis }) {
             <div className="chat-message-header">
               {msg.role === 'user' ? '👤 You' : msg.role === 'assistant' ? '🎩 Peter Lynch' : '⚠️ Error'}
             </div>
-            <div className="chat-message-content">
-              {msg.content}
+            <div className="chat-message-content markdown-content">
+              <ReactMarkdown>{msg.content}</ReactMarkdown>
             </div>
             {msg.role === 'assistant' && (
               <SourceCitation sources={msg.sources} />
@@ -246,8 +247,10 @@ export default function ChatInterface({ symbol, lynchAnalysis }) {
         {loading && (
           <div className="chat-message assistant streaming">
             <div className="chat-message-header">🎩 Peter Lynch</div>
-            <div className="chat-message-content">
-              {streamingMessage || (
+            <div className="chat-message-content markdown-content">
+              {streamingMessage ? (
+                <ReactMarkdown>{streamingMessage}</ReactMarkdown>
+              ) : (
                 <div className="chat-loading">
                   <span className="typing-indicator">●</span>
                   <span className="typing-indicator">●</span>
