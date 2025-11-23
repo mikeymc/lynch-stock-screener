@@ -155,7 +155,19 @@ class LynchCriteria:
         # Extract growth data or None if unavailable
         earnings_cagr = growth_data['earnings_cagr'] if growth_data else None
         revenue_cagr = growth_data['revenue_cagr'] if growth_data else None
-        consistency_score = growth_data['consistency_score'] if growth_data else None
+        
+        # Normalize consistency score (std_dev) to 0-100 scale where 100 is best
+        # raw_consistency is standard deviation of growth rates
+        # Lower std dev = Higher consistency
+        raw_consistency = growth_data['consistency_score'] if growth_data else None
+        if raw_consistency is not None:
+            # Formula: 100 - (std_dev * 2), capped at 0
+            # Example: std_dev 0 -> 100
+            # Example: std_dev 10 -> 80
+            # Example: std_dev 50 -> 0
+            consistency_score = max(0.0, 100.0 - (raw_consistency * 2.0))
+        else:
+            consistency_score = None
 
         pe_ratio = metrics.get('pe_ratio')
 
