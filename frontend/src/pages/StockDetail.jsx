@@ -170,10 +170,7 @@ export default function StockDetail({ watchlist, toggleWatchlist }) {
         <button className="refresh-button" onClick={handleRefresh} style={{ margin: '20px 0 20px 10px' }}>
           🔄 Refresh Data
         </button>
-        <AlgorithmSelector
-          selectedAlgorithm={algorithm}
-          onAlgorithmChange={setAlgorithm}
-        />
+
 
         {loading ? (
           <div className="loading">Loading stock data...</div>
