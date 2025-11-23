@@ -86,20 +86,20 @@ export default function Settings() {
     }
 
     return (
-        <div className="max-w-4xl mx-auto p-6">
-            <div className="flex justify-between items-center mb-8">
-                <h1 className="text-3xl font-bold text-slate-100">Algorithm Settings</h1>
-                <div className="space-x-4">
+        <div className="settings-page">
+            <div className="settings-header">
+                <h1>Algorithm Settings</h1>
+                <div className="settings-actions">
                     <button
                         onClick={handleReset}
-                        className="px-4 py-2 bg-slate-700 hover:bg-slate-600 text-slate-200 rounded transition-colors"
+                        className="btn-secondary"
                         disabled={saving}
                     >
                         Discard Changes
                     </button>
                     <button
                         onClick={handleSave}
-                        className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded transition-colors disabled:opacity-50"
+                        className="btn-primary"
                         disabled={saving}
                     >
                         {saving ? 'Saving...' : 'Save Settings'}
@@ -108,24 +108,24 @@ export default function Settings() {
             </div>
 
             {message && (
-                <div className={`mb-6 p-4 rounded ${message.type === 'error' ? 'bg-red-900/50 text-red-200' : 'bg-green-900/50 text-green-200'}`}>
+                <div className={`message-banner ${message.type}`}>
                     {message.text}
                 </div>
             )}
 
-            <div className="grid gap-8">
+            <div className="settings-grid">
                 {Object.entries(groups).map(([groupName, keys]) => (
-                    <div key={groupName} className="bg-slate-800 rounded-lg p-6 border border-slate-700">
-                        <h2 className="text-xl font-semibold text-slate-200 mb-4 border-b border-slate-700 pb-2">
+                    <div key={groupName} className="settings-card">
+                        <h2 className="settings-group-title">
                             {groupName}
                         </h2>
-                        <div className="grid gap-6 md:grid-cols-2">
+                        <div className="settings-group-content">
                             {keys.map(key => {
                                 const setting = settings[key]
                                 if (!setting) return null
                                 return (
-                                    <div key={key}>
-                                        <label className="block text-sm font-medium text-slate-400 mb-1">
+                                    <div key={key} className="setting-item">
+                                        <label className="setting-label">
                                             {setting.description}
                                         </label>
                                         <input
@@ -133,7 +133,7 @@ export default function Settings() {
                                             step="0.01"
                                             value={setting.value}
                                             onChange={(e) => handleChange(key, e.target.value)}
-                                            className="w-full bg-slate-900 border border-slate-600 rounded px-3 py-2 text-slate-100 focus:outline-none focus:border-blue-500"
+                                            className="setting-input"
                                         />
                                     </div>
                                 )
