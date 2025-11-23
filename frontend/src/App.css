@@ -73,6 +73,23 @@ button:disabled {
   cursor: not-allowed;
 }
 
+.settings-button {
+  background-color: transparent;
+  color: #94a3b8;
+  padding: 0.5rem;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-left: auto;
+  transition: color 0.2s, background-color 0.2s;
+}
+
+.settings-button:hover {
+  background-color: #1e293b;
+  color: #f1f5f9;
+}
+
 .filter-controls {
   display: flex;
   align-items: center;
