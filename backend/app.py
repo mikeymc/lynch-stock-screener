@@ -691,23 +691,38 @@ def get_chart_analysis(symbol):
     }
 
     # Check cache first
+    force_refresh = data.get('force_refresh', False)
+    only_cached = data.get('only_cached', False)
     cached_analysis = db.get_chart_analysis(symbol, section)
-    if cached_analysis:
+    
+    print(f"[DEBUG] Chart analysis request: symbol={symbol}, section={section}, force_refresh={force_refresh}, only_cached={only_cached}")
+    print(f"[DEBUG] Cached analysis found: {cached_analysis is not None}")
+    
+    if cached_analysis and not force_refresh:
+        print(f"[DEBUG] Returning cached analysis")
         return jsonify({
             'analysis': cached_analysis['analysis_text'],
             'cached': True,
             'generated_at': cached_analysis['generated_at']
         })
+    
+    # If only_cached is True and no cache exists, return empty response
+    if only_cached:
+        print(f"[DEBUG] only_cached=True but no cache found, returning empty")
+        return jsonify({})
 
     try:
+        print(f"[DEBUG] Generating new analysis...")
         analysis_text = lynch_analyst.generate_chart_analysis(
             stock_data,
             history,
             section
         )
         
+        print(f"[DEBUG] Analysis generated, saving to cache...")
         # Save to cache
         db.set_chart_analysis(symbol, section, analysis_text, lynch_analyst.model_version)
+        print(f"[DEBUG] Analysis saved to cache successfully")
         
         return jsonify({
             'analysis': analysis_text,
