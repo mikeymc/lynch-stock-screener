@@ -362,10 +362,19 @@ class EdgarFetcher:
         capex_data = []
         try:
             # Try US-GAAP
-            if 'us-gaap' in company_facts['facts'] and 'PaymentsToAcquirePropertyPlantAndEquipment' in company_facts['facts']['us-gaap']:
-                units = company_facts['facts']['us-gaap']['PaymentsToAcquirePropertyPlantAndEquipment']['units']
-                if 'USD' in units:
-                    capex_data = units['USD']
+            if 'us-gaap' in company_facts['facts']:
+                # Standard tag
+                if 'PaymentsToAcquirePropertyPlantAndEquipment' in company_facts['facts']['us-gaap']:
+                    units = company_facts['facts']['us-gaap']['PaymentsToAcquirePropertyPlantAndEquipment']['units']
+                    if 'USD' in units:
+                        capex_data.extend(units['USD'])
+                
+                # Alternative tag (used by AMZN and others)
+                if 'PaymentsToAcquireProductiveAssets' in company_facts['facts']['us-gaap']:
+                    units = company_facts['facts']['us-gaap']['PaymentsToAcquireProductiveAssets']['units']
+                    if 'USD' in units:
+                        capex_data.extend(units['USD'])
+
             # Try IFRS
             elif 'ifrs-full' in company_facts['facts'] and 'CashFlowsUsedInObtainingControlOfSubsidiariesOrOtherBusinessesClassifiedAsInvestingActivities' in company_facts['facts']['ifrs-full']:
                 # Note: IFRS CapEx mapping is tricky, often PurchaseOfPropertyPlantAndEquipmentClassifiedAsInvestingActivities
