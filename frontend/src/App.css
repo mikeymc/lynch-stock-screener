@@ -568,6 +568,45 @@ td strong {
   margin: 0 0 1rem 0;
 }
 
+.lynch-analysis-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 3rem;
+  color: #94a3b8;
+  text-align: center;
+}
+
+.lynch-analysis-empty p {
+  margin-bottom: 1.5rem;
+  font-size: 1.1rem;
+}
+
+.generate-button {
+  background-color: #3b82f6;
+  color: white;
+  border: none;
+  border-radius: 6px;
+  padding: 12px 24px;
+  font-size: 16px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background-color 0.2s, transform 0.1s;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.generate-button:hover {
+  background-color: #2563eb;
+  transform: translateY(-1px);
+}
+
+.generate-button:active {
+  transform: translateY(0);
+}
+
 .status-bar-container {
   width: 100%;
   height: 100%;
@@ -1567,6 +1606,7 @@ td strong {
   cursor: help;
   color: #60a5fa;
 }
+
 /* Markdown Content Styling */
 .markdown-content {
   color: #cbd5e1;
@@ -1584,10 +1624,21 @@ td strong {
   font-weight: 600;
 }
 
-.markdown-content h1 { font-size: 1.8em; }
-.markdown-content h2 { font-size: 1.5em; }
-.markdown-content h3 { font-size: 1.25em; }
-.markdown-content h4 { font-size: 1.1em; }
+.markdown-content h1 {
+  font-size: 1.8em;
+}
+
+.markdown-content h2 {
+  font-size: 1.5em;
+}
+
+.markdown-content h3 {
+  font-size: 1.25em;
+}
+
+.markdown-content h4 {
+  font-size: 1.1em;
+}
 
 .markdown-content p {
   margin-bottom: 1em;

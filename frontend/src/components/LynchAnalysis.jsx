@@ -11,7 +11,7 @@ function LynchAnalysis({ symbol, stockName, onAnalysisLoaded }) {
   const [cached, setCached] = useState(false)
   const [refreshing, setRefreshing] = useState(false)
 
-  const fetchAnalysis = async (forceRefresh = false, signal = null) => {
+  const fetchAnalysis = async (forceRefresh = false, signal = null, onlyCached = false) => {
     try {
       if (forceRefresh) {
         setRefreshing(true)
@@ -20,9 +20,13 @@ function LynchAnalysis({ symbol, stockName, onAnalysisLoaded }) {
       }
       setError(null)
 
-      const url = forceRefresh
+      let url = forceRefresh
         ? `${API_BASE}/stock/${symbol}/lynch-analysis/refresh`
         : `${API_BASE}/stock/${symbol}/lynch-analysis`
+
+      if (onlyCached && !forceRefresh) {
+        url += '?only_cached=true'
+      }
 
       const method = forceRefresh ? 'POST' : 'GET'
 
@@ -58,10 +62,14 @@ function LynchAnalysis({ symbol, stockName, onAnalysisLoaded }) {
     fetchAnalysis(true)
   }
 
-  // Auto-fetch analysis on mount
+  const handleGenerate = () => {
+    fetchAnalysis(false)
+  }
+
+  // Auto-fetch analysis on mount (but only check cache)
   useEffect(() => {
     const controller = new AbortController()
-    fetchAnalysis(false, controller.signal)
+    fetchAnalysis(false, controller.signal, true)
     return () => controller.abort()
   }, [symbol])
 
@@ -85,7 +93,7 @@ function LynchAnalysis({ symbol, stockName, onAnalysisLoaded }) {
         </div>
         <div className="lynch-analysis-loading">
           <div className="spinner"></div>
-          <p>Generating Peter Lynch-style analysis...</p>
+          <p>Checking for analysis...</p>
         </div>
       </div>
     )
@@ -99,8 +107,24 @@ function LynchAnalysis({ symbol, stockName, onAnalysisLoaded }) {
         </div>
         <div className="lynch-analysis-error">
           <p>Failed to load analysis: {error}</p>
-          <button onClick={() => fetchAnalysis()} className="retry-button">
+          <button onClick={() => fetchAnalysis(false, null, true)} className="retry-button">
             Retry
+          </button>
+        </div>
+      </div>
+    )
+  }
+
+  if (!analysis) {
+    return (
+      <div className="lynch-analysis-container">
+        <div className="lynch-analysis-header">
+          <h3>Peter Lynch Analysis</h3>
+        </div>
+        <div className="lynch-analysis-empty">
+          <p>No analysis generated yet for {stockName}.</p>
+          <button onClick={handleGenerate} className="generate-button">
+            ✨ Generate Analysis
           </button>
         </div>
       </div>

@@ -564,6 +564,22 @@ def get_lynch_analysis(symbol):
     cached_analysis = db.get_lynch_analysis(symbol)
     was_cached = cached_analysis is not None
 
+    # If only_cached is requested, return what we have (or None)
+    only_cached = request.args.get('only_cached', 'false').lower() == 'true'
+    if only_cached:
+        if was_cached:
+            return jsonify({
+                'analysis': cached_analysis['analysis_text'],
+                'cached': True,
+                'generated_at': cached_analysis['generated_at']
+            })
+        else:
+            return jsonify({
+                'analysis': None,
+                'cached': False,
+                'generated_at': None
+            })
+
     # Get or generate analysis
     try:
         analysis_text = lynch_analyst.get_or_generate_analysis(
