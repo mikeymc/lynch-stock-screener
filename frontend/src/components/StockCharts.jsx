@@ -1,10 +1,34 @@
 // ABOUTME: Stock charts component displaying 9 financial metrics in a 3x3 grid
 // ABOUTME: Top row: Growth & Profitability, Middle row: Cash Management, Bottom row: Market Valuation & Risk
 
+import { useState, useCallback } from 'react'
 import { Line } from 'react-chartjs-2'
 import ChartAnalysis from './ChartAnalysis'
+import {
+  Chart as ChartJS,
+  CategoryScale,
+  LinearScale,
+  PointElement,
+  LineElement,
+  Title,
+  Tooltip,
+  Legend,
+} from 'chart.js'
+
+// Register ChartJS components
+ChartJS.register(
+  CategoryScale,
+  LinearScale,
+  PointElement,
+  LineElement,
+  Title,
+  Tooltip,
+  Legend
+)
 
 export default function StockCharts({ historyData, loading, symbol }) {
+  const [activeIndex, setActiveIndex] = useState(null)
+
   if (loading) {
     return <div className="loading">Loading historical data...</div>
   }
@@ -40,10 +64,60 @@ export default function StockCharts({ historyData, loading, symbol }) {
     }
   };
 
-  // Helper function to create chart options (hides default zero line)
+  // Plugin to draw synchronized crosshair
+  const crosshairPlugin = {
+    id: 'crosshair',
+    afterDraw: (chart) => {
+      // Get activeIndex from options
+      const index = chart.config.options.plugins.crosshair?.activeIndex;
+
+      if (index === null || index === undefined || index === -1) return;
+
+      const ctx = chart.ctx;
+      const yAxis = chart.scales.y;
+
+      // Get the dataset meta to find the x-coordinate of the point at the active index
+      const meta = chart.getDatasetMeta(0);
+      const point = meta.data[index];
+
+      if (point) {
+        const x = point.x;
+
+        ctx.save();
+        ctx.beginPath();
+        ctx.moveTo(x, yAxis.top);
+        ctx.lineTo(x, yAxis.bottom);
+        ctx.lineWidth = 1;
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.8)'; // Bright white line
+        ctx.setLineDash([5, 5]);
+        ctx.stroke();
+        ctx.restore();
+      }
+    }
+  };
+
+  const handleHover = useCallback((event, elements) => {
+    if (elements && elements.length > 0) {
+      const index = elements[0].index;
+      if (index !== activeIndex) {
+        setActiveIndex(index);
+      }
+    }
+  }, [activeIndex]);
+
+  const handleMouseLeave = useCallback(() => {
+    setActiveIndex(null);
+  }, []);
+
+  // Helper function to create chart options
   const createChartOptions = (title, yAxisLabel) => ({
     responsive: true,
     maintainAspectRatio: false,
+    interaction: {
+      mode: 'index',
+      intersect: false,
+    },
+    onHover: handleHover,
     plugins: {
       title: {
         display: true,
@@ -52,6 +126,9 @@ export default function StockCharts({ historyData, loading, symbol }) {
       },
       legend: {
         display: false
+      },
+      crosshair: {
+        activeIndex: activeIndex
       }
     },
     scales: {
@@ -72,15 +149,16 @@ export default function StockCharts({ historyData, loading, symbol }) {
       }
     }
   })
+
   return (
-    <div className="charts-container">
+    <div className="charts-container" onMouseLeave={handleMouseLeave}>
       {/* SECTION 1: Growth & Profitability */}
       <div className="chart-section">
         <h3 className="section-title">Growth & Profitability</h3>
         <div className="charts-row">
           {/* Revenue */}
           <div className="chart-container">
-            <Line plugins={[zeroLinePlugin]}
+            <Line plugins={[zeroLinePlugin, crosshairPlugin]}
               data={{
                 labels: labels,
                 datasets: [
@@ -89,6 +167,8 @@ export default function StockCharts({ historyData, loading, symbol }) {
                     data: historyData.revenue.map(r => r / 1e9),
                     borderColor: 'rgb(75, 192, 192)',
                     backgroundColor: 'rgba(75, 192, 192, 0.2)',
+                    pointRadius: activeIndex !== null ? 3 : 0, // Show points only on hover/active
+                    pointHoverRadius: 5
                   }
                 ]
               }}
@@ -98,7 +178,7 @@ export default function StockCharts({ historyData, loading, symbol }) {
 
           {/* Net Income */}
           <div className="chart-container">
-            <Line plugins={[zeroLinePlugin]}
+            <Line plugins={[zeroLinePlugin, crosshairPlugin]}
               data={{
                 labels: labels,
                 datasets: [
@@ -107,6 +187,8 @@ export default function StockCharts({ historyData, loading, symbol }) {
                     data: historyData.net_income?.map(ni => ni ? ni / 1e9 : null) || [],
                     borderColor: 'rgb(153, 102, 255)',
                     backgroundColor: 'rgba(153, 102, 255, 0.2)',
+                    pointRadius: activeIndex !== null ? 3 : 0,
+                    pointHoverRadius: 5
                   }
                 ]
               }}
@@ -116,7 +198,7 @@ export default function StockCharts({ historyData, loading, symbol }) {
 
           {/* Operating Cash Flow */}
           <div className="chart-container">
-            <Line plugins={[zeroLinePlugin]}
+            <Line plugins={[zeroLinePlugin, crosshairPlugin]}
               data={{
                 labels: labels,
                 datasets: [
@@ -125,6 +207,8 @@ export default function StockCharts({ historyData, loading, symbol }) {
                     data: historyData.operating_cash_flow?.map(ocf => ocf ? ocf / 1e9 : null) || [],
                     borderColor: 'rgb(54, 162, 235)',
                     backgroundColor: 'rgba(54, 162, 235, 0.2)',
+                    pointRadius: activeIndex !== null ? 3 : 0,
+                    pointHoverRadius: 5
                   },
                 ],
               }}
@@ -141,7 +225,7 @@ export default function StockCharts({ historyData, loading, symbol }) {
         <div className="charts-row">
           {/* Capital Expenditures */}
           <div className="chart-container">
-            <Line plugins={[zeroLinePlugin]}
+            <Line plugins={[zeroLinePlugin, crosshairPlugin]}
               data={{
                 labels: labels,
                 datasets: [
@@ -150,6 +234,8 @@ export default function StockCharts({ historyData, loading, symbol }) {
                     data: historyData.capital_expenditures?.map(capex => capex ? Math.abs(capex) / 1e9 : null) || [],
                     borderColor: 'rgb(239, 68, 68)',
                     backgroundColor: 'rgba(239, 68, 68, 0.2)',
+                    pointRadius: activeIndex !== null ? 3 : 0,
+                    pointHoverRadius: 5
                   },
                 ],
               }}
@@ -159,7 +245,7 @@ export default function StockCharts({ historyData, loading, symbol }) {
 
           {/* Free Cash Flow */}
           <div className="chart-container">
-            <Line plugins={[zeroLinePlugin]}
+            <Line plugins={[zeroLinePlugin, crosshairPlugin]}
               data={{
                 labels: labels,
                 datasets: [
@@ -168,6 +254,8 @@ export default function StockCharts({ historyData, loading, symbol }) {
                     data: historyData.free_cash_flow?.map(fcf => fcf ? fcf / 1e9 : null) || [],
                     borderColor: 'rgb(34, 197, 94)',
                     backgroundColor: 'rgba(34, 197, 94, 0.2)',
+                    pointRadius: activeIndex !== null ? 3 : 0,
+                    pointHoverRadius: 5
                   },
                 ],
               }}
@@ -177,7 +265,7 @@ export default function StockCharts({ historyData, loading, symbol }) {
 
           {/* Dividend Yield */}
           <div className="chart-container">
-            <Line plugins={[zeroLinePlugin]}
+            <Line plugins={[zeroLinePlugin, crosshairPlugin]}
               data={{
                 labels: labels,
                 datasets: [
@@ -186,6 +274,8 @@ export default function StockCharts({ historyData, loading, symbol }) {
                     data: historyData.dividend_yield,
                     borderColor: 'rgb(255, 205, 86)',
                     backgroundColor: 'rgba(255, 205, 86, 0.2)',
+                    pointRadius: activeIndex !== null ? 3 : 0,
+                    pointHoverRadius: 5
                   }
                 ]
               }}
@@ -202,7 +292,7 @@ export default function StockCharts({ historyData, loading, symbol }) {
         <div className="charts-row">
           {/* Stock Price */}
           <div className="chart-container">
-            <Line plugins={[zeroLinePlugin]}
+            <Line plugins={[zeroLinePlugin, crosshairPlugin]}
               data={{
                 labels: labels,
                 datasets: [
@@ -211,6 +301,8 @@ export default function StockCharts({ historyData, loading, symbol }) {
                     data: historyData.price,
                     borderColor: 'rgb(255, 159, 64)',
                     backgroundColor: 'rgba(255, 159, 64, 0.2)',
+                    pointRadius: activeIndex !== null ? 3 : 0,
+                    pointHoverRadius: 5
                   },
                 ],
               }}
@@ -220,7 +312,7 @@ export default function StockCharts({ historyData, loading, symbol }) {
 
           {/* P/E Ratio */}
           <div className="chart-container">
-            <Line plugins={[zeroLinePlugin]}
+            <Line plugins={[zeroLinePlugin, crosshairPlugin]}
               data={{
                 labels: labels,
                 datasets: [
@@ -229,6 +321,8 @@ export default function StockCharts({ historyData, loading, symbol }) {
                     data: historyData.pe_ratio,
                     borderColor: 'rgb(201, 203, 207)',
                     backgroundColor: 'rgba(201, 203, 207, 0.2)',
+                    pointRadius: activeIndex !== null ? 3 : 0,
+                    pointHoverRadius: 5
                   }
                 ]
               }}
@@ -238,7 +332,7 @@ export default function StockCharts({ historyData, loading, symbol }) {
 
           {/* Debt-to-Equity */}
           <div className="chart-container">
-            <Line plugins={[zeroLinePlugin]}
+            <Line plugins={[zeroLinePlugin, crosshairPlugin]}
               data={{
                 labels: labels,
                 datasets: [
@@ -247,6 +341,8 @@ export default function StockCharts({ historyData, loading, symbol }) {
                     data: historyData.debt_to_equity,
                     borderColor: 'rgb(255, 99, 132)',
                     backgroundColor: 'rgba(255, 99, 132, 0.2)',
+                    pointRadius: activeIndex !== null ? 3 : 0,
+                    pointHoverRadius: 5
                   }
                 ]
               }}
