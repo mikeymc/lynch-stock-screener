@@ -3,7 +3,8 @@
 
 import { useState, useCallback } from 'react'
 import { Line } from 'react-chartjs-2'
-import ChartAnalysis from './ChartAnalysis'
+import UnifiedChartAnalysis from './UnifiedChartAnalysis'
+import ReactMarkdown from 'react-markdown'
 import {
   Chart as ChartJS,
   CategoryScale,
@@ -28,6 +29,7 @@ ChartJS.register(
 
 export default function StockCharts({ historyData, loading, symbol }) {
   const [activeIndex, setActiveIndex] = useState(null)
+  const [analyses, setAnalyses] = useState({ growth: null, cash: null, valuation: null })
 
   const handleHover = useCallback((event, elements) => {
     if (elements && elements.length > 0) {
@@ -151,7 +153,11 @@ export default function StockCharts({ historyData, loading, symbol }) {
   })
 
   return (
-    <div className="charts-container" onMouseLeave={handleMouseLeave}>
+    <div className="stock-charts" onMouseLeave={handleMouseLeave}>
+      <UnifiedChartAnalysis
+        symbol={symbol}
+        onAnalysisGenerated={(sections) => setAnalyses(sections)}
+      />
       {/* SECTION 1: Growth & Profitability */}
       <div className="chart-section">
         <h3 className="section-title">Growth & Profitability</h3>
@@ -216,7 +222,13 @@ export default function StockCharts({ historyData, loading, symbol }) {
             />
           </div>
         </div>
-        <ChartAnalysis symbol={symbol} section="growth" />
+        {analyses.growth && (
+          <div style={{ marginTop: '1rem', padding: '1rem', backgroundColor: '#1e293b', borderRadius: '0.5rem', border: '1px solid #334155' }}>
+            <div className="markdown-content">
+              <ReactMarkdown>{analyses.growth}</ReactMarkdown>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* SECTION 2: Cash Management */}
@@ -283,7 +295,13 @@ export default function StockCharts({ historyData, loading, symbol }) {
             />
           </div>
         </div>
-        <ChartAnalysis symbol={symbol} section="cash" />
+        {analyses.cash && (
+          <div style={{ marginTop: '1rem', padding: '1rem', backgroundColor: '#1e293b', borderRadius: '0.5rem', border: '1px solid #334155' }}>
+            <div className="markdown-content">
+              <ReactMarkdown>{analyses.cash}</ReactMarkdown>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* SECTION 3: Market Valuation & Risk */}
@@ -350,7 +368,13 @@ export default function StockCharts({ historyData, loading, symbol }) {
             />
           </div>
         </div>
-        <ChartAnalysis symbol={symbol} section="valuation" />
+        {analyses.valuation && (
+          <div style={{ marginTop: '1rem', padding: '1rem', backgroundColor: '#1e293b', borderRadius: '0.5rem', border: '1px solid #334155' }}>
+            <div className="markdown-content">
+              <ReactMarkdown>{analyses.valuation}</ReactMarkdown>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   )

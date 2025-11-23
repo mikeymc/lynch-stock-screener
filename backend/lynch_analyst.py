@@ -248,6 +248,55 @@ Write a ~200 word analysis in the style of Peter Lynch. Be conversational, insig
         
         return response.text
 
+    def generate_unified_chart_analysis(self, stock_data: Dict[str, Any], history: List[Dict[str, Any]]) -> Dict[str, str]:
+        """
+        Generate a unified Peter Lynch-style analysis for all three chart sections.
+        The analysis will be cohesive with shared context across sections.
+
+        Args:
+            stock_data: Dict containing current stock metrics
+            history: List of dicts containing historical earnings/revenue data
+
+        Returns:
+            Dict with keys 'growth', 'cash', 'valuation' containing analysis text for each section
+        """
+        # Load the unified prompt template
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        prompt_path = os.path.join(script_dir, "chart_analysis_prompt.md")
+        
+        with open(prompt_path, 'r') as f:
+            prompt_template = f.read()
+
+        # Prepare template variables
+        template_vars = self._prepare_template_vars(stock_data, history)
+        
+        # Format the prompt
+        final_prompt = prompt_template.format(**template_vars)
+        
+        # Generate unified analysis
+        model = genai.GenerativeModel(self.model_version)
+        response = model.generate_content(final_prompt)
+        analysis_text = response.text
+        
+        # Parse the response into three sections
+        # Look for markdown headers to split sections
+        sections = {'growth': '', 'cash': '', 'valuation': ''}
+        
+        # Split by section headers
+        import re
+        growth_match = re.search(r'###\s*Growth\s*&\s*Profitability\s*\n(.*?)(?=###|$)', analysis_text, re.DOTALL | re.IGNORECASE)
+        cash_match = re.search(r'###\s*Cash\s*Flow\s*\n(.*?)(?=###|$)', analysis_text, re.DOTALL | re.IGNORECASE)
+        valuation_match = re.search(r'###\s*Valuation\s*\n(.*?)(?=###|$)', analysis_text, re.DOTALL | re.IGNORECASE)
+        
+        if growth_match:
+            sections['growth'] = growth_match.group(1).strip()
+        if cash_match:
+            sections['cash'] = cash_match.group(1).strip()
+        if valuation_match:
+            sections['valuation'] = valuation_match.group(1).strip()
+            
+        return sections
+
     def get_or_generate_analysis(
         self,
         symbol: str,
