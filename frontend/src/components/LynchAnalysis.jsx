@@ -11,7 +11,7 @@ function LynchAnalysis({ symbol, stockName, onAnalysisLoaded }) {
   const [cached, setCached] = useState(false)
   const [refreshing, setRefreshing] = useState(false)
 
-  const fetchAnalysis = async (forceRefresh = false) => {
+  const fetchAnalysis = async (forceRefresh = false, signal = null) => {
     try {
       if (forceRefresh) {
         setRefreshing(true)
@@ -26,7 +26,7 @@ function LynchAnalysis({ symbol, stockName, onAnalysisLoaded }) {
 
       const method = forceRefresh ? 'POST' : 'GET'
 
-      const response = await fetch(url, { method })
+      const response = await fetch(url, { method, signal })
 
       if (!response.ok) {
         throw new Error(`Failed to fetch analysis: ${response.statusText}`)
@@ -42,6 +42,10 @@ function LynchAnalysis({ symbol, stockName, onAnalysisLoaded }) {
         onAnalysisLoaded(data.analysis)
       }
     } catch (err) {
+      if (err.name === 'AbortError') {
+        console.log('Fetch aborted')
+        return
+      }
       console.error('Error fetching Lynch analysis:', err)
       setError(err.message)
     } finally {
@@ -56,7 +60,9 @@ function LynchAnalysis({ symbol, stockName, onAnalysisLoaded }) {
 
   // Auto-fetch analysis on mount
   useEffect(() => {
-    fetchAnalysis()
+    const controller = new AbortController()
+    fetchAnalysis(false, controller.signal)
+    return () => controller.abort()
   }, [symbol])
 
   const formatDate = (isoString) => {

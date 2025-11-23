@@ -140,6 +140,18 @@ class Database:
         """)
 
         cursor.execute("""
+            CREATE TABLE IF NOT EXISTS chart_analyses (
+                symbol TEXT,
+                section TEXT,
+                analysis_text TEXT,
+                generated_at TIMESTAMP,
+                model_version TEXT,
+                PRIMARY KEY (symbol, section),
+                FOREIGN KEY (symbol) REFERENCES stocks(symbol)
+            )
+        """)
+
+        cursor.execute("""
             CREATE TABLE IF NOT EXISTS watchlist (
                 symbol TEXT PRIMARY KEY,
                 added_at TIMESTAMP,
@@ -533,6 +545,39 @@ class Database:
             'analysis_text': row[1],
             'generated_at': row[2],
             'model_version': row[3]
+        }
+
+    def set_chart_analysis(self, symbol: str, section: str, analysis_text: str, model_version: str):
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        cursor.execute("""
+            INSERT OR REPLACE INTO chart_analyses
+            (symbol, section, analysis_text, generated_at, model_version)
+            VALUES (?, ?, ?, ?, ?)
+        """, (symbol, section, analysis_text, datetime.now().isoformat(), model_version))
+        conn.commit()
+        conn.close()
+
+    def get_chart_analysis(self, symbol: str, section: str) -> Optional[Dict[str, Any]]:
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT symbol, section, analysis_text, generated_at, model_version
+            FROM chart_analyses
+            WHERE symbol = ? AND section = ?
+        """, (symbol, section))
+        row = cursor.fetchone()
+        conn.close()
+
+        if not row:
+            return None
+
+        return {
+            'symbol': row[0],
+            'section': row[1],
+            'analysis_text': row[2],
+            'generated_at': row[3],
+            'model_version': row[4]
         }
 
     def create_session(self, total_analyzed: int, pass_count: int, close_count: int, fail_count: int) -> int:

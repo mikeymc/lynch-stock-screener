@@ -674,13 +674,30 @@ def get_chart_analysis(symbol):
         'revenue_cagr': evaluation.get('revenue_cagr') if evaluation else None
     }
 
+    # Check cache first
+    cached_analysis = db.get_chart_analysis(symbol, section)
+    if cached_analysis:
+        return jsonify({
+            'analysis': cached_analysis['analysis_text'],
+            'cached': True,
+            'generated_at': cached_analysis['generated_at']
+        })
+
     try:
         analysis_text = lynch_analyst.generate_chart_analysis(
             stock_data,
             history,
             section
         )
-        return jsonify({'analysis': analysis_text})
+        
+        # Save to cache
+        db.set_chart_analysis(symbol, section, analysis_text, lynch_analyst.model_version)
+        
+        return jsonify({
+            'analysis': analysis_text,
+            'cached': False,
+            'generated_at': datetime.now().isoformat()
+        })
     except Exception as e:
         print(f"Error generating chart analysis for {symbol} section {section}: {e}")
         return jsonify({'error': f'Failed to generate analysis: {str(e)}'}), 500
