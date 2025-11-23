@@ -29,6 +29,19 @@ ChartJS.register(
 export default function StockCharts({ historyData, loading, symbol }) {
   const [activeIndex, setActiveIndex] = useState(null)
 
+  const handleHover = useCallback((event, elements) => {
+    if (elements && elements.length > 0) {
+      const index = elements[0].index;
+      if (index !== activeIndex) {
+        setActiveIndex(index);
+      }
+    }
+  }, [activeIndex]);
+
+  const handleMouseLeave = useCallback(() => {
+    setActiveIndex(null);
+  }, []);
+
   if (loading) {
     return <div className="loading">Loading historical data...</div>
   }
@@ -95,19 +108,6 @@ export default function StockCharts({ historyData, loading, symbol }) {
       }
     }
   };
-
-  const handleHover = useCallback((event, elements) => {
-    if (elements && elements.length > 0) {
-      const index = elements[0].index;
-      if (index !== activeIndex) {
-        setActiveIndex(index);
-      }
-    }
-  }, [activeIndex]);
-
-  const handleMouseLeave = useCallback(() => {
-    setActiveIndex(null);
-  }, []);
 
   // Helper function to create chart options
   const createChartOptions = (title, yAxisLabel) => ({
