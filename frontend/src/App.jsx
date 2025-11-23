@@ -219,17 +219,43 @@ function StockListView({
           const results = sessionData.results || []
           setStocks(results)
 
-          // Calculate counts from actual results instead of trusting stored metadata
-          const passCount = results.filter(s => s.overall_status === 'PASS').length
-          const closeCount = results.filter(s => s.overall_status === 'CLOSE').length
-          const failCount = results.filter(s => s.overall_status === 'FAIL').length
+          // Calculate counts based on the algorithm type
+          // Check if we have new algorithm statuses or old ones
+          const hasNewStatuses = results.some(s =>
+            ['STRONG_BUY', 'BUY', 'HOLD', 'CAUTION', 'AVOID'].includes(s.overall_status)
+          )
 
-          setSummary({
-            totalAnalyzed: results.length,
-            passCount,
-            closeCount,
-            failCount
-          })
+          if (hasNewStatuses) {
+            // New algorithm statuses
+            const strongBuyCount = results.filter(s => s.overall_status === 'STRONG_BUY').length
+            const buyCount = results.filter(s => s.overall_status === 'BUY').length
+            const holdCount = results.filter(s => s.overall_status === 'HOLD').length
+            const cautionCount = results.filter(s => s.overall_status === 'CAUTION').length
+            const avoidCount = results.filter(s => s.overall_status === 'AVOID').length
+
+            setSummary({
+              totalAnalyzed: results.length,
+              strong_buy_count: strongBuyCount,
+              buy_count: buyCount,
+              hold_count: holdCount,
+              caution_count: cautionCount,
+              avoid_count: avoidCount,
+              algorithm: 'weighted' // Assume weighted for new statuses
+            })
+          } else {
+            // Old algorithm statuses (classic)
+            const passCount = results.filter(s => s.overall_status === 'PASS').length
+            const closeCount = results.filter(s => s.overall_status === 'CLOSE').length
+            const failCount = results.filter(s => s.overall_status === 'FAIL').length
+
+            setSummary({
+              totalAnalyzed: results.length,
+              passCount,
+              closeCount,
+              failCount,
+              algorithm: 'classic'
+            })
+          }
         } else if (response.status === 404) {
           // No sessions yet, this is okay
           setStocks([])
