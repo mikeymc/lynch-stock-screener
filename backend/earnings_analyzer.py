@@ -63,16 +63,31 @@ class EarningsAnalyzer:
             return None
 
         growth_rates = []
+        negative_year_penalty = 0
+        has_negative_years = False
+        
         for i in range(1, len(values)):
             if values[i] is not None and values[i-1] is not None and values[i-1] > 0:
                 growth_rate = ((values[i] - values[i-1]) / values[i-1]) * 100
                 growth_rates.append(growth_rate)
+            
+            # Track negative net income years
+            if values[i] is not None and values[i] < 0:
+                negative_year_penalty += 50  # Add 50 to std_dev for each negative year
+                has_negative_years = True
 
-        if not growth_rates:
+        # If we have negative years but insufficient valid growth rates,
+        # return a high penalty instead of None (which would default to neutral 50)
+        if has_negative_years and len(growth_rates) < 3:
+            return 200  # Very high std_dev = very low consistency score
+
+        # Require at least 3 valid growth rate calculations for meaningful consistency
+        if len(growth_rates) < 3:
             return None
 
         mean = sum(growth_rates) / len(growth_rates)
         variance = sum((x - mean) ** 2 for x in growth_rates) / len(growth_rates)
         std_dev = math.sqrt(variance)
-
-        return std_dev
+        
+        # Add penalty for negative years to the standard deviation
+        return std_dev + negative_year_penalty

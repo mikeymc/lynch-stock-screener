@@ -603,6 +603,13 @@ class Database:
     def save_screening_result(self, session_id: int, result_data: Dict[str, Any]):
         conn = self.get_connection()
         cursor = conn.cursor()
+        
+        # Delete existing result for this session/symbol to prevent duplicates
+        cursor.execute("""
+            DELETE FROM screening_results 
+            WHERE session_id = ? AND symbol = ?
+        """, (session_id, result_data.get('symbol')))
+        
         cursor.execute("""
             INSERT INTO screening_results
             (session_id, symbol, company_name, country, market_cap, sector, ipo_year,
