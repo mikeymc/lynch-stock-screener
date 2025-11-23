@@ -3,6 +3,7 @@
 
 import os
 from typing import Dict, Any, List, Optional
+from datetime import datetime
 import google.generativeai as genai
 
 
@@ -61,19 +62,19 @@ class LynchAnalyst:
         # Format historical data for the prompt
         history_lines = []
         for h in sorted(history, key=lambda x: x['year']):
-            eps = h.get('eps')
+            net_income = h.get('net_income')
             revenue = h.get('revenue')
             ocf = h.get('operating_cash_flow')
             capex = h.get('capital_expenditures')
             fcf = h.get('free_cash_flow')
             
-            eps_str = f"${eps:.2f}" if eps is not None else "N/A"
+            net_income_str = f"${net_income/1e9:.2f}B" if net_income is not None else "N/A"
             revenue_str = f"${revenue/1e9:.2f}B" if revenue is not None else "N/A"
             ocf_str = f"${ocf/1e9:.2f}B" if ocf is not None else "N/A"
             capex_str = f"${abs(capex)/1e9:.2f}B" if capex is not None else "N/A"
             fcf_str = f"${fcf/1e9:.2f}B" if fcf is not None else "N/A"
             
-            history_lines.append(f"  {h['year']}: EPS={eps_str}, Revenue={revenue_str}, OCF={ocf_str}, CapEx={capex_str}, FCF={fcf_str}")
+            history_lines.append(f"  {h['year']}: Net Income={net_income_str}, Revenue={revenue_str}, OCF={ocf_str}, CapEx={capex_str}, FCF={fcf_str}")
         history_text = "\n".join(history_lines)
 
         # Prepare a dictionary of values for formatting
@@ -83,6 +84,8 @@ class LynchAnalyst:
         market_cap = stock_data.get('market_cap') or 0
         
         template_vars = {
+            'current_date': datetime.now().strftime('%B %d, %Y'),
+            'current_year': datetime.now().year,
             'company_name': stock_data.get('company_name', 'N/A'),
             'symbol': stock_data.get('symbol', 'N/A'),
             'sector': stock_data.get('sector', 'N/A'),
