@@ -38,10 +38,46 @@ def health():
     return jsonify({'status': 'healthy'})
 
 
+
 @app.route('/api/algorithms', methods=['GET'])
 def get_algorithms():
     """Return metadata for all available scoring algorithms."""
     return jsonify(ALGORITHM_METADATA)
+
+
+@app.route('/api/settings', methods=['GET'])
+def get_settings():
+    """Get all application settings."""
+    try:
+        settings = db.get_all_settings()
+        return jsonify(settings)
+    except Exception as e:
+        print(f"Error getting settings: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/settings', methods=['POST'])
+def update_settings():
+    """Update application settings."""
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({'error': 'No data provided'}), 400
+            
+        for key, item in data.items():
+            value = item.get('value')
+            description = item.get('description')
+            
+            # Update setting in DB
+            db.set_setting(key, value, description)
+            
+        # Reload settings in criteria object
+        criteria.reload_settings()
+        
+        return jsonify({'success': True})
+    except Exception as e:
+        print(f"Error updating settings: {e}")
+        return jsonify({'error': str(e)}), 500
 
 
 @app.route('/api/stock/<symbol>', methods=['GET'])

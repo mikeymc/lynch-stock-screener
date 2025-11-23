@@ -86,25 +86,32 @@ ALGORITHM_METADATA = {
 
 
 class LynchCriteria:
-    # PEG Ratio thresholds (lower is better)
-    PEG_EXCELLENT = 1.0
-    PEG_GOOD = 1.5
-    PEG_FAIR = 2.0
-
-    # Debt to Equity thresholds (lower is better)
-    DEBT_EXCELLENT = 0.5
-    DEBT_GOOD = 1.0
-    DEBT_MODERATE = 2.0
-
-    # Institutional Ownership thresholds (sweet spot in middle)
-    INST_OWN_TOO_LOW = 0.20
-    INST_OWN_IDEAL_MIN = 0.20
-    INST_OWN_IDEAL_MAX = 0.60
-    INST_OWN_TOO_HIGH = 0.60
+    # Constants removed in favor of dynamic settings
+    # See self.settings in __init__
 
     def __init__(self, db: Database, analyzer: EarningsAnalyzer):
         self.db = db
         self.analyzer = analyzer
+        
+        # Initialize default settings if needed
+        self.db.init_default_settings()
+        self.reload_settings()
+
+    def reload_settings(self):
+        """Reload settings from database."""
+        self.settings = self.db.get_all_settings()
+        
+        # Cache values for easy access
+        self.peg_excellent = self.settings['peg_excellent']['value']
+        self.peg_good = self.settings['peg_good']['value']
+        self.peg_fair = self.settings['peg_fair']['value']
+        
+        self.debt_excellent = self.settings['debt_excellent']['value']
+        self.debt_good = self.settings['debt_good']['value']
+        self.debt_moderate = self.settings['debt_moderate']['value']
+        
+        self.inst_own_min = self.settings['inst_own_min']['value']
+        self.inst_own_max = self.settings['inst_own_max']['value']
 
     def evaluate_stock(self, symbol: str, algorithm: str = 'weighted') -> Optional[Dict[str, Any]]:
         """
@@ -219,10 +226,10 @@ class LynchCriteria:
     def _evaluate_weighted(self, symbol: str, base_data: Dict[str, Any]) -> Dict[str, Any]:
         """Weighted scoring: PEG 50%, Consistency 25%, Debt 15%, Ownership 10%."""
         # Calculate weighted score
-        peg_weight = 0.50
-        consistency_weight = 0.25
-        debt_weight = 0.15
-        ownership_weight = 0.10
+        peg_weight = self.settings['weight_peg']['value']
+        consistency_weight = self.settings['weight_consistency']['value']
+        debt_weight = self.settings['weight_debt']['value']
+        ownership_weight = self.settings['weight_ownership']['value']
 
         # Get consistency score (0-100), default to 50 if not available
         consistency_score = base_data.get('consistency_score', 50) if base_data.get('consistency_score') is not None else 50
@@ -537,9 +544,9 @@ class LynchCriteria:
         """Evaluate PEG ratio: lower is better"""
         if value is None:
             return "FAIL"
-        if value <= self.PEG_EXCELLENT:
+        if value <= self.peg_excellent:
             return "PASS"
-        elif value <= self.PEG_GOOD:
+        elif value <= self.peg_good:
             return "CLOSE"
         else:
             return "FAIL"
@@ -554,24 +561,24 @@ class LynchCriteria:
         """
         if value is None:
             return 0.0
-        if value <= self.PEG_EXCELLENT:
+        if value <= self.peg_excellent:
             return 100.0
-        elif value <= self.PEG_GOOD:
+        elif value <= self.peg_good:
             # 75-100 range
-            range_size = self.PEG_GOOD - self.PEG_EXCELLENT
-            position = (self.PEG_GOOD - value) / range_size
+            range_size = self.peg_good - self.peg_excellent
+            position = (self.peg_good - value) / range_size
             return 75.0 + (25.0 * position)
-        elif value <= self.PEG_FAIR:
+        elif value <= self.peg_fair:
             # 25-75 range
-            range_size = self.PEG_FAIR - self.PEG_GOOD
-            position = (self.PEG_FAIR - value) / range_size
+            range_size = self.peg_fair - self.peg_good
+            position = (self.peg_fair - value) / range_size
             return 25.0 + (50.0 * position)
         else:
             # 0-25 range, cap at 4.0
             max_poor = 4.0
             if value >= max_poor:
                 return 0.0
-            range_size = max_poor - self.PEG_FAIR
+            range_size = max_poor - self.peg_fair
             position = (max_poor - value) / range_size
             return 25.0 * position
 
@@ -579,9 +586,9 @@ class LynchCriteria:
         """Evaluate Debt to Equity: lower is better"""
         if value is None:
             return "FAIL"
-        if value <= self.DEBT_EXCELLENT:
+        if value <= self.debt_excellent:
             return "PASS"
-        elif value <= self.DEBT_GOOD:
+        elif value <= self.debt_good:
             return "CLOSE"
         else:
             return "FAIL"
@@ -596,24 +603,24 @@ class LynchCriteria:
         """
         if value is None:
             return 0.0
-        if value <= self.DEBT_EXCELLENT:
+        if value <= self.debt_excellent:
             return 100.0
-        elif value <= self.DEBT_GOOD:
+        elif value <= self.debt_good:
             # 75-100 range
-            range_size = self.DEBT_GOOD - self.DEBT_EXCELLENT
-            position = (self.DEBT_GOOD - value) / range_size
+            range_size = self.debt_good - self.debt_excellent
+            position = (self.debt_good - value) / range_size
             return 75.0 + (25.0 * position)
-        elif value <= self.DEBT_MODERATE:
+        elif value <= self.debt_moderate:
             # 25-75 range
-            range_size = self.DEBT_MODERATE - self.DEBT_GOOD
-            position = (self.DEBT_MODERATE - value) / range_size
+            range_size = self.debt_moderate - self.debt_good
+            position = (self.debt_moderate - value) / range_size
             return 25.0 + (50.0 * position)
         else:
             # 0-25 range, cap at 5.0
             max_high = 5.0
             if value >= max_high:
                 return 0.0
-            range_size = max_high - self.DEBT_MODERATE
+            range_size = max_high - self.debt_moderate
             position = (max_high - value) / range_size
             return 25.0 * position
 
@@ -621,12 +628,13 @@ class LynchCriteria:
         """Evaluate Institutional Ownership: sweet spot in middle (20%-60%)"""
         if value is None:
             return "FAIL"
-        if self.INST_OWN_IDEAL_MIN <= value <= self.INST_OWN_IDEAL_MAX:
+        if self.inst_own_min <= value <= self.inst_own_max:
             return "PASS"
-        elif value < self.INST_OWN_TOO_LOW or value > self.INST_OWN_TOO_HIGH:
-            return "FAIL"
         else:
-            return "CLOSE"
+            # Check if it's close (within 10% of range)
+            if (self.inst_own_min - 0.10) <= value <= (self.inst_own_max + 0.10):
+                return "CLOSE"
+            return "FAIL"
 
     def calculate_institutional_ownership_score(self, value: float) -> float:
         """
@@ -638,26 +646,26 @@ class LynchCriteria:
         if value is None:
             return 0.0
 
-        # Ideal range: 20%-60%, peak at 40%
-        ideal_center = 0.40
+        # Ideal range: peak at center of min/max
+        ideal_center = (self.inst_own_min + self.inst_own_max) / 2
 
-        if self.INST_OWN_IDEAL_MIN <= value <= self.INST_OWN_IDEAL_MAX:
+        if self.inst_own_min <= value <= self.inst_own_max:
             # In ideal range: score 75-100
             # Calculate distance from center
             distance_from_center = abs(value - ideal_center)
-            max_distance = ideal_center - self.INST_OWN_IDEAL_MIN  # 0.20
+            max_distance = ideal_center - self.inst_own_min
             position = 1.0 - (distance_from_center / max_distance)
             return 75.0 + (25.0 * position)
-        elif value < self.INST_OWN_IDEAL_MIN:
+        elif value < self.inst_own_min:
             # Too low: 0-75
             if value <= 0:
                 return 0.0
-            position = value / self.INST_OWN_IDEAL_MIN
+            position = value / self.inst_own_min
             return 75.0 * position
         else:
             # Too high: 75-0
             if value >= 1.0:
                 return 0.0
-            range_size = 1.0 - self.INST_OWN_IDEAL_MAX
+            range_size = 1.0 - self.inst_own_max
             position = (1.0 - value) / range_size
             return 75.0 * position

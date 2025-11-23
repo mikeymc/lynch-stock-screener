@@ -258,6 +258,14 @@ class Database:
             )
         """)
 
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS app_settings (
+                key TEXT PRIMARY KEY,
+                value TEXT,
+                description TEXT
+            )
+        """)
+
         # Migration: Add fiscal_end column if it doesn't exist
         cursor.execute("PRAGMA table_info(earnings_history)")
         columns = [row[1] for row in cursor.fetchall()]
@@ -888,3 +896,88 @@ class Database:
         last_updated = datetime.fromisoformat(row[0])
         age_days = (datetime.now() - last_updated).total_seconds() / 86400
         return age_days < max_age_days
+
+    def get_setting(self, key: str, default: Any = None) -> Any:
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT value FROM app_settings WHERE key = ?", (key,))
+        row = cursor.fetchone()
+        conn.close()
+
+        if row:
+            import json
+            try:
+                return json.loads(row[0])
+            except json.JSONDecodeError:
+                return row[0]
+        return default
+
+    def set_setting(self, key: str, value: Any, description: str = None):
+        import json
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        
+        json_value = json.dumps(value)
+        
+        if description:
+            cursor.execute("""
+                INSERT OR REPLACE INTO app_settings (key, value, description)
+                VALUES (?, ?, ?)
+            """, (key, json_value, description))
+        else:
+            # Keep existing description if updating
+            cursor.execute("SELECT description FROM app_settings WHERE key = ?", (key,))
+            row = cursor.fetchone()
+            existing_desc = row[0] if row else None
+            
+            cursor.execute("""
+                INSERT OR REPLACE INTO app_settings (key, value, description)
+                VALUES (?, ?, ?)
+            """, (key, json_value, existing_desc))
+            
+        conn.commit()
+        conn.close()
+
+    def get_all_settings(self) -> Dict[str, Any]:
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT key, value, description FROM app_settings")
+        rows = cursor.fetchall()
+        conn.close()
+
+        import json
+        settings = {}
+        for row in rows:
+            try:
+                value = json.loads(row[1])
+            except json.JSONDecodeError:
+                value = row[1]
+            
+            settings[row[0]] = {
+                'value': value,
+                'description': row[2]
+            }
+        return settings
+
+    def init_default_settings(self):
+        """Initialize default settings if they don't exist."""
+        defaults = {
+            'peg_excellent': {'value': 1.0, 'desc': 'Upper limit for Excellent PEG ratio'},
+            'peg_good': {'value': 1.5, 'desc': 'Upper limit for Good PEG ratio'},
+            'peg_fair': {'value': 2.0, 'desc': 'Upper limit for Fair PEG ratio'},
+            'debt_excellent': {'value': 0.5, 'desc': 'Upper limit for Excellent Debt/Equity'},
+            'debt_good': {'value': 1.0, 'desc': 'Upper limit for Good Debt/Equity'},
+            'debt_moderate': {'value': 2.0, 'desc': 'Upper limit for Moderate Debt/Equity'},
+            'inst_own_min': {'value': 0.20, 'desc': 'Minimum ideal institutional ownership'},
+            'inst_own_max': {'value': 0.60, 'desc': 'Maximum ideal institutional ownership'},
+            'weight_peg': {'value': 0.50, 'desc': 'Weight for PEG Score in Weighted Algo'},
+            'weight_consistency': {'value': 0.25, 'desc': 'Weight for Consistency in Weighted Algo'},
+            'weight_debt': {'value': 0.15, 'desc': 'Weight for Debt Score in Weighted Algo'},
+            'weight_ownership': {'value': 0.10, 'desc': 'Weight for Ownership in Weighted Algo'}
+        }
+
+        current_settings = self.get_all_settings()
+        
+        for key, data in defaults.items():
+            if key not in current_settings:
+                self.set_setting(key, data['value'], data['desc'])

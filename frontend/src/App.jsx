@@ -14,6 +14,7 @@ import {
 import LynchAnalysis from './components/LynchAnalysis'
 import ChatInterface from './components/ChatInterface'
 import StockDetail from './pages/StockDetail'
+import Settings from './pages/Settings'
 import AlgorithmSelector from './components/AlgorithmSelector'
 import StatusBar from './components/StatusBar'
 import './App.css'
@@ -435,9 +436,17 @@ function StockListView({
   return (
     <div className="app">
       <div className="controls">
-        <button onClick={() => screenStocks(null)} disabled={loading}>
-          Screen All Stocks
-        </button>
+        <div className="flex gap-2">
+          <button onClick={() => screenStocks(null)} disabled={loading}>
+            Screen All Stocks
+          </button>
+          <button
+            onClick={() => navigate('/settings')}
+            className="bg-slate-700 hover:bg-slate-600 px-4 py-2 rounded text-white flex items-center gap-2"
+          >
+            ⚙️
+          </button>
+        </div>
 
         <div className="filter-controls">
           <label>Search: </label>
@@ -747,6 +756,9 @@ function App() {
           watchlist={watchlist}
           toggleWatchlist={toggleWatchlist}
         />
+      } />
+      <Route path="/settings" element={
+        <Settings />
       } />
     </Routes>
   )
