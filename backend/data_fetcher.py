@@ -759,8 +759,41 @@ class DataFetcher:
                 results[symbol] = data
         return results
 
+    @retry_on_rate_limit(max_retries=3, initial_delay=2.0)
     def get_nyse_nasdaq_symbols(self) -> List[str]:
+        """
+        Get NYSE and NASDAQ symbols with database caching.
+        Cache expires after 24 hours.
+        """
+        # Check cache first
+        conn = self.db.get_connection()
+        cursor = conn.cursor()
+        
+        # Create cache table if it doesn't exist
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS symbol_cache (
+                id INTEGER PRIMARY KEY,
+                symbols TEXT,
+                last_updated TIMESTAMP
+            )
+        """)
+        
+        # Check if we have recent cached symbols (less than 24 hours old)
+        cursor.execute("""
+            SELECT symbols, last_updated FROM symbol_cache 
+            WHERE id = 1 AND datetime(last_updated) > datetime('now', '-24 hours')
+        """)
+        cached = cursor.fetchone()
+        
+        if cached:
+            conn.close()
+            symbols = cached[0].split(',')
+            print(f"Using cached symbol list ({len(symbols)} symbols, last updated: {cached[1]})")
+            return symbols
+        
+        # Fetch fresh symbols from GitHub
         try:
+            print("Fetching fresh symbol list from GitHub...")
             nyse_url = "https://raw.githubusercontent.com/rreichel3/US-Stock-Symbols/main/nyse/nyse_tickers.txt"
             nasdaq_url = "https://raw.githubusercontent.com/rreichel3/US-Stock-Symbols/main/nasdaq/nasdaq_tickers.txt"
 
@@ -768,12 +801,33 @@ class DataFetcher:
             nasdaq_symbols = pd.read_csv(nasdaq_url, header=None)[0].tolist()
 
             all_symbols = list(set(nyse_symbols + nasdaq_symbols))
-
             all_symbols = [s for s in all_symbols if isinstance(s, str)]
-
-            return sorted(all_symbols)
+            all_symbols = sorted(all_symbols)
+            
+            # Update cache
+            cursor.execute("""
+                INSERT OR REPLACE INTO symbol_cache (id, symbols, last_updated)
+                VALUES (1, ?, datetime('now'))
+            """, (','.join(all_symbols),))
+            conn.commit()
+            conn.close()
+            
+            print(f"Cached {len(all_symbols)} symbols")
+            return all_symbols
+            
         except Exception as e:
             print(f"Error fetching stock symbols: {type(e).__name__}: {str(e)}")
             import traceback
             traceback.print_exc()
+            
+            # If fetch fails, try to return stale cache as fallback
+            cursor.execute("SELECT symbols FROM symbol_cache WHERE id = 1")
+            stale_cached = cursor.fetchone()
+            conn.close()
+            
+            if stale_cached:
+                symbols = stale_cached[0].split(',')
+                print(f"Using stale cached symbols as fallback ({len(symbols)} symbols)")
+                return symbols
+            
             return []
