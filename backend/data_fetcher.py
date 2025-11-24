@@ -764,6 +764,7 @@ class DataFetcher:
         """
         Get NYSE and NASDAQ symbols with database caching.
         Cache expires after 24 hours.
+        Uses NASDAQ's official FTP server instead of GitHub.
         """
         # Check cache first
         conn = self.db.get_connection()
@@ -791,17 +792,28 @@ class DataFetcher:
             print(f"Using cached symbol list ({len(symbols)} symbols, last updated: {cached[1]})")
             return symbols
         
-        # Fetch fresh symbols from GitHub
+        # Fetch fresh symbols from NASDAQ FTP
         try:
-            print("Fetching fresh symbol list from GitHub...")
-            nyse_url = "https://raw.githubusercontent.com/rreichel3/US-Stock-Symbols/main/nyse/nyse_tickers.txt"
-            nasdaq_url = "https://raw.githubusercontent.com/rreichel3/US-Stock-Symbols/main/nasdaq/nasdaq_tickers.txt"
-
-            nyse_symbols = pd.read_csv(nyse_url, header=None)[0].tolist()
-            nasdaq_symbols = pd.read_csv(nasdaq_url, header=None)[0].tolist()
-
-            all_symbols = list(set(nyse_symbols + nasdaq_symbols))
-            all_symbols = [s for s in all_symbols if isinstance(s, str)]
+            print("Fetching fresh symbol list from NASDAQ FTP...")
+            
+            # NASDAQ's official FTP - includes both NASDAQ and NYSE listed stocks
+            nasdaq_url = "ftp://ftp.nasdaqtrader.com/symboldirectory/nasdaqlisted.txt"
+            other_url = "ftp://ftp.nasdaqtrader.com/symboldirectory/otherlisted.txt"
+            
+            # Read NASDAQ-listed stocks
+            nasdaq_df = pd.read_csv(nasdaq_url, sep='|')
+            nasdaq_symbols = nasdaq_df['Symbol'].tolist()
+            
+            # Read other exchanges (NYSE, AMEX, etc.)
+            other_df = pd.read_csv(other_url, sep='|')
+            other_symbols = other_df['ACT Symbol'].tolist()
+            
+            # Combine and clean
+            all_symbols = list(set(nasdaq_symbols + other_symbols))
+            all_symbols = [s.strip() for s in all_symbols if isinstance(s, str) and s.strip()]
+            
+            # Filter out test symbols and file trailer markers
+            all_symbols = [s for s in all_symbols if not s.startswith('File') and len(s) <= 5]
             all_symbols = sorted(all_symbols)
             
             # Update cache
@@ -812,11 +824,11 @@ class DataFetcher:
             conn.commit()
             conn.close()
             
-            print(f"Cached {len(all_symbols)} symbols")
+            print(f"Cached {len(all_symbols)} symbols from NASDAQ FTP")
             return all_symbols
             
         except Exception as e:
-            print(f"Error fetching stock symbols: {type(e).__name__}: {str(e)}")
+            print(f"Error fetching stock symbols from NASDAQ: {type(e).__name__}: {str(e)}")
             import traceback
             traceback.print_exc()
             
