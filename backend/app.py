@@ -3,6 +3,7 @@
 
 from flask import Flask, jsonify, request, Response, stream_with_context, send_from_directory
 from flask_cors import CORS
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import json
 import time
 import os
@@ -24,6 +25,8 @@ CORS(app)
 # Use /data volume for database in production, local path in development
 base_dir = os.path.dirname(os.path.abspath(__file__))
 db_path = os.environ.get('DB_PATH', '/data/stocks.db' if os.path.exists('/data') else os.path.join(base_dir, 'stocks.db'))
+print(f"Database path: {db_path}")
+print(f"Database exists: {os.path.exists(db_path)}")
 db = Database(db_path)
 fetcher = DataFetcher(db)
 analyzer = EarningsAnalyzer(db)
@@ -31,6 +34,7 @@ criteria = LynchCriteria(db, analyzer)
 schwab_client = SchwabClient()
 lynch_analyst = LynchAnalyst(db)
 conversation_manager = ConversationManager(db)
+
 
 
 @app.route('/api/health', methods=['GET'])
@@ -125,37 +129,103 @@ def screen_stocks():
             # Create a new screening session
             session_id = db.create_session(total_analyzed=0, pass_count=0, close_count=0, fail_count=0)
 
-            results = []
-            for i, symbol in enumerate(symbols, 1):
+            # Worker function to process a single stock
+            def process_stock(symbol):
                 try:
-                    yield f"data: {json.dumps({'type': 'progress', 'message': f'Analyzing {symbol} ({i}/{total})...'})}\n\n"
-
                     stock_data = fetcher.fetch_stock_data(symbol, force_refresh)
                     if not stock_data:
                         print(f"No stock data returned for {symbol}")
-                        continue
-
-                    # Send heartbeat after data fetch to keep connection alive
-                    yield f": heartbeat\n\n"
+                        return None
 
                     evaluation = criteria.evaluate_stock(symbol, algorithm=algorithm)
                     if not evaluation:
                         print(f"No evaluation returned for {symbol}")
-                        continue
-
-                    results.append(evaluation)
+                        return None
 
                     # Save result to session
                     db.save_screening_result(session_id, evaluation)
-
-                    yield f"data: {json.dumps({'type': 'stock_result', 'stock': evaluation})}\n\n"
-
-                    time.sleep(0.2)
+                    return evaluation
                 except Exception as e:
                     print(f"Error processing {symbol}: {e}")
                     import traceback
                     traceback.print_exc()
-                    continue
+                    return None
+
+            results = []
+            processed_count = 0
+            failed_symbols = []  # Track symbols that failed
+            
+            # Process stocks in batches using parallel workers
+            # Reduced to 3 workers to avoid rate limiting
+            BATCH_SIZE = 3
+            MAX_WORKERS = 3
+            BATCH_DELAY = 1.5  # seconds between batches for rate limiting
+            
+            with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
+                for batch_start in range(0, total, BATCH_SIZE):
+                    batch_end = min(batch_start + BATCH_SIZE, total)
+                    batch = symbols[batch_start:batch_end]
+                    
+                    # Submit batch to thread pool
+                    future_to_symbol = {executor.submit(process_stock, symbol): symbol for symbol in batch}
+                    
+                    # Collect results as they complete
+                    for future in as_completed(future_to_symbol):
+                        symbol = future_to_symbol[future]
+                        processed_count += 1
+                        
+                        try:
+                            evaluation = future.result()
+                            if evaluation:
+                                results.append(evaluation)
+                                yield f"data: {json.dumps({'type': 'stock_result', 'stock': evaluation})}\n\n"
+                            else:
+                                # Track failed stocks for retry
+                                failed_symbols.append(symbol)
+                            
+                            # Send progress update
+                            yield f"data: {json.dumps({'type': 'progress', 'message': f'Analyzed {symbol} ({processed_count}/{total})...'})}\n\n"
+                            
+                        except Exception as e:
+                            print(f"Error getting result for {symbol}: {e}")
+                            failed_symbols.append(symbol)
+                            yield f"data: {json.dumps({'type': 'progress', 'message': f'Error with {symbol} ({processed_count}/{total})'})}\n\n"
+                    
+                    # Rate limiting delay between batches
+                    if batch_end < total:
+                        time.sleep(BATCH_DELAY)
+                        yield f": heartbeat\n\n"
+
+            # Automatic retry pass for failed stocks
+            if failed_symbols:
+                retry_count = len(failed_symbols)
+                yield f"data: {json.dumps({'type': 'progress', 'message': f'Retrying {retry_count} failed stocks with conservative settings...'})}\n\n"
+                
+                # Wait a bit for rate limits to reset
+                time.sleep(5)
+                
+                # Retry failed stocks one at a time with longer delays
+                for i, symbol in enumerate(failed_symbols, 1):
+                    try:
+                        yield f"data: {json.dumps({'type': 'progress', 'message': f'Retry {i}/{retry_count}: {symbol}...'})}\n\n"
+                        
+                        evaluation = process_stock(symbol)
+                        if evaluation:
+                            results.append(evaluation)
+                            yield f"data: {json.dumps({'type': 'stock_result', 'stock': evaluation})}\n\n"
+                            yield f"data: {json.dumps({'type': 'progress', 'message': f'✓ Retry succeeded for {symbol}'})}\n\n"
+                        else:
+                            yield f"data: {json.dumps({'type': 'progress', 'message': f'✗ Retry failed for {symbol}'})}\n\n"
+                        
+                        # Longer delay between retries to avoid rate limits
+                        time.sleep(2)
+                    except Exception as e:
+                        print(f"Retry error for {symbol}: {e}")
+                        yield f"data: {json.dumps({'type': 'progress', 'message': f'✗ Retry error for {symbol}'})}\n\n"
+                        time.sleep(2)
+                
+                yield f"data: {json.dumps({'type': 'progress', 'message': f'Retry pass complete. Successfully recovered {len(results) - (total - retry_count)} stocks.'})}\n\n"
+
 
             # Group results by status - support both old and new status formats
             results_by_status = {}

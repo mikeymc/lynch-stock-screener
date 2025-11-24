@@ -3,6 +3,7 @@
 
 import yfinance as yf
 import logging
+import time
 from typing import Dict, Any, Optional, List
 from database import Database
 from edgar_fetcher import EdgarFetcher
@@ -10,6 +11,31 @@ from timeout_utils import call_with_timeout
 import pandas as pd
 
 logger = logging.getLogger(__name__)
+
+
+def retry_on_rate_limit(max_retries=3, initial_delay=1.0):
+    """Decorator to retry API calls with exponential backoff on rate limit errors"""
+    def decorator(func):
+        def wrapper(*args, **kwargs):
+            delay = initial_delay
+            for attempt in range(max_retries):
+                try:
+                    return func(*args, **kwargs)
+                except Exception as e:
+                    error_msg = str(e).lower()
+                    # Check for rate limit indicators
+                    if '429' in error_msg or 'rate limit' in error_msg or 'too many requests' in error_msg:
+                        if attempt < max_retries - 1:
+                            logger.warning(f"Rate limit hit in {func.__name__}, retrying in {delay}s (attempt {attempt + 1}/{max_retries})")
+                            time.sleep(delay)
+                            delay *= 2  # Exponential backoff
+                            continue
+                    # Re-raise if not a rate limit error or max retries exceeded
+                    raise
+            return None
+        return wrapper
+    return decorator
+
 
 
 class DataFetcher:
@@ -66,6 +92,7 @@ class DataFetcher:
             return stock.cashflow
         return call_with_timeout(fetch_cashflow, 15, default=None)
 
+    @retry_on_rate_limit(max_retries=3, initial_delay=1.0)
     def fetch_stock_data(self, symbol: str, force_refresh: bool = False) -> Optional[Dict[str, Any]]:
         if not force_refresh and self.db.is_cache_valid(symbol):
             return self.db.get_stock_metrics(symbol)

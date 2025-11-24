@@ -2,6 +2,7 @@
 # ABOUTME: Provides schema and operations for storing and retrieving stock information
 
 import sqlite3
+import threading
 from datetime import datetime
 from typing import Optional, Dict, Any, List
 
@@ -9,10 +10,21 @@ from typing import Optional, Dict, Any, List
 class Database:
     def __init__(self, db_path: str = "stocks.db"):
         self.db_path = db_path
+        self._lock = threading.Lock()
+        # Enable WAL mode globally for better concurrent access
+        conn = sqlite3.connect(self.db_path)
+        conn.execute("PRAGMA journal_mode = WAL")
+        conn.close()
         self.init_schema()
 
     def get_connection(self):
-        conn = sqlite3.connect(self.db_path)
+        # Create a new connection for each call
+        # WAL mode allows multiple readers and one writer concurrently
+        conn = sqlite3.connect(
+            self.db_path, 
+            check_same_thread=False, 
+            timeout=30.0
+        )
         conn.execute("PRAGMA foreign_keys = ON")
         return conn
 
