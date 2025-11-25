@@ -105,7 +105,10 @@ def run_screening_background(session_id: int, symbols: list, algorithm: str, for
     Updates progress in database as stocks are processed.
     """
     try:
-        print(f"[Session {session_id}] Starting background screening of {len(symbols)} stocks")
+        print(f"[Session {session_id}] ===== BACKGROUND THREAD STARTED =====")
+        print(f"[Session {session_id}] Symbols to process: {len(symbols)}")
+        print(f"[Session {session_id}] Algorithm: {algorithm}")
+        print(f"[Session {session_id}] Force refresh: {force_refresh}")
         
         # Worker function to process a single stock
         def process_stock(symbol):
@@ -302,18 +305,25 @@ def start_screening():
     algorithm = data.get('algorithm', 'weighted')
     
     try:
+        print(f"[START] Starting screening with limit={limit}, algorithm={algorithm}")
+        
         # Get symbols
         symbols = fetcher.get_nyse_nasdaq_symbols()
         if not symbols:
+            print("[START] ERROR: No symbols returned from fetcher")
             return jsonify({'error': 'Unable to fetch stock symbols'}), 500
+        
+        print(f"[START] Fetched {len(symbols)} symbols")
         
         if limit:
             symbols = symbols[:limit]
         
         total = len(symbols)
+        print(f"[START] Will screen {total} symbols")
         
         # Create session
         session_id = db.create_session(algorithm=algorithm, total_count=total)
+        print(f"[START] Created session {session_id}")
         
         # Start background thread
         thread = threading.Thread(
@@ -322,6 +332,7 @@ def start_screening():
             daemon=True
         )
         thread.start()
+        print(f"[START] Started background thread for session {session_id}")
         
         # Track active screening
         with screening_lock:
@@ -329,6 +340,8 @@ def start_screening():
                 'thread': thread,
                 'started_at': datetime.now().isoformat()
             }
+        
+        print(f"[START] Session {session_id} registered in active_screenings")
         
         return jsonify({
             'session_id': session_id,
