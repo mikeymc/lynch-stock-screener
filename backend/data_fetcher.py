@@ -7,10 +7,15 @@ import time
 from typing import Dict, Any, Optional, List
 from database import Database
 from edgar_fetcher import EdgarFetcher
-from timeout_utils import call_with_timeout
 import pandas as pd
+import logging
+import socket
 
 logger = logging.getLogger(__name__)
+
+# Set global socket timeout to prevent hanging network calls
+# This replaces the thread-based timeout which was causing zombie thread accumulation
+socket.setdefaulttimeout(30)
 
 
 def retry_on_rate_limit(max_retries=3, initial_delay=1.0):
@@ -44,53 +49,67 @@ class DataFetcher:
         self.edgar_fetcher = EdgarFetcher(user_agent="Lynch Stock Screener mikey@example.com")
 
     def _get_yf_info(self, symbol: str) -> Optional[Dict[str, Any]]:
-        """Fetch yfinance info with timeout protection"""
-        def fetch_info():
+        """Fetch yfinance info with socket timeout protection"""
+        try:
             stock = yf.Ticker(symbol)
             return stock.info
-        return call_with_timeout(fetch_info, 30, default=None)  # Increased for Fly.io
+        except Exception as e:
+            logger.warning(f"[{symbol}] Failed to fetch info: {e}")
+            return None
 
     def _get_yf_financials(self, symbol: str):
-        """Fetch yfinance financials with timeout protection"""
-        def fetch_financials():
+        """Fetch yfinance financials with socket timeout protection"""
+        try:
             stock = yf.Ticker(symbol)
             return stock.financials
-        return call_with_timeout(fetch_financials, 30, default=None)  # Increased for Fly.io
+        except Exception as e:
+            logger.warning(f"[{symbol}] Failed to fetch financials: {e}")
+            return None
 
     def _get_yf_balance_sheet(self, symbol: str):
-        """Fetch yfinance balance sheet with timeout protection"""
-        def fetch_balance_sheet():
+        """Fetch yfinance balance sheet with socket timeout protection"""
+        try:
             stock = yf.Ticker(symbol)
             return stock.balance_sheet
-        return call_with_timeout(fetch_balance_sheet, 30, default=None)  # Increased for Fly.io
+        except Exception as e:
+            logger.warning(f"[{symbol}] Failed to fetch balance sheet: {e}")
+            return None
 
     def _get_yf_quarterly_financials(self, symbol: str):
-        """Fetch yfinance quarterly financials with timeout protection"""
-        def fetch_quarterly():
+        """Fetch yfinance quarterly financials with socket timeout protection"""
+        try:
             stock = yf.Ticker(symbol)
             return stock.quarterly_financials
-        return call_with_timeout(fetch_quarterly, 30, default=None)  # Increased for Fly.io
+        except Exception as e:
+            logger.warning(f"[{symbol}] Failed to fetch quarterly financials: {e}")
+            return None
 
     def _get_yf_quarterly_balance_sheet(self, symbol: str):
-        """Fetch yfinance quarterly balance sheet with timeout protection"""
-        def fetch_quarterly_bs():
+        """Fetch yfinance quarterly balance sheet with socket timeout protection"""
+        try:
             stock = yf.Ticker(symbol)
             return stock.quarterly_balance_sheet
-        return call_with_timeout(fetch_quarterly_bs, 30, default=None)  # Increased for Fly.io
+        except Exception as e:
+            logger.warning(f"[{symbol}] Failed to fetch quarterly balance sheet: {e}")
+            return None
 
     def _get_yf_history(self, symbol: str):
-        """Fetch yfinance price history with timeout protection"""
-        def fetch_history():
+        """Fetch yfinance price history with socket timeout protection"""
+        try:
             stock = yf.Ticker(symbol)
             return stock.history(period="max")
-        return call_with_timeout(fetch_history, 40, default=None)  # Increased for Fly.io
+        except Exception as e:
+            logger.warning(f"[{symbol}] Failed to fetch history: {e}")
+            return None
 
     def _get_yf_cashflow(self, symbol: str):
-        """Fetch yfinance cash flow with timeout protection"""
-        def fetch_cashflow():
+        """Fetch yfinance cash flow with socket timeout protection"""
+        try:
             stock = yf.Ticker(symbol)
             return stock.cashflow
-        return call_with_timeout(fetch_cashflow, 30, default=None)  # Increased for Fly.io
+        except Exception as e:
+            logger.warning(f"[{symbol}] Failed to fetch cashflow: {e}")
+            return None
 
     @retry_on_rate_limit(max_retries=3, initial_delay=1.0)
     def fetch_stock_data(self, symbol: str, force_refresh: bool = False) -> Optional[Dict[str, Any]]:
@@ -491,11 +510,13 @@ class DataFetcher:
             return None
 
     def _get_yf_dividends(self, symbol: str):
-        """Fetch yfinance dividends with timeout protection"""
-        def fetch_dividends():
+        """Fetch yfinance dividends with socket timeout protection"""
+        try:
             stock = yf.Ticker(symbol)
             return stock.dividends
-        return call_with_timeout(fetch_dividends, 30, default=None)  # Increased for Fly.io
+        except Exception as e:
+            logger.warning(f"[{symbol}] Failed to fetch dividends: {e}")
+            return None
 
     def _fetch_and_store_earnings(self, symbol: str):
         try:
