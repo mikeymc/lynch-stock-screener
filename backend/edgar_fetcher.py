@@ -88,7 +88,7 @@ class EdgarFetcher:
         if cik:
             logger.info(f"[{ticker}] Found CIK: {cik}")
         else:
-            logger.warning(f"[{ticker}] CIK not found in EDGAR mapping")
+            logger.debug(f"[{ticker}] CIK not found in EDGAR mapping")
         return cik
 
     def fetch_company_facts(self, cik: str) -> Optional[Dict[str, Any]]:
@@ -151,7 +151,7 @@ class EdgarFetcher:
 
         # If we still don't have data, return empty
         if eps_data_list is None:
-            logger.warning("Could not parse EPS history from EDGAR: No us-gaap or ifrs-full data found")
+            logger.debug("Could not parse EPS history from EDGAR: No us-gaap or ifrs-full data found")
             return []
 
         # Filter for annual reports (10-K for US, 20-F for foreign)
@@ -218,7 +218,7 @@ class EdgarFetcher:
 
         # If we still don't have data, return empty
         if eps_data_list is None:
-            logger.warning("Could not parse quarterly EPS history from EDGAR: No us-gaap or ifrs-full data found")
+            logger.debug("Could not parse quarterly EPS history from EDGAR: No us-gaap or ifrs-full data found")
             return []
 
         # Filter for quarterly reports (10-Q for US, 6-K for foreign)
@@ -297,7 +297,7 @@ class EdgarFetcher:
 
         # If we still don't have data, return empty
         if net_income_data_list is None:
-            logger.warning("Could not parse Net Income history from EDGAR: No us-gaap or ifrs-full data found")
+            logger.debug("Could not parse Net Income history from EDGAR: No us-gaap or ifrs-full data found")
             return []
 
         # Filter for annual reports (10-K for US, 20-F for foreign)
@@ -479,7 +479,7 @@ class EdgarFetcher:
 
         # If we still don't have data, return empty
         if net_income_data_list is None:
-            logger.warning("Could not parse quarterly Net Income history from EDGAR: No us-gaap or ifrs-full data found")
+            logger.debug("Could not parse quarterly Net Income history from EDGAR: No us-gaap or ifrs-full data found")
             return []
 
         # Extract Q1, Q2, Q3 from quarterly reports (10-Q for US, 6-K for foreign)
@@ -642,7 +642,7 @@ class EdgarFetcher:
 
         # If we still don't have data, return empty
         if shares_data_list is None:
-            logger.warning("Could not parse shares outstanding history from EDGAR: No us-gaap or ifrs-full data found")
+            logger.debug("Could not parse shares outstanding history from EDGAR: No us-gaap or ifrs-full data found")
             return []
 
         # Filter for annual reports (10-K for US, 20-F for foreign)
@@ -707,7 +707,7 @@ class EdgarFetcher:
 
         # If we still don't have data, return empty
         if shares_data_list is None:
-            logger.warning("Could not parse quarterly shares outstanding history from EDGAR: No us-gaap or ifrs-full data found")
+            logger.debug("Could not parse quarterly shares outstanding history from EDGAR: No us-gaap or ifrs-full data found")
             return []
 
         # Extract quarterly reports (10-Q for US, 6-K for foreign)
@@ -1018,7 +1018,7 @@ class EdgarFetcher:
                 pass
 
         if not annual_revenue_by_year:
-            logger.warning(f"No revenue data found in us-gaap or ifrs-full")
+            logger.debug(f"No revenue data found in us-gaap or ifrs-full")
             return []
 
         # Convert dict to list and sort by year descending
@@ -1089,13 +1089,13 @@ class EdgarFetcher:
             # Get equity data
             equity_data = facts.get('StockholdersEquity', {}).get('units', {}).get('USD', [])
             if not equity_data:
-                logger.warning("No StockholdersEquity data found")
+                logger.debug("No StockholdersEquity data found")
                 return []
 
             # Get liabilities data
             liabilities_data = facts.get('Liabilities', {}).get('units', {}).get('USD', [])
             if not liabilities_data:
-                logger.warning("No Liabilities data found")
+                logger.debug("No Liabilities data found")
                 return []
 
             # Filter for 10-K entries and create lookup by fiscal year
@@ -1428,7 +1428,7 @@ class EdgarFetcher:
                 pass
 
         if dividend_data_list is None:
-            logger.warning("Could not parse dividend history from EDGAR")
+            logger.debug("Could not parse dividend history from EDGAR")
             return []
 
         dividends = []

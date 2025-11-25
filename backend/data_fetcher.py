@@ -440,7 +440,7 @@ class DataFetcher:
             if de_filled_count > 0:
                 logger.info(f"[{symbol}] Successfully backfilled D/E for {de_filled_count}/{len(years)} years from yfinance")
             else:
-                logger.warning(f"[{symbol}] Could not backfill any D/E data from yfinance")
+                logger.debug(f"[{symbol}] Could not backfill any D/E data from yfinance")
 
         except Exception as e:
             logger.error(f"[{symbol}] Error backfilling D/E data: {type(e).__name__}: {e}")
@@ -511,7 +511,7 @@ class DataFetcher:
                 logger.info(f"[{symbol}] yfinance returned {year_count} years of annual data")
 
                 if year_count < 5:
-                    logger.warning(f"[{symbol}] Limited data: only {year_count} years available from yfinance")
+                    logger.debug(f"[{symbol}] Limited data: only {year_count} years available from yfinance")
 
                 for col in financials.columns:
                     year = col.year if hasattr(col, 'year') else None
