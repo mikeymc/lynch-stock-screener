@@ -676,6 +676,18 @@ class Database:
         conn.commit()
         conn.close()
     
+    def cancel_session(self, session_id: int):
+        """Mark session as cancelled"""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        cursor.execute("""
+            UPDATE screening_sessions 
+            SET status = 'cancelled'
+            WHERE id = ?
+        """, (session_id,))
+        conn.commit()
+        conn.close()
+    
     def get_session_progress(self, session_id: int) -> Optional[Dict[str, Any]]:
         """Get current progress of a screening session"""
         conn = self.get_connection()

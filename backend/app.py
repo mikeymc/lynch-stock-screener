@@ -138,6 +138,12 @@ def run_screening_background(session_id: int, symbols: list, algorithm: str, for
         
         with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
             for batch_start in range(0, total, BATCH_SIZE):
+                # Check if session was cancelled
+                with screening_lock:
+                    if session_id not in active_screenings:
+                        print(f"[Session {session_id}] Cancelled by user, exiting...")
+                        return
+                
                 batch_end = min(batch_start + BATCH_SIZE, total)
                 batch = symbols[batch_start:batch_end]
                 
@@ -365,6 +371,31 @@ def get_screening_results(session_id):
         return jsonify({'results': results})
     except Exception as e:
         print(f"Error getting results: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/screen/stop/<int:session_id>', methods=['POST'])
+def stop_screening(session_id):
+    """Stop an active screening session"""
+    try:
+        # Mark session as cancelled
+        db.cancel_session(session_id)
+        
+        # Remove from active screenings (thread will exit on next check)
+        with screening_lock:
+            if session_id in active_screenings:
+                del active_screenings[session_id]
+        
+        # Get final progress
+        progress = db.get_session_progress(session_id)
+        
+        return jsonify({
+            'status': 'cancelled',
+            'message': f'Screening stopped at {progress["processed_count"]}/{progress["total_count"]} stocks',
+            'progress': progress
+        })
+    except Exception as e:
+        print(f"Error stopping screening: {e}")
         return jsonify({'error': str(e)}), 500
 
 

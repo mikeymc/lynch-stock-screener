@@ -69,8 +69,16 @@ button:hover:not(:disabled) {
 }
 
 button:disabled {
-  background-color: #475569;
+  opacity: 0.5;
   cursor: not-allowed;
+}
+
+.stop-button {
+  background-color: #ef4444;
+}
+
+.stop-button:hover {
+  background-color: #dc2626;
 }
 
 .settings-button {

@@ -107,6 +107,7 @@ function StockListView({
 }) {
   const navigate = useNavigate()
   const [loading, setLoading] = useState(false)
+  const [activeSessionId, setActiveSessionId] = useState(null)
   const [progress, setProgress] = useState('')
   const [error, setError] = useState(null)
   const itemsPerPage = 100
@@ -280,9 +281,11 @@ function StockListView({
   useEffect(() => {
     const activeSessionId = localStorage.getItem('activeScreeningSession')
     if (activeSessionId) {
+      const sessionIdNum = parseInt(activeSessionId)
+      setActiveSessionId(sessionIdNum)
       setLoading(true)
       setProgress('Resuming screening...')
-      pollScreeningProgress(parseInt(activeSessionId))
+      pollScreeningProgress(sessionIdNum)
     }
   }, [])
 
@@ -314,8 +317,9 @@ function StockListView({
 
       const { session_id, total_count } = await response.json()
 
-      // Store session_id in localStorage for persistence
+      // Store session_id in localStorage and state
       localStorage.setItem('activeScreeningSession', session_id)
+      setActiveSessionId(session_id)
 
       setProgress(`Screening ${total_count} stocks...`)
 
@@ -327,6 +331,30 @@ function StockListView({
       setError(`Failed to start screening: ${err.message}`)
       setLoading(false)
       setProgress('')
+    }
+  }
+
+  const stopScreening = async () => {
+    if (!activeSessionId) return
+
+    try {
+      const response = await fetch(`${API_BASE}/screen/stop/${activeSessionId}`, {
+        method: 'POST'
+      })
+
+      if (response.ok) {
+        const data = await response.json()
+        setProgress(data.message)
+        setLoading(false)
+        setActiveSessionId(null)
+        localStorage.removeItem('activeScreeningSession')
+
+        // Clear progress after a delay
+        setTimeout(() => setProgress(''), 3000)
+      }
+    } catch (err) {
+      console.error('Error stopping screening:', err)
+      setError(`Failed to stop screening: ${err.message}`)
     }
   }
 
@@ -357,34 +385,40 @@ function StockListView({
           setStocks(results)
         }
 
-        // Check if complete
-        if (progress.status === 'complete') {
+        // Check if complete or cancelled
+        if (progress.status === 'complete' || progress.status === 'cancelled') {
           clearInterval(pollInterval)
 
-          // Set final summary
-          const summaryData = {
-            totalAnalyzed: progress.total_analyzed,
-            algorithm: progress.algorithm
-          }
-
-          if (progress.algorithm === 'classic') {
-            summaryData.passCount = progress.pass_count
-            summaryData.closeCount = progress.close_count
-            summaryData.failCount = progress.fail_count
-          } else {
-            summaryData.strong_buy_count = progress.pass_count  // Map to new format
-            summaryData.buy_count = progress.close_count
-            summaryData.hold_count = 0
-            summaryData.caution_count = 0
-            summaryData.avoid_count = progress.fail_count
-          }
-
-          setSummary(summaryData)
-          setProgress('Screening complete!')
-          setLoading(false)
-
-          // Clear localStorage
+          // Clear active session
+          setActiveSessionId(null)
           localStorage.removeItem('activeScreeningSession')
+
+          if (progress.status === 'complete') {
+            // Set final summary
+            const summaryData = {
+              totalAnalyzed: progress.total_analyzed,
+              algorithm: progress.algorithm
+            }
+
+            if (progress.algorithm === 'classic') {
+              summaryData.passCount = progress.pass_count
+              summaryData.closeCount = progress.close_count
+              summaryData.failCount = progress.fail_count
+            } else {
+              summaryData.strong_buy_count = progress.pass_count  // Map to new format
+              summaryData.buy_count = progress.close_count
+              summaryData.hold_count = 0
+              summaryData.caution_count = 0
+              summaryData.avoid_count = progress.fail_count
+            }
+
+            setSummary(summaryData)
+            setProgress('Screening complete!')
+          } else {
+            setProgress('Screening cancelled')
+          }
+
+          setLoading(false)
 
           // Clear progress after a delay
           setTimeout(() => setProgress(''), 3000)
@@ -511,9 +545,15 @@ function StockListView({
     <div className="app">
       <div className="controls">
         <div className="flex gap-2">
-          <button onClick={() => screenStocks(null)} disabled={loading}>
-            Screen All Stocks
-          </button>
+          {activeSessionId ? (
+            <button onClick={stopScreening} className="stop-button">
+              Stop Screening
+            </button>
+          ) : (
+            <button onClick={() => screenStocks(null)} disabled={loading}>
+              Screen All Stocks
+            </button>
+          )}
         </div>
 
         <div className="filter-controls">
