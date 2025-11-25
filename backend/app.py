@@ -4,6 +4,7 @@
 from flask import Flask, jsonify, request, Response, stream_with_context, send_from_directory
 from flask_cors import CORS
 from concurrent.futures import ThreadPoolExecutor, as_completed
+import threading
 import json
 import time
 import os
@@ -34,6 +35,191 @@ criteria = LynchCriteria(db, analyzer)
 schwab_client = SchwabClient()
 lynch_analyst = LynchAnalyst(db)
 conversation_manager = ConversationManager(db)
+
+# Global dict to track active screening threads
+active_screenings = {}
+screening_lock = threading.Lock()
+
+
+def resume_incomplete_sessions():
+    """Resume any screening sessions that were interrupted by backend restart"""
+    try:
+        conn = db.get_connection()
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT id, algorithm, total_count, processed_count
+            FROM screening_sessions
+            WHERE status = 'running'
+        """)
+        incomplete_sessions = cursor.fetchall()
+        conn.close()
+        
+        for session_id, algorithm, total_count, processed_count in incomplete_sessions:
+            print(f"[Startup] Found incomplete session {session_id}: {processed_count}/{total_count} stocks processed")
+            
+            # Get all symbols
+            symbols = fetcher.get_nyse_nasdaq_symbols()
+            if not symbols:
+                print(f"[Startup] Could not fetch symbols for session {session_id}")
+                continue
+            
+            # Resume from where we left off
+            remaining_symbols = symbols[processed_count:]
+            
+            if remaining_symbols:
+                print(f"[Startup] Resuming session {session_id} with {len(remaining_symbols)} remaining stocks")
+                
+                # Start background thread
+                thread = threading.Thread(
+                    target=run_screening_background,
+                    args=(session_id, remaining_symbols, algorithm, False),
+                    daemon=True
+                )
+                thread.start()
+                
+                # Track active screening
+                with screening_lock:
+                    active_screenings[session_id] = {
+                        'thread': thread,
+                        'started_at': datetime.now().isoformat(),
+                        'resumed': True
+                    }
+            else:
+                # No remaining symbols, mark as complete
+                print(f"[Startup] Session {session_id} has no remaining symbols, marking complete")
+                db.complete_session(session_id, processed_count, 0, 0, 0)
+                
+    except Exception as e:
+        print(f"[Startup] Error resuming incomplete sessions: {e}")
+        import traceback
+        traceback.print_exc()
+
+
+# Resume incomplete sessions on startup
+resume_incomplete_sessions()
+
+
+def run_screening_background(session_id: int, symbols: list, algorithm: str, force_refresh: bool):
+    """
+    Run stock screening in background thread.
+    Updates progress in database as stocks are processed.
+    """
+    try:
+        print(f"[Session {session_id}] Starting background screening of {len(symbols)} stocks")
+        
+        # Worker function to process a single stock
+        def process_stock(symbol):
+            try:
+                stock_data = fetcher.fetch_stock_data(symbol, force_refresh)
+                if not stock_data:
+                    return None
+
+                evaluation = criteria.evaluate_stock(symbol, algorithm=algorithm)
+                if not evaluation:
+                    return None
+
+                # Save result to session
+                db.save_screening_result(session_id, evaluation)
+                return evaluation
+                
+            except Exception as e:
+                print(f"Error processing {symbol}: {e}")
+                return None
+        
+        results = []
+        processed_count = 0
+        failed_symbols = []
+        total = len(symbols)
+        
+        # Process stocks in batches using parallel workers
+        BATCH_SIZE = 3
+        MAX_WORKERS = 3
+        BATCH_DELAY = 1.5
+        
+        with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
+            for batch_start in range(0, total, BATCH_SIZE):
+                batch_end = min(batch_start + BATCH_SIZE, total)
+                batch = symbols[batch_start:batch_end]
+                
+                # Submit batch to thread pool
+                future_to_symbol = {executor.submit(process_stock, symbol): symbol for symbol in batch}
+                
+                # Collect results as they complete
+                for future in as_completed(future_to_symbol):
+                    symbol = future_to_symbol[future]
+                    processed_count += 1
+                    
+                    try:
+                        evaluation = future.result()
+                        if evaluation:
+                            results.append(evaluation)
+                        else:
+                            failed_symbols.append(symbol)
+                        
+                        # Update progress in database
+                        db.update_session_progress(session_id, processed_count, symbol)
+                        
+                    except Exception as e:
+                        print(f"Error getting result for {symbol}: {e}")
+                        failed_symbols.append(symbol)
+                        db.update_session_progress(session_id, processed_count, symbol)
+                
+                # Rate limiting delay between batches
+                if batch_end < total:
+                    time.sleep(BATCH_DELAY)
+        
+        # Automatic retry pass for failed stocks
+        if failed_symbols:
+            print(f"[Session {session_id}] Retrying {len(failed_symbols)} failed stocks")
+            time.sleep(5)
+            
+            for symbol in failed_symbols:
+                try:
+                    evaluation = process_stock(symbol)
+                    if evaluation:
+                        results.append(evaluation)
+                        processed_count += 1
+                        db.update_session_progress(session_id, processed_count, symbol)
+                    time.sleep(2)
+                except Exception as e:
+                    print(f"Retry error for {symbol}: {e}")
+        
+        # Calculate final counts
+        results_by_status = {}
+        if algorithm == 'classic':
+            results_by_status = {
+                'pass': [r for r in results if r['overall_status'] == 'PASS'],
+                'close': [r for r in results if r['overall_status'] == 'CLOSE'],
+                'fail': [r for r in results if r['overall_status'] == 'FAIL']
+            }
+        else:
+            results_by_status = {
+                'strong_buy': [r for r in results if r['overall_status'] == 'STRONG_BUY'],
+                'buy': [r for r in results if r['overall_status'] == 'BUY'],
+                'hold': [r for r in results if r['overall_status'] == 'HOLD'],
+                'caution': [r for r in results if r['overall_status'] == 'CAUTION'],
+                'avoid': [r for r in results if r['overall_status'] == 'AVOID']
+            }
+        
+        total_analyzed = len(results)
+        pass_count = len(results_by_status.get('pass', [])) + len(results_by_status.get('strong_buy', []))
+        close_count = len(results_by_status.get('close', [])) + len(results_by_status.get('buy', []))
+        fail_count = len(results_by_status.get('fail', [])) + len(results_by_status.get('avoid', []))
+        
+        # Mark session as complete
+        db.complete_session(session_id, total_analyzed, pass_count, close_count, fail_count)
+        
+        print(f"[Session {session_id}] Screening complete: {total_analyzed} stocks analyzed")
+        
+    except Exception as e:
+        print(f"[Session {session_id}] Fatal error in background screening: {e}")
+        import traceback
+        traceback.print_exc()
+    finally:
+        # Remove from active screenings
+        with screening_lock:
+            if session_id in active_screenings:
+                del active_screenings[session_id]
 
 
 
@@ -99,6 +285,87 @@ def get_stock(symbol):
         'stock_data': stock_data,
         'evaluation': evaluation
     })
+
+
+@app.route('/api/screen/start', methods=['POST'])
+def start_screening():
+    """Start a new screening session in background thread"""
+    data = request.get_json()
+    limit = data.get('limit')
+    force_refresh = data.get('force_refresh', False)
+    algorithm = data.get('algorithm', 'weighted')
+    
+    try:
+        # Get symbols
+        symbols = fetcher.get_nyse_nasdaq_symbols()
+        if not symbols:
+            return jsonify({'error': 'Unable to fetch stock symbols'}), 500
+        
+        if limit:
+            symbols = symbols[:limit]
+        
+        total = len(symbols)
+        
+        # Create session
+        session_id = db.create_session(algorithm=algorithm, total_count=total)
+        
+        # Start background thread
+        thread = threading.Thread(
+            target=run_screening_background,
+            args=(session_id, symbols, algorithm, force_refresh),
+            daemon=True
+        )
+        thread.start()
+        
+        # Track active screening
+        with screening_lock:
+            active_screenings[session_id] = {
+                'thread': thread,
+                'started_at': datetime.now().isoformat()
+            }
+        
+        return jsonify({
+            'session_id': session_id,
+            'total_count': total,
+            'status': 'started'
+        })
+        
+    except Exception as e:
+        print(f"Error starting screening: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/screen/progress/<int:session_id>', methods=['GET'])
+def get_screening_progress(session_id):
+    """Get current progress of a screening session"""
+    try:
+        progress = db.get_session_progress(session_id)
+        if not progress:
+            return jsonify({'error': 'Session not found'}), 404
+        
+        # Check if thread is still active
+        with screening_lock:
+            is_active = session_id in active_screenings
+        
+        progress['is_active'] = is_active
+        return jsonify(progress)
+        
+    except Exception as e:
+        print(f"Error getting progress: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/screen/results/<int:session_id>', methods=['GET'])
+def get_screening_results(session_id):
+    """Get results for a screening session"""
+    try:
+        results = db.get_session_results(session_id)
+        return jsonify({'results': results})
+    except Exception as e:
+        print(f"Error getting results: {e}")
+        return jsonify({'error': str(e)}), 500
 
 
 @app.route('/api/screen', methods=['GET'])

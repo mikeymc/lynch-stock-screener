@@ -276,79 +276,127 @@ function StockListView({
     loadLatestSession()
   }, [])
 
+  // Resume polling if there's an active screening session
+  useEffect(() => {
+    const activeSessionId = localStorage.getItem('activeScreeningSession')
+    if (activeSessionId) {
+      setLoading(true)
+      setProgress('Resuming screening...')
+      pollScreeningProgress(parseInt(activeSessionId))
+    }
+  }, [])
+
   const screenStocks = async (limit) => {
     setLoading(true)
-    setProgress('Fetching stock list...')
+    setProgress('Starting screening...')
     setError(null)
     setStocks([])
     setSummary(null)
     setCurrentPage(1)
 
     try {
-      const params = new URLSearchParams({ algorithm })
-      if (limit) params.append('limit', limit)
-      const url = `${API_BASE}/screen?${params.toString()}`
-      const response = await fetch(url)
+      // Start screening in background
+      const response = await fetch(`${API_BASE}/screen/start`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          limit,
+          algorithm,
+          force_refresh: false
+        })
+      })
 
       if (!response.ok) {
         throw new Error(`API returned ${response.status}: ${response.statusText}`)
       }
 
-      const reader = response.body.getReader()
-      const decoder = new TextDecoder()
-      let buffer = ''
+      const { session_id, total_count } = await response.json()
 
-      while (true) {
-        const { done, value } = await reader.read()
+      // Store session_id in localStorage for persistence
+      localStorage.setItem('activeScreeningSession', session_id)
 
-        if (done) break
+      setProgress(`Screening ${total_count} stocks...`)
 
-        buffer += decoder.decode(value, { stream: true })
-        const lines = buffer.split('\n')
-        buffer = lines.pop()
+      // Start polling for progress
+      pollScreeningProgress(session_id)
 
-        for (const line of lines) {
-          if (line.startsWith('data: ')) {
-            const data = JSON.parse(line.slice(6))
-
-            if (data.type === 'progress') {
-              setProgress(data.message)
-            } else if (data.type === 'stock_result') {
-              setStocks(prevStocks => [...prevStocks, data.stock])
-            } else if (data.type === 'complete') {
-              // Handle both classic and new algorithm summary formats
-              const summaryData = {
-                totalAnalyzed: data.total_analyzed,
-                algorithm: data.algorithm
-              }
-
-              if (data.algorithm === 'classic') {
-                summaryData.passCount = data.pass_count
-                summaryData.closeCount = data.close_count
-                summaryData.failCount = data.fail_count
-              } else {
-                summaryData.strong_buy_count = data.strong_buy_count
-                summaryData.buy_count = data.buy_count
-                summaryData.hold_count = data.hold_count
-                summaryData.caution_count = data.caution_count
-                summaryData.avoid_count = data.avoid_count
-              }
-
-              setSummary(summaryData)
-              setProgress('')
-            } else if (data.type === 'error') {
-              setError(data.message)
-            }
-          }
-        }
-      }
     } catch (err) {
-      console.error('Error screening stocks:', err)
-      setError(`Failed to screen stocks: ${err.message}`)
-    } finally {
+      console.error('Error starting screening:', err)
+      setError(`Failed to start screening: ${err.message}`)
       setLoading(false)
       setProgress('')
     }
+  }
+
+  const pollScreeningProgress = async (sessionId) => {
+    const pollInterval = setInterval(async () => {
+      try {
+        // Get progress
+        const progressResponse = await fetch(`${API_BASE}/screen/progress/${sessionId}`)
+        if (!progressResponse.ok) {
+          clearInterval(pollInterval)
+          setError('Failed to get screening progress')
+          setLoading(false)
+          return
+        }
+
+        const progress = await progressResponse.json()
+
+        // Update progress message
+        const percent = progress.total_count > 0
+          ? Math.round((progress.processed_count / progress.total_count) * 100)
+          : 0
+        setProgress(`Screening: ${progress.processed_count}/${progress.total_count} (${percent}%) - ${progress.current_symbol || ''}`)
+
+        // Fetch and update results incrementally
+        const resultsResponse = await fetch(`${API_BASE}/screen/results/${sessionId}`)
+        if (resultsResponse.ok) {
+          const { results } = await resultsResponse.json()
+          setStocks(results)
+        }
+
+        // Check if complete
+        if (progress.status === 'complete') {
+          clearInterval(pollInterval)
+
+          // Set final summary
+          const summaryData = {
+            totalAnalyzed: progress.total_analyzed,
+            algorithm: progress.algorithm
+          }
+
+          if (progress.algorithm === 'classic') {
+            summaryData.passCount = progress.pass_count
+            summaryData.closeCount = progress.close_count
+            summaryData.failCount = progress.fail_count
+          } else {
+            summaryData.strong_buy_count = progress.pass_count  // Map to new format
+            summaryData.buy_count = progress.close_count
+            summaryData.hold_count = 0
+            summaryData.caution_count = 0
+            summaryData.avoid_count = progress.fail_count
+          }
+
+          setSummary(summaryData)
+          setProgress('Screening complete!')
+          setLoading(false)
+
+          // Clear localStorage
+          localStorage.removeItem('activeScreeningSession')
+
+          // Clear progress after a delay
+          setTimeout(() => setProgress(''), 3000)
+        }
+
+      } catch (err) {
+        console.error('Error polling progress:', err)
+        clearInterval(pollInterval)
+        setError('Lost connection to screening progress')
+        setLoading(false)
+      }
+    }, 2000) // Poll every 2 seconds
   }
 
   const getStatusColor = (status) => {

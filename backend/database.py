@@ -206,9 +206,40 @@ class Database:
                 total_analyzed INTEGER,
                 pass_count INTEGER,
                 close_count INTEGER,
-                fail_count INTEGER
+                fail_count INTEGER,
+                status TEXT DEFAULT 'running',
+                processed_count INTEGER DEFAULT 0,
+                total_count INTEGER DEFAULT 0,
+                current_symbol TEXT,
+                algorithm TEXT
             )
         """)
+
+        # Migration: Add new columns to screening_sessions if they don't exist
+        try:
+            cursor.execute("ALTER TABLE screening_sessions ADD COLUMN status TEXT DEFAULT 'running'")
+        except sqlite3.OperationalError:
+            pass  # Column already exists
+        
+        try:
+            cursor.execute("ALTER TABLE screening_sessions ADD COLUMN processed_count INTEGER DEFAULT 0")
+        except sqlite3.OperationalError:
+            pass
+        
+        try:
+            cursor.execute("ALTER TABLE screening_sessions ADD COLUMN total_count INTEGER DEFAULT 0")
+        except sqlite3.OperationalError:
+            pass
+        
+        try:
+            cursor.execute("ALTER TABLE screening_sessions ADD COLUMN current_symbol TEXT")
+        except sqlite3.OperationalError:
+            pass
+        
+        try:
+            cursor.execute("ALTER TABLE screening_sessions ADD COLUMN algorithm TEXT")
+        except sqlite3.OperationalError:
+            pass
 
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS screening_results (
@@ -600,17 +631,122 @@ class Database:
             'model_version': row[4]
         }
 
-    def create_session(self, total_analyzed: int, pass_count: int, close_count: int, fail_count: int) -> int:
+    def create_session(self, algorithm: str, total_count: int, total_analyzed: int = 0, pass_count: int = 0, close_count: int = 0, fail_count: int = 0) -> int:
+        """Create a new screening session with initial status"""
         conn = self.get_connection()
         cursor = conn.cursor()
         cursor.execute("""
-            INSERT INTO screening_sessions (created_at, total_analyzed, pass_count, close_count, fail_count)
-            VALUES (?, ?, ?, ?, ?)
-        """, (datetime.now().isoformat(), total_analyzed, pass_count, close_count, fail_count))
+            INSERT INTO screening_sessions (
+                created_at, algorithm, total_count, processed_count, 
+                total_analyzed, pass_count, close_count, fail_count, status
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (datetime.now().isoformat(), algorithm, total_count, 0, total_analyzed, pass_count, close_count, fail_count, 'running'))
         session_id = cursor.lastrowid
         conn.commit()
         conn.close()
         return session_id
+    
+    def update_session_progress(self, session_id: int, processed_count: int, current_symbol: str = None):
+        """Update screening session progress"""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        cursor.execute("""
+            UPDATE screening_sessions 
+            SET processed_count = ?, current_symbol = ?
+            WHERE id = ?
+        """, (processed_count, current_symbol, session_id))
+        conn.commit()
+        conn.close()
+    
+    def complete_session(self, session_id: int, total_analyzed: int, pass_count: int, close_count: int, fail_count: int):
+        """Mark session as complete with final counts"""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        cursor.execute("""
+            UPDATE screening_sessions 
+            SET status = 'complete', 
+                total_analyzed = ?,
+                pass_count = ?,
+                close_count = ?,
+                fail_count = ?,
+                processed_count = total_count
+            WHERE id = ?
+        """, (total_analyzed, pass_count, close_count, fail_count, session_id))
+        conn.commit()
+        conn.close()
+    
+    def get_session_progress(self, session_id: int) -> Optional[Dict[str, Any]]:
+        """Get current progress of a screening session"""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT id, created_at, algorithm, status, processed_count, total_count, 
+                   current_symbol, total_analyzed, pass_count, close_count, fail_count
+            FROM screening_sessions
+            WHERE id = ?
+        """, (session_id,))
+        row = cursor.fetchone()
+        conn.close()
+        
+        if not row:
+            return None
+        
+        return {
+            'id': row[0],
+            'created_at': row[1],
+            'algorithm': row[2],
+            'status': row[3],
+            'processed_count': row[4],
+            'total_count': row[5],
+            'current_symbol': row[6],
+            'total_analyzed': row[7],
+            'pass_count': row[8],
+            'close_count': row[9],
+            'fail_count': row[10]
+        }
+
+    def get_session_results(self, session_id: int) -> List[Dict[str, Any]]:
+        """Get all results for a screening session"""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT symbol, company_name, country, market_cap, sector, ipo_year,
+                   price, pe_ratio, peg_ratio, debt_to_equity, institutional_ownership,
+                   dividend_yield, earnings_cagr, revenue_cagr, consistency_score,
+                   peg_status, debt_status, institutional_ownership_status, overall_status
+            FROM screening_results
+            WHERE session_id = ?
+            ORDER BY id ASC
+        """, (session_id,))
+        rows = cursor.fetchall()
+        conn.close()
+        
+        results = []
+        for row in rows:
+            results.append({
+                'symbol': row[0],
+                'company_name': row[1],
+                'country': row[2],
+                'market_cap': row[3],
+                'sector': row[4],
+                'ipo_year': row[5],
+                'price': row[6],
+                'pe_ratio': row[7],
+                'peg_ratio': row[8],
+                'debt_to_equity': row[9],
+                'institutional_ownership': row[10],
+                'dividend_yield': row[11],
+                'earnings_cagr': row[12],
+                'revenue_cagr': row[13],
+                'consistency_score': row[14],
+                'peg_status': row[15],
+                'debt_status': row[16],
+                'institutional_ownership_status': row[17],
+                'overall_status': row[18]
+            })
+        
+        return results
 
     def save_screening_result(self, session_id: int, result_data: Dict[str, Any]):
         conn = self.get_connection()
