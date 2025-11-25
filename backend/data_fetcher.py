@@ -48,49 +48,49 @@ class DataFetcher:
         def fetch_info():
             stock = yf.Ticker(symbol)
             return stock.info
-        return call_with_timeout(fetch_info, 10, default=None)
+        return call_with_timeout(fetch_info, 30, default=None)  # Increased for Fly.io
 
     def _get_yf_financials(self, symbol: str):
         """Fetch yfinance financials with timeout protection"""
         def fetch_financials():
             stock = yf.Ticker(symbol)
             return stock.financials
-        return call_with_timeout(fetch_financials, 15, default=None)
+        return call_with_timeout(fetch_financials, 30, default=None)  # Increased for Fly.io
 
     def _get_yf_balance_sheet(self, symbol: str):
         """Fetch yfinance balance sheet with timeout protection"""
         def fetch_balance_sheet():
             stock = yf.Ticker(symbol)
             return stock.balance_sheet
-        return call_with_timeout(fetch_balance_sheet, 15, default=None)
+        return call_with_timeout(fetch_balance_sheet, 30, default=None)  # Increased for Fly.io
 
     def _get_yf_quarterly_financials(self, symbol: str):
         """Fetch yfinance quarterly financials with timeout protection"""
         def fetch_quarterly():
             stock = yf.Ticker(symbol)
             return stock.quarterly_financials
-        return call_with_timeout(fetch_quarterly, 15, default=None)
+        return call_with_timeout(fetch_quarterly, 30, default=None)  # Increased for Fly.io
 
     def _get_yf_quarterly_balance_sheet(self, symbol: str):
         """Fetch yfinance quarterly balance sheet with timeout protection"""
         def fetch_quarterly_bs():
             stock = yf.Ticker(symbol)
             return stock.quarterly_balance_sheet
-        return call_with_timeout(fetch_quarterly_bs, 15, default=None)
+        return call_with_timeout(fetch_quarterly_bs, 30, default=None)  # Increased for Fly.io
 
     def _get_yf_history(self, symbol: str):
         """Fetch yfinance price history with timeout protection"""
         def fetch_history():
             stock = yf.Ticker(symbol)
             return stock.history(period="max")
-        return call_with_timeout(fetch_history, 20, default=None)
+        return call_with_timeout(fetch_history, 40, default=None)  # Increased for Fly.io
 
     def _get_yf_cashflow(self, symbol: str):
         """Fetch yfinance cash flow with timeout protection"""
         def fetch_cashflow():
             stock = yf.Ticker(symbol)
             return stock.cashflow
-        return call_with_timeout(fetch_cashflow, 15, default=None)
+        return call_with_timeout(fetch_cashflow, 30, default=None)  # Increased for Fly.io
 
     @retry_on_rate_limit(max_retries=3, initial_delay=1.0)
     def fetch_stock_data(self, symbol: str, force_refresh: bool = False) -> Optional[Dict[str, Any]]:
@@ -485,7 +485,7 @@ class DataFetcher:
         def fetch_dividends():
             stock = yf.Ticker(symbol)
             return stock.dividends
-        return call_with_timeout(fetch_dividends, 15, default=None)
+        return call_with_timeout(fetch_dividends, 30, default=None)  # Increased for Fly.io
 
     def _fetch_and_store_earnings(self, symbol: str):
         try:

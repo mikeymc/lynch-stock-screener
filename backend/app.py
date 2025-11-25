@@ -186,15 +186,18 @@ def screen_stocks():
                             # Send progress update
                             yield f"data: {json.dumps({'type': 'progress', 'message': f'Analyzed {symbol} ({processed_count}/{total})...'})}\n\n"
                             
+                            # Send keep-alive heartbeat every stock to prevent Fly.io auto-stop
+                            yield f": keep-alive\n\n"
+                            
                         except Exception as e:
                             print(f"Error getting result for {symbol}: {e}")
                             failed_symbols.append(symbol)
                             yield f"data: {json.dumps({'type': 'progress', 'message': f'Error with {symbol} ({processed_count}/{total})'})}\n\n"
                     
-                    # Rate limiting delay between batches
+                    # Rate limiting delay between batches with heartbeat
                     if batch_end < total:
                         time.sleep(BATCH_DELAY)
-                        yield f": heartbeat\n\n"
+                        yield f": heartbeat-batch-delay\n\n"
 
             # Automatic retry pass for failed stocks
             if failed_symbols:
@@ -216,6 +219,9 @@ def screen_stocks():
                             yield f"data: {json.dumps({'type': 'progress', 'message': f'✓ Retry succeeded for {symbol}'})}\n\n"
                         else:
                             yield f"data: {json.dumps({'type': 'progress', 'message': f'✗ Retry failed for {symbol}'})}\n\n"
+                        
+                        # Keep-alive heartbeat during retry
+                        yield f": keep-alive-retry\n\n"
                         
                         # Longer delay between retries to avoid rate limits
                         time.sleep(2)

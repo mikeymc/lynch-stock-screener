@@ -93,7 +93,7 @@ class EdgarFetcher:
 
     def fetch_company_facts(self, cik: str) -> Optional[Dict[str, Any]]:
         """
-        Fetch company facts from SEC EDGAR API
+        Fetch company facts from SEC EDGAR API with retry logic for SSL errors
 
         Args:
             cik: 10-digit CIK number
@@ -104,14 +104,27 @@ class EdgarFetcher:
         self._rate_limit()
 
         url = self.COMPANY_FACTS_URL.format(cik=cik)
-        try:
-            response = requests.get(url, headers=self.headers, timeout=15)
-            response.raise_for_status()
-            logger.info(f"[CIK {cik}] Successfully fetched company facts from EDGAR")
-            return response.json()
-        except requests.exceptions.RequestException as e:
-            logger.error(f"[CIK {cik}] Error fetching company facts: {type(e).__name__}: {e}")
-            return None
+        
+        # Retry logic for transient SSL errors
+        max_retries = 3
+        for attempt in range(max_retries):
+            try:
+                response = requests.get(url, headers=self.headers, timeout=30)  # Increased timeout for Fly.io
+                response.raise_for_status()
+                logger.info(f"[CIK {cik}] Successfully fetched company facts from EDGAR")
+                return response.json()
+            except requests.exceptions.SSLError as e:
+                if attempt < max_retries - 1:
+                    wait_time = 2 ** attempt  # Exponential backoff: 1s, 2s, 4s
+                    logger.warning(f"[CIK {cik}] SSL error (attempt {attempt + 1}/{max_retries}), retrying in {wait_time}s: {e}")
+                    time.sleep(wait_time)
+                    continue
+                else:
+                    logger.error(f"[CIK {cik}] SSL error after {max_retries} attempts: {e}")
+                    return None
+            except requests.exceptions.RequestException as e:
+                logger.error(f"[CIK {cik}] Error fetching company facts: {type(e).__name__}: {e}")
+                return None
 
     def parse_eps_history(self, company_facts: Dict[str, Any]) -> List[Dict[str, Any]]:
         """
