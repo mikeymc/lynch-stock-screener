@@ -3,6 +3,7 @@
 
 import sqlite3
 import threading
+import os
 from datetime import datetime
 from typing import Optional, Dict, Any, List
 
@@ -11,6 +12,13 @@ class Database:
     def __init__(self, db_path: str = "stocks.db"):
         self.db_path = db_path
         self._lock = threading.Lock()
+        
+        # Ensure the directory exists before creating the database
+        db_dir = os.path.dirname(self.db_path)
+        if db_dir and not os.path.exists(db_dir):
+            os.makedirs(db_dir, exist_ok=True)
+            print(f"Created database directory: {db_dir}")
+        
         # Enable WAL mode globally for better concurrent access
         conn = sqlite3.connect(self.db_path)
         conn.execute("PRAGMA journal_mode = WAL")
@@ -27,6 +35,28 @@ class Database:
         )
         conn.execute("PRAGMA foreign_keys = ON")
         return conn
+    
+    def connection(self):
+        """
+        Context manager for database connections.
+        Ensures connections are always properly closed.
+        
+        Usage:
+            with db.connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute(...)
+        """
+        from contextlib import contextmanager
+        
+        @contextmanager
+        def _connection():
+            conn = self.get_connection()
+            try:
+                yield conn
+            finally:
+                conn.close()
+        
+        return _connection()
 
     def init_schema(self):
         conn = self.get_connection()
@@ -418,50 +448,59 @@ class Database:
 
     def save_stock_basic(self, symbol: str, company_name: str, exchange: str, sector: str = None,
                         country: str = None, ipo_year: int = None):
-        conn = self.get_connection()
-        cursor = conn.cursor()
-        cursor.execute("""
-            INSERT OR REPLACE INTO stocks (symbol, company_name, exchange, sector, country, ipo_year, last_updated)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-        """, (symbol, company_name, exchange, sector, country, ipo_year, datetime.now().isoformat()))
-        conn.commit()
-        conn.close()
+        with self._lock:
+            conn = self.get_connection()
+            try:
+                cursor = conn.cursor()
+                cursor.execute("""
+                    INSERT OR REPLACE INTO stocks (symbol, company_name, exchange, sector, country, ipo_year, last_updated)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                """, (symbol, company_name, exchange, sector, country, ipo_year, datetime.now().isoformat()))
+                conn.commit()
+            finally:
+                conn.close()
 
     def save_stock_metrics(self, symbol: str, metrics: Dict[str, Any]):
-        conn = self.get_connection()
-        cursor = conn.cursor()
-        cursor.execute("""
-            INSERT OR REPLACE INTO stock_metrics
-            (symbol, price, pe_ratio, market_cap, debt_to_equity, institutional_ownership, revenue, dividend_yield, beta, total_debt, interest_expense, effective_tax_rate, last_updated)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """, (
-            symbol,
-            metrics.get('price'),
-            metrics.get('pe_ratio'),
-            metrics.get('market_cap'),
-            metrics.get('debt_to_equity'),
-            metrics.get('institutional_ownership'),
-            metrics.get('revenue'),
-            metrics.get('dividend_yield'),
-            metrics.get('beta'),
-            metrics.get('total_debt'),
-            metrics.get('interest_expense'),
-            metrics.get('effective_tax_rate'),
-            datetime.now().isoformat()
-        ))
-        conn.commit()
-        conn.close()
+        with self._lock:
+            conn = self.get_connection()
+            try:
+                cursor = conn.cursor()
+                cursor.execute("""
+                    INSERT OR REPLACE INTO stock_metrics
+                    (symbol, price, pe_ratio, market_cap, debt_to_equity, institutional_ownership, revenue, dividend_yield, beta, total_debt, interest_expense, effective_tax_rate, last_updated)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """, (
+                    symbol,
+                    metrics.get('price'),
+                    metrics.get('pe_ratio'),
+                    metrics.get('market_cap'),
+                    metrics.get('debt_to_equity'),
+                    metrics.get('institutional_ownership'),
+                    metrics.get('revenue'),
+                    metrics.get('dividend_yield'),
+                    metrics.get('beta'),
+                    metrics.get('total_debt'),
+                    metrics.get('interest_expense'),
+                    metrics.get('effective_tax_rate'),
+                    datetime.now().isoformat()
+                ))
+                conn.commit()
+            finally:
+                conn.close()
 
     def save_earnings_history(self, symbol: str, year: int, eps: float, revenue: float, fiscal_end: Optional[str] = None, debt_to_equity: Optional[float] = None, period: str = 'annual', net_income: Optional[float] = None, dividend_amount: Optional[float] = None, dividend_yield: Optional[float] = None, operating_cash_flow: Optional[float] = None, capital_expenditures: Optional[float] = None, free_cash_flow: Optional[float] = None):
-        conn = self.get_connection()
-        cursor = conn.cursor()
-        cursor.execute("""
-            INSERT OR REPLACE INTO earnings_history
-            (symbol, year, earnings_per_share, revenue, fiscal_end, debt_to_equity, period, net_income, dividend_amount, dividend_yield, operating_cash_flow, capital_expenditures, free_cash_flow, last_updated)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """, (symbol, year, eps, revenue, fiscal_end, debt_to_equity, period, net_income, dividend_amount, dividend_yield, operating_cash_flow, capital_expenditures, free_cash_flow, datetime.now().isoformat()))
-        conn.commit()
-        conn.close()
+        with self._lock:
+            conn = self.get_connection()
+            try:
+                cursor = conn.cursor()
+                cursor.execute("""
+                    INSERT OR REPLACE INTO earnings_history
+                    (symbol, year, earnings_per_share, revenue, fiscal_end, debt_to_equity, period, net_income, dividend_amount, dividend_yield, operating_cash_flow, capital_expenditures, free_cash_flow, last_updated)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """, (symbol, year, eps, revenue, fiscal_end, debt_to_equity, period, net_income, dividend_amount, dividend_yield, operating_cash_flow, capital_expenditures, free_cash_flow, datetime.now().isoformat()))
+                conn.commit()
+            finally:
+                conn.close()
 
     def get_stock_metrics(self, symbol: str) -> Optional[Dict[str, Any]]:
         conn = self.get_connection()
@@ -649,15 +688,18 @@ class Database:
     
     def update_session_progress(self, session_id: int, processed_count: int, current_symbol: str = None):
         """Update screening session progress"""
-        conn = self.get_connection()
-        cursor = conn.cursor()
-        cursor.execute("""
-            UPDATE screening_sessions 
-            SET processed_count = ?, current_symbol = ?
-            WHERE id = ?
-        """, (processed_count, current_symbol, session_id))
-        conn.commit()
-        conn.close()
+        with self._lock:
+            conn = self.get_connection()
+            try:
+                cursor = conn.cursor()
+                cursor.execute("""
+                    UPDATE screening_sessions 
+                    SET processed_count = ?, current_symbol = ?
+                    WHERE id = ?
+                """, (processed_count, current_symbol, session_id))
+                conn.commit()
+            finally:
+                conn.close()
     
     def complete_session(self, session_id: int, total_analyzed: int, pass_count: int, close_count: int, fail_count: int):
         """Mark session as complete with final counts"""
@@ -691,32 +733,34 @@ class Database:
     def get_session_progress(self, session_id: int) -> Optional[Dict[str, Any]]:
         """Get current progress of a screening session"""
         conn = self.get_connection()
-        cursor = conn.cursor()
-        cursor.execute("""
-            SELECT id, created_at, algorithm, status, processed_count, total_count, 
-                   current_symbol, total_analyzed, pass_count, close_count, fail_count
-            FROM screening_sessions
-            WHERE id = ?
-        """, (session_id,))
-        row = cursor.fetchone()
-        conn.close()
-        
-        if not row:
-            return None
-        
-        return {
-            'id': row[0],
-            'created_at': row[1],
-            'algorithm': row[2],
-            'status': row[3],
-            'processed_count': row[4],
-            'total_count': row[5],
-            'current_symbol': row[6],
-            'total_analyzed': row[7],
-            'pass_count': row[8],
-            'close_count': row[9],
-            'fail_count': row[10]
-        }
+        try:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT id, created_at, algorithm, status, processed_count, total_count, 
+                       current_symbol, total_analyzed, pass_count, close_count, fail_count
+                FROM screening_sessions
+                WHERE id = ?
+            """, (session_id,))
+            row = cursor.fetchone()
+            
+            if not row:
+                return None
+            
+            return {
+                'id': row[0],
+                'created_at': row[1],
+                'algorithm': row[2],
+                'status': row[3],
+                'processed_count': row[4],
+                'total_count': row[5],
+                'current_symbol': row[6],
+                'total_analyzed': row[7],
+                'pass_count': row[8],
+                'close_count': row[9],
+                'fail_count': row[10]
+            }
+        finally:
+            conn.close()
 
     def get_session_results(self, session_id: int) -> List[Dict[str, Any]]:
         """Get all results for a screening session"""
@@ -761,50 +805,53 @@ class Database:
         return results
 
     def save_screening_result(self, session_id: int, result_data: Dict[str, Any]):
-        conn = self.get_connection()
-        cursor = conn.cursor()
-        
-        # Delete existing result for this session/symbol to prevent duplicates
-        cursor.execute("""
-            DELETE FROM screening_results 
-            WHERE session_id = ? AND symbol = ?
-        """, (session_id, result_data.get('symbol')))
-        
-        cursor.execute("""
-            INSERT INTO screening_results
-            (session_id, symbol, company_name, country, market_cap, sector, ipo_year,
-             price, pe_ratio, peg_ratio, debt_to_equity, institutional_ownership, dividend_yield,
-             earnings_cagr, revenue_cagr, consistency_score,
-             peg_status, peg_score, debt_status, debt_score,
-             institutional_ownership_status, institutional_ownership_score, overall_status)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """, (
-            session_id,
-            result_data.get('symbol'),
-            result_data.get('company_name'),
-            result_data.get('country'),
-            result_data.get('market_cap'),
-            result_data.get('sector'),
-            result_data.get('ipo_year'),
-            result_data.get('price'),
-            result_data.get('pe_ratio'),
-            result_data.get('peg_ratio'),
-            result_data.get('debt_to_equity'),
-            result_data.get('institutional_ownership'),
-            result_data.get('dividend_yield'),
-            result_data.get('earnings_cagr'),
-            result_data.get('revenue_cagr'),
-            result_data.get('consistency_score'),
-            result_data.get('peg_status'),
-            result_data.get('peg_score'),
-            result_data.get('debt_status'),
-            result_data.get('debt_score'),
-            result_data.get('institutional_ownership_status'),
-            result_data.get('institutional_ownership_score'),
-            result_data.get('overall_status')
-        ))
-        conn.commit()
-        conn.close()
+        with self._lock:
+            conn = self.get_connection()
+            try:
+                cursor = conn.cursor()
+                
+                # Delete existing result for this session/symbol to prevent duplicates
+                cursor.execute("""
+                    DELETE FROM screening_results 
+                    WHERE session_id = ? AND symbol = ?
+                """, (session_id, result_data.get('symbol')))
+                
+                cursor.execute("""
+                    INSERT INTO screening_results
+                    (session_id, symbol, company_name, country, market_cap, sector, ipo_year,
+                     price, pe_ratio, peg_ratio, debt_to_equity, institutional_ownership, dividend_yield,
+                     earnings_cagr, revenue_cagr, consistency_score,
+                     peg_status, peg_score, debt_status, debt_score,
+                     institutional_ownership_status, institutional_ownership_score, overall_status)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """, (
+                    session_id,
+                    result_data.get('symbol'),
+                    result_data.get('company_name'),
+                    result_data.get('country'),
+                    result_data.get('market_cap'),
+                    result_data.get('sector'),
+                    result_data.get('ipo_year'),
+                    result_data.get('price'),
+                    result_data.get('pe_ratio'),
+                    result_data.get('peg_ratio'),
+                    result_data.get('debt_to_equity'),
+                    result_data.get('institutional_ownership'),
+                    result_data.get('dividend_yield'),
+                    result_data.get('earnings_cagr'),
+                    result_data.get('revenue_cagr'),
+                    result_data.get('consistency_score'),
+                    result_data.get('peg_status'),
+                    result_data.get('peg_score'),
+                    result_data.get('debt_status'),
+                    result_data.get('debt_score'),
+                    result_data.get('institutional_ownership_status'),
+                    result_data.get('institutional_ownership_score'),
+                    result_data.get('overall_status')
+                ))
+                conn.commit()
+            finally:
+                conn.close()
 
     def get_latest_session(self) -> Optional[Dict[str, Any]]:
         conn = self.get_connection()
@@ -897,28 +944,34 @@ class Database:
 
     def add_to_watchlist(self, symbol: str):
         conn = self.get_connection()
-        cursor = conn.cursor()
-        cursor.execute("""
-            INSERT OR IGNORE INTO watchlist (symbol, added_at)
-            VALUES (?, ?)
-        """, (symbol, datetime.now().isoformat()))
-        conn.commit()
-        conn.close()
+        try:
+            cursor = conn.cursor()
+            cursor.execute("""
+                INSERT OR IGNORE INTO watchlist (symbol, added_at)
+                VALUES (?, ?)
+            """, (symbol, datetime.now().isoformat()))
+            conn.commit()
+        finally:
+            conn.close()
 
     def remove_from_watchlist(self, symbol: str):
         conn = self.get_connection()
-        cursor = conn.cursor()
-        cursor.execute("DELETE FROM watchlist WHERE symbol = ?", (symbol,))
-        conn.commit()
-        conn.close()
+        try:
+            cursor = conn.cursor()
+            cursor.execute("DELETE FROM watchlist WHERE symbol = ?", (symbol,))
+            conn.commit()
+        finally:
+            conn.close()
 
     def get_watchlist(self) -> List[str]:
         conn = self.get_connection()
-        cursor = conn.cursor()
-        cursor.execute("SELECT symbol FROM watchlist ORDER BY added_at DESC")
-        symbols = [row[0] for row in cursor.fetchall()]
-        conn.close()
-        return symbols
+        try:
+            cursor = conn.cursor()
+            cursor.execute("SELECT symbol FROM watchlist ORDER BY added_at DESC")
+            symbols = [row[0] for row in cursor.fetchall()]
+            return symbols
+        finally:
+            conn.close()
 
     def is_in_watchlist(self, symbol: str) -> bool:
         conn = self.get_connection()

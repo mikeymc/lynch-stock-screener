@@ -430,7 +430,7 @@ function StockListView({
         setError('Lost connection to screening progress')
         setLoading(false)
       }
-    }, 2000) // Poll every 2 seconds
+    }, 5000) // Poll every 5 seconds (reduced from 2s to avoid Fly.io rate limits)
   }
 
   const getStatusColor = (status) => {

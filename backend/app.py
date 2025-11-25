@@ -95,10 +95,6 @@ def resume_incomplete_sessions():
         traceback.print_exc()
 
 
-# Resume incomplete sessions on startup
-resume_incomplete_sessions()
-
-
 def run_screening_background(session_id: int, symbols: list, algorithm: str, force_refresh: bool):
     """
     Run stock screening in background thread.
@@ -230,6 +226,9 @@ def run_screening_background(session_id: int, symbols: list, algorithm: str, for
             if session_id in active_screenings:
                 del active_screenings[session_id]
 
+
+# Resume incomplete sessions on startup
+resume_incomplete_sessions()
 
 
 @app.route('/api/health', methods=['GET'])
