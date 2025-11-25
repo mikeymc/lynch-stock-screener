@@ -220,7 +220,17 @@ class DataFetcher:
                     logger.info(f"[{symbol}] EDGAR fetch failed. Using yfinance")
                 self._fetch_and_store_earnings(symbol)
 
-            return self.db.get_stock_metrics(symbol)
+            # Return the metrics directly instead of querying DB (supports async writes)
+            # Add company info to metrics for completeness
+            metrics.update({
+                'company_name': company_name,
+                'exchange': exchange,
+                'sector': sector,
+                'country': country,
+                'ipo_year': ipo_year,
+                'symbol': symbol
+            })
+            return metrics
 
         except Exception as e:
             print(f"Error fetching stock data for {symbol}: {type(e).__name__}: {str(e)}")
