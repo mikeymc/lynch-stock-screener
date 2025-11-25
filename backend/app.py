@@ -331,17 +331,18 @@ def start_screening():
             args=(session_id, symbols, algorithm, force_refresh),
             daemon=True
         )
-        thread.start()
-        print(f"[START] Started background thread for session {session_id}")
         
-        # Track active screening
+        # Track active screening BEFORE starting thread to avoid race condition
         with screening_lock:
             active_screenings[session_id] = {
                 'thread': thread,
                 'started_at': datetime.now().isoformat()
             }
-        
         print(f"[START] Session {session_id} registered in active_screenings")
+        
+        # Now start the thread
+        thread.start()
+        print(f"[START] Started background thread for session {session_id}")
         
         return jsonify({
             'session_id': session_id,
