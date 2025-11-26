@@ -9,3 +9,4 @@ schwab-py
 google-generativeai
 edgartools
 gunicorn
+tradingview-screener

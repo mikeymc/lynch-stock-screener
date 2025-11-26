@@ -149,9 +149,10 @@ class EdgarFetcher:
                 logger.info(f"[CIK {cik}] Loaded company facts from local cache")
                 return company_facts
             else:
-                logger.debug(f"[CIK {cik}] Not found in local cache, falling back to API")
+                logger.warning(f"⚠️  [CIK {cik}] NOT IN SEC CACHE - Falling back to slow SEC API call")
         
         # Fallback to API
+        logger.warning(f"⚠️  [CIK {cik}] Making slow SEC API request...")
         return self._fetch_from_api(cik)
     
     def _fetch_from_api(self, cik: str) -> Optional[Dict[str, Any]]:

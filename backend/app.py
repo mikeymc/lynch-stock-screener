@@ -106,10 +106,49 @@ def run_screening_background(session_id: int, symbols: list, algorithm: str, for
         print(f"[Session {session_id}] Algorithm: {algorithm}")
         print(f"[Session {session_id}] Force refresh: {force_refresh}")
         
+        # Bulk prefetch market data from TradingView
+        print(f"[Session {session_id}] Prefetching market data from TradingView...")
+        from tradingview_fetcher import TradingViewFetcher
+        tv_fetcher = TradingViewFetcher()
+        # Fetch MAX stocks to ensure we get everything (limit=20000)
+        market_data_cache = tv_fetcher.fetch_all_stocks(limit=20000)
+        
+        # Use TradingView symbols as our source of truth
+        tv_symbols = list(market_data_cache.keys())
+        
+        # Apply filters (Warrants, Preferreds, etc) to the TV list immediately
+        filtered_tv_symbols = []
+        for sym in tv_symbols:
+            # Filter preferred/warrants/etc
+            if any(char in sym for char in ['$', '-', '.']) and sym not in ['BRK.B', 'BF.B']:
+                continue
+            if len(sym) >= 5 and sym[-1] in ['W', 'R', 'U']:
+                continue
+            filtered_tv_symbols.append(sym)
+            
+        # Determine if we should use the full list or a subset (if user requested a limit)
+        FULL_UNIVERSE_THRESHOLD = 5000
+        
+        if len(symbols) < FULL_UNIVERSE_THRESHOLD and len(symbols) < len(filtered_tv_symbols):
+            # User likely requested a limit (e.g. "Screen top 100")
+            print(f"[Session {session_id}] User requested limit detected ({len(symbols)} symbols). Using top {len(symbols)} from TradingView.")
+            symbols = filtered_tv_symbols[:len(symbols)]
+        else:
+            # Full screen - use the entire TradingView universe
+            print(f"[Session {session_id}] Using full TradingView universe ({len(filtered_tv_symbols)} symbols) as source.")
+            symbols = filtered_tv_symbols
+            
+        # Update session total in DB since the count likely changed
+        db.update_session_total_count(session_id, len(symbols))
+        
+        print(f"[Session {session_id}] ✅ Ready to screen {len(symbols)} stocks (100% market data cached)")
+        print()
+        
         # Worker function to process a single stock
         def process_stock(symbol):
             try:
-                stock_data = fetcher.fetch_stock_data(symbol, force_refresh)
+                # Pass market data cache to avoid individual yfinance calls
+                stock_data = fetcher.fetch_stock_data(symbol, force_refresh, market_data_cache=market_data_cache)
                 if not stock_data:
                     return None
 

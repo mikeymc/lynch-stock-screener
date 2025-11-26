@@ -730,6 +730,12 @@ class Database:
         """
         args = (processed_count, current_symbol, session_id)
         self.write_queue.put((sql, args))
+
+    def update_session_total_count(self, session_id: int, total_count: int):
+        """Update session total count"""
+        sql = "UPDATE screening_sessions SET total_count = ? WHERE id = ?"
+        args = (total_count, session_id)
+        self.write_queue.put((sql, args))
     
     def complete_session(self, session_id: int, total_analyzed: int, pass_count: int, close_count: int, fail_count: int):
         """Mark session as complete with final counts"""

@@ -112,7 +112,7 @@ class DataFetcher:
             return None
 
     @retry_on_rate_limit(max_retries=3, initial_delay=1.0)
-    def fetch_stock_data(self, symbol: str, force_refresh: bool = False) -> Optional[Dict[str, Any]]:
+    def fetch_stock_data(self, symbol: str, force_refresh: bool = False, market_data_cache: Optional[Dict[str, Dict]] = None) -> Optional[Dict[str, Any]]:
         if not force_refresh and self.db.is_cache_valid(symbol):
             return self.db.get_stock_metrics(symbol)
 
@@ -121,11 +121,38 @@ class DataFetcher:
             logger.info(f"[{symbol}] Attempting EDGAR fetch")
             edgar_data = self.edgar_fetcher.fetch_stock_fundamentals(symbol)
 
-            # Fetch current market data from yfinance with timeout
-            info = self._get_yf_info(symbol)
+            # Get market data from TradingView cache or fetch from yfinance
+            using_tradingview_cache = False
+            if market_data_cache and symbol in market_data_cache:
+                # Use pre-fetched TradingView data
+                cached_data = market_data_cache[symbol]
+                info = {
+                    'symbol': symbol,
+                    'currentPrice': cached_data.get('price'),
+                    'regularMarketPrice': cached_data.get('price'),
+                    'marketCap': cached_data.get('market_cap'),
+                    'trailingPE': cached_data.get('pe_ratio'),
+                    'dividendYield': cached_data.get('dividend_yield'),
+                    'beta': cached_data.get('beta'),
+                    'sector': cached_data.get('sector'),
+                    'industry': cached_data.get('industry'),
+                    # Add placeholders for fields TradingView doesn't have
+                    'longName': cached_data.get('company_name') or symbol,
+                    'exchange': 'UNKNOWN',
+                    'country': 'US',  # Assume US since we filter for US exchanges
+                    'totalRevenue': None,
+                    'totalDebt': None,
+                    'heldPercentInstitutions': None,
+                }
+                using_tradingview_cache = True
+                logger.info(f"[{symbol}] Using TradingView cached market data")
+            else:
+                # Fallback to individual yfinance call
+                logger.warning(f"⚠️  [{symbol}] NOT IN TRADINGVIEW CACHE - Falling back to slow yfinance API call")
+                info = self._get_yf_info(symbol)
 
             if not info or 'symbol' not in info:
-                logger.warning(f"[{symbol}] Failed to fetch yfinance info (timeout or error)")
+                logger.error(f"❌ [{symbol}] Failed to fetch market data (not in TradingView cache, yfinance also failed)")
                 return None
 
             company_name = info.get('longName', '')
@@ -143,6 +170,13 @@ class DataFetcher:
             elif first_trade_epoch:
                 from datetime import datetime as dt
                 ipo_year = dt.fromtimestamp(first_trade_epoch).year
+            
+            # Fallback: Use earliest revenue year from EDGAR if IPO year is missing
+            if not ipo_year and edgar_data and edgar_data.get('revenue_history'):
+                years = [entry['year'] for entry in edgar_data['revenue_history']]
+                if years:
+                    ipo_year = min(years)
+                    logger.info(f"[{symbol}] Estimated IPO year from EDGAR revenue history: {ipo_year}")
 
             self.db.save_stock_basic(symbol, company_name, exchange, sector, country, ipo_year)
 
@@ -162,29 +196,31 @@ class DataFetcher:
             beta = info.get('beta')
             total_debt = info.get('totalDebt')
             
-            # Get interest expense from financials
+            # Get interest expense and tax rate from financials (SKIP if using TradingView cache for speed)
             interest_expense = None
-            try:
-                financials = ticker.financials
-                if financials is not None and not financials.empty:
-                    if 'Interest Expense' in financials.index:
-                        # Get most recent value (first column)
-                        interest_expense = abs(financials.loc['Interest Expense'].iloc[0])
-            except Exception as e:
-                logger.debug(f"Could not fetch interest expense for {symbol}: {e}")
-            
-            # Calculate effective tax rate from income statement
             effective_tax_rate = None
-            try:
-                financials = ticker.financials
-                if financials is not None and not financials.empty:
-                    if 'Tax Provision' in financials.index and 'Pretax Income' in financials.index:
-                        tax = financials.loc['Tax Provision'].iloc[0]
-                        pretax = financials.loc['Pretax Income'].iloc[0]
-                        if pretax and pretax > 0:
-                            effective_tax_rate = tax / pretax
-            except Exception as e:
-                logger.debug(f"Could not calculate tax rate for {symbol}: {e}")
+            
+            if not using_tradingview_cache:
+                # Only fetch these slow yfinance calls if NOT using TradingView cache
+                try:
+                    ticker = yf.Ticker(symbol)
+                    financials = ticker.financials
+                    if financials is not None and not financials.empty:
+                        if 'Interest Expense' in financials.index:
+                            interest_expense = abs(financials.loc['Interest Expense'].iloc[0])
+                except Exception as e:
+                    logger.debug(f"Could not fetch interest expense for {symbol}: {e}")
+                
+                # Calculate effective tax rate from income statement
+                try:
+                    if financials is not None and not financials.empty:
+                        if 'Tax Provision' in financials.index and 'Pretax Income' in financials.index:
+                            tax = financials.loc['Tax Provision'].iloc[0]
+                            pretax = financials.loc['Pretax Income'].iloc[0]
+                            if pretax and pretax > 0:
+                                effective_tax_rate = tax / pretax
+                except Exception as e:
+                    logger.debug(f"Could not calculate tax rate for {symbol}: {e}")
 
             metrics = {
                 'price': info.get('currentPrice'),
@@ -202,6 +238,7 @@ class DataFetcher:
             self.db.save_stock_metrics(symbol, metrics)
             # todo: this code seems to complicated. do we really need to count calculated eps?
             # Use EDGAR calculated EPS if available (≥5 years), otherwise fall back to yfinance
+            # ALWAYS process EDGAR data if available (even if using TradingView cache) to get growth rates
             if edgar_data and edgar_data.get('calculated_eps_history') and edgar_data.get('revenue_history'):
                 calculated_eps_count = len(edgar_data.get('calculated_eps_history', []))
                 rev_count = len(edgar_data.get('revenue_history', []))
@@ -217,19 +254,31 @@ class DataFetcher:
                 # Use EDGAR only if we have >= 5 matched years, otherwise fall back to yfinance
                 if matched_years >= 5:
                     logger.info(f"[{symbol}] Using EDGAR Net Income ({matched_years} years)")
-                    # Fetch price history for yield calculation
-                    price_history = self._get_yf_history(symbol)
+                    
+                    # Fetch price history for yield calculation (SKIP if using TradingView cache)
+                    price_history = None
+                    if not using_tradingview_cache:
+                        price_history = self._get_yf_history(symbol)
+                        
                     self._store_edgar_earnings(symbol, edgar_data, price_history)
-                    # Fetch quarterly data from EDGAR
+                    
+                    # Fetch quarterly data from EDGAR (SKIP if using TradingView cache)
                     if edgar_data.get('net_income_quarterly'):
                         logger.info(f"[{symbol}] Fetching quarterly Net Income from EDGAR")
+                        # Only fetch price history if we haven't already and we're not using cache
+                        # But quarterly storage also needs price history for yield... 
+                        # Since we skip quarterly data for cache anyway, this is fine.
                         self._store_edgar_quarterly_earnings(symbol, edgar_data, price_history)
                     else:
-                        logger.warning(f"[{symbol}] No quarterly Net Income available, falling back to yfinance for quarterly data")
-                        self._fetch_quarterly_earnings(symbol)
+                        if not using_tradingview_cache:
+                            logger.warning(f"[{symbol}] No quarterly Net Income available, falling back to yfinance for quarterly data")
+                            self._fetch_quarterly_earnings(symbol)
                 else:
                     logger.info(f"[{symbol}] EDGAR has insufficient matched years ({matched_years} < 5). Falling back to yfinance")
-                    self._fetch_and_store_earnings(symbol)
+                    if not using_tradingview_cache:
+                        self._fetch_and_store_earnings(symbol)
+                    else:
+                        logger.info(f"[{symbol}] Skipping yfinance fallback (using TradingView cache)")
             else:
                 if edgar_data:
                     calculated_eps_count = len(edgar_data.get('calculated_eps_history', []))
@@ -237,7 +286,11 @@ class DataFetcher:
                     logger.info(f"[{symbol}] Partial EDGAR data: {calculated_eps_count} calculated EPS years, {rev_count} revenue years. Falling back to yfinance")
                 else:
                     logger.info(f"[{symbol}] EDGAR fetch failed. Using yfinance")
-                self._fetch_and_store_earnings(symbol)
+                
+                if not using_tradingview_cache:
+                    self._fetch_and_store_earnings(symbol)
+                else:
+                    logger.info(f"[{symbol}] Skipping yfinance fallback (using TradingView cache)")
 
             # Return the metrics directly instead of querying DB (supports async writes)
             # Add company info to metrics for completeness
