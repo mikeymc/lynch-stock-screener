@@ -17,12 +17,14 @@ class EdgarFetcher:
     TICKER_CIK_URL = "https://www.sec.gov/files/company_tickers.json"
     COMPANY_FACTS_URL = f"{BASE_URL}/api/xbrl/companyfacts/CIK{{cik}}.json"
 
-    def __init__(self, user_agent: str):
+    def __init__(self, user_agent: str, use_bulk_cache: bool = True, cache_dir: str = "./sec_cache"):
         """
         Initialize EDGAR fetcher with required User-Agent header
 
         Args:
             user_agent: User-Agent string in format "Company Name email@example.com"
+            use_bulk_cache: Whether to use local bulk data cache (default: True)
+            cache_dir: Directory for bulk data cache (default: ./sec_cache)
         """
         self.user_agent = user_agent
         self.headers = {
@@ -32,9 +34,46 @@ class EdgarFetcher:
         self.ticker_to_cik_cache = None
         self.last_request_time = 0
         self.min_request_interval = 0.1  # 10 requests per second max
+        
+        # Initialize bulk data manager
+        self.use_bulk_cache = use_bulk_cache
+        self.bulk_manager = None
+        
+        if use_bulk_cache:
+            from sec_bulk_data import SECBulkDataManager
+            self.bulk_manager = SECBulkDataManager(cache_dir=cache_dir, user_agent=user_agent)
+            
+            # Check if cache needs initialization
+            if not self.bulk_manager.is_cache_valid():
+                logger.warning("SEC bulk data cache is not initialized or stale")
+                logger.warning("Run initialize_sec_cache() to download bulk data")
+                logger.warning("Falling back to API calls for now")
 
         # Set identity for edgartools
         set_identity(user_agent)
+
+    def initialize_sec_cache(self, force: bool = False) -> bool:
+        """
+        Initialize or update the SEC bulk data cache
+        
+        Args:
+            force: Force re-download even if cache is valid
+            
+        Returns:
+            True if successful, False otherwise
+        """
+        if not self.bulk_manager:
+            logger.error("Bulk cache is disabled")
+            return False
+        
+        if not force and self.bulk_manager.is_cache_valid():
+            logger.info("SEC cache is already valid, skipping download")
+            stats = self.bulk_manager.get_cache_stats()
+            logger.info(f"Cache stats: {stats}")
+            return True
+        
+        logger.info("Initializing SEC bulk data cache...")
+        return self.bulk_manager.download_and_extract()
 
     def _rate_limit(self):
         """Enforce rate limiting of 10 requests per second"""
@@ -93,6 +132,30 @@ class EdgarFetcher:
 
     def fetch_company_facts(self, cik: str) -> Optional[Dict[str, Any]]:
         """
+        Fetch company facts from local cache or SEC EDGAR API
+        
+        Tries local bulk data cache first, falls back to API if not found.
+
+        Args:
+            cik: 10-digit CIK number
+
+        Returns:
+            Dictionary containing company facts data or None on error
+        """
+        # Try local cache first
+        if self.bulk_manager and self.bulk_manager.is_cache_valid():
+            company_facts = self.bulk_manager.load_company_facts(cik)
+            if company_facts:
+                logger.info(f"[CIK {cik}] Loaded company facts from local cache")
+                return company_facts
+            else:
+                logger.debug(f"[CIK {cik}] Not found in local cache, falling back to API")
+        
+        # Fallback to API
+        return self._fetch_from_api(cik)
+    
+    def _fetch_from_api(self, cik: str) -> Optional[Dict[str, Any]]:
+        """
         Fetch company facts from SEC EDGAR API with retry logic for SSL errors
 
         Args:
@@ -111,7 +174,7 @@ class EdgarFetcher:
             try:
                 response = requests.get(url, headers=self.headers, timeout=30)  # Increased timeout for Fly.io
                 response.raise_for_status()
-                logger.info(f"[CIK {cik}] Successfully fetched company facts from EDGAR")
+                logger.info(f"[CIK {cik}] Successfully fetched company facts from EDGAR API")
                 return response.json()
             except requests.exceptions.SSLError as e:
                 if attempt < max_retries - 1:
