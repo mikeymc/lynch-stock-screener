@@ -53,3 +53,7 @@ tokens/
 
 # Test cache
 .pytest_cache/
+
+# SEC cache
+sec_cache/
+
