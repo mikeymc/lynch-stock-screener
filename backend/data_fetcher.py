@@ -112,7 +112,7 @@ class DataFetcher:
             return None
 
     @retry_on_rate_limit(max_retries=3, initial_delay=1.0)
-    def fetch_stock_data(self, symbol: str, force_refresh: bool = False, market_data_cache: Optional[Dict[str, Dict]] = None) -> Optional[Dict[str, Any]]:
+    def fetch_stock_data(self, symbol: str, force_refresh: bool = False, market_data_cache: Optional[Dict[str, Dict]] = None, finviz_cache: Optional[Dict[str, float]] = None) -> Optional[Dict[str, Any]]:
         if not force_refresh and self.db.is_cache_valid(symbol):
             return self.db.get_stock_metrics(symbol)
 
@@ -188,10 +188,21 @@ class DataFetcher:
                 debt_to_equity_pct = info.get('debtToEquity', 0)
                 debt_to_equity = debt_to_equity_pct / 100 if debt_to_equity_pct else None
 
-            # Use yfinance for current market data (price, P/E, market cap, institutional ownership)
+            # Use yfinance for current market data (price, P/E, market cap)
             # yfinance returns dividendYield already as percentage (e.g., 2.79 for 2.79%)
             dividend_yield = info.get('dividendYield')
-            
+
+            # Get institutional ownership from Finviz cache if available, otherwise yfinance
+            institutional_ownership = None
+            if finviz_cache and symbol in finviz_cache:
+                institutional_ownership = finviz_cache[symbol]
+                logger.info(f"[{symbol}] Using Finviz cached institutional ownership: {institutional_ownership:.1%}")
+            elif info:
+                # Fallback to yfinance if not in Finviz cache
+                institutional_ownership = info.get('heldPercentInstitutions')
+                if institutional_ownership is not None:
+                    logger.warning(f"⚠️  [{symbol}] NOT IN FINVIZ CACHE - Using yfinance institutional ownership")
+
             # Fetch WACC-related data
             beta = info.get('beta')
             total_debt = info.get('totalDebt')
@@ -227,7 +238,7 @@ class DataFetcher:
                 'pe_ratio': info.get('trailingPE'),
                 'market_cap': info.get('marketCap'),
                 'debt_to_equity': debt_to_equity,
-                'institutional_ownership': info.get('heldPercentInstitutions'),
+                'institutional_ownership': institutional_ownership,
                 'revenue': info.get('totalRevenue'),
                 'dividend_yield': dividend_yield,
                 'beta': beta,
@@ -236,20 +247,18 @@ class DataFetcher:
                 'effective_tax_rate': effective_tax_rate
             }
             self.db.save_stock_metrics(symbol, metrics)
-            # todo: this code seems to complicated. do we really need to count calculated eps?
-            # Use EDGAR calculated EPS if available (≥5 years), otherwise fall back to yfinance
+            # Use EDGAR net income if available (≥5 years), otherwise fall back to yfinance
             # ALWAYS process EDGAR data if available (even if using TradingView cache) to get growth rates
-            if edgar_data and edgar_data.get('calculated_eps_history') and edgar_data.get('revenue_history'):
-                calculated_eps_count = len(edgar_data.get('calculated_eps_history', []))
+            if edgar_data and edgar_data.get('net_income_annual') and edgar_data.get('revenue_history'):
+                net_income_count = len(edgar_data.get('net_income_annual', []))
                 rev_count = len(edgar_data.get('revenue_history', []))
 
-                # calculated_eps_history already has matched years (Net Income / Shares)
-                # Just check that we have revenue for those years
-                calc_eps_years = {entry['year'] for entry in edgar_data.get('calculated_eps_history', [])}
+                # Check that we have matching years for net income and revenue
+                net_income_years = {entry['year'] for entry in edgar_data.get('net_income_annual', [])}
                 rev_years = {entry['year'] for entry in edgar_data.get('revenue_history', [])}
-                matched_years = len(calc_eps_years & rev_years)
+                matched_years = len(net_income_years & rev_years)
 
-                logger.info(f"[{symbol}] EDGAR returned {calculated_eps_count} calculated EPS years, {rev_count} revenue years, {matched_years} matched")
+                logger.info(f"[{symbol}] EDGAR returned {net_income_count} net income years, {rev_count} revenue years, {matched_years} matched")
 
                 # Use EDGAR only if we have >= 5 matched years, otherwise fall back to yfinance
                 if matched_years >= 5:
@@ -281,9 +290,9 @@ class DataFetcher:
                         logger.info(f"[{symbol}] Skipping yfinance fallback (using TradingView cache)")
             else:
                 if edgar_data:
-                    calculated_eps_count = len(edgar_data.get('calculated_eps_history', []))
+                    net_income_count = len(edgar_data.get('net_income_annual', []))
                     rev_count = len(edgar_data.get('revenue_history', []))
-                    logger.info(f"[{symbol}] Partial EDGAR data: {calculated_eps_count} calculated EPS years, {rev_count} revenue years. Falling back to yfinance")
+                    logger.info(f"[{symbol}] Partial EDGAR data: {net_income_count} net income years, {rev_count} revenue years. Falling back to yfinance")
                 else:
                     logger.info(f"[{symbol}] EDGAR fetch failed. Using yfinance")
                 

@@ -18,23 +18,34 @@ class EarningsAnalyzer:
 
         history_sorted = sorted(history, key=lambda x: x['year'])
 
+        # Filter out entries with NULL net_income or revenue
+        # Keep entries with negative net_income (losses are valid data)
+        valid_history = [
+            h for h in history_sorted
+            if h.get('net_income') is not None and h.get('revenue') is not None
+        ]
+
+        # Need at least 3 years of valid data
+        if len(valid_history) < 3:
+            return None
+
+        # Limit to most recent 10 years for growth calculations
+        # This avoids ancient losses from rejecting currently-profitable stocks
+        recent_history = valid_history[-10:]
+
         # Use Net Income instead of EPS for growth calculations
-        net_income_values = [h.get('net_income') for h in history_sorted]
-        revenue_values = [h['revenue'] for h in history_sorted]
+        net_income_values = [h.get('net_income') for h in recent_history]
+        revenue_values = [h['revenue'] for h in recent_history]
 
-        # Filter out entries without net_income data
-        if not all(ni is not None for ni in net_income_values):
-            return None
-
-        if any(v <= 0 for v in net_income_values[:1]):
-            return None
-
+        # Don't reject stocks with negative earnings - just skip CAGR calculation for earnings
+        # (Revenue CAGR can still be calculated)
         start_net_income = net_income_values[0]
         end_net_income = net_income_values[-1]
         start_revenue = revenue_values[0]
         end_revenue = revenue_values[-1]
-        years = len(history_sorted) - 1
+        years = len(recent_history) - 1
 
+        # Calculate CAGRs - these will return None if start values are <= 0
         earnings_cagr = self.calculate_cagr(start_net_income, end_net_income, years)
         revenue_cagr = self.calculate_cagr(start_revenue, end_revenue, years)
         consistency_score = self.calculate_growth_consistency(net_income_values)

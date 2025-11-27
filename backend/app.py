@@ -112,6 +112,13 @@ def run_screening_background(session_id: int, symbols: list, algorithm: str, for
         tv_fetcher = TradingViewFetcher()
         # Fetch MAX stocks to ensure we get everything (limit=20000)
         market_data_cache = tv_fetcher.fetch_all_stocks(limit=20000)
+
+        # Bulk prefetch institutional ownership from Finviz
+        print(f"[Session {session_id}] Prefetching institutional ownership from Finviz...")
+        from finviz_fetcher import FinvizFetcher
+        finviz_fetcher = FinvizFetcher()
+        finviz_cache = finviz_fetcher.fetch_all_institutional_ownership(limit=20000)
+        print(f"[Session {session_id}] ✅ Loaded {len(finviz_cache)} institutional ownership values from Finviz")
         
         # Use TradingView symbols as our source of truth
         tv_symbols = list(market_data_cache.keys())
@@ -147,8 +154,8 @@ def run_screening_background(session_id: int, symbols: list, algorithm: str, for
         # Worker function to process a single stock
         def process_stock(symbol):
             try:
-                # Pass market data cache to avoid individual yfinance calls
-                stock_data = fetcher.fetch_stock_data(symbol, force_refresh, market_data_cache=market_data_cache)
+                # Pass market data cache and finviz cache to avoid individual yfinance calls
+                stock_data = fetcher.fetch_stock_data(symbol, force_refresh, market_data_cache=market_data_cache, finviz_cache=finviz_cache)
                 if not stock_data:
                     return None
 
@@ -430,17 +437,30 @@ def get_screening_results(session_id):
 def stop_screening(session_id):
     """Stop an active screening session"""
     try:
+        # Check if session exists
+        progress = db.get_session_progress(session_id)
+
+        if not progress:
+            # Session doesn't exist (likely database was reset)
+            # Remove from active screenings anyway to clean up
+            with screening_lock:
+                if session_id in active_screenings:
+                    del active_screenings[session_id]
+
+            return jsonify({
+                'status': 'not_found',
+                'message': f'Session {session_id} not found (database may have been reset)',
+                'progress': None
+            }), 404
+
         # Mark session as cancelled
         db.cancel_session(session_id)
-        
+
         # Remove from active screenings (thread will exit on next check)
         with screening_lock:
             if session_id in active_screenings:
                 del active_screenings[session_id]
-        
-        # Get final progress
-        progress = db.get_session_progress(session_id)
-        
+
         return jsonify({
             'status': 'cancelled',
             'message': f'Screening stopped at {progress["processed_count"]}/{progress["total_count"]} stocks',
@@ -448,6 +468,8 @@ def stop_screening(session_id):
         })
     except Exception as e:
         print(f"Error stopping screening: {e}")
+        import traceback
+        traceback.print_exc()
         return jsonify({'error': str(e)}), 500
 
 

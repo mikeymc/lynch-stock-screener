@@ -342,15 +342,26 @@ function StockListView({
         method: 'POST'
       })
 
-      if (response.ok) {
+      if (response.ok || response.status === 404) {
         const data = await response.json()
-        setProgress(data.message)
+
+        // Handle both successful stop and session-not-found
+        if (response.status === 404) {
+          // Session doesn't exist (database was likely reset)
+          setProgress('Session not found - database may have been reset. Ready to screen.')
+        } else {
+          setProgress(data.message)
+        }
+
         setLoading(false)
         setActiveSessionId(null)
         localStorage.removeItem('activeScreeningSession')
 
         // Clear progress after a delay
         setTimeout(() => setProgress(''), 3000)
+      } else {
+        const data = await response.json()
+        setError(`Failed to stop screening: ${data.error || response.statusText}`)
       }
     } catch (err) {
       console.error('Error stopping screening:', err)

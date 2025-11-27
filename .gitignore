@@ -51,6 +51,9 @@ yarn-error.log*
 tokens/
 *.json
 
+# Finviz institutional ownership cache (regenerated monthly)
+backend/finviz_institutional_cache.json
+
 # Test cache
 .pytest_cache/
 
