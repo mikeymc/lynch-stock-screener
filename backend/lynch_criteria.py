@@ -174,8 +174,8 @@ class LynchCriteria:
         # Calculate PEG ratio only if both P/E and earnings growth are available
         peg_ratio = self.calculate_peg_ratio(pe_ratio, earnings_cagr) if pe_ratio and earnings_cagr else None
 
-        debt_to_equity = metrics.get('debt_to_equity', 0)
-        institutional_ownership = metrics.get('institutional_ownership', 0)
+        debt_to_equity = metrics.get('debt_to_equity')
+        institutional_ownership = metrics.get('institutional_ownership')  # Don't default to 0, keep None as None
 
         # Calculate individual metric scores
         if peg_ratio is None:

@@ -197,8 +197,9 @@ class DataFetcher:
             if finviz_cache and symbol in finviz_cache:
                 institutional_ownership = finviz_cache[symbol]
                 logger.info(f"[{symbol}] Using Finviz cached institutional ownership: {institutional_ownership:.1%}")
-            elif info:
-                # Fallback to yfinance if not in Finviz cache
+            elif not using_tradingview_cache and info:
+                # Only fallback to yfinance if NOT using TradingView cache
+                # (TradingView cache explicitly sets heldPercentInstitutions to None)
                 institutional_ownership = info.get('heldPercentInstitutions')
                 if institutional_ownership is not None:
                     logger.warning(f"⚠️  [{symbol}] NOT IN FINVIZ CACHE - Using yfinance institutional ownership")

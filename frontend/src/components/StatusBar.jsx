@@ -45,17 +45,19 @@ export default function StatusBar({ status, score, value, metricType }) {
   return (
     <div className="status-bar-container" title={tooltipText}>
       <div className="status-bar" data-metric={metricType}>
-        {zones.map((zone, index) => (
-          <div
-            key={index}
-            className={`status-zone ${zone.class}`}
-            style={{ width: zone.width }}
-          ></div>
-        ))}
         <div
           className="status-marker"
           style={{ left: markerPosition }}
         ></div>
+        <div style={{ display: 'flex', width: '100%', height: '100%' }}>
+          {zones.map((zone, index) => (
+            <div
+              key={index}
+              className={`status-zone ${zone.class}`}
+              style={{ width: zone.width }}
+            ></div>
+          ))}
+        </div>
       </div>
     </div>
   )
