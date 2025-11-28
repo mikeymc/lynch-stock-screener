@@ -46,7 +46,12 @@ def retry_on_rate_limit(max_retries=3, initial_delay=1.0):
 class DataFetcher:
     def __init__(self, db: Database):
         self.db = db
-        self.edgar_fetcher = EdgarFetcher(user_agent="Lynch Stock Screener mikey@example.com")
+        # Get a database connection for EdgarFetcher to query company_facts
+        db_conn = db.get_connection()
+        self.edgar_fetcher = EdgarFetcher(
+            user_agent="Lynch Stock Screener mikey@example.com",
+            db_connection=db_conn
+        )
 
     def _get_yf_info(self, symbol: str) -> Optional[Dict[str, Any]]:
         """Fetch yfinance info with socket timeout protection"""

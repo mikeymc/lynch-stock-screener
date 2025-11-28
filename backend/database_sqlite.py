@@ -1,108 +1,137 @@
-# ABOUTME: Manages PostgreSQL database for caching stock data and financial metrics
+# ABOUTME: Manages SQLite database for caching stock data and financial metrics
 # ABOUTME: Provides schema and operations for storing and retrieving stock information
 
-import psycopg2
-import psycopg2.pool
-import psycopg2.extras
+import sqlite3
 import threading
 import os
 import queue
 import time
 from datetime import datetime
 from typing import Optional, Dict, Any, List
-import json
 
 
 class Database:
-    def __init__(self,
-                 host: str = "localhost",
-                 port: int = 5432,
-                 database: str = "lynch_stocks",
-                 user: str = "lynch",
-                 password: str = "lynch_dev_password"):
-
-        self.db_params = {
-            'host': host,
-            'port': port,
-            'database': database,
-            'user': user,
-            'password': password
-        }
-
+    def __init__(self, db_path: str = "stocks.db"):
+        self.db_path = db_path
         self._lock = threading.Lock()
-        self._initializing = True
-
+        self._initializing = True  # Flag to bypass pool during init
+        
         # Connection pool for concurrent reads
+        self.connection_pool = queue.Queue(maxsize=10)
         self.pool_size = 10
-        self.connection_pool = psycopg2.pool.ThreadedConnectionPool(
-            minconn=2,
-            maxconn=self.pool_size,
-            **self.db_params
-        )
-
+        
         # Queue for database write operations
         self.write_queue = queue.Queue()
-        self.write_batch_size = 50
+        self.write_batch = []  # Batch writes for better performance
+        self.write_batch_size = 50  # Commit every 50 operations
+        self.last_commit_time = time.time()
+        
+        # Ensure the directory exists before creating the database
+        db_dir = os.path.dirname(self.db_path)
+        if db_dir and not os.path.exists(db_dir):
+            os.makedirs(db_dir, exist_ok=True)
+            print(f"Created database directory: {db_dir}")
+        
+        # Enable WAL mode globally for better concurrent access
+        # Use a dedicated connection that won't interfere with the pool
+        init_conn = sqlite3.connect(self.db_path)
+        init_conn.execute("PRAGMA journal_mode = WAL")
+        init_conn.execute("PRAGMA foreign_keys = ON")
 
-        # Initialize schema
-        init_conn = self.connection_pool.getconn()
-        try:
-            self._init_schema_with_connection(init_conn)
-        finally:
-            self.connection_pool.putconn(init_conn)
-
+        # Initialize schema BEFORE creating the pool to avoid any connection conflicts
+        self._init_schema_with_connection(init_conn)
+        init_conn.close()
         self._initializing = False
 
+        # Now create connection pool for concurrent reads
+        for _ in range(self.pool_size):
+            conn = sqlite3.connect(
+                self.db_path,
+                check_same_thread=False,
+                timeout=30.0
+            )
+            conn.execute("PRAGMA foreign_keys = ON")
+            self.connection_pool.put(conn)
+        print(f"Database connection pool initialized with {self.pool_size} connections")
+        
         # Start background writer thread
         self.writer_thread = threading.Thread(target=self._writer_loop, daemon=True)
         self.writer_thread.start()
         print("Database writer thread started")
 
     def get_connection(self):
-        """Get a connection from the pool"""
-        return self.connection_pool.getconn()
-
+        """Get a connection from the pool, or create a new one if pool is empty"""
+        try:
+            # Try to get from pool with short timeout
+            conn = self.connection_pool.get(timeout=0.1)
+            return conn
+        except queue.Empty:
+            # Pool exhausted, create new connection (will be discarded after use)
+            conn = sqlite3.connect(
+                self.db_path,
+                check_same_thread=False,
+                timeout=30.0
+            )
+            conn.execute("PRAGMA foreign_keys = ON")
+            return conn
+    
     def return_connection(self, conn):
         """Return a connection to the pool"""
-        self.connection_pool.putconn(conn)
-
+        try:
+            self.connection_pool.put_nowait(conn)
+        except queue.Full:
+            # Pool is full, close the connection
+            conn.close()
+        
     def _writer_loop(self):
         """
         Background thread that handles all database writes sequentially.
         Implements batched writes for better performance with high concurrency.
         """
-        conn = self.connection_pool.getconn()
+        # Create a dedicated connection for the writer thread
+        conn = sqlite3.connect(
+            self.db_path, 
+            check_same_thread=False, 
+            timeout=60.0  # Long timeout for writer
+        )
+        conn.execute("PRAGMA foreign_keys = ON")
         cursor = conn.cursor()
-
+        
         batch = []
         last_commit = time.time()
-
+        
         while True:
             try:
+                # Get task from queue with timeout to allow periodic commits
                 try:
                     task = self.write_queue.get(timeout=2.0)
                 except queue.Empty:
                     task = None
-
+                
                 if task is None and not batch:
+                    # No task and no pending batch, continue
                     continue
-
+                
                 if task is not None:
                     if task == "STOP":
+                        # Sentinel to stop thread - commit pending batch first
                         if batch:
                             conn.commit()
                         break
-
+                    
+                    # Add to batch
                     batch.append(task)
                     self.write_queue.task_done()
-
+                
+                # Commit batch if it's large enough or enough time has passed
                 should_commit = (
                     len(batch) >= self.write_batch_size or
                     (batch and time.time() - last_commit >= 2.0)
                 )
-
+                
                 if should_commit:
                     try:
+                        # Execute all batched operations
                         for sql, args in batch:
                             cursor.execute(sql, args)
                         conn.commit()
@@ -112,19 +141,23 @@ class Database:
                         print(f"Database batch write error: {e}")
                         conn.rollback()
                         batch = []
-
+                        
             except Exception as e:
                 print(f"Fatal error in writer loop: {e}")
-                time.sleep(1)
-
-        self.connection_pool.putconn(conn)
-
+                time.sleep(1)  # Prevent tight loop on fatal error
+    
     def connection(self):
         """
         Context manager for database connections.
+        Ensures connections are returned to the pool after use.
+        
+        Usage:
+            with db.connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute(...)
         """
         from contextlib import contextmanager
-
+        
         @contextmanager
         def _connection():
             conn = self.get_connection()
@@ -132,7 +165,7 @@ class Database:
                 yield conn
             finally:
                 self.return_connection(conn)
-
+        
         return _connection()
 
     def _init_schema_with_connection(self, conn):
@@ -181,9 +214,53 @@ class Database:
             )
         """)
 
+        # Run migrations to ensure existing tables have all columns
+        self._migrate_schema(cursor, conn)
+
+        conn.commit()
+
+    def _migrate_schema(self, cursor, conn):
+        """Checks for missing columns and adds them if necessary."""
+        # Check stock_metrics columns
+        cursor.execute("PRAGMA table_info(stock_metrics)")
+        columns = {row[1] for row in cursor.fetchall()}
+        
+        new_columns = [
+            ('beta', 'REAL'),
+            ('total_debt', 'REAL'),
+            ('interest_expense', 'REAL'),
+            ('effective_tax_rate', 'REAL')
+        ]
+        
+        for col_name, col_type in new_columns:
+            if col_name not in columns:
+                try:
+                    cursor.execute(f"ALTER TABLE stock_metrics ADD COLUMN {col_name} {col_type}")
+                    print(f"Migrated stock_metrics: Added {col_name}")
+                except Exception as e:
+                    print(f"Migration error for {col_name}: {e}")
+
+        # Check earnings_history columns (for consistency)
+        cursor.execute("PRAGMA table_info(earnings_history)")
+        eh_columns = {row[1] for row in cursor.fetchall()}
+        
+        eh_new_columns = [
+            ('operating_cash_flow', 'REAL'),
+            ('capital_expenditures', 'REAL'),
+            ('free_cash_flow', 'REAL')
+        ]
+        
+        for col_name, col_type in eh_new_columns:
+            if col_name not in eh_columns:
+                try:
+                    cursor.execute(f"ALTER TABLE earnings_history ADD COLUMN {col_name} {col_type}")
+                    print(f"Migrated earnings_history: Added {col_name}")
+                except Exception as e:
+                    print(f"Migration error for {col_name}: {e}")
+
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS earnings_history (
-                id SERIAL PRIMARY KEY,
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
                 symbol TEXT,
                 year INTEGER,
                 earnings_per_share REAL,
@@ -235,7 +312,7 @@ class Database:
 
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS sec_filings (
-                id SERIAL PRIMARY KEY,
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
                 symbol TEXT,
                 filing_type TEXT,
                 filing_date TEXT,
@@ -249,7 +326,7 @@ class Database:
 
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS filing_sections (
-                id SERIAL PRIMARY KEY,
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
                 symbol TEXT,
                 section_name TEXT,
                 content TEXT,
@@ -263,7 +340,7 @@ class Database:
 
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS screening_sessions (
-                id SERIAL PRIMARY KEY,
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
                 created_at TIMESTAMP,
                 total_analyzed INTEGER,
                 pass_count INTEGER,
@@ -277,9 +354,35 @@ class Database:
             )
         """)
 
+        # Migration: Add new columns to screening_sessions if they don't exist
+        try:
+            cursor.execute("ALTER TABLE screening_sessions ADD COLUMN status TEXT DEFAULT 'running'")
+        except sqlite3.OperationalError:
+            pass  # Column already exists
+        
+        try:
+            cursor.execute("ALTER TABLE screening_sessions ADD COLUMN processed_count INTEGER DEFAULT 0")
+        except sqlite3.OperationalError:
+            pass
+        
+        try:
+            cursor.execute("ALTER TABLE screening_sessions ADD COLUMN total_count INTEGER DEFAULT 0")
+        except sqlite3.OperationalError:
+            pass
+        
+        try:
+            cursor.execute("ALTER TABLE screening_sessions ADD COLUMN current_symbol TEXT")
+        except sqlite3.OperationalError:
+            pass
+        
+        try:
+            cursor.execute("ALTER TABLE screening_sessions ADD COLUMN algorithm TEXT")
+        except sqlite3.OperationalError:
+            pass
+
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS screening_results (
-                id SERIAL PRIMARY KEY,
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
                 session_id INTEGER,
                 symbol TEXT,
                 company_name TEXT,
@@ -297,11 +400,8 @@ class Database:
                 revenue_cagr REAL,
                 consistency_score REAL,
                 peg_status TEXT,
-                peg_score REAL,
                 debt_status TEXT,
-                debt_score REAL,
                 institutional_ownership_status TEXT,
-                institutional_ownership_score REAL,
                 overall_status TEXT,
                 FOREIGN KEY (session_id) REFERENCES screening_sessions(id) ON DELETE CASCADE
             )
@@ -309,7 +409,7 @@ class Database:
 
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS conversations (
-                id SERIAL PRIMARY KEY,
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
                 symbol TEXT NOT NULL,
                 title TEXT,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -320,7 +420,7 @@ class Database:
 
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS messages (
-                id SERIAL PRIMARY KEY,
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
                 conversation_id INTEGER NOT NULL,
                 role TEXT NOT NULL,
                 content TEXT NOT NULL,
@@ -331,7 +431,7 @@ class Database:
 
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS message_sources (
-                id SERIAL PRIMARY KEY,
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
                 message_id INTEGER NOT NULL,
                 section_name TEXT NOT NULL,
                 filing_type TEXT,
@@ -348,42 +448,127 @@ class Database:
             )
         """)
 
-        conn.commit()
+        # Migration: Add fiscal_end column if it doesn't exist
+        cursor.execute("PRAGMA table_info(earnings_history)")
+        columns = [row[1] for row in cursor.fetchall()]
+        if 'fiscal_end' not in columns:
+            cursor.execute("ALTER TABLE earnings_history ADD COLUMN fiscal_end TEXT")
+
+        # Migration: Add debt_to_equity column if it doesn't exist
+        cursor.execute("PRAGMA table_info(earnings_history)")
+        columns = [row[1] for row in cursor.fetchall()]
+        if 'debt_to_equity' not in columns:
+            cursor.execute("ALTER TABLE earnings_history ADD COLUMN debt_to_equity REAL")
+
+        # Migration: Add country and ipo_year columns to stocks table
+        cursor.execute("PRAGMA table_info(stocks)")
+        stocks_columns = [row[1] for row in cursor.fetchall()]
+        if 'country' not in stocks_columns:
+            cursor.execute("ALTER TABLE stocks ADD COLUMN country TEXT")
+        if 'ipo_year' not in stocks_columns:
+            cursor.execute("ALTER TABLE stocks ADD COLUMN ipo_year INTEGER")
+
+        # Migration: Add dividend_yield column to stock_metrics table
+        cursor.execute("PRAGMA table_info(stock_metrics)")
+        metrics_columns = [row[1] for row in cursor.fetchall()]
+        if 'dividend_yield' not in metrics_columns:
+            cursor.execute("ALTER TABLE stock_metrics ADD COLUMN dividend_yield REAL")
+
+        # Migration: Add dividend_yield column to screening_results table
+        cursor.execute("PRAGMA table_info(screening_results)")
+        results_columns = [row[1] for row in cursor.fetchall()]
+        if 'dividend_yield' not in results_columns:
+            cursor.execute("ALTER TABLE screening_results ADD COLUMN dividend_yield REAL")
+
+        # Migration: Add score columns to screening_results table
+        cursor.execute("PRAGMA table_info(screening_results)")
+        results_columns = [row[1] for row in cursor.fetchall()]
+        if 'peg_score' not in results_columns:
+            cursor.execute("ALTER TABLE screening_results ADD COLUMN peg_score REAL")
+        if 'debt_score' not in results_columns:
+            cursor.execute("ALTER TABLE screening_results ADD COLUMN debt_score REAL")
+        if 'institutional_ownership_score' not in results_columns:
+            cursor.execute("ALTER TABLE screening_results ADD COLUMN institutional_ownership_score REAL")
+
+        # Migration: Add period column to earnings_history table
+        cursor.execute("PRAGMA table_info(earnings_history)")
+        earnings_columns = [row[1] for row in cursor.fetchall()]
+        if 'period' not in earnings_columns:
+            cursor.execute("ALTER TABLE earnings_history ADD COLUMN period TEXT DEFAULT 'annual'")
+
+        # Migration: Add net_income column to earnings_history table
+        cursor.execute("PRAGMA table_info(earnings_history)")
+        earnings_columns = [row[1] for row in cursor.fetchall()]
+        if 'net_income' not in earnings_columns:
+            cursor.execute("ALTER TABLE earnings_history ADD COLUMN net_income REAL")
+
+        # Migration: Update UNIQUE constraint to include period
+        # Check if old constraint exists (symbol, year only)
+        cursor.execute("SELECT sql FROM sqlite_master WHERE type='table' AND name='earnings_history'")
+        table_def = cursor.fetchone()
+        if table_def and 'UNIQUE(symbol, year, period)' not in table_def[0]:
+            # Recreate table with new constraint
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS earnings_history_new (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    symbol TEXT,
+                    year INTEGER,
+                    earnings_per_share REAL,
+                    revenue REAL,
+                    fiscal_end TEXT,
+                    debt_to_equity REAL,
+                    period TEXT DEFAULT 'annual',
+                    net_income REAL,
+                    dividend_amount REAL,
+                    dividend_yield REAL,
+                    last_updated TIMESTAMP,
+                    FOREIGN KEY (symbol) REFERENCES stocks(symbol),
+                    UNIQUE(symbol, year, period)
+                )
+            """)
+            # Copy data from old table
+            cursor.execute("""
+                INSERT INTO earnings_history_new
+                SELECT * FROM earnings_history
+            """)
+            # Drop old table and rename new one
+            cursor.execute("DROP TABLE earnings_history")
+            cursor.execute("ALTER TABLE earnings_history_new RENAME TO earnings_history")
+
+        # Migration: Add dividend_amount column to earnings_history table
+        cursor.execute("PRAGMA table_info(earnings_history)")
+        earnings_columns = [row[1] for row in cursor.fetchall()]
+        if 'dividend_amount' not in earnings_columns:
+            cursor.execute("ALTER TABLE earnings_history ADD COLUMN dividend_amount REAL")
+
+        if 'dividend_yield' not in earnings_columns:
+            cursor.execute("ALTER TABLE earnings_history ADD COLUMN dividend_yield REAL")
+
+        # Migration: Add cash flow columns to earnings_history table
+        cursor.execute("PRAGMA table_info(earnings_history)")
+        earnings_columns = [row[1] for row in cursor.fetchall()]
+        if 'operating_cash_flow' not in earnings_columns:
+            cursor.execute("ALTER TABLE earnings_history ADD COLUMN operating_cash_flow REAL")
+        if 'capital_expenditures' not in earnings_columns:
+            cursor.execute("ALTER TABLE earnings_history ADD COLUMN capital_expenditures REAL")
+        if 'free_cash_flow' not in earnings_columns:
+            cursor.execute("ALTER TABLE earnings_history ADD COLUMN free_cash_flow REAL")
+
 
     def save_stock_basic(self, symbol: str, company_name: str, exchange: str, sector: str = None,
                         country: str = None, ipo_year: int = None):
         sql = """
-            INSERT INTO stocks (symbol, company_name, exchange, sector, country, ipo_year, last_updated)
-            VALUES (%s, %s, %s, %s, %s, %s, %s)
-            ON CONFLICT (symbol) DO UPDATE SET
-                company_name = EXCLUDED.company_name,
-                exchange = EXCLUDED.exchange,
-                sector = EXCLUDED.sector,
-                country = EXCLUDED.country,
-                ipo_year = EXCLUDED.ipo_year,
-                last_updated = EXCLUDED.last_updated
+            INSERT OR REPLACE INTO stocks (symbol, company_name, exchange, sector, country, ipo_year, last_updated)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
         """
-        args = (symbol, company_name, exchange, sector, country, ipo_year, datetime.now())
+        args = (symbol, company_name, exchange, sector, country, ipo_year, datetime.now().isoformat())
         self.write_queue.put((sql, args))
 
     def save_stock_metrics(self, symbol: str, metrics: Dict[str, Any]):
         sql = """
-            INSERT INTO stock_metrics
+            INSERT OR REPLACE INTO stock_metrics
             (symbol, price, pe_ratio, market_cap, debt_to_equity, institutional_ownership, revenue, dividend_yield, beta, total_debt, interest_expense, effective_tax_rate, last_updated)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-            ON CONFLICT (symbol) DO UPDATE SET
-                price = EXCLUDED.price,
-                pe_ratio = EXCLUDED.pe_ratio,
-                market_cap = EXCLUDED.market_cap,
-                debt_to_equity = EXCLUDED.debt_to_equity,
-                institutional_ownership = EXCLUDED.institutional_ownership,
-                revenue = EXCLUDED.revenue,
-                dividend_yield = EXCLUDED.dividend_yield,
-                beta = EXCLUDED.beta,
-                total_debt = EXCLUDED.total_debt,
-                interest_expense = EXCLUDED.interest_expense,
-                effective_tax_rate = EXCLUDED.effective_tax_rate,
-                last_updated = EXCLUDED.last_updated
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """
         args = (
             symbol,
@@ -398,29 +583,17 @@ class Database:
             metrics.get('total_debt'),
             metrics.get('interest_expense'),
             metrics.get('effective_tax_rate'),
-            datetime.now()
+            datetime.now().isoformat()
         )
         self.write_queue.put((sql, args))
 
     def save_earnings_history(self, symbol: str, year: int, eps: float, revenue: float, fiscal_end: Optional[str] = None, debt_to_equity: Optional[float] = None, period: str = 'annual', net_income: Optional[float] = None, dividend_amount: Optional[float] = None, dividend_yield: Optional[float] = None, operating_cash_flow: Optional[float] = None, capital_expenditures: Optional[float] = None, free_cash_flow: Optional[float] = None):
         sql = """
-            INSERT INTO earnings_history
+            INSERT OR REPLACE INTO earnings_history
             (symbol, year, earnings_per_share, revenue, fiscal_end, debt_to_equity, period, net_income, dividend_amount, dividend_yield, operating_cash_flow, capital_expenditures, free_cash_flow, last_updated)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-            ON CONFLICT (symbol, year, period) DO UPDATE SET
-                earnings_per_share = EXCLUDED.earnings_per_share,
-                revenue = EXCLUDED.revenue,
-                fiscal_end = EXCLUDED.fiscal_end,
-                debt_to_equity = EXCLUDED.debt_to_equity,
-                net_income = EXCLUDED.net_income,
-                dividend_amount = EXCLUDED.dividend_amount,
-                dividend_yield = EXCLUDED.dividend_yield,
-                operating_cash_flow = EXCLUDED.operating_cash_flow,
-                capital_expenditures = EXCLUDED.capital_expenditures,
-                free_cash_flow = EXCLUDED.free_cash_flow,
-                last_updated = EXCLUDED.last_updated
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """
-        args = (symbol, year, eps, revenue, fiscal_end, debt_to_equity, period, net_income, dividend_amount, dividend_yield, operating_cash_flow, capital_expenditures, free_cash_flow, datetime.now())
+        args = (symbol, year, eps, revenue, fiscal_end, debt_to_equity, period, net_income, dividend_amount, dividend_yield, operating_cash_flow, capital_expenditures, free_cash_flow, datetime.now().isoformat())
         self.write_queue.put((sql, args))
 
     def get_stock_metrics(self, symbol: str) -> Optional[Dict[str, Any]]:
@@ -430,7 +603,7 @@ class Database:
             SELECT sm.*, s.company_name, s.exchange, s.sector, s.country, s.ipo_year
             FROM stock_metrics sm
             JOIN stocks s ON sm.symbol = s.symbol
-            WHERE sm.symbol = %s
+            WHERE sm.symbol = ?
         """, (symbol,))
         row = cursor.fetchone()
         self.return_connection(conn)
@@ -438,6 +611,10 @@ class Database:
         if not row:
             return None
 
+        # stock_metrics columns: symbol, price, pe_ratio, market_cap, debt_to_equity, 
+        # institutional_ownership, revenue, dividend_yield, last_updated, beta, total_debt, 
+        # interest_expense, effective_tax_rate (13 columns total)
+        # Then joined stocks columns: company_name, exchange, sector, country, ipo_year
         return {
             'symbol': row[0],
             'price': row[1],
@@ -463,10 +640,11 @@ class Database:
         conn = self.get_connection()
         cursor = conn.cursor()
 
+        # Build WHERE clause based on period_type
         if period_type == 'quarterly':
-            where_clause = "WHERE symbol = %s AND period IN ('Q1', 'Q2', 'Q3', 'Q4')"
-        else:
-            where_clause = "WHERE symbol = %s AND period = 'annual'"
+            where_clause = "WHERE symbol = ? AND period IN ('Q1', 'Q2', 'Q3', 'Q4')"
+        else:  # default to annual
+            where_clause = "WHERE symbol = ? AND period = 'annual'"
 
         cursor.execute(f"""
             SELECT year, earnings_per_share, revenue, fiscal_end, debt_to_equity, period, net_income, dividend_amount, dividend_yield, operating_cash_flow, capital_expenditures, free_cash_flow, last_updated
@@ -500,7 +678,7 @@ class Database:
         conn = self.get_connection()
         cursor = conn.cursor()
         cursor.execute("""
-            SELECT last_updated FROM stock_metrics WHERE symbol = %s
+            SELECT last_updated FROM stock_metrics WHERE symbol = ?
         """, (symbol,))
         row = cursor.fetchone()
         self.return_connection(conn)
@@ -508,7 +686,7 @@ class Database:
         if not row:
             return False
 
-        last_updated = row[0]
+        last_updated = datetime.fromisoformat(row[0])
         age_hours = (datetime.now() - last_updated).total_seconds() / 3600
         return age_hours < max_age_hours
 
@@ -525,14 +703,10 @@ class Database:
         conn = self.get_connection()
         cursor = conn.cursor()
         cursor.execute("""
-            INSERT INTO lynch_analyses
+            INSERT OR REPLACE INTO lynch_analyses
             (symbol, analysis_text, generated_at, model_version)
-            VALUES (%s, %s, %s, %s)
-            ON CONFLICT (symbol) DO UPDATE SET
-                analysis_text = EXCLUDED.analysis_text,
-                generated_at = EXCLUDED.generated_at,
-                model_version = EXCLUDED.model_version
-        """, (symbol, analysis_text, datetime.now(), model_version))
+            VALUES (?, ?, ?, ?)
+        """, (symbol, analysis_text, datetime.now().isoformat(), model_version))
         conn.commit()
         self.return_connection(conn)
 
@@ -542,7 +716,7 @@ class Database:
         cursor.execute("""
             SELECT symbol, analysis_text, generated_at, model_version
             FROM lynch_analyses
-            WHERE symbol = %s
+            WHERE symbol = ?
         """, (symbol,))
         row = cursor.fetchone()
         self.return_connection(conn)
@@ -561,14 +735,10 @@ class Database:
         conn = self.get_connection()
         cursor = conn.cursor()
         cursor.execute("""
-            INSERT INTO chart_analyses
+            INSERT OR REPLACE INTO chart_analyses
             (symbol, section, analysis_text, generated_at, model_version)
-            VALUES (%s, %s, %s, %s, %s)
-            ON CONFLICT (symbol, section) DO UPDATE SET
-                analysis_text = EXCLUDED.analysis_text,
-                generated_at = EXCLUDED.generated_at,
-                model_version = EXCLUDED.model_version
-        """, (symbol, section, analysis_text, datetime.now(), model_version))
+            VALUES (?, ?, ?, ?, ?)
+        """, (symbol, section, analysis_text, datetime.now().isoformat(), model_version))
         conn.commit()
         self.return_connection(conn)
 
@@ -578,7 +748,7 @@ class Database:
         cursor.execute("""
             SELECT symbol, section, analysis_text, generated_at, model_version
             FROM chart_analyses
-            WHERE symbol = %s AND section = %s
+            WHERE symbol = ? AND section = ?
         """, (symbol, section))
         row = cursor.fetchone()
         self.return_connection(conn)
@@ -600,76 +770,75 @@ class Database:
         cursor = conn.cursor()
         cursor.execute("""
             INSERT INTO screening_sessions (
-                created_at, algorithm, total_count, processed_count,
+                created_at, algorithm, total_count, processed_count, 
                 total_analyzed, pass_count, close_count, fail_count, status
             )
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
-            RETURNING id
-        """, (datetime.now(), algorithm, total_count, 0, total_analyzed, pass_count, close_count, fail_count, 'running'))
-        session_id = cursor.fetchone()[0]
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (datetime.now().isoformat(), algorithm, total_count, 0, total_analyzed, pass_count, close_count, fail_count, 'running'))
+        session_id = cursor.lastrowid
         conn.commit()
         self.return_connection(conn)
         return session_id
-
+    
     def update_session_progress(self, session_id: int, processed_count: int, current_symbol: str = None):
         """Update screening session progress"""
         sql = """
-            UPDATE screening_sessions
-            SET processed_count = %s, current_symbol = %s
-            WHERE id = %s
+            UPDATE screening_sessions 
+            SET processed_count = ?, current_symbol = ?
+            WHERE id = ?
         """
         args = (processed_count, current_symbol, session_id)
         self.write_queue.put((sql, args))
 
     def update_session_total_count(self, session_id: int, total_count: int):
         """Update session total count"""
-        sql = "UPDATE screening_sessions SET total_count = %s WHERE id = %s"
+        sql = "UPDATE screening_sessions SET total_count = ? WHERE id = ?"
         args = (total_count, session_id)
         self.write_queue.put((sql, args))
-
+    
     def complete_session(self, session_id: int, total_analyzed: int, pass_count: int, close_count: int, fail_count: int):
         """Mark session as complete with final counts"""
         sql = """
-            UPDATE screening_sessions
-            SET status = 'complete',
-                total_analyzed = %s,
-                pass_count = %s,
-                close_count = %s,
-                fail_count = %s,
+            UPDATE screening_sessions 
+            SET status = 'complete', 
+                total_analyzed = ?,
+                pass_count = ?,
+                close_count = ?,
+                fail_count = ?,
                 processed_count = total_count
-            WHERE id = %s
+            WHERE id = ?
         """
         args = (total_analyzed, pass_count, close_count, fail_count, session_id)
         self.write_queue.put((sql, args))
-
+    
     def cancel_session(self, session_id: int):
         """Mark session as cancelled"""
         conn = self.get_connection()
         cursor = conn.cursor()
         cursor.execute("""
-            UPDATE screening_sessions
+            UPDATE screening_sessions 
             SET status = 'cancelled'
-            WHERE id = %s
+            WHERE id = ?
         """, (session_id,))
         conn.commit()
         self.return_connection(conn)
-
+    
     def get_session_progress(self, session_id: int) -> Optional[Dict[str, Any]]:
         """Get current progress of a screening session"""
         conn = self.get_connection()
         try:
             cursor = conn.cursor()
             cursor.execute("""
-                SELECT id, created_at, algorithm, status, processed_count, total_count,
+                SELECT id, created_at, algorithm, status, processed_count, total_count, 
                        current_symbol, total_analyzed, pass_count, close_count, fail_count
                 FROM screening_sessions
-                WHERE id = %s
+                WHERE id = ?
             """, (session_id,))
             row = cursor.fetchone()
-
+            
             if not row:
                 return None
-
+            
             return {
                 'id': row[0],
                 'created_at': row[1],
@@ -696,12 +865,12 @@ class Database:
                    dividend_yield, earnings_cagr, revenue_cagr, consistency_score,
                    peg_status, debt_status, institutional_ownership_status, overall_status
             FROM screening_results
-            WHERE session_id = %s
+            WHERE session_id = ?
             ORDER BY id ASC
         """, (session_id,))
         rows = cursor.fetchall()
         self.return_connection(conn)
-
+        
         results = []
         for row in rows:
             results.append({
@@ -725,17 +894,18 @@ class Database:
                 'institutional_ownership_status': row[17],
                 'overall_status': row[18]
             })
-
+        
         return results
 
     def save_screening_result(self, session_id: int, result_data: Dict[str, Any]):
+        # Delete existing result for this session/symbol to prevent duplicates
         sql_delete = """
-            DELETE FROM screening_results
-            WHERE session_id = %s AND symbol = %s
+            DELETE FROM screening_results 
+            WHERE session_id = ? AND symbol = ?
         """
         args_delete = (session_id, result_data.get('symbol'))
         self.write_queue.put((sql_delete, args_delete))
-
+        
         sql_insert = """
             INSERT INTO screening_results
             (session_id, symbol, company_name, country, market_cap, sector, ipo_year,
@@ -743,7 +913,7 @@ class Database:
              earnings_cagr, revenue_cagr, consistency_score,
              peg_status, peg_score, debt_status, debt_score,
              institutional_ownership_status, institutional_ownership_score, overall_status)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """
         args_insert = (
             session_id,
@@ -776,6 +946,7 @@ class Database:
         conn = self.get_connection()
         cursor = conn.cursor()
 
+        # Get the latest session
         cursor.execute("""
             SELECT id, created_at, total_analyzed, pass_count, close_count, fail_count
             FROM screening_sessions
@@ -790,6 +961,7 @@ class Database:
 
         session_id = session_row[0]
 
+        # Get all results for this session
         cursor.execute("""
             SELECT symbol, company_name, country, market_cap, sector, ipo_year,
                    price, pe_ratio, peg_ratio, debt_to_equity, institutional_ownership, dividend_yield,
@@ -797,7 +969,7 @@ class Database:
                    peg_status, peg_score, debt_status, debt_score,
                    institutional_ownership_status, institutional_ownership_score, overall_status
             FROM screening_results
-            WHERE session_id = %s
+            WHERE session_id = ?
         """, (session_id,))
         result_rows = cursor.fetchall()
 
@@ -844,30 +1016,31 @@ class Database:
         conn = self.get_connection()
         cursor = conn.cursor()
 
+        # Get IDs of sessions to delete (all except the keep_count most recent)
         cursor.execute("""
             SELECT id FROM screening_sessions
             ORDER BY created_at DESC
-            OFFSET %s
+            LIMIT -1 OFFSET ?
         """, (keep_count,))
         old_session_ids = [row[0] for row in cursor.fetchall()]
 
+        # Delete old sessions (CASCADE will delete associated results)
         for session_id in old_session_ids:
-            cursor.execute("DELETE FROM screening_sessions WHERE id = %s", (session_id,))
+            cursor.execute("DELETE FROM screening_sessions WHERE id = ?", (session_id,))
 
         conn.commit()
         self.return_connection(conn)
 
     def add_to_watchlist(self, symbol: str):
         sql = """
-            INSERT INTO watchlist (symbol, added_at)
-            VALUES (%s, %s)
-            ON CONFLICT (symbol) DO NOTHING
+            INSERT OR IGNORE INTO watchlist (symbol, added_at)
+            VALUES (?, ?)
         """
-        args = (symbol, datetime.now())
+        args = (symbol, datetime.now().isoformat())
         self.write_queue.put((sql, args))
 
     def remove_from_watchlist(self, symbol: str):
-        sql = "DELETE FROM watchlist WHERE symbol = %s"
+        sql = "DELETE FROM watchlist WHERE symbol = ?"
         args = (symbol,)
         self.write_queue.put((sql, args))
 
@@ -884,7 +1057,7 @@ class Database:
     def is_in_watchlist(self, symbol: str) -> bool:
         conn = self.get_connection()
         cursor = conn.cursor()
-        cursor.execute("SELECT 1 FROM watchlist WHERE symbol = %s", (symbol,))
+        cursor.execute("SELECT 1 FROM watchlist WHERE symbol = ?", (symbol,))
         result = cursor.fetchone()
         self.return_connection(conn)
         return result is not None
@@ -893,15 +1066,10 @@ class Database:
         conn = self.get_connection()
         cursor = conn.cursor()
         cursor.execute("""
-            INSERT INTO sec_filings
+            INSERT OR REPLACE INTO sec_filings
             (symbol, filing_type, filing_date, document_url, accession_number, last_updated)
-            VALUES (%s, %s, %s, %s, %s, %s)
-            ON CONFLICT (symbol, accession_number) DO UPDATE SET
-                filing_type = EXCLUDED.filing_type,
-                filing_date = EXCLUDED.filing_date,
-                document_url = EXCLUDED.document_url,
-                last_updated = EXCLUDED.last_updated
-        """, (symbol, filing_type, filing_date, document_url, accession_number, datetime.now()))
+            VALUES (?, ?, ?, ?, ?, ?)
+        """, (symbol, filing_type, filing_date, document_url, accession_number, datetime.now().isoformat()))
         conn.commit()
         self.return_connection(conn)
 
@@ -909,19 +1077,21 @@ class Database:
         conn = self.get_connection()
         cursor = conn.cursor()
 
+        # Get most recent 10-K
         cursor.execute("""
             SELECT filing_date, document_url, accession_number
             FROM sec_filings
-            WHERE symbol = %s AND filing_type = '10-K'
+            WHERE symbol = ? AND filing_type = '10-K'
             ORDER BY filing_date DESC
             LIMIT 1
         """, (symbol,))
         ten_k_row = cursor.fetchone()
 
+        # Get 3 most recent 10-Qs
         cursor.execute("""
             SELECT filing_date, document_url, accession_number
             FROM sec_filings
-            WHERE symbol = %s AND filing_type = '10-Q'
+            WHERE symbol = ? AND filing_type = '10-Q'
             ORDER BY filing_date DESC
             LIMIT 3
         """, (symbol,))
@@ -958,7 +1128,7 @@ class Database:
         cursor = conn.cursor()
         cursor.execute("""
             SELECT last_updated FROM sec_filings
-            WHERE symbol = %s
+            WHERE symbol = ?
             ORDER BY last_updated DESC
             LIMIT 1
         """, (symbol,))
@@ -968,7 +1138,7 @@ class Database:
         if not row:
             return False
 
-        last_updated = row[0]
+        last_updated = datetime.fromisoformat(row[0])
         age_days = (datetime.now() - last_updated).total_seconds() / 86400
         return age_days < max_age_days
 
@@ -976,14 +1146,10 @@ class Database:
         conn = self.get_connection()
         cursor = conn.cursor()
         cursor.execute("""
-            INSERT INTO filing_sections
+            INSERT OR REPLACE INTO filing_sections
             (symbol, section_name, content, filing_type, filing_date, last_updated)
-            VALUES (%s, %s, %s, %s, %s, %s)
-            ON CONFLICT (symbol, section_name, filing_type) DO UPDATE SET
-                content = EXCLUDED.content,
-                filing_date = EXCLUDED.filing_date,
-                last_updated = EXCLUDED.last_updated
-        """, (symbol, section_name, content, filing_type, filing_date, datetime.now()))
+            VALUES (?, ?, ?, ?, ?, ?)
+        """, (symbol, section_name, content, filing_type, filing_date, datetime.now().isoformat()))
         conn.commit()
         self.return_connection(conn)
 
@@ -993,7 +1159,7 @@ class Database:
         cursor.execute("""
             SELECT section_name, content, filing_type, filing_date, last_updated
             FROM filing_sections
-            WHERE symbol = %s
+            WHERE symbol = ?
         """, (symbol,))
         rows = cursor.fetchall()
         self.return_connection(conn)
@@ -1018,7 +1184,7 @@ class Database:
         cursor = conn.cursor()
         cursor.execute("""
             SELECT last_updated FROM filing_sections
-            WHERE symbol = %s
+            WHERE symbol = ?
             ORDER BY last_updated DESC
             LIMIT 1
         """, (symbol,))
@@ -1028,18 +1194,19 @@ class Database:
         if not row:
             return False
 
-        last_updated = row[0]
+        last_updated = datetime.fromisoformat(row[0])
         age_days = (datetime.now() - last_updated).total_seconds() / 86400
         return age_days < max_age_days
 
     def get_setting(self, key: str, default: Any = None) -> Any:
         conn = self.get_connection()
         cursor = conn.cursor()
-        cursor.execute("SELECT value FROM app_settings WHERE key = %s", (key,))
+        cursor.execute("SELECT value FROM app_settings WHERE key = ?", (key,))
         row = cursor.fetchone()
         self.return_connection(conn)
 
         if row:
+            import json
             try:
                 return json.loads(row[0])
             except json.JSONDecodeError:
@@ -1047,31 +1214,28 @@ class Database:
         return default
 
     def set_setting(self, key: str, value: Any, description: str = None):
+        import json
         conn = self.get_connection()
         cursor = conn.cursor()
-
+        
         json_value = json.dumps(value)
-
+        
         if description:
             cursor.execute("""
-                INSERT INTO app_settings (key, value, description)
-                VALUES (%s, %s, %s)
-                ON CONFLICT (key) DO UPDATE SET
-                    value = EXCLUDED.value,
-                    description = EXCLUDED.description
+                INSERT OR REPLACE INTO app_settings (key, value, description)
+                VALUES (?, ?, ?)
             """, (key, json_value, description))
         else:
-            cursor.execute("SELECT description FROM app_settings WHERE key = %s", (key,))
+            # Keep existing description if updating
+            cursor.execute("SELECT description FROM app_settings WHERE key = ?", (key,))
             row = cursor.fetchone()
             existing_desc = row[0] if row else None
-
+            
             cursor.execute("""
-                INSERT INTO app_settings (key, value, description)
-                VALUES (%s, %s, %s)
-                ON CONFLICT (key) DO UPDATE SET
-                    value = EXCLUDED.value
+                INSERT OR REPLACE INTO app_settings (key, value, description)
+                VALUES (?, ?, ?)
             """, (key, json_value, existing_desc))
-
+            
         conn.commit()
         self.return_connection(conn)
 
@@ -1082,13 +1246,14 @@ class Database:
         rows = cursor.fetchall()
         self.return_connection(conn)
 
+        import json
         settings = {}
         for row in rows:
             try:
                 value = json.loads(row[1])
             except json.JSONDecodeError:
                 value = row[1]
-
+            
             settings[row[0]] = {
                 'value': value,
                 'description': row[2]
@@ -1113,7 +1278,7 @@ class Database:
         }
 
         current_settings = self.get_all_settings()
-
+        
         for key, data in defaults.items():
             if key not in current_settings:
                 self.set_setting(key, data['value'], data['desc'])

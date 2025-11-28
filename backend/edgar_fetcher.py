@@ -17,14 +17,15 @@ class EdgarFetcher:
     TICKER_CIK_URL = "https://www.sec.gov/files/company_tickers.json"
     COMPANY_FACTS_URL = f"{BASE_URL}/api/xbrl/companyfacts/CIK{{cik}}.json"
 
-    def __init__(self, user_agent: str, use_bulk_cache: bool = True, cache_dir: str = "./sec_cache"):
+    def __init__(self, user_agent: str, use_bulk_cache: bool = True, cache_dir: str = "./sec_cache", db_connection=None):
         """
         Initialize EDGAR fetcher with required User-Agent header
 
         Args:
             user_agent: User-Agent string in format "Company Name email@example.com"
-            use_bulk_cache: Whether to use local bulk data cache (default: True)
-            cache_dir: Directory for bulk data cache (default: ./sec_cache)
+            use_bulk_cache: Whether to use PostgreSQL cache (default: True)
+            cache_dir: Deprecated - kept for backwards compatibility
+            db_connection: Optional database connection for querying company_facts
         """
         self.user_agent = user_agent
         self.headers = {
@@ -34,20 +35,10 @@ class EdgarFetcher:
         self.ticker_to_cik_cache = None
         self.last_request_time = 0
         self.min_request_interval = 0.1  # 10 requests per second max
-        
-        # Initialize bulk data manager
+
+        # Use PostgreSQL for SEC data
         self.use_bulk_cache = use_bulk_cache
-        self.bulk_manager = None
-        
-        if use_bulk_cache:
-            from sec_bulk_data import SECBulkDataManager
-            self.bulk_manager = SECBulkDataManager(cache_dir=cache_dir, user_agent=user_agent)
-            
-            # Check if cache needs initialization
-            if not self.bulk_manager.is_cache_valid():
-                logger.warning("SEC bulk data cache is not initialized or stale")
-                logger.warning("Run initialize_sec_cache() to download bulk data")
-                logger.warning("Falling back to API calls for now")
+        self.db_connection = db_connection
 
         # Set identity for edgartools
         set_identity(user_agent)
@@ -132,9 +123,9 @@ class EdgarFetcher:
 
     def fetch_company_facts(self, cik: str) -> Optional[Dict[str, Any]]:
         """
-        Fetch company facts from local cache or SEC EDGAR API
-        
-        Tries local bulk data cache first, falls back to API if not found.
+        Fetch company facts from PostgreSQL cache or SEC EDGAR API
+
+        Tries PostgreSQL company_facts table first, falls back to API if not found.
 
         Args:
             cik: 10-digit CIK number
@@ -142,15 +133,23 @@ class EdgarFetcher:
         Returns:
             Dictionary containing company facts data or None on error
         """
-        # Try local cache first
-        if self.bulk_manager and self.bulk_manager.is_cache_valid():
-            company_facts = self.bulk_manager.load_company_facts(cik)
-            if company_facts:
-                logger.info(f"[CIK {cik}] Loaded company facts from local cache")
-                return company_facts
-            else:
-                logger.warning(f"⚠️  [CIK {cik}] NOT IN SEC CACHE - Falling back to slow SEC API call")
-        
+        # Try PostgreSQL cache first
+        if self.use_bulk_cache and self.db_connection:
+            try:
+                cursor = self.db_connection.cursor()
+                cursor.execute("""
+                    SELECT facts FROM company_facts WHERE cik = %s
+                """, (cik,))
+                row = cursor.fetchone()
+
+                if row and row[0]:
+                    logger.info(f"[CIK {cik}] Loaded company facts from PostgreSQL")
+                    return row[0]  # JSONB is automatically deserialized
+                else:
+                    logger.warning(f"⚠️  [CIK {cik}] NOT IN PostgreSQL - Falling back to slow SEC API call")
+            except Exception as e:
+                logger.error(f"[CIK {cik}] Error querying PostgreSQL: {e}")
+
         # Fallback to API
         logger.warning(f"⚠️  [CIK {cik}] Making slow SEC API request...")
         return self._fetch_from_api(cik)
