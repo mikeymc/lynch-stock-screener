@@ -3,7 +3,7 @@
 
 from typing import Dict, Any, List, Optional
 from datetime import datetime
-from database import Database
+from database_sqlite import Database
 import google.generativeai as genai
 from rag_context import RAGContext
 

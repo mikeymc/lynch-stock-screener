@@ -2,7 +2,7 @@
 # ABOUTME: Flags stocks as PASS, CLOSE, or FAIL based on PEG ratio, debt, growth, and ownership
 
 from typing import Dict, Any, Optional
-from database import Database
+from database_sqlite import Database
 from earnings_analyzer import EarningsAnalyzer
 
 

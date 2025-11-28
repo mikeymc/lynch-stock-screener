@@ -2,7 +2,7 @@
 # ABOUTME: Provides smart section selection based on user queries and formats context for Gemini
 
 from typing import Dict, Any, List, Optional, Tuple
-from database import Database
+from database_sqlite import Database
 import re
 
 

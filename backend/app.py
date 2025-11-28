@@ -10,7 +10,7 @@ import time
 import os
 import yfinance as yf
 from datetime import datetime
-from database import Database
+from database_sqlite import Database
 from data_fetcher import DataFetcher
 from earnings_analyzer import EarningsAnalyzer
 from lynch_criteria import LynchCriteria, ALGORITHM_METADATA

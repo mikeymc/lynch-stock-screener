@@ -5,7 +5,7 @@ import yfinance as yf
 import logging
 import time
 from typing import Dict, Any, Optional, List
-from database import Database
+from database_sqlite import Database
 from edgar_fetcher import EdgarFetcher
 import pandas as pd
 import logging

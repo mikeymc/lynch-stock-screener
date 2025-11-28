@@ -1,7 +1,7 @@
 # ABOUTME: Backfills missing debt-to-equity data from yfinance balance sheets
 # ABOUTME: Targets only stocks with NULL debt_to_equity values in earnings_history
 
-from database import Database
+from database_sqlite import Database
 from data_fetcher import DataFetcher
 import logging
 import time

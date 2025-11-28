@@ -2,7 +2,7 @@
 # ABOUTME: Provides earnings and revenue growth metrics for Peter Lynch criteria
 
 from typing import Dict, Any, Optional, List
-from database import Database
+from database_sqlite import Database
 import math
 
 
