@@ -17,7 +17,7 @@ class EdgarFetcher:
     TICKER_CIK_URL = "https://www.sec.gov/files/company_tickers.json"
     COMPANY_FACTS_URL = f"{BASE_URL}/api/xbrl/companyfacts/CIK{{cik}}.json"
 
-    def __init__(self, user_agent: str, use_bulk_cache: bool = True, cache_dir: str = "./sec_cache", db_connection=None):
+    def __init__(self, user_agent: str, use_bulk_cache: bool = True, cache_dir: str = "./sec_cache", db=None):
         """
         Initialize EDGAR fetcher with required User-Agent header
 
@@ -25,7 +25,7 @@ class EdgarFetcher:
             user_agent: User-Agent string in format "Company Name email@example.com"
             use_bulk_cache: Whether to use PostgreSQL cache (default: True)
             cache_dir: Deprecated - kept for backwards compatibility
-            db_connection: Optional database connection for querying company_facts
+            db: Optional Database instance for querying company_facts
         """
         self.user_agent = user_agent
         self.headers = {
@@ -38,7 +38,7 @@ class EdgarFetcher:
 
         # Use PostgreSQL for SEC data
         self.use_bulk_cache = use_bulk_cache
-        self.db_connection = db_connection
+        self.db = db
 
         # Set identity for edgartools
         set_identity(user_agent)
@@ -134,9 +134,11 @@ class EdgarFetcher:
             Dictionary containing company facts data or None on error
         """
         # Try PostgreSQL cache first
-        if self.use_bulk_cache and self.db_connection:
+        if self.use_bulk_cache and self.db:
+            conn = None
             try:
-                cursor = self.db_connection.cursor()
+                conn = self.db.get_connection()
+                cursor = conn.cursor()
                 cursor.execute("""
                     SELECT facts FROM company_facts WHERE cik = %s
                 """, (cik,))
@@ -149,6 +151,9 @@ class EdgarFetcher:
                     logger.warning(f"⚠️  [CIK {cik}] NOT IN PostgreSQL - Falling back to slow SEC API call")
             except Exception as e:
                 logger.error(f"[CIK {cik}] Error querying PostgreSQL: {e}")
+            finally:
+                if conn:
+                    self.db.return_connection(conn)
 
         # Fallback to API
         logger.warning(f"⚠️  [CIK {cik}] Making slow SEC API request...")

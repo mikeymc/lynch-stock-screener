@@ -5,7 +5,7 @@ import yfinance as yf
 import logging
 import time
 from typing import Dict, Any, Optional, List
-from database_sqlite import Database
+from database import Database
 from edgar_fetcher import EdgarFetcher
 import pandas as pd
 import logging
@@ -46,11 +46,10 @@ def retry_on_rate_limit(max_retries=3, initial_delay=1.0):
 class DataFetcher:
     def __init__(self, db: Database):
         self.db = db
-        # Get a database connection for EdgarFetcher to query company_facts
-        db_conn = db.get_connection()
+        # Pass database instance to EdgarFetcher (it will get/return connections as needed)
         self.edgar_fetcher = EdgarFetcher(
             user_agent="Lynch Stock Screener mikey@example.com",
-            db_connection=db_conn
+            db=db
         )
 
     def _get_yf_info(self, symbol: str) -> Optional[Dict[str, Any]]:
@@ -555,16 +554,18 @@ class DataFetcher:
                     if debt_to_equity is not None:
                         # Update the existing record with D/E data
                         conn = self.db.get_connection()
-                        cursor = conn.cursor()
-                        cursor.execute("""
-                            UPDATE earnings_history
-                            SET debt_to_equity = ?
-                            WHERE symbol = ? AND year = ? AND period = 'annual'
-                        """, (debt_to_equity, symbol, year))
-                        conn.commit()
-                        conn.close()
-                        de_filled_count += 1
-                        logger.debug(f"[{symbol}] Backfilled D/E for {year}: {debt_to_equity:.2f}")
+                        try:
+                            cursor = conn.cursor()
+                            cursor.execute("""
+                                UPDATE earnings_history
+                                SET debt_to_equity = %s
+                                WHERE symbol = %s AND year = %s AND period = 'annual'
+                            """, (debt_to_equity, symbol, year))
+                            conn.commit()
+                            de_filled_count += 1
+                            logger.debug(f"[{symbol}] Backfilled D/E for {year}: {debt_to_equity:.2f}")
+                        finally:
+                            self.db.return_connection(conn)
 
             if de_filled_count > 0:
                 logger.info(f"[{symbol}] Successfully backfilled D/E for {de_filled_count}/{len(years)} years from yfinance")
@@ -915,32 +916,31 @@ class DataFetcher:
         """
         # Check cache first
         conn = self.db.get_connection()
-        cursor = conn.cursor()
-        
-        # Create cache table if it doesn't exist
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS symbol_cache (
-                id INTEGER PRIMARY KEY,
-                symbols TEXT,
-                last_updated TIMESTAMP
-            )
-        """)
-        
-        # Check if we have recent cached symbols (less than 24 hours old)
-        cursor.execute("""
-            SELECT symbols, last_updated FROM symbol_cache 
-            WHERE id = 1 AND datetime(last_updated) > datetime('now', '-24 hours')
-        """)
-        cached = cursor.fetchone()
-        
-        if cached:
-            conn.close()
-            symbols = cached[0].split(',')
-            print(f"Using cached symbol list ({len(symbols)} symbols, last updated: {cached[1]})")
-            return symbols
-        
-        # Fetch fresh symbols from NASDAQ FTP
         try:
+            cursor = conn.cursor()
+
+            # Create cache table if it doesn't exist
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS symbol_cache (
+                    id INTEGER PRIMARY KEY,
+                    symbols TEXT,
+                    last_updated TIMESTAMP
+                )
+            """)
+
+            # Check if we have recent cached symbols (less than 24 hours old)
+            cursor.execute("""
+                SELECT symbols, last_updated FROM symbol_cache
+                WHERE id = 1 AND last_updated > NOW() - INTERVAL '24 hours'
+            """)
+            cached = cursor.fetchone()
+
+            if cached:
+                symbols = cached[0].split(',')
+                print(f"Using cached symbol list ({len(symbols)} symbols, last updated: {cached[1]})")
+                return symbols
+
+            # Fetch fresh symbols from NASDAQ FTP
             print("Fetching fresh symbol list from NASDAQ FTP...")
             
             # NASDAQ's official FTP - includes both NASDAQ and NYSE listed stocks
@@ -965,28 +965,34 @@ class DataFetcher:
             
             # Update cache
             cursor.execute("""
-                INSERT OR REPLACE INTO symbol_cache (id, symbols, last_updated)
-                VALUES (1, ?, datetime('now'))
+                INSERT INTO symbol_cache (id, symbols, last_updated)
+                VALUES (1, %s, NOW())
+                ON CONFLICT (id) DO UPDATE SET
+                    symbols = EXCLUDED.symbols,
+                    last_updated = EXCLUDED.last_updated
             """, (','.join(all_symbols),))
             conn.commit()
-            conn.close()
-            
+
             print(f"Cached {len(all_symbols)} symbols from NASDAQ FTP")
             return all_symbols
-            
+
         except Exception as e:
             print(f"Error fetching stock symbols from NASDAQ: {type(e).__name__}: {str(e)}")
             import traceback
             traceback.print_exc()
-            
+
             # If fetch fails, try to return stale cache as fallback
-            cursor.execute("SELECT symbols FROM symbol_cache WHERE id = 1")
-            stale_cached = cursor.fetchone()
-            conn.close()
-            
-            if stale_cached:
-                symbols = stale_cached[0].split(',')
-                print(f"Using stale cached symbols as fallback ({len(symbols)} symbols)")
-                return symbols
-            
+            try:
+                cursor.execute("SELECT symbols FROM symbol_cache WHERE id = 1")
+                stale_cached = cursor.fetchone()
+
+                if stale_cached:
+                    symbols = stale_cached[0].split(',')
+                    print(f"Using stale cached symbols as fallback ({len(symbols)} symbols)")
+                    return symbols
+            except:
+                pass
+
             return []
+        finally:
+            self.db.return_connection(conn)

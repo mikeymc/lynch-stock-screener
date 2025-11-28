@@ -3,7 +3,7 @@
 
 from typing import Dict, Any, List, Optional
 from datetime import datetime
-from database_sqlite import Database
+from database import Database
 import google.generativeai as genai
 from rag_context import RAGContext
 
@@ -51,7 +51,7 @@ class ConversationManager:
 
         conversation_id = cursor.lastrowid
         conn.commit()
-        conn.close()
+        self.db.return_connection(conn)
 
         return conversation_id
 
@@ -67,7 +67,7 @@ class ConversationManager:
         """, (conversation_id,))
 
         row = cursor.fetchone()
-        conn.close()
+        self.db.return_connection(conn)
 
         if not row:
             return None
@@ -93,7 +93,7 @@ class ConversationManager:
         """, (symbol,))
 
         rows = cursor.fetchall()
-        conn.close()
+        self.db.return_connection(conn)
 
         return [{
             'id': row[0],
@@ -116,7 +116,7 @@ class ConversationManager:
         """, (conversation_id,))
 
         rows = cursor.fetchall()
-        conn.close()
+        self.db.return_connection(conn)
 
         return [{
             'id': row[0],
@@ -179,7 +179,7 @@ class ConversationManager:
         """, (conversation_id,))
 
         conn.commit()
-        conn.close()
+        self.db.return_connection(conn)
 
         return message_id
 

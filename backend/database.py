@@ -33,9 +33,10 @@ class Database:
         self._initializing = True
 
         # Connection pool for concurrent reads
-        self.pool_size = 10
+        # Pool size must accommodate parallel screening workers (40) + some overhead
+        self.pool_size = 50
         self.connection_pool = psycopg2.pool.ThreadedConnectionPool(
-            minconn=2,
+            minconn=5,
             maxconn=self.pool_size,
             **self.db_params
         )

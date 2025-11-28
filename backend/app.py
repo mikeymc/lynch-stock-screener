@@ -6,11 +6,12 @@ from flask_cors import CORS
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import threading
 import json
+import math
 import time
 import os
 import yfinance as yf
 from datetime import datetime
-from database_sqlite import Database
+from database import Database
 from data_fetcher import DataFetcher
 from earnings_analyzer import EarningsAnalyzer
 from lynch_criteria import LynchCriteria, ALGORITHM_METADATA
@@ -22,13 +23,22 @@ from wacc_calculator import calculate_wacc
 app = Flask(__name__, static_folder='static', static_url_path='')
 CORS(app)
 
-# Use /data volume for database in production, local path in development
-# Use /data volume for database in production, local path in development
-base_dir = os.path.dirname(os.path.abspath(__file__))
-db_path = os.environ.get('DB_PATH', '/data/stocks.db' if os.path.exists('/data') else os.path.join(base_dir, 'stocks.db'))
-print(f"Database path: {db_path}")
-print(f"Database exists: {os.path.exists(db_path)}")
-db = Database(db_path)
+# PostgreSQL connection parameters
+# Use environment variables for production, defaults for local development
+db_host = os.environ.get('DB_HOST', 'localhost')
+db_port = int(os.environ.get('DB_PORT', '5432'))
+db_name = os.environ.get('DB_NAME', 'lynch_stocks')
+db_user = os.environ.get('DB_USER', 'lynch')
+db_password = os.environ.get('DB_PASSWORD', 'lynch_dev_password')
+
+print(f"Connecting to PostgreSQL: {db_user}@{db_host}:{db_port}/{db_name}")
+db = Database(
+    host=db_host,
+    port=db_port,
+    database=db_name,
+    user=db_user,
+    password=db_password
+)
 fetcher = DataFetcher(db)
 analyzer = EarningsAnalyzer(db)
 criteria = LynchCriteria(db, analyzer)
@@ -39,6 +49,17 @@ conversation_manager = ConversationManager(db)
 # Global dict to track active screening threads
 active_screenings = {}
 screening_lock = threading.Lock()
+
+
+def clean_nan_values(obj):
+    """Recursively replace NaN values with None for JSON serialization"""
+    if isinstance(obj, dict):
+        return {k: clean_nan_values(v) for k, v in obj.items()}
+    elif isinstance(obj, list):
+        return [clean_nan_values(item) for item in obj]
+    elif isinstance(obj, float) and (math.isnan(obj) or math.isinf(obj)):
+        return None
+    return obj
 
 
 def resume_incomplete_sessions():
@@ -52,7 +73,7 @@ def resume_incomplete_sessions():
             WHERE status = 'running'
         """)
         incomplete_sessions = cursor.fetchall()
-        conn.close()
+        db.return_connection(conn)
         
         for session_id, algorithm, total_count, processed_count in incomplete_sessions:
             print(f"[Startup] Found incomplete session {session_id}: {processed_count}/{total_count} stocks processed")
@@ -428,7 +449,9 @@ def get_screening_results(session_id):
     """Get results for a screening session"""
     try:
         results = db.get_session_results(session_id)
-        return jsonify({'results': results})
+        # Clean NaN values before returning
+        clean_results = [clean_nan_values(result) for result in results]
+        return jsonify({'results': clean_results})
     except Exception as e:
         print(f"Error getting results: {e}")
         return jsonify({'error': str(e)}), 500
@@ -551,7 +574,8 @@ def screen_stocks():
                             evaluation = future.result()
                             if evaluation:
                                 results.append(evaluation)
-                                yield f"data: {json.dumps({'type': 'stock_result', 'stock': evaluation})}\n\n"
+                                clean_eval = clean_nan_values(evaluation)
+                                yield f"data: {json.dumps({'type': 'stock_result', 'stock': clean_eval})}\n\n"
                             else:
                                 # Track failed stocks for retry
                                 failed_symbols.append(symbol)
@@ -588,7 +612,8 @@ def screen_stocks():
                         evaluation = process_stock(symbol)
                         if evaluation:
                             results.append(evaluation)
-                            yield f"data: {json.dumps({'type': 'stock_result', 'stock': evaluation})}\n\n"
+                            clean_eval = clean_nan_values(evaluation)
+                            yield f"data: {json.dumps({'type': 'stock_result', 'stock': clean_eval})}\n\n"
                             yield f"data: {json.dumps({'type': 'progress', 'message': f'✓ Retry succeeded for {symbol}'})}\n\n"
                         else:
                             yield f"data: {json.dumps({'type': 'progress', 'message': f'✗ Retry failed for {symbol}'})}\n\n"
@@ -630,8 +655,8 @@ def screen_stocks():
             if algorithm == 'classic':
                 cursor.execute("""
                     UPDATE screening_sessions
-                    SET total_analyzed = ?, pass_count = ?, close_count = ?, fail_count = ?
-                    WHERE id = ?
+                    SET total_analyzed = %s, pass_count = %s, close_count = %s, fail_count = %s
+                    WHERE id = %s
                 """, (len(results), len(results_by_status['pass']), len(results_by_status['close']), len(results_by_status['fail']), session_id))
             else:
                 # For new algorithms, map to old schema for backward compatibility
@@ -640,11 +665,11 @@ def screen_stocks():
                 fail_count = len(results_by_status.get('caution', [])) + len(results_by_status.get('avoid', []))
                 cursor.execute("""
                     UPDATE screening_sessions
-                    SET total_analyzed = ?, pass_count = ?, close_count = ?, fail_count = ?
-                    WHERE id = ?
+                    SET total_analyzed = %s, pass_count = %s, close_count = %s, fail_count = %s
+                    WHERE id = %s
                 """, (len(results), pass_count, close_count, fail_count, session_id))
             conn.commit()
-            conn.close()
+            db.return_connection(conn)
 
             # Cleanup old sessions, keeping only the 2 most recent
             db.cleanup_old_sessions(keep_count=2)
@@ -711,6 +736,10 @@ def get_latest_session():
 
     if not session_data:
         return jsonify({'error': 'No screening sessions found'}), 404
+
+    # Clean NaN values in results
+    if 'results' in session_data:
+        session_data['results'] = [clean_nan_values(result) for result in session_data['results']]
 
     return jsonify(session_data)
 
@@ -852,7 +881,7 @@ def get_stock_history(symbol):
     stock_metrics = db.get_stock_metrics(symbol.upper())
     wacc_data = calculate_wacc(stock_metrics) if stock_metrics else None
 
-    return jsonify({
+    response_data = {
         'labels': labels,
         'eps': eps_values,
         'revenue': revenue_values,
@@ -867,7 +896,11 @@ def get_stock_history(symbol):
         'free_cash_flow': free_cash_flow_values,
         'history': earnings_history,
         'wacc': wacc_data
-    })
+    }
+
+    # Clean NaN values before returning
+    response_data = clean_nan_values(response_data)
+    return jsonify(response_data)
 
 
 @app.route('/api/stock/<symbol>/filings', methods=['GET'])

@@ -1,7 +1,7 @@
 # ABOUTME: Backfills missing debt-to-equity data from yfinance balance sheets
 # ABOUTME: Targets only stocks with NULL debt_to_equity values in earnings_history
 
-from database_sqlite import Database
+from database import Database
 from data_fetcher import DataFetcher
 import logging
 import time
@@ -11,21 +11,21 @@ logger = logging.getLogger(__name__)
 
 def backfill_all_debt_to_equity():
     """Backfill missing debt-to-equity data for all stocks"""
-    db = Database('stocks.db')
+    db = Database()  # Uses default PostgreSQL connection
     fetcher = DataFetcher(db)
 
     # Get all symbols with NULL debt_to_equity in annual earnings
     conn = db.get_connection()
     cursor = conn.cursor()
     cursor.execute("""
-        SELECT DISTINCT symbol, GROUP_CONCAT(year) as years
+        SELECT DISTINCT symbol, STRING_AGG(year::text, ',') as years
         FROM earnings_history
         WHERE debt_to_equity IS NULL AND period = 'annual'
         GROUP BY symbol
         ORDER BY symbol
     """)
     results = cursor.fetchall()
-    conn.close()
+    db.return_connection(conn)
 
     total_stocks = len(results)
     logger.info(f"Found {total_stocks} stocks needing D/E data")
@@ -44,10 +44,10 @@ def backfill_all_debt_to_equity():
             cursor = conn.cursor()
             cursor.execute("""
                 SELECT COUNT(*) FROM earnings_history
-                WHERE symbol = ? AND period = 'annual' AND debt_to_equity IS NOT NULL
+                WHERE symbol = %s AND period = 'annual' AND debt_to_equity IS NOT NULL
             """, (symbol,))
             before_count = cursor.fetchone()[0]
-            conn.close()
+            db.return_connection(conn)
 
             # Attempt backfill
             fetcher._backfill_debt_to_equity(symbol, years)
@@ -57,10 +57,10 @@ def backfill_all_debt_to_equity():
             cursor = conn.cursor()
             cursor.execute("""
                 SELECT COUNT(*) FROM earnings_history
-                WHERE symbol = ? AND period = 'annual' AND debt_to_equity IS NOT NULL
+                WHERE symbol = %s AND period = 'annual' AND debt_to_equity IS NOT NULL
             """, (symbol,))
             after_count = cursor.fetchone()[0]
-            conn.close()
+            db.return_connection(conn)
 
             filled = after_count - before_count
             if filled > 0:
@@ -100,7 +100,7 @@ def backfill_all_debt_to_equity():
         WHERE period = 'annual'
     """)
     total_stocks, null_records, filled_records = cursor.fetchone()
-    conn.close()
+    db.return_connection(conn)
 
     logger.info("="*60)
     logger.info("Database Stats:")

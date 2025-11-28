@@ -2,7 +2,7 @@
 # ABOUTME: Provides smart section selection based on user queries and formats context for Gemini
 
 from typing import Dict, Any, List, Optional, Tuple
-from database_sqlite import Database
+from database import Database
 import re
 
 
@@ -80,7 +80,7 @@ class RAGContext:
         """, (symbol,))
 
         row = cursor.fetchone()
-        conn.close()
+        self.db.return_connection(conn)
 
         if not row:
             return None
@@ -115,7 +115,7 @@ class RAGContext:
         """, (symbol,))
 
         rows = cursor.fetchall()
-        conn.close()
+        self.db.return_connection(conn)
 
         return [{
             'year': row[0],
@@ -144,7 +144,7 @@ class RAGContext:
         """, (symbol,))
 
         rows = cursor.fetchall()
-        conn.close()
+        self.db.return_connection(conn)
 
         if not rows:
             return {}, []
