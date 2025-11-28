@@ -29,9 +29,9 @@ class EarningsAnalyzer:
         if len(valid_history) < 3:
             return None
 
-        # Limit to most recent 10 years for growth calculations
-        # This avoids ancient losses from rejecting currently-profitable stocks
-        recent_history = valid_history[-10:]
+        # Limit to most recent 5 years for growth calculations
+        # This focuses on recent performance as per Lynch's preference
+        recent_history = valid_history[-5:]
 
         # Use Net Income instead of EPS for growth calculations
         net_income_values = [h.get('net_income') for h in recent_history]
@@ -84,7 +84,7 @@ class EarningsAnalyzer:
             
             # Track negative net income years
             if values[i] is not None and values[i] < 0:
-                negative_year_penalty += 50  # Add 50 to std_dev for each negative year
+                negative_year_penalty += 10  # Add 10 to std_dev for each negative year (softer penalty)
                 has_negative_years = True
 
         # If we have negative years but insufficient valid growth rates,
