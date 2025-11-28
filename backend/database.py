@@ -14,9 +14,17 @@ class Database:
     def __init__(self, db_path: str = "stocks.db"):
         self.db_path = db_path
         self._lock = threading.Lock()
+        self._initializing = True  # Flag to bypass pool during init
+        
+        # Connection pool for concurrent reads
+        self.connection_pool = queue.Queue(maxsize=10)
+        self.pool_size = 10
         
         # Queue for database write operations
         self.write_queue = queue.Queue()
+        self.write_batch = []  # Batch writes for better performance
+        self.write_batch_size = 50  # Commit every 50 operations
+        self.last_commit_time = time.time()
         
         # Ensure the directory exists before creating the database
         db_dir = os.path.dirname(self.db_path)
@@ -25,10 +33,26 @@ class Database:
             print(f"Created database directory: {db_dir}")
         
         # Enable WAL mode globally for better concurrent access
-        conn = sqlite3.connect(self.db_path)
-        conn.execute("PRAGMA journal_mode = WAL")
-        conn.close()
-        self.init_schema()
+        # Use a dedicated connection that won't interfere with the pool
+        init_conn = sqlite3.connect(self.db_path)
+        init_conn.execute("PRAGMA journal_mode = WAL")
+        init_conn.execute("PRAGMA foreign_keys = ON")
+
+        # Initialize schema BEFORE creating the pool to avoid any connection conflicts
+        self._init_schema_with_connection(init_conn)
+        init_conn.close()
+        self._initializing = False
+
+        # Now create connection pool for concurrent reads
+        for _ in range(self.pool_size):
+            conn = sqlite3.connect(
+                self.db_path,
+                check_same_thread=False,
+                timeout=30.0
+            )
+            conn.execute("PRAGMA foreign_keys = ON")
+            self.connection_pool.put(conn)
+        print(f"Database connection pool initialized with {self.pool_size} connections")
         
         # Start background writer thread
         self.writer_thread = threading.Thread(target=self._writer_loop, daemon=True)
@@ -36,21 +60,33 @@ class Database:
         print("Database writer thread started")
 
     def get_connection(self):
-        # Create a new connection for each call
-        # WAL mode allows multiple readers and one writer concurrently
-        conn = sqlite3.connect(
-            self.db_path, 
-            check_same_thread=False, 
-            timeout=30.0
-        )
-        conn.execute("PRAGMA foreign_keys = ON")
-        return conn
+        """Get a connection from the pool, or create a new one if pool is empty"""
+        try:
+            # Try to get from pool with short timeout
+            conn = self.connection_pool.get(timeout=0.1)
+            return conn
+        except queue.Empty:
+            # Pool exhausted, create new connection (will be discarded after use)
+            conn = sqlite3.connect(
+                self.db_path,
+                check_same_thread=False,
+                timeout=30.0
+            )
+            conn.execute("PRAGMA foreign_keys = ON")
+            return conn
+    
+    def return_connection(self, conn):
+        """Return a connection to the pool"""
+        try:
+            self.connection_pool.put_nowait(conn)
+        except queue.Full:
+            # Pool is full, close the connection
+            conn.close()
         
     def _writer_loop(self):
         """
         Background thread that handles all database writes sequentially.
-        This prevents 'database is locked' and 'unable to open database file' errors
-        by ensuring only one write connection exists at a time.
+        Implements batched writes for better performance with high concurrency.
         """
         # Create a dedicated connection for the writer thread
         conn = sqlite3.connect(
@@ -61,27 +97,51 @@ class Database:
         conn.execute("PRAGMA foreign_keys = ON")
         cursor = conn.cursor()
         
+        batch = []
+        last_commit = time.time()
+        
         while True:
             try:
-                # Get task from queue
-                task = self.write_queue.get()
-                
-                if task is None:
-                    # Sentinel to stop thread
-                    break
-                    
-                sql, args = task
-                
+                # Get task from queue with timeout to allow periodic commits
                 try:
-                    cursor.execute(sql, args)
-                    conn.commit()
-                except Exception as e:
-                    print(f"Database write error: {e}")
-                    # Rollback on error to keep connection healthy
-                    conn.rollback()
-                finally:
-                    self.write_queue.task_done()
+                    task = self.write_queue.get(timeout=2.0)
+                except queue.Empty:
+                    task = None
+                
+                if task is None and not batch:
+                    # No task and no pending batch, continue
+                    continue
+                
+                if task is not None:
+                    if task == "STOP":
+                        # Sentinel to stop thread - commit pending batch first
+                        if batch:
+                            conn.commit()
+                        break
                     
+                    # Add to batch
+                    batch.append(task)
+                    self.write_queue.task_done()
+                
+                # Commit batch if it's large enough or enough time has passed
+                should_commit = (
+                    len(batch) >= self.write_batch_size or
+                    (batch and time.time() - last_commit >= 2.0)
+                )
+                
+                if should_commit:
+                    try:
+                        # Execute all batched operations
+                        for sql, args in batch:
+                            cursor.execute(sql, args)
+                        conn.commit()
+                        last_commit = time.time()
+                        batch = []
+                    except Exception as e:
+                        print(f"Database batch write error: {e}")
+                        conn.rollback()
+                        batch = []
+                        
             except Exception as e:
                 print(f"Fatal error in writer loop: {e}")
                 time.sleep(1)  # Prevent tight loop on fatal error
@@ -89,7 +149,7 @@ class Database:
     def connection(self):
         """
         Context manager for database connections.
-        Ensures connections are always properly closed.
+        Ensures connections are returned to the pool after use.
         
         Usage:
             with db.connection() as conn:
@@ -104,12 +164,12 @@ class Database:
             try:
                 yield conn
             finally:
-                conn.close()
+                self.return_connection(conn)
         
         return _connection()
 
-    def init_schema(self):
-        conn = self.get_connection()
+    def _init_schema_with_connection(self, conn):
+        """Initialize database schema using the provided connection"""
         cursor = conn.cursor()
 
         cursor.execute("""
@@ -156,9 +216,8 @@ class Database:
 
         # Run migrations to ensure existing tables have all columns
         self._migrate_schema(cursor, conn)
-        
+
         conn.commit()
-        conn.close()
 
     def _migrate_schema(self, cursor, conn):
         """Checks for missing columns and adds them if necessary."""
@@ -547,7 +606,7 @@ class Database:
             WHERE sm.symbol = ?
         """, (symbol,))
         row = cursor.fetchone()
-        conn.close()
+        self.return_connection(conn)
 
         if not row:
             return None
@@ -594,7 +653,7 @@ class Database:
             ORDER BY year DESC, period
         """, (symbol,))
         rows = cursor.fetchall()
-        conn.close()
+        self.return_connection(conn)
 
         return [
             {
@@ -622,7 +681,7 @@ class Database:
             SELECT last_updated FROM stock_metrics WHERE symbol = ?
         """, (symbol,))
         row = cursor.fetchone()
-        conn.close()
+        self.return_connection(conn)
 
         if not row:
             return False
@@ -636,7 +695,7 @@ class Database:
         cursor = conn.cursor()
         cursor.execute("SELECT symbol FROM stocks ORDER BY symbol")
         rows = cursor.fetchall()
-        conn.close()
+        self.return_connection(conn)
 
         return [row[0] for row in rows]
 
@@ -649,7 +708,7 @@ class Database:
             VALUES (?, ?, ?, ?)
         """, (symbol, analysis_text, datetime.now().isoformat(), model_version))
         conn.commit()
-        conn.close()
+        self.return_connection(conn)
 
     def get_lynch_analysis(self, symbol: str) -> Optional[Dict[str, Any]]:
         conn = self.get_connection()
@@ -660,7 +719,7 @@ class Database:
             WHERE symbol = ?
         """, (symbol,))
         row = cursor.fetchone()
-        conn.close()
+        self.return_connection(conn)
 
         if not row:
             return None
@@ -681,7 +740,7 @@ class Database:
             VALUES (?, ?, ?, ?, ?)
         """, (symbol, section, analysis_text, datetime.now().isoformat(), model_version))
         conn.commit()
-        conn.close()
+        self.return_connection(conn)
 
     def get_chart_analysis(self, symbol: str, section: str) -> Optional[Dict[str, Any]]:
         conn = self.get_connection()
@@ -692,7 +751,7 @@ class Database:
             WHERE symbol = ? AND section = ?
         """, (symbol, section))
         row = cursor.fetchone()
-        conn.close()
+        self.return_connection(conn)
 
         if not row:
             return None
@@ -718,7 +777,7 @@ class Database:
         """, (datetime.now().isoformat(), algorithm, total_count, 0, total_analyzed, pass_count, close_count, fail_count, 'running'))
         session_id = cursor.lastrowid
         conn.commit()
-        conn.close()
+        self.return_connection(conn)
         return session_id
     
     def update_session_progress(self, session_id: int, processed_count: int, current_symbol: str = None):
@@ -762,7 +821,7 @@ class Database:
             WHERE id = ?
         """, (session_id,))
         conn.commit()
-        conn.close()
+        self.return_connection(conn)
     
     def get_session_progress(self, session_id: int) -> Optional[Dict[str, Any]]:
         """Get current progress of a screening session"""
@@ -794,7 +853,7 @@ class Database:
                 'fail_count': row[10]
             }
         finally:
-            conn.close()
+            self.return_connection(conn)
 
     def get_session_results(self, session_id: int) -> List[Dict[str, Any]]:
         """Get all results for a screening session"""
@@ -810,7 +869,7 @@ class Database:
             ORDER BY id ASC
         """, (session_id,))
         rows = cursor.fetchall()
-        conn.close()
+        self.return_connection(conn)
         
         results = []
         for row in rows:
@@ -897,7 +956,7 @@ class Database:
         session_row = cursor.fetchone()
 
         if not session_row:
-            conn.close()
+            self.return_connection(conn)
             return None
 
         session_id = session_row[0]
@@ -914,7 +973,7 @@ class Database:
         """, (session_id,))
         result_rows = cursor.fetchall()
 
-        conn.close()
+        self.return_connection(conn)
 
         results = []
         for row in result_rows:
@@ -970,7 +1029,7 @@ class Database:
             cursor.execute("DELETE FROM screening_sessions WHERE id = ?", (session_id,))
 
         conn.commit()
-        conn.close()
+        self.return_connection(conn)
 
     def add_to_watchlist(self, symbol: str):
         sql = """
@@ -993,14 +1052,14 @@ class Database:
             symbols = [row[0] for row in cursor.fetchall()]
             return symbols
         finally:
-            conn.close()
+            self.return_connection(conn)
 
     def is_in_watchlist(self, symbol: str) -> bool:
         conn = self.get_connection()
         cursor = conn.cursor()
         cursor.execute("SELECT 1 FROM watchlist WHERE symbol = ?", (symbol,))
         result = cursor.fetchone()
-        conn.close()
+        self.return_connection(conn)
         return result is not None
 
     def save_sec_filing(self, symbol: str, filing_type: str, filing_date: str, document_url: str, accession_number: str):
@@ -1012,7 +1071,7 @@ class Database:
             VALUES (?, ?, ?, ?, ?, ?)
         """, (symbol, filing_type, filing_date, document_url, accession_number, datetime.now().isoformat()))
         conn.commit()
-        conn.close()
+        self.return_connection(conn)
 
     def get_sec_filings(self, symbol: str) -> Optional[Dict[str, Any]]:
         conn = self.get_connection()
@@ -1038,7 +1097,7 @@ class Database:
         """, (symbol,))
         ten_q_rows = cursor.fetchall()
 
-        conn.close()
+        self.return_connection(conn)
 
         if not ten_k_row and not ten_q_rows:
             return None
@@ -1074,7 +1133,7 @@ class Database:
             LIMIT 1
         """, (symbol,))
         row = cursor.fetchone()
-        conn.close()
+        self.return_connection(conn)
 
         if not row:
             return False
@@ -1092,7 +1151,7 @@ class Database:
             VALUES (?, ?, ?, ?, ?, ?)
         """, (symbol, section_name, content, filing_type, filing_date, datetime.now().isoformat()))
         conn.commit()
-        conn.close()
+        self.return_connection(conn)
 
     def get_filing_sections(self, symbol: str) -> Optional[Dict[str, Any]]:
         conn = self.get_connection()
@@ -1103,7 +1162,7 @@ class Database:
             WHERE symbol = ?
         """, (symbol,))
         rows = cursor.fetchall()
-        conn.close()
+        self.return_connection(conn)
 
         if not rows:
             return None
@@ -1130,7 +1189,7 @@ class Database:
             LIMIT 1
         """, (symbol,))
         row = cursor.fetchone()
-        conn.close()
+        self.return_connection(conn)
 
         if not row:
             return False
@@ -1144,7 +1203,7 @@ class Database:
         cursor = conn.cursor()
         cursor.execute("SELECT value FROM app_settings WHERE key = ?", (key,))
         row = cursor.fetchone()
-        conn.close()
+        self.return_connection(conn)
 
         if row:
             import json
@@ -1178,14 +1237,14 @@ class Database:
             """, (key, json_value, existing_desc))
             
         conn.commit()
-        conn.close()
+        self.return_connection(conn)
 
     def get_all_settings(self) -> Dict[str, Any]:
         conn = self.get_connection()
         cursor = conn.cursor()
         cursor.execute("SELECT key, value, description FROM app_settings")
         rows = cursor.fetchall()
-        conn.close()
+        self.return_connection(conn)
 
         import json
         settings = {}

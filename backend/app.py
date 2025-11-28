@@ -177,9 +177,10 @@ def run_screening_background(session_id: int, symbols: list, algorithm: str, for
         total = len(symbols)
         
         # Process stocks in batches using parallel workers
-        BATCH_SIZE = 3
-        MAX_WORKERS = 3
-        BATCH_DELAY = 1.5
+        # Increased parallelization since we're using local caches (TradingView + Finviz)
+        BATCH_SIZE = 10  # Increased from 3
+        MAX_WORKERS = 10  # Increased from 3
+        BATCH_DELAY = 0.5  # Reduced from 1.5s since most data is cached
         
         with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
             for batch_start in range(0, total, BATCH_SIZE):
@@ -528,10 +529,10 @@ def screen_stocks():
             failed_symbols = []  # Track symbols that failed
             
             # Process stocks in batches using parallel workers
-            # Reduced to 3 workers to avoid rate limiting
-            BATCH_SIZE = 3
-            MAX_WORKERS = 3
-            BATCH_DELAY = 1.5  # seconds between batches for rate limiting
+            # Increased parallelization since we're using local caches (TradingView + Finviz)
+            BATCH_SIZE = 10  # Increased from 3
+            MAX_WORKERS = 10  # Increased from 3
+            BATCH_DELAY = 0.5  # Reduced from 1.5s since most data is cached
             
             with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
                 for batch_start in range(0, total, BATCH_SIZE):
