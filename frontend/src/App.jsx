@@ -17,6 +17,7 @@ import StockDetail from './pages/StockDetail'
 import Settings from './pages/Settings'
 import AlgorithmSelector from './components/AlgorithmSelector'
 import StatusBar from './components/StatusBar'
+import AdvancedFilter from './components/AdvancedFilter'
 import './App.css'
 
 ChartJS.register(
@@ -112,6 +113,17 @@ function StockListView({
   const [error, setError] = useState(null)
   const itemsPerPage = 100
 
+  // Advanced filters state
+  const [advancedFilters, setAdvancedFilters] = useState({
+    countries: [],
+    regions: [],
+    institutionalOwnership: { min: null, max: null },
+    revenueGrowth: { min: null },
+    incomeGrowth: { min: null },
+    debtToEquity: { max: null }
+  })
+  const [showAdvancedFilters, setShowAdvancedFilters] = useState(false)
+
   // Re-evaluate existing stocks when algorithm changes
   const prevAlgorithmRef = useRef(algorithm)
   useEffect(() => {
@@ -186,7 +198,7 @@ function StockListView({
     reEvaluateStocks()
   }, [algorithm])
 
-  // Load watchlist on mount
+  // Load watchlist and advanced filters on mount
   useEffect(() => {
     const loadWatchlist = async () => {
       try {
@@ -199,7 +211,23 @@ function StockListView({
         console.error('Error loading watchlist:', err)
       }
     }
+
+    const loadAdvancedFilters = async () => {
+      try {
+        const response = await fetch(`${API_BASE}/settings`)
+        if (response.ok) {
+          const settings = await response.json()
+          if (settings.advanced_filters && settings.advanced_filters.value) {
+            setAdvancedFilters(settings.advanced_filters.value)
+          }
+        }
+      } catch (err) {
+        console.error('Error loading advanced filters:', err)
+      }
+    }
+
     loadWatchlist()
+    loadAdvancedFilters()
   }, [])
 
   // Start with empty state (don't load cached session since algorithm may have changed)
@@ -493,6 +521,76 @@ function StockListView({
         }
       }
 
+      // Apply advanced filters
+      // Region/Country filter
+      if (advancedFilters.regions.length > 0 || advancedFilters.countries.length > 0) {
+        const stockCountry = stock.country || ''
+        let matchesRegion = false
+
+        // Check if stock matches any selected region (using 2-letter country codes)
+        const REGION_COUNTRIES = {
+          'USA': ['US'],
+          'Canada': ['CA'],
+          'Central/South America': ['MX', 'BR', 'AR', 'CL', 'PE', 'CO', 'VE', 'EC', 'BO', 'PY', 'UY', 'CR', 'PA', 'GT', 'HN', 'SV', 'NI'],
+          'Europe': ['GB', 'DE', 'FR', 'IT', 'ES', 'NL', 'CH', 'IE', 'BE', 'SE', 'NO', 'DK', 'FI', 'AT', 'PL', 'PT', 'GR', 'CZ', 'HU', 'RO', 'LU', 'IS'],
+          'Asia': ['CN', 'JP', 'KR', 'IN', 'SG', 'HK', 'TW', 'TH', 'MY', 'ID', 'PH', 'VN', 'IL'],
+          'Other': []
+        }
+
+        for (const region of advancedFilters.regions) {
+          const countriesInRegion = REGION_COUNTRIES[region] || []
+          if (countriesInRegion.includes(stockCountry)) {
+            matchesRegion = true
+            break
+          }
+        }
+
+        // Check if stock matches any selected country
+        const matchesCountry = advancedFilters.countries.includes(stockCountry)
+
+        if (!matchesRegion && !matchesCountry) {
+          return false
+        }
+      }
+
+      // Institutional ownership filter
+      if (advancedFilters.institutionalOwnership.min !== null) {
+        const instOwn = stock.institutional_ownership
+        if (instOwn === null || instOwn === undefined || instOwn < advancedFilters.institutionalOwnership.min / 100) {
+          return false
+        }
+      }
+      if (advancedFilters.institutionalOwnership.max !== null) {
+        const instOwn = stock.institutional_ownership
+        if (instOwn === null || instOwn === undefined || instOwn > advancedFilters.institutionalOwnership.max / 100) {
+          return false
+        }
+      }
+
+      // Revenue growth filter
+      if (advancedFilters.revenueGrowth.min !== null) {
+        const revGrowth = stock.revenue_cagr
+        if (revGrowth === null || revGrowth === undefined || revGrowth < advancedFilters.revenueGrowth.min) {
+          return false
+        }
+      }
+
+      // Income growth filter
+      if (advancedFilters.incomeGrowth.min !== null) {
+        const incGrowth = stock.earnings_cagr
+        if (incGrowth === null || incGrowth === undefined || incGrowth < advancedFilters.incomeGrowth.min) {
+          return false
+        }
+      }
+
+      // Debt to equity filter
+      if (advancedFilters.debtToEquity.max !== null) {
+        const de = stock.debt_to_equity
+        if (de === null || de === undefined || de > advancedFilters.debtToEquity.max) {
+          return false
+        }
+      }
+
       return true
     })
 
@@ -532,7 +630,7 @@ function StockListView({
       }
     })
     return sorted
-  }, [stocks, filter, sortBy, sortDir, searchQuery, watchlist])
+  }, [stocks, filter, sortBy, sortDir, searchQuery, watchlist, advancedFilters])
 
   const totalPages = Math.ceil(sortedStocks.length / itemsPerPage)
   const startIndex = (currentPage - 1) * itemsPerPage
@@ -550,6 +648,40 @@ function StockListView({
 
   const handleStockClick = (symbol) => {
     navigate(`/stock/${symbol}`)
+  }
+
+  const handleAdvancedFiltersChange = async (newFilters) => {
+    setAdvancedFilters(newFilters)
+
+    // Save to database
+    try {
+      await fetch(`${API_BASE}/settings`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          advanced_filters: {
+            value: newFilters,
+            description: 'Advanced stock filter settings'
+          }
+        })
+      })
+    } catch (err) {
+      console.error('Error saving advanced filters:', err)
+    }
+  }
+
+  const getActiveFilterCount = () => {
+    let count = 0
+    if (advancedFilters.regions.length > 0) count++
+    if (advancedFilters.countries.length > 0) count++
+    if (advancedFilters.institutionalOwnership.min !== null) count++
+    if (advancedFilters.institutionalOwnership.max !== null) count++
+    if (advancedFilters.revenueGrowth.min !== null) count++
+    if (advancedFilters.incomeGrowth.min !== null) count++
+    if (advancedFilters.debtToEquity.max !== null) count++
+    return count
   }
 
   return (
@@ -640,6 +772,19 @@ function StockListView({
         />
 
         <button
+          onClick={() => setShowAdvancedFilters(!showAdvancedFilters)}
+          className="filter-button"
+          title="Advanced Filters"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"></polygon>
+          </svg>
+          {getActiveFilterCount() > 0 && (
+            <span className="filter-badge">{getActiveFilterCount()}</span>
+          )}
+        </button>
+
+        <button
           onClick={() => navigate('/settings')}
           className="settings-button"
           title="Settings"
@@ -665,6 +810,13 @@ function StockListView({
           <button onClick={() => setError(null)} className="error-dismiss">Dismiss</button>
         </div>
       )}
+
+      <AdvancedFilter
+        filters={advancedFilters}
+        onFiltersChange={handleAdvancedFiltersChange}
+        isOpen={showAdvancedFilters}
+        onToggle={() => setShowAdvancedFilters(!showAdvancedFilters)}
+      />
 
       {sortedStocks.length > 0 && (
         <>
