@@ -150,17 +150,6 @@ class Database:
                 last_updated TIMESTAMP
             )
         """)
-        
-        # Migration: Add country and ipo_year columns if they don't exist
-        try:
-            cursor.execute("ALTER TABLE stocks ADD COLUMN country TEXT")
-        except sqlite3.OperationalError:
-            pass  # Column already exists
-        
-        try:
-            cursor.execute("ALTER TABLE stocks ADD COLUMN ipo_year INTEGER")
-        except sqlite3.OperationalError:
-            pass  # Column already exists
 
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS stock_metrics (

@@ -143,8 +143,8 @@ class DataFetcher:
                     'industry': cached_data.get('industry'),
                     # Add placeholders for fields TradingView doesn't have
                     'longName': cached_data.get('company_name') or symbol,
-                    'exchange': 'UNKNOWN',
-                    'country': 'US',  # Assume US since we filter for US exchanges
+                    'exchange': cached_data.get('exchange', 'UNKNOWN'),
+                    'country': cached_data.get('country'),  # May be None, will fetch from yfinance if needed
                     'totalRevenue': None,
                     'totalDebt': None,
                     'heldPercentInstitutions': None,
@@ -163,7 +163,24 @@ class DataFetcher:
             company_name = info.get('longName', '')
             exchange = info.get('exchange', '')
             sector = info.get('sector', '')
+            
+            # Get country from TradingView cache or yfinance
             country = info.get('country', '')
+            
+            # If country is missing and we're using TradingView cache, try yfinance for country only
+            if not country and using_tradingview_cache:
+                try:
+                    logger.info(f"[{symbol}] Country missing from TradingView, fetching from yfinance")
+                    yf_info = self._get_yf_info(symbol)
+                    if yf_info:
+                        country = yf_info.get('country', '')
+                except Exception as e:
+                    logger.warning(f"[{symbol}] Failed to fetch country from yfinance: {e}")
+            
+            # Normalize country to 2-letter code
+            if country:
+                from country_codes import normalize_country_code
+                country = normalize_country_code(country)
 
             # Calculate IPO year from firstTradeDateMilliseconds or firstTradeDateEpochUtc
             ipo_year = None
