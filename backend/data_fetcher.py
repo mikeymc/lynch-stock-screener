@@ -207,6 +207,21 @@ class DataFetcher:
             # Fetch WACC-related data
             beta = info.get('beta')
             total_debt = info.get('totalDebt')
+
+            # Fallback for Debt-to-Equity if missing from EDGAR and yfinance info
+            if debt_to_equity is None:
+                logger.info(f"[{symbol}] D/E missing from info, attempting calculation from balance sheet")
+                try:
+                    balance_sheet = self._get_yf_balance_sheet(symbol)
+                    if balance_sheet is not None and not balance_sheet.empty:
+                        # Get most recent column
+                        recent_col = balance_sheet.columns[0]
+                        calc_de = self._calculate_debt_to_equity(balance_sheet, recent_col)
+                        if calc_de is not None:
+                            debt_to_equity = calc_de
+                            logger.info(f"[{symbol}] Calculated D/E from balance sheet: {debt_to_equity:.2f}")
+                except Exception as e:
+                    logger.warning(f"[{symbol}] Failed to calculate D/E from balance sheet: {e}")
             
             # Get interest expense and tax rate from financials (SKIP if using TradingView cache for speed)
             interest_expense = None
@@ -549,19 +564,35 @@ class DataFetcher:
             Debt-to-equity ratio or None if data unavailable
         """
         try:
-            # Try to get Total Liabilities and Stockholder Equity
+            # Try to get Total Liabilities
             liabilities = None
             equity = None
 
-            if 'Total Liabilities Net Minority Interest' in balance_sheet.index:
-                liabilities = balance_sheet.loc['Total Liabilities Net Minority Interest', col]
-            elif 'Total Liab' in balance_sheet.index:
-                liabilities = balance_sheet.loc['Total Liab', col]
+            # List of possible keys for Liabilities
+            liab_keys = [
+                'Total Liabilities Net Minority Interest',
+                'Total Liab',
+                'Total Liabilities',
+                'Total Liabilities Net Minority Interest'
+            ]
+            
+            for key in liab_keys:
+                if key in balance_sheet.index:
+                    liabilities = balance_sheet.loc[key, col]
+                    break
 
-            if 'Stockholders Equity' in balance_sheet.index:
-                equity = balance_sheet.loc['Stockholders Equity', col]
-            elif 'Total Stockholder Equity' in balance_sheet.index:
-                equity = balance_sheet.loc['Total Stockholder Equity', col]
+            # List of possible keys for Equity
+            equity_keys = [
+                'Stockholders Equity',
+                'Total Stockholder Equity',
+                'Total Equity Gross Minority Interest',
+                'Common Stock Equity'
+            ]
+            
+            for key in equity_keys:
+                if key in balance_sheet.index:
+                    equity = balance_sheet.loc[key, col]
+                    break
 
             # Calculate D/E ratio if both values are available and valid
             if pd.notna(liabilities) and pd.notna(equity) and equity != 0:
