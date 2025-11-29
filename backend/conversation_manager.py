@@ -46,7 +46,7 @@ class ConversationManager:
 
         cursor.execute("""
             INSERT INTO conversations (symbol, title, created_at, updated_at)
-            VALUES (?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            VALUES (%s, %s, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
         """, (symbol, title))
 
         conversation_id = cursor.lastrowid
@@ -63,7 +63,7 @@ class ConversationManager:
         cursor.execute("""
             SELECT id, symbol, title, created_at, updated_at
             FROM conversations
-            WHERE id = ?
+            WHERE id = %s
         """, (conversation_id,))
 
         row = cursor.fetchone()
@@ -88,7 +88,7 @@ class ConversationManager:
         cursor.execute("""
             SELECT id, symbol, title, created_at, updated_at
             FROM conversations
-            WHERE symbol = ?
+            WHERE symbol = %s
             ORDER BY updated_at DESC
         """, (symbol,))
 
@@ -111,7 +111,7 @@ class ConversationManager:
         cursor.execute("""
             SELECT id, role, content, created_at
             FROM messages
-            WHERE conversation_id = ?
+            WHERE conversation_id = %s
             ORDER BY created_at ASC
         """, (conversation_id,))
 
@@ -144,7 +144,7 @@ class ConversationManager:
         # Insert message
         cursor.execute("""
             INSERT INTO messages (conversation_id, role, content, created_at)
-            VALUES (?, ?, ?, CURRENT_TIMESTAMP)
+            VALUES (%s, %s, %s, CURRENT_TIMESTAMP)
         """, (conversation_id, role, content))
 
         message_id = cursor.lastrowid
@@ -156,8 +156,8 @@ class ConversationManager:
                 cursor.execute("""
                     SELECT filing_type, filing_date
                     FROM filing_sections
-                    WHERE symbol = (SELECT symbol FROM conversations WHERE id = ?)
-                    AND section_name = ?
+                    WHERE symbol = (SELECT symbol FROM conversations WHERE id = %s)
+                    AND section_name = %s
                     ORDER BY filing_date DESC
                     LIMIT 1
                 """, (conversation_id, section_name))
@@ -168,14 +168,14 @@ class ConversationManager:
 
                 cursor.execute("""
                     INSERT INTO message_sources (message_id, section_name, filing_type, filing_date)
-                    VALUES (?, ?, ?, ?)
+                    VALUES (%s, %s, %s, %s)
                 """, (message_id, section_name, filing_type, filing_date))
 
         # Update conversation updated_at timestamp
         cursor.execute("""
             UPDATE conversations
             SET updated_at = CURRENT_TIMESTAMP
-            WHERE id = ?
+            WHERE id = %s
         """, (conversation_id,))
 
         conn.commit()

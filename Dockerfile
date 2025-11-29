@@ -32,9 +32,6 @@ COPY backend/ ./
 # Copy frontend build from stage 1
 COPY --from=frontend-builder /frontend/dist ./static
 
-# Create data directory for SQLite database
-RUN mkdir -p /data
-
 # Expose port
 EXPOSE 8080
 

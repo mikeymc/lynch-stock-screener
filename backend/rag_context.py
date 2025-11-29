@@ -76,7 +76,7 @@ class RAGContext:
                 sm.institutional_ownership, sm.revenue, sm.dividend_yield
             FROM stocks s
             LEFT JOIN stock_metrics sm ON s.symbol = sm.symbol
-            WHERE s.symbol = ?
+            WHERE s.symbol = %s
         """, (symbol,))
 
         row = cursor.fetchone()
@@ -109,7 +109,7 @@ class RAGContext:
         cursor.execute("""
             SELECT year, earnings_per_share, revenue, debt_to_equity, fiscal_end
             FROM earnings_history
-            WHERE symbol = ? AND period = 'annual'
+            WHERE symbol = %s AND period = 'annual'
             ORDER BY year DESC
             LIMIT 10
         """, (symbol,))
@@ -139,7 +139,7 @@ class RAGContext:
         cursor.execute("""
             SELECT section_name, content, filing_type, filing_date
             FROM filing_sections
-            WHERE symbol = ?
+            WHERE symbol = %s
             ORDER BY filing_date DESC
         """, (symbol,))
 
