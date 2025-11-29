@@ -358,8 +358,8 @@ def get_stock(symbol):
     evaluation = criteria.evaluate_stock(symbol.upper(), algorithm=algorithm)
 
     return jsonify({
-        'stock_data': stock_data,
-        'evaluation': evaluation
+        'stock_data': clean_nan_values(stock_data),
+        'evaluation': clean_nan_values(evaluation)
     })
 
 

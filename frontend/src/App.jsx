@@ -198,20 +198,8 @@ function StockListView({
     reEvaluateStocks()
   }, [algorithm])
 
-  // Load watchlist and advanced filters on mount
+  // Load advanced filters on mount
   useEffect(() => {
-    const loadWatchlist = async () => {
-      try {
-        const response = await fetch(`${API_BASE}/watchlist`)
-        if (response.ok) {
-          const data = await response.json()
-          setWatchlist(new Set(data.symbols))
-        }
-      } catch (err) {
-        console.error('Error loading watchlist:', err)
-      }
-    }
-
     const loadAdvancedFilters = async () => {
       try {
         const response = await fetch(`${API_BASE}/settings`)
@@ -226,7 +214,6 @@ function StockListView({
       }
     }
 
-    loadWatchlist()
     loadAdvancedFilters()
   }, [])
 
