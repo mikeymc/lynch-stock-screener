@@ -38,10 +38,11 @@ class TradingViewFetcher:
         
         # Define markets by region (TradingView market codes)
         # Note: 'america' includes NYSE, NASDAQ, AMEX
+        # Excludes: India, China, Mexico, South America to reduce costs
         market_groups = {
-            'us': ['america'],
+            'us': ['america', 'canada'],  # US + Canada
             'europe': ['uk', 'germany', 'france', 'italy', 'spain', 'switzerland', 'netherlands', 'belgium', 'sweden'],
-            'asia': ['hongkong', 'japan', 'india', 'korea', 'singapore', 'china', 'taiwan']
+            'asia': ['hongkong', 'japan', 'korea', 'singapore', 'taiwan']  # Excludes India & China
         }
         
         all_results = {}
