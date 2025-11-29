@@ -251,7 +251,7 @@ def run_screening_background(session_id: int, symbols: list, algorithm: str, for
                     evaluation = process_stock(symbol)
                     if evaluation:
                         results.append(evaluation)
-                        processed_count += 1
+                        # Do not increment processed_count on retry, as it was already counted in the main loop
                         db.update_session_progress(session_id, processed_count, symbol)
                     time.sleep(2)
                 except Exception as e:
