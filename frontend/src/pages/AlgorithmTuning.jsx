@@ -134,11 +134,19 @@ export default function AlgorithmTuning() {
                 if (data.status === 'complete') {
                     clearInterval(interval);
                     setOptimizationRunning(false);
-                    setOptimizationResult(data.result);
+
+                    // Check if result contains an error
+                    if (data.result && data.result.error) {
+                        alert(`Optimization failed: ${data.result.error}`);
+                        setOptimizationResult(null);
+                    } else {
+                        setOptimizationResult(data.result);
+                    }
                 } else if (data.status === 'error') {
                     clearInterval(interval);
                     setOptimizationRunning(false);
                     console.error('Optimization error:', data.error);
+                    alert(`Optimization error: ${data.error}`);
                 }
             } catch (error) {
                 console.error('Error polling optimization:', error);
@@ -251,7 +259,11 @@ export default function AlgorithmTuning() {
                                 </div>
                                 <div className="stat highlight">
                                     <span className="label">Improvement:</span>
-                                    <span className="value">{((optimizationResult.improvement / Math.abs(optimizationResult.initial_correlation)) * 100).toFixed(1)}%</span>
+                                    <span className="value">
+                                        {optimizationResult.improvement && optimizationResult.initial_correlation
+                                            ? ((optimizationResult.improvement / Math.abs(optimizationResult.initial_correlation)) * 100).toFixed(1) + '%'
+                                            : 'N/A'}
+                                    </span>
                                 </div>
                             </div>
 
