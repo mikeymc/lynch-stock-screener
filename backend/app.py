@@ -19,6 +19,7 @@ from schwab_client import SchwabClient
 from lynch_analyst import LynchAnalyst
 from conversation_manager import ConversationManager
 from wacc_calculator import calculate_wacc
+from backtester import Backtester
 
 app = Flask(__name__, static_folder='static', static_url_path='')
 CORS(app)
@@ -45,6 +46,7 @@ criteria = LynchCriteria(db, analyzer)
 schwab_client = SchwabClient()
 lynch_analyst = LynchAnalyst(db)
 conversation_manager = ConversationManager(db)
+backtester = Backtester(db)
 
 # Global dict to track active screening threads
 active_screenings = {}
@@ -1491,6 +1493,29 @@ def serve_react_app(path):
         return send_from_directory(app.static_folder, path)
     else:
         return send_from_directory(app.static_folder, 'index.html')
+
+
+@app.route('/api/backtest', methods=['POST'])
+def run_backtest():
+    """Run a backtest for a specific stock."""
+    try:
+        data = request.get_json()
+        symbol = data.get('symbol')
+        years_back = int(data.get('years_back', 1))
+        
+        if not symbol:
+            return jsonify({'error': 'Symbol is required'}), 400
+            
+        result = backtester.run_backtest(symbol.upper(), years_back)
+        
+        if 'error' in result:
+            return jsonify(result), 400
+            
+        return jsonify(clean_nan_values(result))
+        
+    except Exception as e:
+        print(f"Error running backtest: {e}")
+        return jsonify({'error': str(e)}), 500
 
 
 if __name__ == '__main__':

@@ -59,6 +59,10 @@ class Database:
         self.writer_thread.start()
         print("Database writer thread started")
 
+    def flush(self):
+        """Wait for all pending writes to complete"""
+        self.write_queue.join()
+
     def get_connection(self):
         """Get a connection from the pool"""
         return self.connection_pool.getconn()
@@ -248,6 +252,18 @@ class Database:
                 last_updated TIMESTAMP,
                 FOREIGN KEY (symbol) REFERENCES stocks(symbol),
                 UNIQUE(symbol, section_name, filing_type)
+            )
+        """)
+
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS price_history (
+                symbol TEXT,
+                date DATE,
+                close REAL,
+                adjusted_close REAL,
+                volume BIGINT,
+                PRIMARY KEY (symbol, date),
+                FOREIGN KEY (symbol) REFERENCES stocks(symbol)
             )
         """)
 
@@ -482,6 +498,66 @@ class Database:
                 'capital_expenditures': row[10],
                 'free_cash_flow': row[11],
                 'last_updated': row[12]
+            }
+            for row in rows
+            for row in rows
+        ]
+
+    def save_price_history(self, symbol: str, history_data: List[Dict[str, Any]]):
+        """
+        Save bulk price history data.
+        history_data list of dicts with: date, close, adjusted_close, volume
+        """
+        sql = """
+            INSERT INTO price_history
+            (symbol, date, close, adjusted_close, volume)
+            VALUES (%s, %s, %s, %s, %s)
+            ON CONFLICT (symbol, date) DO UPDATE SET
+                close = EXCLUDED.close,
+                adjusted_close = EXCLUDED.adjusted_close,
+                volume = EXCLUDED.volume
+        """
+        # Prepare batch
+        batch = []
+        for item in history_data:
+            batch.append((
+                symbol,
+                item['date'],
+                item['close'],
+                item.get('adjusted_close'),
+                item.get('volume')
+            ))
+        
+        # Use batch write
+        for args in batch:
+            self.write_queue.put((sql, args))
+
+    def get_price_history(self, symbol: str, start_date: str = None, end_date: str = None) -> List[Dict[str, Any]]:
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        
+        query = "SELECT date, close, adjusted_close, volume FROM price_history WHERE symbol = %s"
+        params = [symbol]
+        
+        if start_date:
+            query += " AND date >= %s"
+            params.append(start_date)
+        if end_date:
+            query += " AND date <= %s"
+            params.append(end_date)
+            
+        query += " ORDER BY date ASC"
+        
+        cursor.execute(query, params)
+        rows = cursor.fetchall()
+        self.return_connection(conn)
+        
+        return [
+            {
+                'date': row[0].strftime('%Y-%m-%d') if row[0] else None,
+                'close': row[1],
+                'adjusted_close': row[2],
+                'volume': row[3]
             }
             for row in rows
         ]
