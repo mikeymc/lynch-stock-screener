@@ -99,33 +99,53 @@ class Backtester:
         known_earnings.sort(key=lambda x: x['year'], reverse=True)
         latest_earnings = known_earnings[0]
         
-        # 3. Reconstruct Metrics
-        eps = latest_earnings['eps']
-        if not eps or eps <= 0:
-            pe_ratio = None
+        # 3. Reconstruct Metrics using Net Income (immune to stock splits)
+        # Get current metrics to estimate shares outstanding
+        current_metrics = self.db.get_stock_metrics(symbol)
+        
+        # Use net income for growth calculations (more stable than EPS)
+        net_income = latest_earnings.get('net_income')
+        
+        # Calculate synthetic EPS using estimated shares
+        # Estimate shares: current_market_cap / current_price
+        if current_metrics and current_metrics.get('price') and current_metrics.get('market_cap'):
+            shares_outstanding = current_metrics['market_cap'] / current_metrics['price']
+            if net_income and shares_outstanding > 0:
+                eps = net_income / shares_outstanding
+                pe_ratio = current_price / eps if eps > 0 else None
+            else:
+                eps = latest_earnings.get('eps')  # Fallback to stored EPS
+                pe_ratio = current_price / eps if eps and eps > 0 else None
         else:
-            pe_ratio = current_price / eps
+            eps = latest_earnings.get('eps')  # Fallback
+            pe_ratio = current_price / eps if eps and eps > 0 else None
             
-        # Calculate Growth (CAGR) based on known history
+        # Calculate Earnings Growth (CAGR) using net income (split-resistant)
         # We need at least 3 years of history for a valid CAGR
+        earnings_cagr = None
         if len(known_earnings) >= 3:
-            # Calculate CAGR between oldest and newest known
             oldest = known_earnings[min(len(known_earnings)-1, 4)] # Max 5 years back
             years = latest_earnings['year'] - oldest['year']
-            if years > 0 and oldest['eps'] > 0 and latest_earnings['eps'] > 0:
-                earnings_cagr = ((latest_earnings['eps'] / oldest['eps']) ** (1/years) - 1) * 100
-            else:
-                earnings_cagr = None
-        else:
-            earnings_cagr = None
-
-        # Reconstruct Base Data Dictionary
-        # Note: Some metrics like Market Cap need shares outstanding, which we might not have historically.
-        # We can approximate Market Cap = Price * (Current Market Cap / Current Price) if we assume share count hasn't changed wildly.
-        # Or just ignore Market Cap for scoring if it's not critical (it's used for categorization).
+            
+            latest_ni = latest_earnings.get('net_income')
+            oldest_ni = oldest.get('net_income')
+            
+            if years > 0 and oldest_ni and oldest_ni > 0 and latest_ni and latest_ni > 0:
+                earnings_cagr = ((latest_ni / oldest_ni) ** (1/years) - 1) * 100
         
-        # For simplicity, we'll use the current share count estimate
-        current_metrics = self.db.get_stock_metrics(symbol)
+        # Calculate Revenue Growth (CAGR)
+        revenue_cagr = None
+        if len(known_earnings) >= 3:
+            oldest = known_earnings[min(len(known_earnings)-1, 4)] # Max 5 years back
+            years = latest_earnings['year'] - oldest['year']
+            
+            latest_rev = latest_earnings.get('revenue')
+            oldest_rev = oldest.get('revenue')
+            
+            if years > 0 and oldest_rev and oldest_rev > 0 and latest_rev and latest_rev > 0:
+                revenue_cagr = ((latest_rev / oldest_rev) ** (1/years) - 1) * 100
+
+        # Calculate market cap using estimated shares
         if current_metrics and current_metrics.get('price') and current_metrics.get('market_cap'):
             shares_outstanding = current_metrics['market_cap'] / current_metrics['price']
             market_cap = current_price * shares_outstanding
@@ -138,7 +158,7 @@ class Backtester:
             'pe_ratio': pe_ratio,
             'peg_ratio': None, # Calculated by criteria
             'earnings_cagr': earnings_cagr,
-            'revenue_cagr': None, # TODO: similar logic for revenue
+            'revenue_cagr': revenue_cagr,
             'debt_to_equity': latest_earnings.get('debt_to_equity'), # Use historical D/E if available
             'institutional_ownership': current_metrics.get('institutional_ownership'), # Limitation: We don't have historical ownership
             'dividend_yield': (latest_earnings.get('dividend_amount', 0) / current_price * 100) if latest_earnings.get('dividend_amount') else 0,

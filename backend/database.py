@@ -268,6 +268,60 @@ class Database:
         """)
 
         cursor.execute("""
+            CREATE TABLE IF NOT EXISTS backtest_results (
+                id SERIAL PRIMARY KEY,
+                symbol TEXT,
+                backtest_date DATE,
+                years_back INTEGER,
+                start_price REAL,
+                end_price REAL,
+                total_return REAL,
+                historical_score REAL,
+                historical_rating TEXT,
+                peg_score REAL,
+                debt_score REAL,
+                ownership_score REAL,
+                consistency_score REAL,
+                peg_ratio REAL,
+                earnings_cagr REAL,
+                revenue_cagr REAL,
+                debt_to_equity REAL,
+                institutional_ownership REAL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(symbol, years_back)
+            )
+        """)
+
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS algorithm_configurations (
+                id SERIAL PRIMARY KEY,
+                name TEXT,
+                weight_peg REAL,
+                weight_consistency REAL,
+                weight_debt REAL,
+                weight_ownership REAL,
+                correlation_1yr REAL,
+                correlation_3yr REAL,
+                correlation_5yr REAL,
+                is_active BOOLEAN DEFAULT FALSE,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS optimization_runs (
+                id SERIAL PRIMARY KEY,
+                years_back INTEGER,
+                iterations INTEGER,
+                initial_correlation REAL,
+                final_correlation REAL,
+                improvement REAL,
+                best_config_id INTEGER REFERENCES algorithm_configurations(id),
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+
+        cursor.execute("""
             CREATE TABLE IF NOT EXISTS screening_sessions (
                 id SERIAL PRIMARY KEY,
                 created_at TIMESTAMP,
@@ -1183,3 +1237,145 @@ class Database:
         for key, data in defaults.items():
             if key not in current_settings:
                 self.set_setting(key, data['value'], data['desc'])
+    # Backtest Results Methods
+    def save_backtest_result(self, result: Dict[str, Any]):
+        """Save a backtest result"""
+        sql = """
+            INSERT INTO backtest_results
+            (symbol, backtest_date, years_back, start_price, end_price, total_return,
+             historical_score, historical_rating, peg_score, debt_score, ownership_score,
+             consistency_score, peg_ratio, earnings_cagr, revenue_cagr, debt_to_equity,
+             institutional_ownership)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            ON CONFLICT (symbol, years_back) DO UPDATE SET
+                backtest_date = EXCLUDED.backtest_date,
+                start_price = EXCLUDED.start_price,
+                end_price = EXCLUDED.end_price,
+                total_return = EXCLUDED.total_return,
+                historical_score = EXCLUDED.historical_score,
+                historical_rating = EXCLUDED.historical_rating,
+                peg_score = EXCLUDED.peg_score,
+                debt_score = EXCLUDED.debt_score,
+                ownership_score = EXCLUDED.ownership_score,
+                consistency_score = EXCLUDED.consistency_score,
+                peg_ratio = EXCLUDED.peg_ratio,
+                earnings_cagr = EXCLUDED.earnings_cagr,
+                revenue_cagr = EXCLUDED.revenue_cagr,
+                debt_to_equity = EXCLUDED.debt_to_equity,
+                institutional_ownership = EXCLUDED.institutional_ownership
+        """
+        hist_data = result.get('historical_data', {})
+        args = (
+            result['symbol'],
+            result['backtest_date'],
+            result.get('years_back', 1),
+            result['start_price'],
+            result['end_price'],
+            result['total_return'],
+            result['historical_score'],
+            result['historical_rating'],
+            hist_data.get('peg_score'),
+            hist_data.get('debt_score'),
+            hist_data.get('institutional_ownership_score'),
+            hist_data.get('consistency_score'),
+            hist_data.get('peg_ratio'),
+            hist_data.get('earnings_cagr'),
+            hist_data.get('revenue_cagr'),
+            hist_data.get('debt_to_equity'),
+            hist_data.get('institutional_ownership')
+        )
+        self.write_queue.put((sql, args))
+
+    def get_backtest_results(self, years_back: int = None) -> List[Dict[str, Any]]:
+        """Get backtest results, optionally filtered by years_back"""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        
+        if years_back:
+            query = "SELECT * FROM backtest_results WHERE years_back = %s ORDER BY symbol"
+            cursor.execute(query, (years_back,))
+        else:
+            query = "SELECT * FROM backtest_results ORDER BY years_back, symbol"
+            cursor.execute(query)
+        
+        rows = cursor.fetchall()
+        self.return_connection(conn)
+        
+        return [
+            {
+                'id': row[0],
+                'symbol': row[1],
+                'backtest_date': row[2],
+                'years_back': row[3],
+                'start_price': row[4],
+                'end_price': row[5],
+                'total_return': row[6],
+                'historical_score': row[7],
+                'historical_rating': row[8],
+                'peg_score': row[9],
+                'debt_score': row[10],
+                'ownership_score': row[11],
+                'consistency_score': row[12],
+                'peg_ratio': row[13],
+                'earnings_cagr': row[14],
+                'revenue_cagr': row[15],
+                'debt_to_equity': row[16],
+                'institutional_ownership': row[17],
+                'created_at': row[18]
+            }
+            for row in rows
+        ]
+
+    # Algorithm Configuration Methods
+    def save_algorithm_config(self, config: Dict[str, Any]) -> int:
+        """Save an algorithm configuration and return its ID"""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        
+        cursor.execute("""
+            INSERT INTO algorithm_configurations
+            (name, weight_peg, weight_consistency, weight_debt, weight_ownership,
+             correlation_1yr, correlation_3yr, correlation_5yr, is_active)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+            RETURNING id
+        """, (
+            config.get('name', 'Unnamed'),
+            config['weight_peg'],
+            config['weight_consistency'],
+            config['weight_debt'],
+            config['weight_ownership'],
+            config.get('correlation_1yr'),
+            config.get('correlation_3yr'),
+            config.get('correlation_5yr'),
+            config.get('is_active', False)
+        ))
+        
+        config_id = cursor.fetchone()[0]
+        conn.commit()
+        self.return_connection(conn)
+        return config_id
+
+    def get_algorithm_configs(self) -> List[Dict[str, Any]]:
+        """Get all algorithm configurations"""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM algorithm_configurations ORDER BY created_at DESC")
+        rows = cursor.fetchall()
+        self.return_connection(conn)
+        
+        return [
+            {
+                'id': row[0],
+                'name': row[1],
+                'weight_peg': row[2],
+                'weight_consistency': row[3],
+                'weight_debt': row[4],
+                'weight_ownership': row[5],
+                'correlation_1yr': row[6],
+                'correlation_3yr': row[7],
+                'correlation_5yr': row[8],
+                'is_active': row[9],
+                'created_at': row[10]
+            }
+            for row in rows
+        ]

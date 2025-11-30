@@ -9,6 +9,7 @@ import json
 import math
 import time
 import os
+import numpy as np
 import yfinance as yf
 from datetime import datetime
 from database import Database
@@ -20,6 +21,9 @@ from lynch_analyst import LynchAnalyst
 from conversation_manager import ConversationManager
 from wacc_calculator import calculate_wacc
 from backtester import Backtester
+from algorithm_validator import AlgorithmValidator
+from correlation_analyzer import CorrelationAnalyzer
+from algorithm_optimizer import AlgorithmOptimizer
 
 app = Flask(__name__, static_folder='static', static_url_path='')
 CORS(app)
@@ -47,6 +51,13 @@ schwab_client = SchwabClient()
 lynch_analyst = LynchAnalyst(db)
 conversation_manager = ConversationManager(db)
 backtester = Backtester(db)
+validator = AlgorithmValidator(db)
+analyzer_corr = CorrelationAnalyzer(db)
+optimizer = AlgorithmOptimizer(db)
+
+# Track running validation/optimization jobs
+validation_jobs = {}
+optimization_jobs = {}
 
 # Global dict to track active screening threads
 active_screenings = {}
@@ -54,13 +65,17 @@ screening_lock = threading.Lock()
 
 
 def clean_nan_values(obj):
-    """Recursively replace NaN values with None for JSON serialization"""
+    """Recursively replace NaN values with None and convert numpy types for JSON serialization"""
     if isinstance(obj, dict):
         return {k: clean_nan_values(v) for k, v in obj.items()}
     elif isinstance(obj, list):
         return [clean_nan_values(item) for item in obj]
     elif isinstance(obj, float) and (math.isnan(obj) or math.isinf(obj)):
         return None
+    elif isinstance(obj, (np.integer, np.floating, np.bool_)):
+        return obj.item()
+    elif isinstance(obj, np.ndarray):
+        return clean_nan_values(obj.tolist())
     return obj
 
 
@@ -1517,6 +1532,186 @@ def run_backtest():
         print(f"Error running backtest: {e}")
         return jsonify({'error': str(e)}), 500
 
+
+
+
+# ============================================================
+# Algorithm Validation & Optimization Endpoints
+# ============================================================
+
+@app.route('/api/validate/run', methods=['POST'])
+def start_validation():
+    """Start a validation run for S&P 500 stocks"""
+    try:
+        data = request.get_json()
+        years_back = int(data.get('years_back', 1))
+        limit = data.get('limit')  # Optional limit for testing
+        
+        # Generate unique job ID
+        import uuid
+        job_id = str(uuid.uuid4())
+        
+        # Start validation in background thread
+        def run_validation_background():
+            try:
+                validation_jobs[job_id] = {'status': 'running', 'progress': 0}
+                
+                summary = validator.run_sp500_backtests(
+                    years_back=years_back,
+                    max_workers=5,
+                    limit=limit
+                )
+                
+                # Run correlation analysis
+                analysis = analyzer_corr.analyze_results(years_back=years_back)
+                
+                validation_jobs[job_id] = {
+                    'status': 'complete',
+                    'summary': summary,
+                    'analysis': analysis
+                }
+            except Exception as e:
+                validation_jobs[job_id] = {
+                    'status': 'error',
+                    'error': str(e)
+                }
+        
+        thread = threading.Thread(target=run_validation_background, daemon=True)
+        thread.start()
+        
+        return jsonify({
+            'job_id': job_id,
+            'status': 'started',
+            'years_back': years_back
+        })
+        
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/validate/progress/<job_id>', methods=['GET'])
+def get_validation_progress(job_id):
+    """Get progress of a validation job"""
+    if job_id not in validation_jobs:
+        return jsonify({'error': 'Job not found'}), 404
+    
+    return jsonify(clean_nan_values(validation_jobs[job_id]))
+
+@app.route('/api/validate/results/<int:years_back>', methods=['GET'])
+def get_validation_results(years_back):
+    """Get validation results and analysis"""
+    try:
+        # Get correlation analysis
+        analysis = analyzer_corr.analyze_results(years_back=years_back)
+        
+        if 'error' in analysis:
+            return jsonify(analysis), 400
+        
+        return jsonify(clean_nan_values(analysis))
+        
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/optimize/run', methods=['POST'])
+def start_optimization():
+    """Start auto-optimization to find best weights"""
+    try:
+        data = request.get_json()
+        years_back = int(data.get('years_back', 1))
+        method = data.get('method', 'gradient_descent')
+        max_iterations = int(data.get('max_iterations', 50))
+        
+        # Generate unique job ID
+        import uuid
+        job_id = str(uuid.uuid4())
+        
+        # Start optimization in background thread
+        def run_optimization_background():
+            try:
+                optimization_jobs[job_id] = {'status': 'running', 'progress': 0}
+                
+                result = optimizer.optimize(
+                    years_back=years_back,
+                    method=method,
+                    max_iterations=max_iterations
+                )
+                
+                optimization_jobs[job_id] = {
+                    'status': 'complete',
+                    'result': result
+                }
+            except Exception as e:
+                optimization_jobs[job_id] = {
+                    'status': 'error',
+                    'error': str(e)
+                }
+        
+        thread = threading.Thread(target=run_optimization_background, daemon=True)
+        thread.start()
+        
+        return jsonify({
+            'job_id': job_id,
+            'status': 'started',
+            'years_back': years_back,
+            'method': method
+        })
+        
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/optimize/progress/<job_id>', methods=['GET'])
+def get_optimization_progress(job_id):
+    """Get progress of an optimization job"""
+    if job_id not in optimization_jobs:
+        return jsonify({'error': 'Job not found'}), 404
+    
+    return jsonify(clean_nan_values(optimization_jobs[job_id]))
+
+@app.route('/api/algorithm/config', methods=['GET', 'POST'])
+def algorithm_config():
+    """Get or update algorithm configuration"""
+    if request.method == 'GET':
+        # Get current configuration
+        config = {
+            'weight_peg': db.get_setting('weight_peg', 0.50),
+            'weight_consistency': db.get_setting('weight_consistency', 0.25),
+            'weight_debt': db.get_setting('weight_debt', 0.15),
+            'weight_ownership': db.get_setting('weight_ownership', 0.10)
+        }
+        
+        # Get all saved configurations
+        saved_configs = db.get_algorithm_configs()
+        
+        return jsonify({
+            'current': config,
+            'saved_configs': clean_nan_values(saved_configs)
+        })
+    
+    elif request.method == 'POST':
+        # Update configuration
+        data = request.get_json()
+        
+        if 'config' in data:
+            # Apply a saved configuration
+            config = data['config']
+            db.set_setting('weight_peg', config['weight_peg'])
+            db.set_setting('weight_consistency', config['weight_consistency'])
+            db.set_setting('weight_debt', config['weight_debt'])
+            db.set_setting('weight_ownership', config['weight_ownership'])
+            
+            return jsonify({'status': 'updated', 'config': config})
+        else:
+            return jsonify({'error': 'No config provided'}), 400
+
+@app.route('/api/backtest/results', methods=['GET'])
+def get_backtest_results():
+    """Get all backtest results"""
+    try:
+        years_back = request.args.get('years_back', type=int)
+        results = db.get_backtest_results(years_back=years_back)
+        
+        return jsonify(clean_nan_values(results))
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 8080))
