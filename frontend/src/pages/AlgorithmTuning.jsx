@@ -110,7 +110,8 @@ export default function AlgorithmTuning() {
                 body: JSON.stringify({
                     years_back: yearsBack,
                     method: 'gradient_descent',
-                    max_iterations: 50
+                    max_iterations: 50,
+                    limit: null  // Run on full S&P 500
                 })
             });
 
@@ -242,30 +243,87 @@ export default function AlgorithmTuning() {
                         disabled={optimizationRunning}
                         className="btn-optimize"
                     >
-                        {optimizationRunning ? '🔄 Optimizing...' : '✨ Auto-Optimize'}
+                        {optimizationRunning
+                        ? (optimizationResult?.stage === 'optimizing' ? '🔄 Optimizing weights...'
+                           : optimizationResult?.stage === 'clearing_cache' ? '🔄 Clearing cache...'
+                           : optimizationResult?.stage === 'revalidating' ? '🔄 Running validation...'
+                           : '🔄 Optimizing...')
+                        : '✨ Auto-Optimize'}
                     </button>
 
-                    {optimizationResult && (
+                    {optimizationResult && !optimizationResult.error && (
                         <div className="optimization-results">
                             <h3>🎯 Optimization Results</h3>
-                            <div className="improvement-stats">
-                                <div className="stat">
-                                    <span className="label">Initial Correlation:</span>
-                                    <span className="value">{optimizationResult.initial_correlation?.toFixed(4)}</span>
+
+                            {/* Before/After Comparison */}
+                            {optimizationResult.baseline_analysis && optimizationResult.optimized_analysis ? (
+                                <div className="before-after-comparison">
+                                    <div className="comparison-row">
+                                        <div className="comparison-col">
+                                            <h4>Before (Current Config)</h4>
+                                            <div className="stat">
+                                                <span className="label">Correlation:</span>
+                                                <span className="value">{optimizationResult.baseline_analysis.overall_correlation?.coefficient?.toFixed(4)}</span>
+                                            </div>
+                                            <div className="stat">
+                                                <span className="label">Stocks:</span>
+                                                <span className="value">{optimizationResult.baseline_analysis.total_stocks}</span>
+                                            </div>
+                                            <div className="stat">
+                                                <span className="label">Significant:</span>
+                                                <span className="value">{optimizationResult.baseline_analysis.overall_correlation?.significant ? 'Yes' : 'No'}</span>
+                                            </div>
+                                        </div>
+
+                                        <div className="comparison-arrow">→</div>
+
+                                        <div className="comparison-col success">
+                                            <h4>After (Optimized Config)</h4>
+                                            <div className="stat">
+                                                <span className="label">Correlation:</span>
+                                                <span className="value">{optimizationResult.optimized_analysis.overall_correlation?.coefficient?.toFixed(4)}</span>
+                                            </div>
+                                            <div className="stat">
+                                                <span className="label">Stocks:</span>
+                                                <span className="value">{optimizationResult.optimized_analysis.total_stocks}</span>
+                                            </div>
+                                            <div className="stat">
+                                                <span className="label">Significant:</span>
+                                                <span className="value">{optimizationResult.optimized_analysis.overall_correlation?.significant ? 'Yes' : 'No'}</span>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <div className="improvement-highlight">
+                                        <span className="label">Correlation Improvement:</span>
+                                        <span className="value">
+                                            {optimizationResult.improvement && optimizationResult.baseline_analysis.overall_correlation?.coefficient
+                                                ? ((optimizationResult.improvement / Math.abs(optimizationResult.baseline_analysis.overall_correlation.coefficient)) * 100).toFixed(1) + '%'
+                                                : 'N/A'}
+                                        </span>
+                                    </div>
                                 </div>
-                                <div className="stat">
-                                    <span className="label">Optimized Correlation:</span>
-                                    <span className="value success">{optimizationResult.final_correlation?.toFixed(4)}</span>
+                            ) : (
+                                /* Fallback to old display if analyses not available */
+                                <div className="improvement-stats">
+                                    <div className="stat">
+                                        <span className="label">Initial Correlation:</span>
+                                        <span className="value">{optimizationResult.initial_correlation?.toFixed(4)}</span>
+                                    </div>
+                                    <div className="stat">
+                                        <span className="label">Optimized Correlation:</span>
+                                        <span className="value success">{optimizationResult.final_correlation?.toFixed(4)}</span>
+                                    </div>
+                                    <div className="stat highlight">
+                                        <span className="label">Improvement:</span>
+                                        <span className="value">
+                                            {optimizationResult.improvement && optimizationResult.initial_correlation
+                                                ? ((optimizationResult.improvement / Math.abs(optimizationResult.initial_correlation)) * 100).toFixed(1) + '%'
+                                                : 'N/A'}
+                                        </span>
+                                    </div>
                                 </div>
-                                <div className="stat highlight">
-                                    <span className="label">Improvement:</span>
-                                    <span className="value">
-                                        {optimizationResult.improvement && optimizationResult.initial_correlation
-                                            ? ((optimizationResult.improvement / Math.abs(optimizationResult.initial_correlation)) * 100).toFixed(1) + '%'
-                                            : 'N/A'}
-                                    </span>
-                                </div>
-                            </div>
+                            )}
 
                             <div className="optimized-config">
                                 <h4>Best Configuration:</h4>

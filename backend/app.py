@@ -1630,25 +1630,61 @@ def start_optimization():
         years_back = int(data.get('years_back', 1))
         method = data.get('method', 'gradient_descent')
         max_iterations = int(data.get('max_iterations', 50))
-        
+        limit = data.get('limit')  # Capture limit for use in background thread
+
         # Generate unique job ID
         import uuid
         job_id = str(uuid.uuid4())
-        
+
         # Start optimization in background thread
         def run_optimization_background():
             try:
-                optimization_jobs[job_id] = {'status': 'running', 'progress': 0}
-                
+                optimization_jobs[job_id] = {'status': 'running', 'progress': 0, 'stage': 'optimizing'}
+
+                # Get baseline analysis
+                baseline_analysis = analyzer_corr.analyze_results(years_back=years_back)
+
+                # Run optimization
                 result = optimizer.optimize(
                     years_back=years_back,
                     method=method,
                     max_iterations=max_iterations
                 )
-                
+
+                if 'error' in result:
+                    optimization_jobs[job_id] = {
+                        'status': 'complete',
+                        'result': result,
+                        'baseline_analysis': baseline_analysis
+                    }
+                    return
+
+                # Delete old backtest results to prepare for revalidation with new config
+                optimization_jobs[job_id]['stage'] = 'clearing_cache'
+                conn = db.get_connection()
+                cursor = conn.cursor()
+                cursor.execute('DELETE FROM backtest_results WHERE years_back = %s', (years_back,))
+                conn.commit()
+                db.return_connection(conn)
+
+                # Run validation with optimized config
+                optimization_jobs[job_id]['stage'] = 'revalidating'
+                summary = validator.run_sp500_backtests(
+                    years_back=years_back,
+                    max_workers=5,
+                    limit=limit,  # Use same limit as original validation
+                    force_rerun=True,
+                    overrides=result['best_config']
+                )
+
+                # Get optimized analysis
+                optimized_analysis = analyzer_corr.analyze_results(years_back=years_back)
+
                 optimization_jobs[job_id] = {
                     'status': 'complete',
-                    'result': result
+                    'result': result,
+                    'baseline_analysis': baseline_analysis,
+                    'optimized_analysis': optimized_analysis
                 }
             except Exception as e:
                 optimization_jobs[job_id] = {
