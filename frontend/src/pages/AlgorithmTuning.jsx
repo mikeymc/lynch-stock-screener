@@ -60,7 +60,11 @@ export default function AlgorithmTuning() {
             const response = await fetch('http://localhost:8080/api/validate/run', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ years_back: yearsBack, limit: 50 })  // Limit for faster testing
+                body: JSON.stringify({
+                    years_back: yearsBack,
+                    limit: 50,
+                    config: config
+                })
             });
 
             const data = await response.json();

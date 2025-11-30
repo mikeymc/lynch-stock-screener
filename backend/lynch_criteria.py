@@ -113,7 +113,7 @@ class LynchCriteria:
         self.inst_own_min = self.settings['inst_own_min']['value']
         self.inst_own_max = self.settings['inst_own_max']['value']
 
-    def evaluate_stock(self, symbol: str, algorithm: str = 'weighted') -> Optional[Dict[str, Any]]:
+    def evaluate_stock(self, symbol: str, algorithm: str = 'weighted', overrides: Dict[str, float] = None, custom_metrics: Dict[str, Any] = None) -> Optional[Dict[str, Any]]:
         """
         Evaluate a stock using the specified algorithm.
 
@@ -125,13 +125,17 @@ class LynchCriteria:
             Dictionary with evaluation results including algorithm-specific scoring
         """
         # Get base metrics and growth data
-        base_data = self._get_base_metrics(symbol)
+        if custom_metrics:
+            base_data = custom_metrics
+        else:
+            base_data = self._get_base_metrics(symbol)
+            
         if not base_data:
             return None
 
         # Route to appropriate algorithm
         if algorithm == 'weighted':
-            return self._evaluate_weighted(symbol, base_data)
+            return self._evaluate_weighted(symbol, base_data, overrides)
         elif algorithm == 'two_tier':
             return self._evaluate_two_tier(symbol, base_data)
         elif algorithm == 'category_based':
@@ -142,7 +146,7 @@ class LynchCriteria:
             return self._evaluate_classic(symbol, base_data)
         else:
             # Default to weighted if unknown algorithm
-            return self._evaluate_weighted(symbol, base_data)
+            return self._evaluate_weighted(symbol, base_data, overrides)
 
     def _get_base_metrics(self, symbol: str) -> Optional[Dict[str, Any]]:
         """Get base metrics and growth data for a stock."""
@@ -235,13 +239,19 @@ class LynchCriteria:
         result['rating_label'] = overall_status
         return result
 
-    def _evaluate_weighted(self, symbol: str, base_data: Dict[str, Any]) -> Dict[str, Any]:
+    def _evaluate_weighted(self, symbol: str, base_data: Dict[str, Any], overrides: Dict[str, float] = None) -> Dict[str, Any]:
         """Weighted scoring: PEG 50%, Consistency 25%, Debt 15%, Ownership 10%."""
         # Calculate weighted score
-        peg_weight = self.settings['weight_peg']['value']
-        consistency_weight = self.settings['weight_consistency']['value']
-        debt_weight = self.settings['weight_debt']['value']
-        ownership_weight = self.settings['weight_ownership']['value']
+        if overrides:
+            peg_weight = overrides.get('weight_peg', self.settings['weight_peg']['value'])
+            consistency_weight = overrides.get('weight_consistency', self.settings['weight_consistency']['value'])
+            debt_weight = overrides.get('weight_debt', self.settings['weight_debt']['value'])
+            ownership_weight = overrides.get('weight_ownership', self.settings['weight_ownership']['value'])
+        else:
+            peg_weight = self.settings['weight_peg']['value']
+            consistency_weight = self.settings['weight_consistency']['value']
+            debt_weight = self.settings['weight_debt']['value']
+            ownership_weight = self.settings['weight_ownership']['value']
 
         # Get consistency score (0-100), default to 50 if not available
         consistency_score = base_data.get('consistency_score', 50) if base_data.get('consistency_score') is not None else 50

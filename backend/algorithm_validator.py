@@ -41,7 +41,7 @@ class AlgorithmValidator:
                 'NKE', 'DIS', 'CRM', 'CSCO', 'ACN', 'TMO', 'VZ', 'ABT', 'NFLX'
             ]
     
-    def run_sp500_backtests(self, years_back: int, max_workers: int = 5, limit: int = None) -> Dict[str, Any]:
+    def run_sp500_backtests(self, years_back: int, max_workers: int = 5, limit: int = None, force_rerun: bool = False, overrides: Dict[str, float] = None) -> Dict[str, Any]:
         """
         Run backtests on all S&P 500 stocks
         
@@ -63,13 +63,17 @@ class AlgorithmValidator:
         
         logger.info(f"Starting backtest validation for {total_symbols} stocks, {years_back} years back")
         
+        # Reload settings to ensure we use the latest configuration
+        self.backtester.criteria.reload_settings()
+        logger.info("Reloaded algorithm settings")
+        
         start_time = time.time()
         processed = 0
         
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
             # Submit all tasks
             future_to_symbol = {
-                executor.submit(self._backtest_with_cache, symbol, years_back): symbol 
+                executor.submit(self._backtest_with_cache, symbol, years_back, force_rerun, overrides): symbol  
                 for symbol in symbols
             }
             
@@ -117,22 +121,23 @@ class AlgorithmValidator:
         
         return summary
     
-    def _backtest_with_cache(self, symbol: str, years_back: int) -> Optional[Dict[str, Any]]:
+    def _backtest_with_cache(self, symbol: str, years_back: int, force_rerun: bool = False, overrides: Dict[str, float] = None) -> Optional[Dict[str, Any]]:
         """
         Run backtest with price caching
         
         Reuses price data if already fetched for this symbol
         """
         try:
-            # Check if we already have the result
-            existing_results = self.db.get_backtest_results(years_back=years_back)
-            for result in existing_results:
-                if result['symbol'] == symbol:
-                    logger.debug(f"{symbol}: Using cached result")
-                    return None  # Already have this result
+            if not force_rerun:
+                # Check if we already have the result
+                existing_results = self.db.get_backtest_results(years_back=years_back)
+                for result in existing_results:
+                    if result['symbol'] == symbol:
+                        logger.debug(f"{symbol}: Using cached result")
+                        return None  # Already have this result
             
             # Run backtest - backtester handles its own price caching
-            result = self.backtester.run_backtest(symbol, years_back=years_back)
+            result = self.backtester.run_backtest(symbol, years_back=years_back, overrides=overrides)
             
             # Add years_back to result for database storage
             if 'error' not in result:

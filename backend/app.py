@@ -25,6 +25,13 @@ from algorithm_validator import AlgorithmValidator
 from correlation_analyzer import CorrelationAnalyzer
 from algorithm_optimizer import AlgorithmOptimizer
 
+from algorithm_optimizer import AlgorithmOptimizer
+import logging
+
+# Configure logging
+logging.basicConfig(level=logging.DEBUG)
+logger = logging.getLogger(__name__)
+
 app = Flask(__name__, static_folder='static', static_url_path='')
 CORS(app)
 
@@ -1546,6 +1553,8 @@ def start_validation():
         data = request.get_json()
         years_back = int(data.get('years_back', 1))
         limit = data.get('limit')  # Optional limit for testing
+        force = data.get('force', True)  # Default to True to ensure we test new settings
+        config = data.get('config')  # Optional config overrides
         
         # Generate unique job ID
         import uuid
@@ -1559,7 +1568,9 @@ def start_validation():
                 summary = validator.run_sp500_backtests(
                     years_back=years_back,
                     max_workers=5,
-                    limit=limit
+                    limit=limit,
+                    force_rerun=force,
+                    overrides=config
                 )
                 
                 # Run correlation analysis

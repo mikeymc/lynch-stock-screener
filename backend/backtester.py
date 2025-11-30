@@ -48,7 +48,7 @@ class Backtester:
         except Exception as e:
             logger.error(f"Error fetching history for {symbol}: {e}")
 
-    def get_historical_score(self, symbol: str, date: str) -> Optional[Dict[str, Any]]:
+    def get_historical_score(self, symbol: str, date: str, overrides: Dict[str, float] = None) -> Optional[Dict[str, Any]]:
         """
         Reconstruct the Lynch Score for a stock as it would have appeared on a specific date.
         """
@@ -72,32 +72,42 @@ class Backtester:
         # 2. Get Earnings History known BEFORE that date
         # We need to filter earnings reports that were released before the target date.
         # Since our earnings_history table doesn't have a 'release_date' column for every row (it has fiscal_end),
-        # we have to approximate. 
+        # we have to approximate.
         # Usually annual reports are out within 3 months of fiscal end.
         # For this implementation, we will use the 'year' and assume data is available by April of next year.
         # OR better: We use the data available in the DB but we need to be careful not to use future years.
-        
+
         all_earnings = self.db.get_earnings_history(symbol)
         target_year = datetime.fromisoformat(date).year
-        
+
         # Filter out earnings from future years relative to the backtest date
-        # If date is Nov 2023, we can see 2022 annual report. 
+        # If date is Nov 2023, we can see 2022 annual report.
         # We might see 2023 Q1, Q2, Q3 if we had quarterly data.
         # For annual data: if date is > April 2023, we assume 2022 data is known.
-        
+
         known_earnings = []
         for earnings in all_earnings:
             # Simple logic: If earnings year < target_year, it's definitely known.
             # If earnings year == target_year, it's NOT known yet (usually).
             if earnings['year'] < target_year:
                 known_earnings.append(earnings)
-        
+
         if not known_earnings:
             return None
-            
+
+        # Deduplicate by year+period (database has duplicate entries)
+        unique_earnings = {}
+        for e in known_earnings:
+            key = (e['year'], e.get('period', 'annual'))
+            if key not in unique_earnings:
+                unique_earnings[key] = e
+
+        known_earnings = list(unique_earnings.values())
+
         # Sort by year desc
         known_earnings.sort(key=lambda x: x['year'], reverse=True)
         latest_earnings = known_earnings[0]
+        logger.debug(f"{symbol}: Found {len(known_earnings)} unique years of known earnings before {date}")
         
         # 3. Reconstruct Metrics using Net Income (immune to stock splits)
         # Get current metrics to estimate shares outstanding
@@ -178,6 +188,7 @@ class Backtester:
         base_data['peg_ratio'] = self.criteria.calculate_peg_ratio(pe_ratio, earnings_cagr)
         base_data['peg_status'] = self.criteria.evaluate_peg(base_data['peg_ratio'])
         base_data['peg_score'] = self.criteria.calculate_peg_score(base_data['peg_ratio'])
+        logger.debug(f"{symbol}: PEG Ratio={base_data['peg_ratio']}, Score={base_data['peg_score']}, CAGR={earnings_cagr}")
         
         # Debt
         base_data['debt_status'] = self.criteria.evaluate_debt(base_data['debt_to_equity'])
@@ -187,11 +198,17 @@ class Backtester:
         base_data['institutional_ownership_status'] = self.criteria.evaluate_institutional_ownership(base_data['institutional_ownership'])
         base_data['institutional_ownership_score'] = self.criteria.calculate_institutional_ownership_score(base_data['institutional_ownership'])
 
-        # Evaluate using Weighted algorithm
-        result = self.criteria._evaluate_weighted(symbol, base_data)
-        return result
+        # 4. Calculate Score using historical data
+        # We pass the reconstructed historical data as custom_metrics to avoid fetching current data
+        score_result = self.criteria.evaluate_stock(
+            symbol, 
+            algorithm='weighted', 
+            overrides=overrides,
+            custom_metrics=base_data
+        )
+        return score_result
 
-    def run_backtest(self, symbol: str, years_back: int = 1) -> Dict[str, Any]:
+    def run_backtest(self, symbol: str, years_back: int = 1, overrides: Dict[str, float] = None) -> Dict[str, Any]:
         """
         Run a backtest for a single stock.
         """
@@ -202,8 +219,9 @@ class Backtester:
         # 1. Ensure we have price history
         self.fetch_historical_prices(symbol, start_date_str, end_date.strftime('%Y-%m-%d'))
         
-        # 2. Get Historical Score
-        historical_analysis = self.get_historical_score(symbol, start_date_str)
+        # 3. Calculate Historical Score (at start date)
+        # This returns the full scoring result including the score
+        historical_analysis = self.get_historical_score(symbol, start_date_str, overrides=overrides)
         
         if not historical_analysis:
             return {'error': 'Insufficient historical data'}
