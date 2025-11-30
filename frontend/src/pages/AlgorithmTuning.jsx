@@ -62,7 +62,7 @@ export default function AlgorithmTuning() {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     years_back: yearsBack,
-                    limit: 50,
+                    limit: null,  // No limit - run full S&P 500
                     config: config
                 })
             });
