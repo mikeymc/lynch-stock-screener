@@ -20,20 +20,29 @@ class AlgorithmValidator:
     def get_sp500_symbols(self) -> List[str]:
         """Fetch S&P 500 stock symbols from Wikipedia"""
         try:
-            # Read S&P 500 table from Wikipedia
+            # Read S&P 500 table from Wikipedia with User-Agent to avoid 403
             url = 'https://en.wikipedia.org/wiki/List_of_S%26P_500_companies'
-            tables = pd.read_html(url)
-            sp500_table = tables[0]
-            symbols = sp500_table['Symbol'].tolist()
-            
-            # Clean symbols (remove dots for BRK.B -> BRK-B format)
-            symbols = [s.replace('.', '-') for s in symbols]
-            
-            logger.info(f"Fetched {len(symbols)} S&P 500 symbols")
-            return symbols
+
+            # pandas read_html can accept storage_options for headers
+            import urllib.request
+            req = urllib.request.Request(url)
+            req.add_header('User-Agent', 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36')
+
+            with urllib.request.urlopen(req) as response:
+                tables = pd.read_html(response.read())
+                # S&P 500 table is the second table (index 1), first is a warning
+                sp500_table = tables[1]
+                symbols = sp500_table['Symbol'].tolist()
+
+                # Clean symbols (remove dots for BRK.B -> BRK-B format)
+                symbols = [s.replace('.', '-') for s in symbols]
+
+                logger.info(f"Fetched {len(symbols)} S&P 500 symbols from Wikipedia")
+                return symbols
         except Exception as e:
             logger.error(f"Error fetching S&P 500 symbols: {e}")
             # Fallback to a static list of major stocks if fetch fails
+            logger.warning("Using fallback list of 36 major stocks")
             return [
                 'AAPL', 'MSFT', 'GOOGL', 'AMZN', 'META', 'NVDA', 'TSLA', 'BRK-B',
                 'UNH', 'JNJ', 'JPM', 'V', 'XOM', 'PG', 'MA', 'HD', 'CVX', 'LLY',
