@@ -421,12 +421,21 @@ class EdgarFetcher:
         # 1. Extract Operating Cash Flow (NetCashProvidedByUsedInOperatingActivities)
         ocf_data = []
         try:
-            # Try US-GAAP
-            if 'us-gaap' in company_facts['facts'] and 'NetCashProvidedByUsedInOperatingActivities' in company_facts['facts']['us-gaap']:
-                units = company_facts['facts']['us-gaap']['NetCashProvidedByUsedInOperatingActivities']['units']
-                if 'USD' in units:
-                    ocf_data = units['USD']
-            # Try IFRS if no US-GAAP
+            # Try US-GAAP - try multiple tag variations
+            if 'us-gaap' in company_facts['facts']:
+                # Standard tag
+                if 'NetCashProvidedByUsedInOperatingActivities' in company_facts['facts']['us-gaap']:
+                    units = company_facts['facts']['us-gaap']['NetCashProvidedByUsedInOperatingActivities']['units']
+                    if 'USD' in units:
+                        ocf_data.extend(units['USD'])
+
+                # Alternative tag - continuing operations (used by AAPL 2014 and others)
+                if 'NetCashProvidedByUsedInOperatingActivitiesContinuingOperations' in company_facts['facts']['us-gaap']:
+                    units = company_facts['facts']['us-gaap']['NetCashProvidedByUsedInOperatingActivitiesContinuingOperations']['units']
+                    if 'USD' in units:
+                        ocf_data.extend(units['USD'])
+
+            # Try IFRS if no US-GAAP data found
             elif 'ifrs-full' in company_facts['facts'] and 'CashFlowsFromUsedInOperatingActivities' in company_facts['facts']['ifrs-full']:
                  units = company_facts['facts']['ifrs-full']['CashFlowsFromUsedInOperatingActivities']['units']
                  # Find USD or first currency
