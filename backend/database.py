@@ -554,7 +554,6 @@ class Database:
                 'last_updated': row[12]
             }
             for row in rows
-            for row in rows
         ]
 
     def save_price_history(self, symbol: str, history_data: List[Dict[str, Any]]):
