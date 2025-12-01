@@ -81,13 +81,15 @@ class CorrelationAnalyzer:
         }
     
     def _interpret_correlation(self, r: float) -> str:
-        """Interpret correlation strength"""
+        """Interpret correlation strength (Financial Domain Scale)"""
         abs_r = abs(r)
-        if abs_r > 0.7:
+        if abs_r > 0.25:
             strength = "strong"
-        elif abs_r > 0.4:
-            strength = "moderate"
-        elif abs_r > 0.2:
+        elif abs_r > 0.15:
+            strength = "excellent"
+        elif abs_r > 0.10:
+            strength = "good"
+        elif abs_r > 0.05:
             strength = "weak"
         else:
             strength = "negligible"

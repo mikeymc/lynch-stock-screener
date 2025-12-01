@@ -1236,14 +1236,31 @@ class Database:
     def init_default_settings(self):
         """Initialize default settings if they don't exist."""
         defaults = {
+            # PEG thresholds (existing)
             'peg_excellent': {'value': 1.0, 'desc': 'Upper limit for Excellent PEG ratio'},
             'peg_good': {'value': 1.5, 'desc': 'Upper limit for Good PEG ratio'},
             'peg_fair': {'value': 2.0, 'desc': 'Upper limit for Fair PEG ratio'},
+            
+            # Debt thresholds (existing)
             'debt_excellent': {'value': 0.5, 'desc': 'Upper limit for Excellent Debt/Equity'},
             'debt_good': {'value': 1.0, 'desc': 'Upper limit for Good Debt/Equity'},
             'debt_moderate': {'value': 2.0, 'desc': 'Upper limit for Moderate Debt/Equity'},
+            
+            # Institutional ownership thresholds (existing)
             'inst_own_min': {'value': 0.20, 'desc': 'Minimum ideal institutional ownership'},
             'inst_own_max': {'value': 0.60, 'desc': 'Maximum ideal institutional ownership'},
+            
+            # Revenue growth thresholds (NEW)
+            'revenue_growth_excellent': {'value': 15.0, 'desc': 'Excellent revenue growth % (CAGR)'},
+            'revenue_growth_good': {'value': 10.0, 'desc': 'Good revenue growth % (CAGR)'},
+            'revenue_growth_fair': {'value': 5.0, 'desc': 'Fair revenue growth % (CAGR)'},
+            
+            # Income growth thresholds (NEW)
+            'income_growth_excellent': {'value': 15.0, 'desc': 'Excellent income growth % (CAGR)'},
+            'income_growth_good': {'value': 10.0, 'desc': 'Good income growth % (CAGR)'},
+            'income_growth_fair': {'value': 5.0, 'desc': 'Fair income growth % (CAGR)'},
+            
+            # Algorithm weights (existing)
             'weight_peg': {'value': 0.50, 'desc': 'Weight for PEG Score in Weighted Algo'},
             'weight_consistency': {'value': 0.25, 'desc': 'Weight for Consistency in Weighted Algo'},
             'weight_debt': {'value': 0.15, 'desc': 'Weight for Debt Score in Weighted Algo'},

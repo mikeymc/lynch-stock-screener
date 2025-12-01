@@ -112,6 +112,15 @@ class LynchCriteria:
         
         self.inst_own_min = self.settings['inst_own_min']['value']
         self.inst_own_max = self.settings['inst_own_max']['value']
+        
+        # Cache new growth thresholds
+        self.revenue_growth_excellent = self.settings['revenue_growth_excellent']['value']
+        self.revenue_growth_good = self.settings['revenue_growth_good']['value']
+        self.revenue_growth_fair = self.settings['revenue_growth_fair']['value']
+        
+        self.income_growth_excellent = self.settings['income_growth_excellent']['value']
+        self.income_growth_good = self.settings['income_growth_good']['value']
+        self.income_growth_fair = self.settings['income_growth_fair']['value']
 
     def evaluate_stock(self, symbol: str, algorithm: str = 'weighted', overrides: Dict[str, float] = None, custom_metrics: Dict[str, Any] = None) -> Optional[Dict[str, Any]]:
         """
@@ -194,6 +203,10 @@ class LynchCriteria:
 
         inst_ownership_status = self.evaluate_institutional_ownership(institutional_ownership)
         inst_ownership_score = self.calculate_institutional_ownership_score(institutional_ownership)
+        
+        # Calculate growth scores
+        revenue_growth_score = self.calculate_revenue_growth_score(revenue_cagr)
+        income_growth_score = self.calculate_income_growth_score(earnings_cagr)
 
         # Return base data that all algorithms can use
         return {
@@ -219,6 +232,8 @@ class LynchCriteria:
             'debt_score': debt_score,
             'institutional_ownership_status': inst_ownership_status,
             'institutional_ownership_score': inst_ownership_score,
+            'revenue_growth_score': revenue_growth_score,
+            'income_growth_score': income_growth_score,
         }
 
     def _evaluate_classic(self, symbol: str, base_data: Dict[str, Any]) -> Dict[str, Any]:
@@ -691,3 +706,71 @@ class LynchCriteria:
             range_size = 1.0 - self.inst_own_max
             position = (1.0 - value) / range_size
             return 75.0 * position
+
+    def calculate_revenue_growth_score(self, value: float) -> float:
+        """
+        Calculate Revenue Growth score (0-100).
+        Excellent (15%+): 100
+        Good (10-15%): 75-100
+        Fair (5-10%): 25-75
+        Poor (<5%): 0-25
+        Negative growth: 0
+        """
+        if value is None:
+            return 50.0  # Default neutral score if no data
+        
+        if value < 0:
+            return 0.0  # Negative growth = 0 score
+        
+        if value >= self.revenue_growth_excellent:
+            return 100.0
+        elif value >= self.revenue_growth_good:
+            # 75-100 range
+            range_size = self.revenue_growth_excellent - self.revenue_growth_good
+            position = (value - self.revenue_growth_good) / range_size
+            return 75.0 + (25.0 * position)
+        elif value >= self.revenue_growth_fair:
+            # 25-75 range
+            range_size = self.revenue_growth_good - self.revenue_growth_fair
+            position = (value - self.revenue_growth_fair) / range_size
+            return 25.0 + (50.0 * position)
+        else:
+            # 0-25 range
+            if value <= 0:
+                return 0.0
+            position = value / self.revenue_growth_fair
+            return 25.0 * position
+    
+    def calculate_income_growth_score(self, value: float) -> float:
+        """
+        Calculate Income/Earnings Growth score (0-100).
+        Excellent (15%+): 100
+        Good (10-15%): 75-100
+        Fair (5-10%): 25-75
+        Poor (<5%): 0-25
+        Negative growth: 0
+        """
+        if value is None:
+            return 50.0  # Default neutral score if no data
+        
+        if value < 0:
+            return 0.0  # Negative growth = 0 score
+        
+        if value >= self.income_growth_excellent:
+            return 100.0
+        elif value >= self.income_growth_good:
+            # 75-100 range
+            range_size = self.income_growth_excellent - self.income_growth_good
+            position = (value - self.income_growth_good) / range_size
+            return 75.0 + (25.0 * position)
+        elif value >= self.income_growth_fair:
+            # 25-75 range
+            range_size = self.income_growth_good - self.income_growth_fair
+            position = (value - self.income_growth_fair) / range_size
+            return 25.0 + (50.0 * position)
+        else:
+            # 0-25 range
+            if value <= 0:
+                return 0.0
+            position = value / self.income_growth_fair
+            return 25.0 * position

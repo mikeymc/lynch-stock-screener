@@ -39,7 +39,7 @@ class AlgorithmOptimizer:
         logger.info(f"Starting optimization with {len(results)} backtest results")
         
         # Get current configuration
-        current_config = self._get_current_weights()
+        current_config = self._get_current_config()
         initial_correlation = self._calculate_correlation_with_config(results, current_config)
         
         logger.info(f"Initial correlation: {initial_correlation:.4f}")
@@ -94,13 +94,38 @@ class AlgorithmOptimizer:
             'config_id': config_id
         }
     
-    def _get_current_weights(self) -> Dict[str, float]:
-        """Get current algorithm weights from settings"""
+    def _get_current_config(self) -> Dict[str, float]:
+        """Get current algorithm weights and thresholds from settings"""
         return {
+            # Weights
             'weight_peg': self.db.get_setting('weight_peg', 0.50),
             'weight_consistency': self.db.get_setting('weight_consistency', 0.25),
             'weight_debt': self.db.get_setting('weight_debt', 0.15),
-            'weight_ownership': self.db.get_setting('weight_ownership', 0.10)
+            'weight_ownership': self.db.get_setting('weight_ownership', 0.10),
+            
+            # PEG thresholds
+            'peg_excellent': self.db.get_setting('peg_excellent', 1.0),
+            'peg_good': self.db.get_setting('peg_good', 1.5),
+            'peg_fair': self.db.get_setting('peg_fair', 2.0),
+            
+            # Debt thresholds
+            'debt_excellent': self.db.get_setting('debt_excellent', 0.5),
+            'debt_good': self.db.get_setting('debt_good', 1.0),
+            'debt_moderate': self.db.get_setting('debt_moderate', 2.0),
+            
+            # Institutional ownership thresholds
+            'inst_own_min': self.db.get_setting('inst_own_min', 0.20),
+            'inst_own_max': self.db.get_setting('inst_own_max', 0.60),
+            
+            # Revenue growth thresholds
+            'revenue_growth_excellent': self.db.get_setting('revenue_growth_excellent', 15.0),
+            'revenue_growth_good': self.db.get_setting('revenue_growth_good', 10.0),
+            'revenue_growth_fair': self.db.get_setting('revenue_growth_fair', 5.0),
+            
+            # Income growth thresholds
+            'income_growth_excellent': self.db.get_setting('income_growth_excellent', 15.0),
+            'income_growth_good': self.db.get_setting('income_growth_good', 10.0),
+            'income_growth_fair': self.db.get_setting('income_growth_fair', 5.0),
         }
     
     def _calculate_correlation_with_config(self, results: List[Dict[str, Any]], 
@@ -133,16 +158,60 @@ class AlgorithmOptimizer:
     def _recalculate_score(self, result: Dict[str, Any], 
                           config: Dict[str, float]) -> Optional[float]:
         """
-        Recalculate overall score using new weights
+        Recalculate overall score using new weights AND thresholds
         
-        Uses stored component scores (peg_score, debt_score, etc.) from backtest results
+        Recalculates component scores from raw metrics using threshold overrides
         """
-        peg_score = result.get('peg_score', 0) or 0
-        consistency_score = result.get('consistency_score', 50) or 50
-        debt_score = result.get('debt_score', 0) or 0
-        ownership_score = result.get('ownership_score', 0) or 0
+        # Extract raw metrics from backtest result
+        peg_ratio = result.get('peg_ratio')
+        debt_to_equity = result.get('debt_to_equity')
+        institutional_ownership = result.get('institutional_ownership')
+        revenue_cagr = result.get('revenue_cagr')
+        earnings_cagr = result.get('earnings_cagr')
+        consistency_score = result.get('consistency_score', 50) or 50  # This doesn't depend on thresholds
         
-        # Weighted score calculation
+        # Recalculate PEG score with new thresholds
+        peg_score = self._calculate_peg_score_with_thresholds(
+            peg_ratio,
+            config.get('peg_excellent', 1.0),
+            config.get('peg_good', 1.5),
+            config.get('peg_fair', 2.0)
+        )
+        
+        # Recalculate debt score with new thresholds
+        debt_score = self._calculate_debt_score_with_thresholds(
+            debt_to_equity,
+            config.get('debt_excellent', 0.5),
+            config.get('debt_good', 1.0),
+            config.get('debt_moderate', 2.0)
+        )
+        
+        # Recalculate institutional ownership score with new thresholds
+        ownership_score = self._calculate_ownership_score_with_thresholds(
+            institutional_ownership,
+            config.get('inst_own_min', 0.20),
+            config.get('inst_own_max', 0.60)
+        )
+        
+        # Recalculate revenue growth score with new thresholds
+        revenue_growth_score = self._calculate_growth_score_with_thresholds(
+            revenue_cagr,
+            config.get('revenue_growth_excellent', 15.0),
+            config.get('revenue_growth_good', 10.0),
+            config.get('revenue_growth_fair', 5.0)
+        )
+        
+        # Recalculate income growth score with new thresholds
+        income_growth_score = self._calculate_growth_score_with_thresholds(
+            earnings_cagr,
+            config.get('income_growth_excellent', 15.0),
+            config.get('income_growth_good', 10.0),
+            config.get('income_growth_fair', 5.0)
+        )
+        
+        # Weighted score calculation (currently only uses the original 4 components)
+        # Note: growth scores are calculated but not yet weighted in the overall score
+        # This can be added later if desired
         overall_score = (
             config['weight_peg'] * peg_score +
             config['weight_consistency'] * consistency_score +
@@ -150,7 +219,7 @@ class AlgorithmOptimizer:
             config['weight_ownership'] * ownership_score
         )
         
-        return overall_score
+        return round(overall_score, 1)
     
     def _gradient_descent_optimize(self, results: List[Dict[str, Any]], 
                                    initial_config: Dict[str, float],
@@ -269,38 +338,111 @@ class AlgorithmOptimizer:
         return best_config, history
 
     def _bayesian_optimize(self, results: List[Dict[str, Any]],
-                          n_calls: int = 100) -> Tuple[Dict[str, float], List[Dict[str, Any]]]:
+                          n_calls: int = 200) -> Tuple[Dict[str, float], List[Dict[str, Any]]]:
         """
         Bayesian optimization using Gaussian processes
 
-        Intelligently explores weight space to find optimal configuration
+        Intelligently explores weight and threshold space to find optimal configuration
         More efficient than grid search, better at avoiding local optima than gradient descent
         """
         history = []
 
-        # Define search space for 3 weights (4th is determined by constraint that sum = 1)
-        # We'll optimize peg, consistency, and debt weights; ownership = 1 - sum(others)
+        # Define search space for weights and thresholds
+        # Weights: 3 weights (4th is determined by constraint that sum = 1)
+        # Thresholds: All tunable threshold parameters
         space = [
+            # Weights
             Real(0.1, 0.8, name='weight_peg'),
             Real(0.05, 0.5, name='weight_consistency'),
-            Real(0.05, 0.4, name='weight_debt')
+            Real(0.05, 0.4, name='weight_debt'),
+            
+            # PEG thresholds
+            Real(0.5, 1.5, name='peg_excellent'),
+            Real(1.0, 2.5, name='peg_good'),
+            Real(1.5, 3.0, name='peg_fair'),
+            
+            # Debt thresholds
+            Real(0.2, 1.0, name='debt_excellent'),
+            Real(0.5, 1.5, name='debt_good'),
+            Real(1.0, 3.0, name='debt_moderate'),
+            
+            # Institutional ownership thresholds
+            Real(0.0, 0.60, name='inst_own_min'),
+            Real(0.50, 1.10, name='inst_own_max'),
+            
+            # Revenue growth thresholds
+            Real(10.0, 25.0, name='revenue_growth_excellent'),
+            Real(5.0, 20.0, name='revenue_growth_good'),
+            Real(0.0, 15.0, name='revenue_growth_fair'),
+            
+            # Income growth thresholds
+            Real(10.0, 25.0, name='income_growth_excellent'),
+            Real(5.0, 20.0, name='income_growth_good'),
+            Real(0.0, 15.0, name='income_growth_fair'),
         ]
 
         # Objective function to minimize (we negate correlation since we want to maximize it)
         @use_named_args(space)
-        def objective(weight_peg, weight_consistency, weight_debt):
+        def objective(weight_peg, weight_consistency, weight_debt,
+                     peg_excellent, peg_good, peg_fair,
+                     debt_excellent, debt_good, debt_moderate,
+                     inst_own_min, inst_own_max,
+                     revenue_growth_excellent, revenue_growth_good, revenue_growth_fair,
+                     income_growth_excellent, income_growth_good, income_growth_fair):
+            
             # Calculate ownership weight to ensure sum = 1
             weight_ownership = 1.0 - (weight_peg + weight_consistency + weight_debt)
 
-            # Skip invalid combinations where ownership would be negative or too small
+            # Validate weight constraints
             if weight_ownership < 0.01 or weight_ownership > 0.5:
                 return 1.0  # Return high value (bad) for invalid configs
+            
+            # Validate threshold ordering constraints
+            if peg_excellent >= peg_good or peg_good >= peg_fair:
+                return 1.0  # PEG thresholds must be in ascending order
+            
+            if debt_excellent >= debt_good or debt_good >= debt_moderate:
+                return 1.0  # Debt thresholds must be in ascending order
+            
+            if inst_own_min >= inst_own_max:
+                return 1.0  # Inst own min must be less than max
+            
+            if revenue_growth_excellent <= revenue_growth_good or revenue_growth_good <= revenue_growth_fair:
+                return 1.0  # Revenue growth thresholds must be in descending order
+            
+            if income_growth_excellent <= income_growth_good or income_growth_good <= income_growth_fair:
+                return 1.0  # Income growth thresholds must be in descending order
 
             config = {
+                # Weights
                 'weight_peg': weight_peg,
                 'weight_consistency': weight_consistency,
                 'weight_debt': weight_debt,
-                'weight_ownership': weight_ownership
+                'weight_ownership': weight_ownership,
+                
+                # PEG thresholds
+                'peg_excellent': peg_excellent,
+                'peg_good': peg_good,
+                'peg_fair': peg_fair,
+                
+                # Debt thresholds
+                'debt_excellent': debt_excellent,
+                'debt_good': debt_good,
+                'debt_moderate': debt_moderate,
+                
+                # Institutional ownership thresholds
+                'inst_own_min': inst_own_min,
+                'inst_own_max': inst_own_max,
+                
+                # Revenue growth thresholds
+                'revenue_growth_excellent': revenue_growth_excellent,
+                'revenue_growth_good': revenue_growth_good,
+                'revenue_growth_fair': revenue_growth_fair,
+                
+                # Income growth thresholds
+                'income_growth_excellent': income_growth_excellent,
+                'income_growth_good': income_growth_good,
+                'income_growth_fair': income_growth_fair,
             }
 
             correlation = self._calculate_correlation_with_config(results, config)
@@ -326,26 +468,58 @@ class AlgorithmOptimizer:
             space,
             n_calls=n_calls,
             random_state=42,
-            n_initial_points=10,  # Random exploration first
+            n_initial_points=20,  # Increased from 10 for larger search space
             acq_func='EI',  # Expected Improvement acquisition function
             verbose=False
         )
 
-        # Extract best configuration
-        best_peg, best_consistency, best_debt = result.x
-        best_ownership = 1.0 - (best_peg + best_consistency + best_debt)
+        # Extract best configuration from all parameters
+        (best_weight_peg, best_weight_consistency, best_weight_debt,
+         best_peg_excellent, best_peg_good, best_peg_fair,
+         best_debt_excellent, best_debt_good, best_debt_moderate,
+         best_inst_own_min, best_inst_own_max,
+         best_revenue_growth_excellent, best_revenue_growth_good, best_revenue_growth_fair,
+         best_income_growth_excellent, best_income_growth_good, best_income_growth_fair) = result.x
+        
+        best_weight_ownership = 1.0 - (best_weight_peg + best_weight_consistency + best_weight_debt)
 
         best_config = {
-            'weight_peg': best_peg,
-            'weight_consistency': best_consistency,
-            'weight_debt': best_debt,
-            'weight_ownership': best_ownership
+            # Weights
+            'weight_peg': best_weight_peg,
+            'weight_consistency': best_weight_consistency,
+            'weight_debt': best_weight_debt,
+            'weight_ownership': best_weight_ownership,
+            
+            # PEG thresholds
+            'peg_excellent': best_peg_excellent,
+            'peg_good': best_peg_good,
+            'peg_fair': best_peg_fair,
+            
+            # Debt thresholds
+            'debt_excellent': best_debt_excellent,
+            'debt_good': best_debt_good,
+            'debt_moderate': best_debt_moderate,
+            
+            # Institutional ownership thresholds
+            'inst_own_min': best_inst_own_min,
+            'inst_own_max': best_inst_own_max,
+            
+            # Revenue growth thresholds
+            'revenue_growth_excellent': best_revenue_growth_excellent,
+            'revenue_growth_good': best_revenue_growth_good,
+            'revenue_growth_fair': best_revenue_growth_fair,
+            
+            # Income growth thresholds
+            'income_growth_excellent': best_income_growth_excellent,
+            'income_growth_good': best_income_growth_good,
+            'income_growth_fair': best_income_growth_fair,
         }
 
         best_correlation = -result.fun  # Negate since we minimized negative correlation
         logger.info(f"Bayesian optimization complete. Best correlation: {best_correlation:.4f}")
 
         return best_config, history
+
 
     def _normalize_weights(self, config: Dict[str, float]) -> Dict[str, float]:
         """Ensure all weights are positive and sum to 1"""
@@ -359,3 +533,95 @@ class AlgorithmOptimizer:
             config[key] /= total
         
         return config
+
+    def _calculate_peg_score_with_thresholds(self, value: float, excellent: float, good: float, fair: float) -> float:
+        """Calculate PEG score using custom thresholds"""
+        if value is None:
+            return 0.0
+        if value <= excellent:
+            return 100.0
+        elif value <= good:
+            range_size = good - excellent
+            position = (good - value) / range_size
+            return 75.0 + (25.0 * position)
+        elif value <= fair:
+            range_size = fair - good
+            position = (fair - value) / range_size
+            return 25.0 + (50.0 * position)
+        else:
+            max_poor = 4.0
+            if value >= max_poor:
+                return 0.0
+            range_size = max_poor - fair
+            position = (max_poor - value) / range_size
+            return 25.0 * position
+    
+    def _calculate_debt_score_with_thresholds(self, value: float, excellent: float, good: float, moderate: float) -> float:
+        """Calculate debt score using custom thresholds"""
+        if value is None:
+            return 0.0
+        if value <= excellent:
+            return 100.0
+        elif value <= good:
+            range_size = good - excellent
+            position = (good - value) / range_size
+            return 75.0 + (25.0 * position)
+        elif value <= moderate:
+            range_size = moderate - good
+            position = (moderate - value) / range_size
+            return 25.0 + (50.0 * position)
+        else:
+            max_high = 5.0
+            if value >= max_high:
+                return 0.0
+            range_size = max_high - moderate
+            position = (max_high - value) / range_size
+            return 25.0 * position
+    
+    def _calculate_ownership_score_with_thresholds(self, value: float, min_threshold: float, max_threshold: float) -> float:
+        """Calculate institutional ownership score using custom thresholds"""
+        if value is None:
+            return 0.0
+        
+        ideal_center = (min_threshold + max_threshold) / 2
+        
+        if min_threshold <= value <= max_threshold:
+            distance_from_center = abs(value - ideal_center)
+            max_distance = ideal_center - min_threshold
+            position = 1.0 - (distance_from_center / max_distance)
+            return 75.0 + (25.0 * position)
+        elif value < min_threshold:
+            if value <= 0:
+                return 0.0
+            position = value / min_threshold
+            return 75.0 * position
+        else:
+            if value >= 1.0:
+                return 0.0
+            range_size = 1.0 - max_threshold
+            position = (1.0 - value) / range_size
+            return 75.0 * position
+    
+    def _calculate_growth_score_with_thresholds(self, value: float, excellent: float, good: float, fair: float) -> float:
+        """Calculate growth score using custom thresholds"""
+        if value is None:
+            return 50.0
+        
+        if value < 0:
+            return 0.0
+        
+        if value >= excellent:
+            return 100.0
+        elif value >= good:
+            range_size = excellent - good
+            position = (value - good) / range_size
+            return 75.0 + (25.0 * position)
+        elif value >= fair:
+            range_size = good - fair
+            position = (value - fair) / range_size
+            return 25.0 + (50.0 * position)
+        else:
+            if value <= 0:
+                return 0.0
+            position = value / fair
+            return 25.0 * position
