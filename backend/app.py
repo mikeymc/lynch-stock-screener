@@ -32,6 +32,11 @@ import logging
 logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
 
+# Suppress noisy third-party library logs
+logging.getLogger('yfinance').setLevel(logging.WARNING)
+logging.getLogger('urllib3').setLevel(logging.WARNING)
+logging.getLogger('peewee').setLevel(logging.WARNING)
+
 app = Flask(__name__, static_folder='static', static_url_path='')
 CORS(app)
 
