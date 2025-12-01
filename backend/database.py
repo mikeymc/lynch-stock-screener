@@ -71,6 +71,23 @@ class Database:
         """Return a connection to the pool"""
         self.connection_pool.putconn(conn)
 
+    def _sanitize_numpy_types(self, args):
+        """Convert numpy types to Python native types for psycopg2"""
+        import numpy as np
+
+        if isinstance(args, (list, tuple)):
+            return type(args)(self._sanitize_numpy_types(arg) for arg in args)
+        elif isinstance(args, dict):
+            return {k: self._sanitize_numpy_types(v) for k, v in args.items()}
+        elif isinstance(args, (np.integer, np.floating)):
+            return args.item()
+        elif isinstance(args, np.ndarray):
+            return args.tolist()
+        elif isinstance(args, np.bool_):
+            return bool(args)
+        else:
+            return args
+
     def _writer_loop(self):
         """
         Background thread that handles all database writes sequentially.
@@ -109,7 +126,9 @@ class Database:
                 if should_commit:
                     try:
                         for sql, args in batch:
-                            cursor.execute(sql, args)
+                            # Convert numpy types to Python native types
+                            sanitized_args = self._sanitize_numpy_types(args)
+                            cursor.execute(sql, sanitized_args)
                         conn.commit()
                         last_commit = time.time()
                         batch = []
