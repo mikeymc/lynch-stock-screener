@@ -2,6 +2,9 @@ import numpy as np
 from typing import Dict, Any, List, Tuple, Optional
 import logging
 from scipy import stats
+from skopt import gp_minimize
+from skopt.space import Real
+from skopt.utils import use_named_args
 
 from database import Database
 from correlation_analyzer import CorrelationAnalyzer
@@ -13,17 +16,17 @@ class AlgorithmOptimizer:
         self.db = db
         self.analyzer = CorrelationAnalyzer(db)
         
-    def optimize(self, years_back: int, method: str = 'gradient_descent', 
+    def optimize(self, years_back: int, method: str = 'gradient_descent',
                  max_iterations: int = 100, learning_rate: float = 0.01) -> Dict[str, Any]:
         """
         Optimize algorithm weights to maximize correlation with returns
-        
+
         Args:
             years_back: Which backtest timeframe to optimize for
-            method: 'gradient_descent' or 'grid_search'
+            method: 'gradient_descent', 'grid_search', or 'bayesian'
             max_iterations: Maximum optimization iterations
             learning_rate: Step size for gradient descent
-            
+
         Returns:
             Dict with best configuration and optimization history
         """
@@ -47,6 +50,8 @@ class AlgorithmOptimizer:
             )
         elif method == 'grid_search':
             best_config, history = self._grid_search_optimize(results)
+        elif method == 'bayesian':
+            best_config, history = self._bayesian_optimize(results, max_iterations)
         else:
             return {'error': f'Unknown optimization method: {method}'}
         
@@ -262,7 +267,86 @@ class AlgorithmOptimizer:
                 iteration += 1
         
         return best_config, history
-    
+
+    def _bayesian_optimize(self, results: List[Dict[str, Any]],
+                          n_calls: int = 100) -> Tuple[Dict[str, float], List[Dict[str, Any]]]:
+        """
+        Bayesian optimization using Gaussian processes
+
+        Intelligently explores weight space to find optimal configuration
+        More efficient than grid search, better at avoiding local optima than gradient descent
+        """
+        history = []
+
+        # Define search space for 3 weights (4th is determined by constraint that sum = 1)
+        # We'll optimize peg, consistency, and debt weights; ownership = 1 - sum(others)
+        space = [
+            Real(0.1, 0.8, name='weight_peg'),
+            Real(0.05, 0.5, name='weight_consistency'),
+            Real(0.05, 0.4, name='weight_debt')
+        ]
+
+        # Objective function to minimize (we negate correlation since we want to maximize it)
+        @use_named_args(space)
+        def objective(weight_peg, weight_consistency, weight_debt):
+            # Calculate ownership weight to ensure sum = 1
+            weight_ownership = 1.0 - (weight_peg + weight_consistency + weight_debt)
+
+            # Skip invalid combinations where ownership would be negative or too small
+            if weight_ownership < 0.01 or weight_ownership > 0.5:
+                return 1.0  # Return high value (bad) for invalid configs
+
+            config = {
+                'weight_peg': weight_peg,
+                'weight_consistency': weight_consistency,
+                'weight_debt': weight_debt,
+                'weight_ownership': weight_ownership
+            }
+
+            correlation = self._calculate_correlation_with_config(results, config)
+
+            # Track history
+            history.append({
+                'iteration': len(history),
+                'correlation': correlation,
+                'config': config.copy()
+            })
+
+            # Log progress
+            if correlation > 0:
+                logger.info(f"Bayesian iteration {len(history)}: correlation {correlation:.4f}")
+
+            # Return negative correlation (we're minimizing, but want to maximize correlation)
+            return -correlation
+
+        # Run Bayesian optimization
+        logger.info(f"Starting Bayesian optimization with {n_calls} evaluations")
+        result = gp_minimize(
+            objective,
+            space,
+            n_calls=n_calls,
+            random_state=42,
+            n_initial_points=10,  # Random exploration first
+            acq_func='EI',  # Expected Improvement acquisition function
+            verbose=False
+        )
+
+        # Extract best configuration
+        best_peg, best_consistency, best_debt = result.x
+        best_ownership = 1.0 - (best_peg + best_consistency + best_debt)
+
+        best_config = {
+            'weight_peg': best_peg,
+            'weight_consistency': best_consistency,
+            'weight_debt': best_debt,
+            'weight_ownership': best_ownership
+        }
+
+        best_correlation = -result.fun  # Negate since we minimized negative correlation
+        logger.info(f"Bayesian optimization complete. Best correlation: {best_correlation:.4f}")
+
+        return best_config, history
+
     def _normalize_weights(self, config: Dict[str, float]) -> Dict[str, float]:
         """Ensure all weights are positive and sum to 1"""
         # Make all weights positive

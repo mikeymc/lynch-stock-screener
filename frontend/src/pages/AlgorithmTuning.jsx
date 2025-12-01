@@ -18,6 +18,7 @@ export default function AlgorithmTuning() {
     const [optimizationResult, setOptimizationResult] = useState(null);
     const [savedConfigs, setSavedConfigs] = useState([]);
     const [yearsBack, setYearsBack] = useState(1);
+    const [optimizationMethod, setOptimizationMethod] = useState('bayesian');
 
     // Load current configuration on mount
     useEffect(() => {
@@ -109,8 +110,8 @@ export default function AlgorithmTuning() {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     years_back: yearsBack,
-                    method: 'gradient_descent',
-                    max_iterations: 50,
+                    method: optimizationMethod,
+                    max_iterations: optimizationMethod === 'bayesian' ? 100 : 50,
                     limit: null  // Run on full S&P 500
                 })
             });
@@ -237,6 +238,19 @@ export default function AlgorithmTuning() {
                 <div className="tuning-card auto-optimization">
                     <h2>🤖 Auto-Optimization</h2>
                     <p>Let the algorithm find the best weights automatically</p>
+
+                    <div className="optimization-method-selector">
+                        <label>Optimization Method:</label>
+                        <select
+                            value={optimizationMethod}
+                            onChange={(e) => setOptimizationMethod(e.target.value)}
+                            disabled={optimizationRunning}
+                        >
+                            <option value="bayesian">Bayesian (Recommended)</option>
+                            <option value="gradient_descent">Gradient Descent</option>
+                            <option value="grid_search">Grid Search</option>
+                        </select>
+                    </div>
 
                     <button
                         onClick={runOptimization}
