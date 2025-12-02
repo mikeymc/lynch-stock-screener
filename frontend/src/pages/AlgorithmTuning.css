@@ -458,6 +458,7 @@ button {
     border-radius: 8px;
     font-size: 0.95rem;
     line-height: 1.6;
+    color: #1f2937;
 }
 
 .insight:last-child {
@@ -548,6 +549,124 @@ button {
     color: #667eea;
     min-width: 100px;
     font-size: 0.95rem;
+}
+
+/* Live Optimization UI */
+.live-optimization {
+    margin-top: 2rem;
+    padding-top: 2rem;
+    border-top: 1px solid #e5e7eb;
+    animation: fadeIn 0.5s ease-out;
+}
+
+.live-optimization h3 {
+    color: #059669;
+    margin-bottom: 1.5rem;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.progress-bar-container {
+    width: 100%;
+    height: 12px;
+    background-color: #e5e7eb;
+    border-radius: 6px;
+    overflow: hidden;
+    margin-bottom: 0.5rem;
+}
+
+.progress-bar-fill {
+    height: 100%;
+    background: linear-gradient(90deg, #10b981, #34d399);
+    transition: width 0.3s ease-out;
+}
+
+.progress-text {
+    text-align: right;
+    font-size: 0.85rem;
+    color: #6b7280;
+    margin-bottom: 1.5rem;
+}
+
+.current-best {
+    background: #ecfdf5;
+    padding: 1rem;
+    border-radius: 8px;
+    border: 1px solid #d1fae5;
+    margin-bottom: 2rem;
+    text-align: center;
+}
+
+.current-best .stat {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+}
+
+.current-best .value.highlight {
+    color: #059669;
+    font-size: 2rem;
+    font-weight: 700;
+}
+
+.live-sliders {
+    background: #f9fafb;
+    padding: 1.5rem;
+    border-radius: 8px;
+    border: 1px solid #e5e7eb;
+}
+
+.live-sliders h4 {
+    margin-bottom: 1.5rem;
+    color: #374151;
+    text-align: center;
+}
+
+.live-sliders h5 {
+    color: #6b7280;
+    margin-bottom: 1rem;
+    font-size: 0.9rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+.sliders-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 1.5rem;
+}
+
+.live-slider .slider-container input[type="range"] {
+    background: #d1fae5;
+    /* Light green track */
+}
+
+.live-slider .slider-container input[type="range"]::-webkit-slider-thumb {
+    background: #059669;
+    /* Dark green thumb */
+    border-color: #047857;
+}
+
+.live-slider label {
+    color: #059669;
+}
+
+.live-slider .slider-value {
+    color: #059669;
+    font-weight: 600;
+}
+
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+        transform: translateY(10px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
 }
 
 .scale-desc strong {

@@ -17,7 +17,8 @@ class AlgorithmOptimizer:
         self.analyzer = CorrelationAnalyzer(db)
         
     def optimize(self, years_back: int, method: str = 'gradient_descent',
-                 max_iterations: int = 100, learning_rate: float = 0.01) -> Dict[str, Any]:
+                 max_iterations: int = 100, learning_rate: float = 0.01,
+                 progress_callback: Optional[Callable[[Dict[str, Any]], None]] = None) -> Dict[str, Any]:
         """
         Optimize algorithm weights to maximize correlation with returns
 
@@ -51,7 +52,7 @@ class AlgorithmOptimizer:
         elif method == 'grid_search':
             best_config, history = self._grid_search_optimize(results)
         elif method == 'bayesian':
-            best_config, history = self._bayesian_optimize(results, max_iterations)
+            best_config, history = self._bayesian_optimize(results, max_iterations, progress_callback)
         else:
             return {'error': f'Unknown optimization method: {method}'}
         
@@ -338,7 +339,8 @@ class AlgorithmOptimizer:
         return best_config, history
 
     def _bayesian_optimize(self, results: List[Dict[str, Any]],
-                          n_calls: int = 500) -> Tuple[Dict[str, float], List[Dict[str, Any]]]:
+                          n_calls: int = 500,
+                          progress_callback: Optional[Callable[[Dict[str, Any]], None]] = None) -> Tuple[Dict[str, float], List[Dict[str, Any]]]:
         """
         Enhanced Bayesian optimization using Gaussian processes
         
@@ -509,6 +511,28 @@ class AlgorithmOptimizer:
             # Return negative correlation (we're minimizing, but want to maximize correlation)
             return -correlation
 
+        # Callback for progress reporting
+        def on_step(res):
+            if progress_callback:
+                try:
+                    # Map parameters to config
+                    current_best_params = {dim.name: val for dim, val in zip(space, res.x)}
+                    
+                    # Calculate derived weight
+                    w_peg = current_best_params['weight_peg']
+                    w_cons = current_best_params['weight_consistency']
+                    w_debt = current_best_params['weight_debt']
+                    w_own = 1.0 - (w_peg + w_cons + w_debt)
+                    current_best_params['weight_ownership'] = w_own
+                    
+                    progress_callback({
+                        'iteration': len(res.x_iters),
+                        'best_score': -res.fun, # We minimized negative correlation
+                        'best_config': current_best_params
+                    })
+                except Exception as e:
+                    logger.error(f"Error in progress callback: {e}")
+
         # Run Enhanced Bayesian optimization
         logger.info(f"Starting Enhanced Bayesian optimization with {n_calls} evaluations")
         logger.info("Enhancements: gp_hedge acquisition, LHS initial sampling, warm starting")
@@ -523,7 +547,8 @@ class AlgorithmOptimizer:
             x0=x0,  # Warm start from previous best configs
             y0=y0,  # Their known correlations
             n_jobs=-1,  # Parallel evaluation (use all CPU cores)
-            verbose=False
+            verbose=False,
+            callback=on_step
         )
 
         # Extract best configuration from all parameters

@@ -1649,11 +1649,20 @@ def start_optimization():
                 # Get baseline analysis
                 baseline_analysis = analyzer_corr.analyze_results(years_back=years_back)
 
+                # Progress callback
+                def on_progress(data):
+                    optimization_jobs[job_id].update({
+                        'progress': data['iteration'],
+                        'best_score': data['best_score'],
+                        'best_config': data['best_config']
+                    })
+
                 # Run optimization
                 result = optimizer.optimize(
                     years_back=years_back,
                     method=method,
-                    max_iterations=max_iterations
+                    max_iterations=max_iterations,
+                    progress_callback=on_progress
                 )
 
                 if 'error' in result:

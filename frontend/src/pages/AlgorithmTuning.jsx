@@ -59,6 +59,7 @@ export default function AlgorithmTuning() {
 
     const [analysis, setAnalysis] = useState(null);
     const [optimizationResult, setOptimizationResult] = useState(null);
+    const [optimizationProgress, setOptimizationProgress] = useState(null);
     const [yearsBack, setYearsBack] = useState(5);
 
     // Load current configuration on mount
@@ -155,6 +156,7 @@ export default function AlgorithmTuning() {
     const runOptimization = async () => {
         setOptimizationRunning(true);
         setOptimizationResult(null);
+        setOptimizationProgress(null);
 
         try {
             const response = await fetch('http://localhost:8080/api/optimize/run', {
@@ -163,54 +165,62 @@ export default function AlgorithmTuning() {
                 body: JSON.stringify({
                     years_back: yearsBack,
                     method: 'bayesian',
-                    max_iterations: 500,
+                    max_iterations: 100,
                     limit: null  // Run on full S&P 500
                 })
             });
-
             const data = await response.json();
-            setOptimizationJobId(data.job_id);
 
-            // Poll for results
-            pollOptimizationProgress(data.job_id);
+            if (data.error) {
+                alert('Error starting optimization: ' + data.error);
+                setOptimizationRunning(false);
+                return;
+            }
+
+            const jobId = data.job_id;
+
+            // Poll for progress
+            const pollInterval = setInterval(async () => {
+                try {
+                    const statusRes = await fetch(`http://localhost:8080/api/optimize/progress/${jobId}`);
+                    const statusData = await statusRes.json();
+
+                    if (statusData.error) {
+                        clearInterval(pollInterval);
+                        setOptimizationRunning(false);
+                        alert('Error checking progress: ' + statusData.error);
+                        return;
+                    }
+
+                    // Update progress state
+                    setOptimizationProgress(statusData);
+
+                    if (statusData.status === 'complete') {
+                        clearInterval(pollInterval);
+                        setOptimizationResult(statusData);
+                        setOptimizationRunning(false);
+                        setOptimizationProgress(null); // Clear progress when done
+                    } else if (statusData.status === 'error') {
+                        clearInterval(pollInterval);
+                        setOptimizationRunning(false);
+                        alert('Optimization failed: ' + statusData.error);
+                    }
+                } catch (e) {
+                    console.error("Polling error", e);
+                }
+            }, 1000);
+
         } catch (error) {
-            console.error('Error starting optimization:', error);
+            console.error('Error running optimization:', error);
             setOptimizationRunning(false);
         }
     };
 
-    const pollOptimizationProgress = async (jobId) => {
-        const interval = setInterval(async () => {
-            try {
-                const response = await fetch(`http://localhost:8080/api/optimize/progress/${jobId}`);
-                const data = await response.json();
 
-                if (data.status === 'complete') {
-                    clearInterval(interval);
-                    setOptimizationRunning(false);
-
-                    // Check if result contains an error
-                    if (data.result && data.result.error) {
-                        alert(`Optimization failed: ${data.result.error}`);
-                        setOptimizationResult(null);
-                    } else {
-                        setOptimizationResult(data.result);
-                    }
-                } else if (data.status === 'error') {
-                    clearInterval(interval);
-                    setOptimizationRunning(false);
-                    console.error('Optimization error:', data.error);
-                    alert(`Optimization error: ${data.error}`);
-                }
-            } catch (error) {
-                console.error('Error polling optimization:', error);
-            }
-        }, 2000);
-    };
 
     const applyOptimizedConfig = () => {
-        if (optimizationResult && optimizationResult.best_config) {
-            setConfig(optimizationResult.best_config);
+        if (optimizationResult && optimizationResult.result && optimizationResult.result.best_config) {
+            setConfig(optimizationResult.result.best_config);
         }
     };
 
@@ -242,6 +252,27 @@ export default function AlgorithmTuning() {
                 />
                 <span className="slider-value">
                     {isPercentage ? (config[key] * 100).toFixed(1) + '%' : config[key]?.toFixed(2)}
+                </span>
+            </div>
+        </div>
+    );
+
+    const renderLiveSlider = (key, label, min, max, step, isPercentage = false) => (
+        <div key={key} className="slider-group live-slider">
+            <label>{label}</label>
+            <div className="slider-container">
+                <input
+                    type="range"
+                    min={min}
+                    max={max}
+                    step={step}
+                    value={optimizationProgress?.best_config?.[key] || 0}
+                    disabled={true}
+                />
+                <span className="slider-value">
+                    {isPercentage
+                        ? `${((optimizationProgress?.best_config?.[key] || 0) * 100).toFixed(0)}%`
+                        : (optimizationProgress?.best_config?.[key] || 0).toFixed(2)}
                 </span>
             </div>
         </div>
@@ -334,12 +365,76 @@ export default function AlgorithmTuning() {
                         className="btn-optimize"
                     >
                         {optimizationRunning
-                            ? (optimizationResult?.stage === 'optimizing' ? '🔄 Optimizing parameters...'
-                                : optimizationResult?.stage === 'clearing_cache' ? '🔄 Clearing cache...'
-                                    : optimizationResult?.stage === 'revalidating' ? '🔄 Running validation...'
-                                        : '🔄 Optimizing...')
+                            ? (optimizationProgress?.stage === 'optimizing' ? `🔄 Optimizing... Iteration ${optimizationProgress.progress}`
+                                : optimizationProgress?.stage === 'clearing_cache' ? '🔄 Clearing cache...'
+                                    : optimizationProgress?.stage === 'revalidating' ? '🔄 Running validation...'
+                                        : '🔄 Starting...')
                             : '✨ Auto-Optimize'}
                     </button>
+
+                    {/* Live Optimization Progress */}
+                    {optimizationRunning && optimizationProgress && (
+                        <div className="live-optimization">
+                            <h3>🚀 Optimization in Progress</h3>
+
+                            <div className="progress-bar-container">
+                                <div
+                                    className="progress-bar-fill"
+                                    style={{ width: `${(optimizationProgress.progress / 100) * 100}%` }}
+                                ></div>
+                            </div>
+                            <div className="progress-text">
+                                Iteration {optimizationProgress.progress} / 100
+                            </div>
+
+                            <div className="current-best">
+                                <div className="stat">
+                                    <span className="label">Current Best Correlation:</span>
+                                    <span className="value highlight">{optimizationProgress.best_score?.toFixed(4) || '...'}</span>
+                                </div>
+                            </div>
+
+                            {optimizationProgress.best_config && (
+                                <div className="live-sliders">
+                                    <h4>Current Best Configuration</h4>
+                                    <div className="sliders-grid">
+                                        <div className="slider-column">
+                                            <h5>Weights</h5>
+                                            {renderLiveSlider('weight_peg', 'PEG Weight', 0, 1, 0.01, true)}
+                                            {renderLiveSlider('weight_consistency', 'Consistency', 0, 1, 0.01, true)}
+                                            {renderLiveSlider('weight_debt', 'Debt Weight', 0, 1, 0.01, true)}
+                                            {renderLiveSlider('weight_ownership', 'Ownership', 0, 1, 0.01, true)}
+
+                                            <h5 style={{ marginTop: '1.5rem' }}>PEG Thresholds</h5>
+                                            {renderLiveSlider('peg_excellent', 'PEG Excellent', 0.5, 1.5, 0.05)}
+                                            {renderLiveSlider('peg_good', 'PEG Good', 1.0, 2.5, 0.05)}
+                                            {renderLiveSlider('peg_fair', 'PEG Fair', 1.5, 3.0, 0.05)}
+
+                                            <h5 style={{ marginTop: '1.5rem' }}>Debt Thresholds</h5>
+                                            {renderLiveSlider('debt_excellent', 'Debt Excellent', 0.2, 1.0, 0.05)}
+                                            {renderLiveSlider('debt_good', 'Debt Good', 0.5, 1.5, 0.05)}
+                                            {renderLiveSlider('debt_moderate', 'Debt Moderate', 1.0, 3.0, 0.05)}
+                                        </div>
+                                        <div className="slider-column">
+                                            <h5>Growth Thresholds</h5>
+                                            {renderLiveSlider('revenue_growth_excellent', 'Rev Excellent', 10, 25, 0.5)}
+                                            {renderLiveSlider('revenue_growth_good', 'Rev Good', 5, 20, 0.5)}
+                                            {renderLiveSlider('revenue_growth_fair', 'Rev Fair', 0, 15, 0.5)}
+
+                                            <div style={{ height: '0.5rem' }}></div>
+                                            {renderLiveSlider('income_growth_excellent', 'Inc Excellent', 10, 25, 0.5)}
+                                            {renderLiveSlider('income_growth_good', 'Inc Good', 5, 20, 0.5)}
+                                            {renderLiveSlider('income_growth_fair', 'Inc Fair', 0, 15, 0.5)}
+
+                                            <h5 style={{ marginTop: '1.5rem' }}>Ownership</h5>
+                                            {renderLiveSlider('inst_own_min', 'Min Ownership', 0, 0.6, 0.01, true)}
+                                            {renderLiveSlider('inst_own_max', 'Max Ownership', 0.5, 1.1, 0.01, true)}
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+                    )}
 
                     {optimizationResult && !optimizationResult.error && (
                         <div className="optimization-results">
@@ -387,8 +482,8 @@ export default function AlgorithmTuning() {
                                     <div className="improvement-highlight">
                                         <span className="label">Correlation Improvement:</span>
                                         <span className="value">
-                                            {optimizationResult.improvement && optimizationResult.baseline_analysis.overall_correlation?.coefficient
-                                                ? ((optimizationResult.improvement / Math.abs(optimizationResult.baseline_analysis.overall_correlation.coefficient)) * 100).toFixed(1) + '%'
+                                            {optimizationResult.optimized_analysis?.overall_correlation?.coefficient && optimizationResult.baseline_analysis?.overall_correlation?.coefficient
+                                                ? ((optimizationResult.optimized_analysis.overall_correlation.coefficient - optimizationResult.baseline_analysis.overall_correlation.coefficient) / Math.abs(optimizationResult.baseline_analysis.overall_correlation.coefficient) * 100).toFixed(1) + '%'
                                                 : 'N/A'}
                                         </span>
                                     </div>
@@ -398,17 +493,17 @@ export default function AlgorithmTuning() {
                                 <div className="improvement-stats">
                                     <div className="stat">
                                         <span className="label">Initial Correlation:</span>
-                                        <span className="value">{optimizationResult.initial_correlation?.toFixed(4)}</span>
+                                        <span className="value">{optimizationResult.result?.initial_correlation?.toFixed(4)}</span>
                                     </div>
                                     <div className="stat">
                                         <span className="label">Optimized Correlation:</span>
-                                        <span className="value success">{optimizationResult.final_correlation?.toFixed(4)}</span>
+                                        <span className="value success">{optimizationResult.result?.final_correlation?.toFixed(4)}</span>
                                     </div>
                                     <div className="stat highlight">
                                         <span className="label">Improvement:</span>
                                         <span className="value">
-                                            {optimizationResult.improvement && optimizationResult.initial_correlation
-                                                ? ((optimizationResult.improvement / Math.abs(optimizationResult.initial_correlation)) * 100).toFixed(1) + '%'
+                                            {optimizationResult.result?.final_correlation && optimizationResult.result?.initial_correlation
+                                                ? ((optimizationResult.result.final_correlation - optimizationResult.result.initial_correlation) / Math.abs(optimizationResult.result.initial_correlation) * 100).toFixed(1) + '%'
                                                 : 'N/A'}
                                         </span>
                                     </div>
@@ -417,16 +512,25 @@ export default function AlgorithmTuning() {
 
                             <div className="optimized-config">
                                 <h4>Best Configuration:</h4>
-                                {Object.entries(optimizationResult.best_config || {}).map(([key, value]) => (
-                                    <div key={key} className="config-item">
-                                        <span>{key.replace(/_/g, ' ').toUpperCase()}:</span>
-                                        <span>
-                                            {key.startsWith('weight_') || key.startsWith('inst_own')
-                                                ? (value * 100).toFixed(1) + '%'
-                                                : value.toFixed(2)}
-                                        </span>
-                                    </div>
-                                ))}
+                                {['weight_peg', 'weight_consistency', 'weight_debt', 'weight_ownership',
+                                    'peg_excellent', 'peg_good', 'peg_fair',
+                                    'revenue_growth_excellent', 'revenue_growth_good', 'revenue_growth_fair',
+                                    'income_growth_excellent', 'income_growth_good', 'income_growth_fair',
+                                    'debt_excellent', 'debt_good', 'debt_moderate',
+                                    'inst_own_min', 'inst_own_max'].map(key => {
+                                        const value = optimizationResult.result?.best_config?.[key];
+                                        if (value === undefined) return null;
+                                        return (
+                                            <div key={key} className="config-item">
+                                                <span>{key.replace(/_/g, ' ').toUpperCase()}:</span>
+                                                <span>
+                                                    {key.startsWith('weight_') || key.startsWith('inst_own')
+                                                        ? (value * 100).toFixed(1) + '%'
+                                                        : value.toFixed(2)}
+                                                </span>
+                                            </div>
+                                        );
+                                    })}
                             </div>
 
                             <button onClick={applyOptimizedConfig} className="btn-apply">
