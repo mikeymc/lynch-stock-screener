@@ -1446,7 +1446,7 @@ def send_message(symbol):
         conversation_id = data.get('conversation_id')
 
         # Get or create conversation
-        if not conversation_id:
+        if not conversation_id or conversation_id == 0 or conversation_id == '0':
             conversation_id = conversation_manager.get_or_create_conversation(symbol.upper())
 
         # Send message and get response
@@ -1483,7 +1483,7 @@ def send_message_stream(symbol):
         lynch_analysis = data.get('lynch_analysis')
 
         # Get or create conversation
-        if not conversation_id:
+        if not conversation_id or conversation_id == 0 or conversation_id == '0':
             conversation_id = conversation_manager.get_or_create_conversation(symbol.upper())
 
         def generate():

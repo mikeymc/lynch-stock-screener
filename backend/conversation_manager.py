@@ -47,9 +47,10 @@ class ConversationManager:
         cursor.execute("""
             INSERT INTO conversations (symbol, title, created_at, updated_at)
             VALUES (%s, %s, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            RETURNING id
         """, (symbol, title))
 
-        conversation_id = cursor.lastrowid
+        conversation_id = cursor.fetchone()[0]
         conn.commit()
         self.db.return_connection(conn)
 
@@ -145,9 +146,10 @@ class ConversationManager:
         cursor.execute("""
             INSERT INTO messages (conversation_id, role, content, created_at)
             VALUES (%s, %s, %s, CURRENT_TIMESTAMP)
+            RETURNING id
         """, (conversation_id, role, content))
 
-        message_id = cursor.lastrowid
+        message_id = cursor.fetchone()[0]
 
         # Add sources if provided
         if sources:
