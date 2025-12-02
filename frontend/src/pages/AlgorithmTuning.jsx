@@ -59,9 +59,7 @@ export default function AlgorithmTuning() {
 
     const [analysis, setAnalysis] = useState(null);
     const [optimizationResult, setOptimizationResult] = useState(null);
-    const [savedConfigs, setSavedConfigs] = useState([]);
-    const [yearsBack, setYearsBack] = useState(1);
-    const [optimizationMethod, setOptimizationMethod] = useState('bayesian');
+    const [yearsBack, setYearsBack] = useState(5);
 
     // Load current configuration on mount
     useEffect(() => {
@@ -74,9 +72,6 @@ export default function AlgorithmTuning() {
             const data = await response.json();
             if (data.current) {
                 setConfig(data.current);
-            }
-            if (data.saved_configs) {
-                setSavedConfigs(data.saved_configs);
             }
         } catch (error) {
             console.error('Error loading config:', error);
@@ -167,8 +162,8 @@ export default function AlgorithmTuning() {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     years_back: yearsBack,
-                    method: optimizationMethod,
-                    max_iterations: optimizationMethod === 'bayesian' ? 200 : 50,
+                    method: 'bayesian',
+                    max_iterations: 500,
                     limit: null  // Run on full S&P 500
                 })
             });
@@ -267,9 +262,8 @@ export default function AlgorithmTuning() {
                     <div className="timeframe-selector">
                         <label>Backtest Timeframe:</label>
                         <select value={yearsBack} onChange={(e) => setYearsBack(parseInt(e.target.value))}>
-                            <option value={1}>1 Year</option>
-                            <option value={3}>3 Years</option>
-                            <option value={5}>5 Years</option>
+                            <option value={5}>5 Years (Recommended)</option>
+                            <option value={10}>10 Years (Long-term)</option>
                         </select>
                     </div>
 
@@ -332,20 +326,7 @@ export default function AlgorithmTuning() {
                 {/* Auto-Optimization Section */}
                 <div className="tuning-card auto-optimization">
                     <h2>🤖 Auto-Optimization</h2>
-                    <p>Let the algorithm find the best weights and thresholds automatically</p>
-
-                    <div className="optimization-method-selector">
-                        <label>Optimization Method:</label>
-                        <select
-                            value={optimizationMethod}
-                            onChange={(e) => setOptimizationMethod(e.target.value)}
-                            disabled={optimizationRunning}
-                        >
-                            <option value="bayesian">Bayesian (Recommended)</option>
-                            <option value="gradient_descent">Gradient Descent</option>
-                            <option value="grid_search">Grid Search</option>
-                        </select>
-                    </div>
+                    <p>Let the algorithm find the best weights and thresholds automatically using Bayesian optimization</p>
 
                     <button
                         onClick={runOptimization}
@@ -555,10 +536,10 @@ export default function AlgorithmTuning() {
                     </div>
 
                     <div className="guide-footer">
-                        <strong>💡 Pro Tip:</strong> Try increasing the <strong>Backtest Timeframe</strong> to 3 or 5 years. Short-term prices are noisy; fundamental factors like PEG and Debt often show their true predictive power over longer horizons.
+                        <strong>💡 Timeframe Selection:</strong> We recommend <strong>5 years</strong> for most analysis. For an even longer-term view that smooths out market cycles, try <strong>10 years</strong> - though be aware of survivorship bias (only companies that "survived" are in today's S&P 500).
                     </div>
                 </div>
             </div>
-        </div>
+        </div >
     );
 }

@@ -338,18 +338,19 @@ class AlgorithmOptimizer:
         return best_config, history
 
     def _bayesian_optimize(self, results: List[Dict[str, Any]],
-                          n_calls: int = 200) -> Tuple[Dict[str, float], List[Dict[str, Any]]]:
+                          n_calls: int = 500) -> Tuple[Dict[str, float], List[Dict[str, Any]]]:
         """
-        Bayesian optimization using Gaussian processes
-
-        Intelligently explores weight and threshold space to find optimal configuration
-        More efficient than grid search, better at avoiding local optima than gradient descent
+        Enhanced Bayesian optimization using Gaussian processes
+        
+        Enhancements:
+        - Adaptive acquisition function (gp_hedge)
+        - Latin Hypercube Sampling for initial points
+        - Warm starting from previous best configs
+        - Parallel evaluation support (n_jobs=-1)
         """
         history = []
 
         # Define search space for weights and thresholds
-        # Weights: 3 weights (4th is determined by constraint that sum = 1)
-        # Thresholds: All tunable threshold parameters
         space = [
             # Weights
             Real(0.1, 0.8, name='weight_peg'),
@@ -380,6 +381,53 @@ class AlgorithmOptimizer:
             Real(5.0, 20.0, name='income_growth_good'),
             Real(0.0, 15.0, name='income_growth_fair'),
         ]
+
+        # Warm starting: Get previous best configurations
+        x0 = None
+        y0 = None
+        try:
+            previous_configs = self.db.get_algorithm_configs()
+            if previous_configs and len(previous_configs) > 0:
+                # Take top 5 configs by correlation
+                sorted_configs = sorted(
+                    previous_configs,
+                    key=lambda x: x.get('correlation_5yr', x.get('correlation_3yr', x.get('correlation_1yr', 0))),
+                    reverse=True
+                )[:5]
+                
+                x0 = []
+                y0 = []
+                for cfg in sorted_configs:
+                    # Build parameter vector in same order as space
+                    params = [
+                        cfg['weight_peg'],
+                        cfg['weight_consistency'],
+                        cfg['weight_debt'],
+                        cfg.get('peg_excellent', 1.0),
+                        cfg.get('peg_good', 1.5),
+                        cfg.get('peg_fair', 2.0),
+                        cfg.get('debt_excellent', 0.5),
+                        cfg.get('debt_good', 1.0),
+                        cfg.get('debt_moderate', 2.0),
+                        cfg.get('inst_own_min', 0.20),
+                        cfg.get('inst_own_max', 0.60),
+                        cfg.get('revenue_growth_excellent', 15.0),
+                        cfg.get('revenue_growth_good', 10.0),
+                        cfg.get('revenue_growth_fair', 5.0),
+                        cfg.get('income_growth_excellent', 15.0),
+                        cfg.get('income_growth_good', 10.0),
+                        cfg.get('income_growth_fair', 5.0),
+                    ]
+                    x0.append(params)
+                    # Negate correlation since we minimize
+                    corr = cfg.get('correlation_5yr', cfg.get('correlation_3yr', cfg.get('correlation_1yr', 0)))
+                    y0.append(-corr)
+                
+                logger.info(f"Warm starting with {len(x0)} previous configurations")
+        except Exception as e:
+            logger.warning(f"Could not load previous configs for warm start: {e}")
+            x0 = None
+            y0 = None
 
         # Objective function to minimize (we negate correlation since we want to maximize it)
         @use_named_args(space)
@@ -461,15 +509,20 @@ class AlgorithmOptimizer:
             # Return negative correlation (we're minimizing, but want to maximize correlation)
             return -correlation
 
-        # Run Bayesian optimization
-        logger.info(f"Starting Bayesian optimization with {n_calls} evaluations")
+        # Run Enhanced Bayesian optimization
+        logger.info(f"Starting Enhanced Bayesian optimization with {n_calls} evaluations")
+        logger.info("Enhancements: gp_hedge acquisition, LHS initial sampling, warm starting")
+        
         result = gp_minimize(
             objective,
             space,
             n_calls=n_calls,
-            random_state=42,
-            n_initial_points=20,  # Increased from 10 for larger search space
-            acq_func='EI',  # Expected Improvement acquisition function
+            n_initial_points=50,  # More initial samples for better exploration
+            initial_point_generator='lhs',  # Latin Hypercube Sampling
+            acq_func='gp_hedge',  # Adaptive acquisition function
+            x0=x0,  # Warm start from previous best configs
+            y0=y0,  # Their known correlations
+            n_jobs=-1,  # Parallel evaluation (use all CPU cores)
             verbose=False
         )
 

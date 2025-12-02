@@ -1722,37 +1722,60 @@ def get_optimization_progress(job_id):
 def algorithm_config():
     """Get or update algorithm configuration"""
     if request.method == 'GET':
-        # Get current configuration
+        # Get current configuration from settings table (includes all thresholds)
         config = {
+            # Weights
             'weight_peg': db.get_setting('weight_peg', 0.50),
             'weight_consistency': db.get_setting('weight_consistency', 0.25),
             'weight_debt': db.get_setting('weight_debt', 0.15),
-            'weight_ownership': db.get_setting('weight_ownership', 0.10)
+            'weight_ownership': db.get_setting('weight_ownership', 0.10),
+            
+            # PEG Thresholds
+            'peg_excellent': db.get_setting('peg_excellent', 1.0),
+            'peg_good': db.get_setting('peg_good', 1.5),
+            'peg_fair': db.get_setting('peg_fair', 2.0),
+            
+            # Debt Thresholds
+            'debt_excellent': db.get_setting('debt_excellent', 0.5),
+            'debt_good': db.get_setting('debt_good', 1.0),
+            'debt_moderate': db.get_setting('debt_moderate', 2.0),
+            
+            # Institutional Ownership Thresholds
+            'inst_own_min': db.get_setting('inst_own_min', 0.20),
+            'inst_own_max': db.get_setting('inst_own_max', 0.60),
+            
+            # Revenue Growth Thresholds
+            'revenue_growth_excellent': db.get_setting('revenue_growth_excellent', 15.0),
+            'revenue_growth_good': db.get_setting('revenue_growth_good', 10.0),
+            'revenue_growth_fair': db.get_setting('revenue_growth_fair', 5.0),
+            
+            # Income Growth Thresholds
+            'income_growth_excellent': db.get_setting('income_growth_excellent', 15.0),
+            'income_growth_good': db.get_setting('income_growth_good', 10.0),
+            'income_growth_fair': db.get_setting('income_growth_fair', 5.0),
         }
         
-        # Get all saved configurations
-        saved_configs = db.get_algorithm_configs()
-        
-        return jsonify({
-            'current': config,
-            'saved_configs': clean_nan_values(saved_configs)
-        })
+        return jsonify({'current': config})
     
     elif request.method == 'POST':
-        # Update configuration
+        # Update configuration - save all provided parameters to settings table
         data = request.get_json()
         
         if 'config' in data:
-            # Apply a saved configuration
             config = data['config']
-            db.set_setting('weight_peg', config['weight_peg'])
-            db.set_setting('weight_consistency', config['weight_consistency'])
-            db.set_setting('weight_debt', config['weight_debt'])
-            db.set_setting('weight_ownership', config['weight_ownership'])
+            
+            # Save all parameters that are provided
+            for key, value in config.items():
+                db.set_setting(key, value)
+            
+            # Reload settings in LynchCriteria to pick up new thresholds
+            from lynch_criteria import LynchCriteria
+            LynchCriteria.reload_settings()
             
             return jsonify({'status': 'updated', 'config': config})
         else:
             return jsonify({'error': 'No config provided'}), 400
+
 
 @app.route('/api/backtest/results', methods=['GET'])
 def get_backtest_results():
