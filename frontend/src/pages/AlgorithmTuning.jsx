@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import './AlgorithmTuning.css';
 
 const CollapsibleSection = ({ title, children, defaultOpen = false }) => {
@@ -20,6 +21,7 @@ const CollapsibleSection = ({ title, children, defaultOpen = false }) => {
 };
 
 export default function AlgorithmTuning() {
+    const navigate = useNavigate();
     const [config, setConfig] = useState({
         // Weights
         weight_peg: 0.50,
@@ -280,11 +282,9 @@ export default function AlgorithmTuning() {
 
     return (
         <div className="algorithm-tuning">
-            <div className="tuning-header">
-                <h1>🎛️ Algorithm Tuning Lab</h1>
-                <p>Optimize your Lynch scoring algorithm to predict stock returns</p>
-            </div>
-
+            <button className="back-button" onClick={() => navigate('/')}>
+                ← Back to Stock List
+            </button>
             <div className="tuning-grid">
                 {/* Manual Tuning Section */}
                 <div className="tuning-card manual-tuning">
