@@ -674,7 +674,7 @@ function StockListView({
   }
 
   return (
-    <div className="app">
+    <div className="app stock-list-view">
       <div className="controls">
         <div className="flex gap-2">
           {activeSessionId ? (

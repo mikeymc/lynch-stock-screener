@@ -19,6 +19,9 @@ body {
 .app {
   min-height: 100vh;
   padding: 0;
+}
+
+.app.stock-list-view {
   padding-top: 65px;
 }
 
@@ -1905,6 +1908,7 @@ td strong {
   background-color: transparent;
   padding: 0;
 }
+
 /* Advanced Filter Panel Styles */
 .advanced-filter-panel {
   background-color: #1e293b;
@@ -1920,6 +1924,7 @@ td strong {
     opacity: 0;
     transform: translateY(-10px);
   }
+
   to {
     opacity: 1;
     transform: translateY(0);
