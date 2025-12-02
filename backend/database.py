@@ -475,6 +475,25 @@ class Database:
             )
         """)
 
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS news_articles (
+                id SERIAL PRIMARY KEY,
+                symbol TEXT NOT NULL,
+                finnhub_id INTEGER,
+                headline TEXT,
+                summary TEXT,
+                source TEXT,
+                url TEXT,
+                image_url TEXT,
+                category TEXT,
+                datetime INTEGER,
+                published_date TIMESTAMP,
+                last_updated TIMESTAMP,
+                FOREIGN KEY (symbol) REFERENCES stocks(symbol),
+                UNIQUE(symbol, finnhub_id)
+            )
+        """)
+
         conn.commit()
 
     def save_stock_basic(self, symbol: str, company_name: str, exchange: str, sector: str = None,
@@ -1218,19 +1237,137 @@ class Database:
         age_days = (datetime.now() - last_updated).total_seconds() / 86400
         return age_days < max_age_days
 
-    def get_setting(self, key: str, default: Any = None) -> Any:
+    def get_setting(self, key: str) -> Optional[Dict[str, Any]]:
+        """Get a specific setting by key"""
         conn = self.get_connection()
         cursor = conn.cursor()
-        cursor.execute("SELECT value FROM app_settings WHERE key = %s", (key,))
-        row = cursor.fetchone()
+        cursor.execute("SELECT value, description FROM app_settings WHERE key = %s", (key,))
+        result = cursor.fetchone()
         self.return_connection(conn)
 
-        if row:
-            try:
-                return json.loads(row[0])
-            except json.JSONDecodeError:
-                return row[0]
-        return default
+        if result is None:
+            return None
+        else:
+            return {
+                'key': key,
+                'value': result[0],
+                'description': result[1]
+            }
+
+    def save_news_article(self, symbol: str, article_data: Dict[str, Any]):
+        """
+        Save a news article to the database
+        
+        Args:
+            symbol: Stock symbol
+            article_data: Dict containing article data (finnhub_id, headline, summary, etc.)
+        """
+        sql = """
+            INSERT INTO news_articles
+            (symbol, finnhub_id, headline, summary, source, url, image_url, category, datetime, published_date, last_updated)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            ON CONFLICT (symbol, finnhub_id) DO UPDATE SET
+                headline = EXCLUDED.headline,
+                summary = EXCLUDED.summary,
+                source = EXCLUDED.source,
+                url = EXCLUDED.url,
+                image_url = EXCLUDED.image_url,
+                category = EXCLUDED.category,
+                datetime = EXCLUDED.datetime,
+                published_date = EXCLUDED.published_date,
+                last_updated = EXCLUDED.last_updated
+        """
+        args = (
+            symbol,
+            article_data.get('finnhub_id'),
+            article_data.get('headline'),
+            article_data.get('summary'),
+            article_data.get('source'),
+            article_data.get('url'),
+            article_data.get('image_url'),
+            article_data.get('category'),
+            article_data.get('datetime'),
+            article_data.get('published_date'),
+            datetime.now()
+        )
+        self.write_queue.put((sql, args))
+
+    def get_news_articles(self, symbol: str, limit: Optional[int] = None) -> List[Dict[str, Any]]:
+        """
+        Get news articles for a stock, ordered by date descending (most recent first)
+        
+        Args:
+            symbol: Stock symbol
+            limit: Optional limit on number of articles to return
+            
+        Returns:
+            List of article dicts
+        """
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        
+        query = """
+            SELECT id, symbol, finnhub_id, headline, summary, source, url, 
+                   image_url, category, datetime, published_date, last_updated
+            FROM news_articles
+            WHERE symbol = %s
+            ORDER BY datetime DESC
+        """
+        
+        if limit:
+            query += f" LIMIT {limit}"
+        
+        cursor.execute(query, (symbol,))
+        rows = cursor.fetchall()
+        self.return_connection(conn)
+        
+        return [
+            {
+                'id': row[0],
+                'symbol': row[1],
+                'finnhub_id': row[2],
+                'headline': row[3],
+                'summary': row[4],
+                'source': row[5],
+                'url': row[6],
+                'image_url': row[7],
+                'category': row[8],
+                'datetime': row[9],
+                'published_date': row[10].isoformat() if row[10] else None,
+                'last_updated': row[11].isoformat() if row[11] else None
+            }
+            for row in rows
+        ]
+
+    def get_news_cache_status(self, symbol: str) -> Optional[Dict[str, Any]]:
+        """
+        Check if we have cached news for a symbol and when it was last updated
+        
+        Args:
+            symbol: Stock symbol
+            
+        Returns:
+            Dict with cache info or None if no cache
+        """
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        
+        cursor.execute("""
+            SELECT COUNT(*), MAX(last_updated)
+            FROM news_articles
+            WHERE symbol = %s
+        """, (symbol,))
+        
+        row = cursor.fetchone()
+        self.return_connection(conn)
+        
+        if not row or row[0] == 0:
+            return None
+        
+        return {
+            'article_count': row[0],
+            'last_updated': row[1]
+        }
 
     def set_setting(self, key: str, value: Any, description: str = None):
         conn = self.get_connection()

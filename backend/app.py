@@ -24,6 +24,7 @@ from backtester import Backtester
 from algorithm_validator import AlgorithmValidator
 from correlation_analyzer import CorrelationAnalyzer
 from algorithm_optimizer import AlgorithmOptimizer
+from finnhub_news import FinnhubNewsClient
 
 from algorithm_optimizer import AlgorithmOptimizer
 import logging
@@ -66,6 +67,10 @@ backtester = Backtester(db)
 validator = AlgorithmValidator(db)
 analyzer_corr = CorrelationAnalyzer(db)
 optimizer = AlgorithmOptimizer(db)
+
+# Initialize Finnhub client for news
+finnhub_api_key = os.environ.get('FINNHUB_API_KEY', 'd4nkaqpr01qk2nucd6q0d4nkaqpr01qk2nucd6qg')
+finnhub_client = FinnhubNewsClient(finnhub_api_key)
 
 # Track running validation/optimization jobs
 validation_jobs = {}
@@ -1074,6 +1079,118 @@ def get_stock_sections(symbol):
     return jsonify({'sections': all_sections, 'cached': False})
 
 
+@app.route('/api/stock/<symbol>/news', methods=['GET'])
+def get_stock_news(symbol):
+    """
+    Get news articles for a stock (from cache or fetch fresh)
+    """
+    symbol = symbol.upper()
+
+    try:
+        # Check cache status
+        cache_status = db.get_news_cache_status(symbol)
+        
+        # If we have cache and it's recent (< 24 hours), return it
+        if cache_status and cache_status['last_updated']:
+            from datetime import datetime, timedelta
+            last_updated = cache_status['last_updated']
+            age_hours = (datetime.now() - last_updated).total_seconds() / 3600
+            
+            if age_hours < 24:
+                # Assuming 'logger' is defined elsewhere, e.g., from 'app.logger'
+                # If not, replace with 'print' or define 'logger'
+                # from flask import current_app as app
+                # logger = app.logger
+                print(f"Returning cached news for {symbol} ({cache_status['article_count']} articles)")
+                articles = db.get_news_articles(symbol)
+                return jsonify({
+                    'articles': articles,
+                    'cached': True,
+                    'last_updated': cache_status['last_updated'].isoformat(),
+                    'article_count': cache_status['article_count']
+                })
+        
+        # Cache is stale or doesn't exist, fetch fresh news
+        print(f"Fetching fresh news for {symbol} from Finnhub")
+        raw_articles = finnhub_client.fetch_all_news(symbol)
+        
+        if not raw_articles:
+            return jsonify({
+                'articles': [],
+                'cached': False,
+                'last_updated': datetime.now().isoformat(),
+                'article_count': 0
+            })
+        
+        # Format and save articles to database
+        for raw_article in raw_articles:
+            formatted_article = finnhub_client.format_article(raw_article)
+            db.save_news_article(symbol, formatted_article)
+        
+        # Wait for writes to complete
+        db.flush()
+        
+        # Return fresh articles
+        articles = db.get_news_articles(symbol)
+        print(f"Fetched and cached {len(articles)} news articles for {symbol}")
+        
+        return jsonify({
+            'articles': articles,
+            'cached': False,
+            'last_updated': datetime.now().isoformat(),
+            'article_count': len(articles)
+        })
+        
+    except Exception as e:
+        print(f"Error fetching news for {symbol}: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': f'Failed to fetch news: {str(e)}'}), 500
+
+
+@app.route('/api/stock/<symbol>/news/refresh', methods=['POST'])
+def refresh_stock_news(symbol):
+    """
+    Force refresh news articles for a stock from Finnhub API
+    """
+    symbol = symbol.upper()
+    
+    try:
+        print(f"Force refreshing news for {symbol}")
+        raw_articles = finnhub_client.fetch_all_news(symbol)
+        
+        if not raw_articles:
+            return jsonify({
+                'articles': [],
+                'last_updated': datetime.now().isoformat(),
+                'article_count': 0
+            })
+        
+        # Format and save articles to database
+        for raw_article in raw_articles:
+            formatted_article = finnhub_client.format_article(raw_article)
+            db.save_news_article(symbol, formatted_article)
+        
+        # Wait for writes to complete
+        db.flush()
+        
+        # Return fresh articles
+        articles = db.get_news_articles(symbol)
+        print(f"Refreshed {len(articles)} news articles for {symbol}")
+        
+        return jsonify({
+            'articles': articles,
+            'last_updated': datetime.now().isoformat(),
+            'article_count': len(articles)
+        })
+        
+    except Exception as e:
+        print(f"Error refreshing news for {symbol}: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': f'Failed to refresh news: {str(e)}'}), 500
+
+
 @app.route('/api/stock/<symbol>/lynch-analysis', methods=['GET'])
 def get_lynch_analysis(symbol):
     """
@@ -1129,11 +1246,15 @@ def get_lynch_analysis(symbol):
 
     # Get or generate analysis
     try:
+        # Fetch news articles for context
+        news_articles = db.get_news_articles(symbol, limit=20)
+        
         analysis_text = lynch_analyst.get_or_generate_analysis(
             symbol,
             stock_data,
             history,
             sections=sections,
+            news=news_articles,
             use_cache=True
         )
 
@@ -1186,11 +1307,15 @@ def refresh_lynch_analysis(symbol):
 
     # Force regeneration
     try:
+        # Fetch news articles for context
+        news_articles = db.get_news_articles(symbol, limit=20)
+        
         analysis_text = lynch_analyst.get_or_generate_analysis(
             symbol,
             stock_data,
             history,
             sections=sections,
+            news=news_articles,
             use_cache=False
         )
 

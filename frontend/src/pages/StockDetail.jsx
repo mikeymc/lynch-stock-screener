@@ -11,6 +11,7 @@ import AnalysisChat from '../components/AnalysisChat'
 import AlgorithmSelector from '../components/AlgorithmSelector'
 import ErrorBoundary from '../components/ErrorBoundary'
 import DCFAnalysis from '../components/DCFAnalysis'
+import StockNews from '../components/StockNews'
 
 const API_BASE = '/api'
 
@@ -30,6 +31,8 @@ export default function StockDetail({ watchlist, toggleWatchlist }) {
   const [loadingFilings, setLoadingFilings] = useState(false)
   const [sectionsData, setSectionsData] = useState(null)
   const [loadingSections, setLoadingSections] = useState(false)
+  const [newsData, setNewsData] = useState(null)
+  const [loadingNews, setLoadingNews] = useState(false)
 
 
 
@@ -125,6 +128,29 @@ export default function StockDetail({ watchlist, toggleWatchlist }) {
     fetchSectionsData()
   }, [stock, symbol])
 
+  // Fetch news data
+  useEffect(() => {
+    if (!stock) return
+
+    const fetchNewsData = async () => {
+      setLoadingNews(true)
+      try {
+        const response = await fetch(`${API_BASE}/stock/${symbol}/news`)
+        if (response.ok) {
+          const data = await response.json()
+          setNewsData(data)
+        }
+      } catch (err) {
+        console.error('Error fetching news:', err)
+        setNewsData(null)
+      } finally {
+        setLoadingNews(false)
+      }
+    }
+
+    fetchNewsData()
+  }, [stock, symbol])
+
 
 
   const handleRefresh = async () => {
@@ -139,6 +165,7 @@ export default function StockDetail({ watchlist, toggleWatchlist }) {
           setHistoryData(null)
           setFilingsData(null)
           setSectionsData(null)
+          setNewsData(null)
         }
       }
     } catch (err) {
@@ -221,6 +248,12 @@ export default function StockDetail({ watchlist, toggleWatchlist }) {
                 >
                   🎯 Analysis & Chat
                 </button>
+                <button
+                  className={`tab-button ${activeTab === 'news' ? 'active' : ''}`}
+                  onClick={() => setActiveTab('news')}
+                >
+                  📰 News
+                </button>
               </div>
 
               <div className="tabs-content">
@@ -246,6 +279,10 @@ export default function StockDetail({ watchlist, toggleWatchlist }) {
                     symbol={stock.symbol}
                     stockName={stock.company_name}
                   />
+                )}
+
+                {activeTab === 'news' && (
+                  <StockNews newsData={newsData} loading={loadingNews} />
                 )}
               </div>
             </div>

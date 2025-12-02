@@ -108,9 +108,15 @@ class LynchAnalyst:
                 
         return template_vars
 
-    def format_prompt(self, stock_data: Dict[str, Any], history: List[Dict[str, Any]], sections: Optional[Dict[str, Any]] = None) -> str:
+    def format_prompt(self, stock_data: Dict[str, Any], history: List[Dict[str, Any]], sections: Optional[Dict[str, Any]] = None, news: Optional[List[Dict[str, Any]]] = None) -> str:
         """
         Format a prompt for Gemini to generate a Peter Lynch-style analysis
+        
+        Args:
+            stock_data: Dict containing current stock metrics
+            history: List of historical earnings/revenue data
+            sections: Optional dict of filing sections
+            news: Optional list of news articles
         """
         template_vars = self._prepare_template_vars(stock_data, history)
         
@@ -127,6 +133,35 @@ class LynchAnalyst:
             print(f"Traceback:")
             traceback.print_exc()
             raise
+
+        # Append news articles if available
+        if news and len(news) > 0:
+            news_text = "\n\n---\n\n## Recent News Articles\n\n"
+            news_text += "Consider the following news when forming your analysis. Look for trends, catalysts, risks, and how they align with the financial data.\n\n"
+            
+            # Include up to 20 most recent articles
+            for i, article in enumerate(news[:20], 1):
+                from datetime import datetime
+                pub_date = article.get('published_date', 'Unknown date')
+                if pub_date != 'Unknown date':
+                    try:
+                        # Format the date nicely
+                        dt = datetime.fromisoformat(pub_date.replace('Z', '+00:00'))
+                        pub_date = dt.strftime('%B %d, %Y')
+                    except:
+                        pass
+                
+                headline = article.get('headline', 'No headline')
+                summary = article.get('summary', '')
+                source = article.get('source', 'Unknown source')
+                
+                news_text += f"**{i}. {headline}** ({source} - {pub_date})\n"
+                if summary:
+                    news_text += f"   {summary}\n\n"
+                else:
+                    news_text += "\n"
+            
+            formatted_prompt += news_text
 
         # Append SEC filing sections if available
         if sections:
@@ -160,7 +195,7 @@ class LynchAnalyst:
 
         return formatted_prompt
 
-    def generate_analysis(self, stock_data: Dict[str, Any], history: List[Dict[str, Any]], sections: Optional[Dict[str, Any]] = None) -> str:
+    def generate_analysis(self, stock_data: Dict[str, Any], history: List[Dict[str, Any]], sections: Optional[Dict[str, Any]] = None, news: Optional[List[Dict[str, Any]]] = None) -> str:
         """
         Generate a new Peter Lynch-style analysis using Gemini AI
 
@@ -168,6 +203,7 @@ class LynchAnalyst:
             stock_data: Dict containing current stock metrics
             history: List of dicts containing historical earnings/revenue data
             sections: Optional dict of filing sections
+            news: Optional list of news articles
 
         Returns:
             Generated analysis text
@@ -175,7 +211,7 @@ class LynchAnalyst:
         Raises:
             Exception: If API call fails
         """
-        prompt = self.format_prompt(stock_data, history, sections)
+        prompt = self.format_prompt(stock_data, history, sections, news)
 
         model = genai.GenerativeModel(self.model_version)
         response = model.generate_content(prompt)
@@ -306,6 +342,7 @@ Write a ~200 word analysis in the style of Peter Lynch. Be conversational, insig
         stock_data: Dict[str, Any],
         history: List[Dict[str, Any]],
         sections: Optional[Dict[str, Any]] = None,
+        news: Optional[List[Dict[str, Any]]] = None,
         use_cache: bool = True
     ) -> str:
         """
@@ -316,6 +353,7 @@ Write a ~200 word analysis in the style of Peter Lynch. Be conversational, insig
             stock_data: Dict containing current stock metrics
             history: List of dicts containing historical earnings/revenue data
             sections: Optional dict of filing sections
+            news: Optional list of news articles
             use_cache: Whether to use cached analysis if available
 
         Returns:
@@ -328,7 +366,7 @@ Write a ~200 word analysis in the style of Peter Lynch. Be conversational, insig
                 return cached['analysis_text']
 
         # Generate new analysis
-        analysis_text = self.generate_analysis(stock_data, history, sections)
+        analysis_text = self.generate_analysis(stock_data, history, sections, news)
 
         # Save to cache
         self.db.save_lynch_analysis(symbol, analysis_text, self.model_version)
