@@ -189,16 +189,52 @@ export default function StockDetail({ watchlist, toggleWatchlist }) {
   }
 
   return (
-    <div className="app">
+    <div className="app stock-list-view">
+      <div className="controls">
+        <div style={{ display: 'flex', gap: '10px' }}>
+          <button className="back-button" onClick={() => navigate('/')}>
+            Back to List
+          </button>
+          <button className="refresh-button" onClick={handleRefresh}>
+            Refresh Data
+          </button>
+        </div>
+
+        <div style={{ display: 'flex', gap: '10px', marginLeft: '20px', overflowX: 'auto' }}>
+          <button
+            className={`tab-button ${activeTab === 'charts' ? 'active' : ''}`}
+            onClick={() => setActiveTab('charts')}
+          >
+            Charts
+          </button>
+          <button
+            className={`tab-button ${activeTab === 'dcf' ? 'active' : ''}`}
+            onClick={() => setActiveTab('dcf')}
+          >
+            DCF Analysis
+          </button>
+          <button
+            className={`tab-button ${activeTab === 'reports' ? 'active' : ''}`}
+            onClick={() => setActiveTab('reports')}
+          >
+            Reports
+          </button>
+          <button
+            className={`tab-button ${activeTab === 'analysis' ? 'active' : ''}`}
+            onClick={() => setActiveTab('analysis')}
+          >
+            Analysis & Chat
+          </button>
+          <button
+            className={`tab-button ${activeTab === 'news' ? 'active' : ''}`}
+            onClick={() => setActiveTab('news')}
+          >
+            News
+          </button>
+        </div>
+      </div>
+
       <div className="stock-detail-container">
-        <button className="back-button" onClick={() => navigate('/')}>
-          ← Back to Stock List
-        </button>
-        <button className="refresh-button" onClick={handleRefresh} style={{ margin: '20px 0 20px 10px' }}>
-          🔄 Refresh Data
-        </button>
-
-
         {loading ? (
           <div className="loading">Loading stock data...</div>
         ) : !stock ? (
@@ -223,39 +259,6 @@ export default function StockDetail({ watchlist, toggleWatchlist }) {
             </div>
 
             <div className="tabs-container">
-              <div className="tabs-header">
-                <button
-                  className={`tab-button ${activeTab === 'charts' ? 'active' : ''}`}
-                  onClick={() => setActiveTab('charts')}
-                >
-                  📊 Charts
-                </button>
-                <button
-                  className={`tab-button ${activeTab === 'dcf' ? 'active' : ''}`}
-                  onClick={() => setActiveTab('dcf')}
-                >
-                  💰 DCF Analysis
-                </button>
-                <button
-                  className={`tab-button ${activeTab === 'reports' ? 'active' : ''}`}
-                  onClick={() => setActiveTab('reports')}
-                >
-                  📄 Reports
-                </button>
-                <button
-                  className={`tab-button ${activeTab === 'analysis' ? 'active' : ''}`}
-                  onClick={() => setActiveTab('analysis')}
-                >
-                  🎯 Analysis & Chat
-                </button>
-                <button
-                  className={`tab-button ${activeTab === 'news' ? 'active' : ''}`}
-                  onClick={() => setActiveTab('news')}
-                >
-                  📰 News
-                </button>
-              </div>
-
               <div className="tabs-content">
                 {activeTab === 'charts' && (
                   <StockCharts historyData={historyData} loading={loadingHistory} symbol={symbol} />
