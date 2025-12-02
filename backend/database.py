@@ -319,6 +319,20 @@ class Database:
                 weight_consistency REAL,
                 weight_debt REAL,
                 weight_ownership REAL,
+                peg_excellent REAL DEFAULT 1.0,
+                peg_good REAL DEFAULT 1.5,
+                peg_fair REAL DEFAULT 2.0,
+                debt_excellent REAL DEFAULT 0.5,
+                debt_good REAL DEFAULT 1.0,
+                debt_moderate REAL DEFAULT 2.0,
+                inst_own_min REAL DEFAULT 0.20,
+                inst_own_max REAL DEFAULT 0.60,
+                revenue_growth_excellent REAL DEFAULT 15.0,
+                revenue_growth_good REAL DEFAULT 10.0,
+                revenue_growth_fair REAL DEFAULT 5.0,
+                income_growth_excellent REAL DEFAULT 15.0,
+                income_growth_good REAL DEFAULT 10.0,
+                income_growth_fair REAL DEFAULT 5.0,
                 correlation_1yr REAL,
                 correlation_3yr REAL,
                 correlation_5yr REAL,
@@ -326,6 +340,40 @@ class Database:
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         """)
+
+        # Migration: Add missing columns if they don't exist
+        try:
+            # List of new columns to check/add
+            new_columns = [
+                ('peg_excellent', 'REAL DEFAULT 1.0'),
+                ('peg_good', 'REAL DEFAULT 1.5'),
+                ('peg_fair', 'REAL DEFAULT 2.0'),
+                ('debt_excellent', 'REAL DEFAULT 0.5'),
+                ('debt_good', 'REAL DEFAULT 1.0'),
+                ('debt_moderate', 'REAL DEFAULT 2.0'),
+                ('inst_own_min', 'REAL DEFAULT 0.20'),
+                ('inst_own_max', 'REAL DEFAULT 0.60'),
+                ('revenue_growth_excellent', 'REAL DEFAULT 15.0'),
+                ('revenue_growth_good', 'REAL DEFAULT 10.0'),
+                ('revenue_growth_fair', 'REAL DEFAULT 5.0'),
+                ('income_growth_excellent', 'REAL DEFAULT 15.0'),
+                ('income_growth_good', 'REAL DEFAULT 10.0'),
+                ('income_growth_fair', 'REAL DEFAULT 5.0')
+            ]
+            
+            for col_name, col_def in new_columns:
+                cursor.execute(f"""
+                    DO $$ 
+                    BEGIN 
+                        BEGIN
+                            ALTER TABLE algorithm_configurations ADD COLUMN {col_name} {col_def};
+                        EXCEPTION
+                            WHEN duplicate_column THEN NULL;
+                        END;
+                    END $$;
+                """)
+        except Exception as e:
+            print(f"Migration warning: {e}")
 
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS optimization_runs (
@@ -1370,8 +1418,19 @@ class Database:
         cursor.execute("""
             INSERT INTO algorithm_configurations
             (name, weight_peg, weight_consistency, weight_debt, weight_ownership,
+             peg_excellent, peg_good, peg_fair,
+             debt_excellent, debt_good, debt_moderate,
+             inst_own_min, inst_own_max,
+             revenue_growth_excellent, revenue_growth_good, revenue_growth_fair,
+             income_growth_excellent, income_growth_good, income_growth_fair,
              correlation_1yr, correlation_3yr, correlation_5yr, is_active)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+            VALUES (%s, %s, %s, %s, %s, 
+                    %s, %s, %s, 
+                    %s, %s, %s, 
+                    %s, %s, 
+                    %s, %s, %s, 
+                    %s, %s, %s, 
+                    %s, %s, %s, %s)
             RETURNING id
         """, (
             config.get('name', 'Unnamed'),
@@ -1379,6 +1438,20 @@ class Database:
             config['weight_consistency'],
             config['weight_debt'],
             config['weight_ownership'],
+            config.get('peg_excellent', 1.0),
+            config.get('peg_good', 1.5),
+            config.get('peg_fair', 2.0),
+            config.get('debt_excellent', 0.5),
+            config.get('debt_good', 1.0),
+            config.get('debt_moderate', 2.0),
+            config.get('inst_own_min', 0.20),
+            config.get('inst_own_max', 0.60),
+            config.get('revenue_growth_excellent', 15.0),
+            config.get('revenue_growth_good', 10.0),
+            config.get('revenue_growth_fair', 5.0),
+            config.get('income_growth_excellent', 15.0),
+            config.get('income_growth_good', 10.0),
+            config.get('income_growth_fair', 5.0),
             config.get('correlation_1yr'),
             config.get('correlation_3yr'),
             config.get('correlation_5yr'),
@@ -1398,19 +1471,13 @@ class Database:
         rows = cursor.fetchall()
         self.return_connection(conn)
         
-        return [
-            {
-                'id': row[0],
-                'name': row[1],
-                'weight_peg': row[2],
-                'weight_consistency': row[3],
-                'weight_debt': row[4],
-                'weight_ownership': row[5],
-                'correlation_1yr': row[6],
-                'correlation_3yr': row[7],
-                'correlation_5yr': row[8],
-                'is_active': row[9],
-                'created_at': row[10]
-            }
-            for row in rows
-        ]
+        # Get column names from cursor description to map correctly
+        # This is safer than hardcoding indices since we just added columns
+        colnames = [desc[0] for desc in cursor.description]
+        
+        results = []
+        for row in rows:
+            row_dict = dict(zip(colnames, row))
+            results.append(row_dict)
+            
+        return results
