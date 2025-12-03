@@ -949,8 +949,10 @@ def get_stock_filings(symbol):
 
     # Only fetch for US stocks
     country = stock_metrics.get('country', '')
-    if country and country.upper() != 'USA' and country.upper() != 'UNITED STATES':
-        return jsonify({})
+    if country:
+        country_upper = country.upper()
+        if country_upper not in ('US', 'USA', 'UNITED STATES'):
+            return jsonify({})
 
     # Check cache validity
     if db.is_filings_cache_valid(symbol):
@@ -1005,10 +1007,12 @@ def get_stock_sections(symbol):
     country = stock_metrics.get('country', '')
     app.logger.info(f"[SECTIONS] {symbol} country: {country}")
     print(f"[SECTIONS] {symbol} country: {country}", file=sys.stderr, flush=True)
-    if country and country.upper() != 'USA' and country.upper() != 'UNITED STATES':
-        app.logger.info(f"[SECTIONS] Skipping non-US stock {symbol}")
-        print(f"[SECTIONS] Skipping non-US stock {symbol}", file=sys.stderr, flush=True)
-        return jsonify({'sections': {}, 'cached': False})
+    if country:
+        country_upper = country.upper()
+        if country_upper not in ('US', 'USA', 'UNITED STATES'):
+            app.logger.info(f"[SECTIONS] Skipping non-US stock {symbol}")
+            print(f"[SECTIONS] Skipping non-US stock {symbol}", file=sys.stderr, flush=True)
+            return jsonify({'sections': {}, 'cached': False})
 
     # Check cache validity (30 days)
     if db.is_sections_cache_valid(symbol, max_age_days=30):

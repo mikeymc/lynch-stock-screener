@@ -1371,8 +1371,14 @@ class EdgarFetcher:
         sections = {}
 
         try:
-            # Get company and latest filing
-            company = Company(ticker)
+            # Get CIK first to avoid edgartools ticker lookup issues
+            cik = self.get_cik_for_ticker(ticker)
+            if not cik:
+                logger.warning(f"[{ticker}] Could not find CIK for section extraction")
+                return {}
+
+            # Get company using CIK (more reliable)
+            company = Company(cik)
             filings = company.get_filings(form=filing_type)
 
             if not filings:

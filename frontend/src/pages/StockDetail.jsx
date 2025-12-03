@@ -83,8 +83,9 @@ export default function StockDetail({ watchlist, toggleWatchlist }) {
   }, [stock, symbol, periodType])
 
   // Fetch filings data
+  // Fetch filings data (Lazy load)
   useEffect(() => {
-    if (!stock) return
+    if (!stock || activeTab !== 'reports' || filingsData) return
 
     const fetchFilingsData = async () => {
       setLoadingFilings(true)
@@ -103,11 +104,12 @@ export default function StockDetail({ watchlist, toggleWatchlist }) {
     }
 
     fetchFilingsData()
-  }, [stock, symbol])
+  }, [stock, symbol, activeTab, filingsData])
 
   // Fetch sections data
+  // Fetch sections data (Lazy load)
   useEffect(() => {
-    if (!stock) return
+    if (!stock || activeTab !== 'reports' || sectionsData) return
 
     const fetchSectionsData = async () => {
       setLoadingSections(true)
@@ -126,7 +128,7 @@ export default function StockDetail({ watchlist, toggleWatchlist }) {
     }
 
     fetchSectionsData()
-  }, [stock, symbol])
+  }, [stock, symbol, activeTab, sectionsData])
 
   // Fetch news data
   useEffect(() => {
