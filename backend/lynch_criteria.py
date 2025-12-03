@@ -1,9 +1,12 @@
 # ABOUTME: Evaluates stocks against Peter Lynch investment criteria
 # ABOUTME: Flags stocks as PASS, CLOSE, or FAIL based on PEG ratio, debt, growth, and ownership
 
+import logging
 from typing import Dict, Any, Optional
 from database import Database
 from earnings_analyzer import EarningsAnalyzer
+
+logger = logging.getLogger(__name__)
 
 
 # Algorithm metadata for UI display
@@ -99,6 +102,7 @@ class LynchCriteria:
 
     def reload_settings(self):
         """Reload settings from database."""
+        logger.info("Reloading Lynch criteria settings from database")
         self.settings = self.db.get_all_settings()
         
         # Cache values for easy access

@@ -1905,11 +1905,10 @@ def algorithm_config():
             # Save all parameters that are provided
             for key, value in config.items():
                 db.set_setting(key, value)
-            
+
             # Reload settings in LynchCriteria to pick up new thresholds
-            from lynch_criteria import LynchCriteria
-            LynchCriteria.reload_settings()
-            
+            criteria.reload_settings()
+
             return jsonify({'status': 'updated', 'config': config})
         else:
             return jsonify({'error': 'No config provided'}), 400

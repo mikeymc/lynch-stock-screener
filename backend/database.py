@@ -8,9 +8,12 @@ import threading
 import os
 import queue
 import time
+import logging
 from datetime import datetime
 from typing import Optional, Dict, Any, List
 import json
+
+logger = logging.getLogger(__name__)
 
 
 class Database:
@@ -1237,8 +1240,13 @@ class Database:
         age_days = (datetime.now() - last_updated).total_seconds() / 86400
         return age_days < max_age_days
 
-    def get_setting(self, key: str) -> Optional[Dict[str, Any]]:
-        """Get a specific setting by key"""
+    def get_setting(self, key: str, default: Any = None) -> Any:
+        """Get a setting value by key, with optional default"""
+        result = self.get_setting_full(key)
+        return result['value'] if result else default
+
+    def get_setting_full(self, key: str) -> Optional[Dict[str, Any]]:
+        """Get complete setting record (key, value, description)"""
         conn = self.get_connection()
         cursor = conn.cursor()
         cursor.execute("SELECT value, description FROM app_settings WHERE key = %s", (key,))
@@ -1250,7 +1258,7 @@ class Database:
         else:
             return {
                 'key': key,
-                'value': result[0],
+                'value': json.loads(result[0]),
                 'description': result[1]
             }
 
@@ -1370,6 +1378,7 @@ class Database:
         }
 
     def set_setting(self, key: str, value: Any, description: str = None):
+        logger.info(f"Setting configuration: key='{key}', value={value}")
         conn = self.get_connection()
         cursor = conn.cursor()
 
@@ -1420,6 +1429,7 @@ class Database:
 
     def init_default_settings(self):
         """Initialize default settings if they don't exist."""
+        logger.info("Initializing default settings (only adds missing settings, does not overwrite existing)")
         defaults = {
             # PEG thresholds (existing)
             'peg_excellent': {'value': 1.0, 'desc': 'Upper limit for Excellent PEG ratio'},
@@ -1454,9 +1464,13 @@ class Database:
 
         current_settings = self.get_all_settings()
 
+        added_count = 0
         for key, data in defaults.items():
             if key not in current_settings:
                 self.set_setting(key, data['value'], data['desc'])
+                added_count += 1
+
+        logger.info(f"Default settings initialization complete: {added_count} new settings added")
     # Backtest Results Methods
     def save_backtest_result(self, result: Dict[str, Any]):
         """Save a backtest result"""

@@ -1,5 +1,5 @@
 import numpy as np
-from typing import Dict, Any, List, Tuple, Optional
+from typing import Dict, Any, List, Tuple, Optional, Callable
 import logging
 from scipy import stats
 from skopt import gp_minimize
