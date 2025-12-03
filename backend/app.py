@@ -76,6 +76,7 @@ finnhub_client = FinnhubNewsClient(finnhub_api_key)
 # Track running validation/optimization jobs
 validation_jobs = {}
 optimization_jobs = {}
+rescoring_jobs = {}
 
 # Global dict to track active screening threads
 active_screenings = {}
@@ -1857,6 +1858,66 @@ def get_optimization_progress(job_id):
     
     return jsonify(clean_nan_values(optimization_jobs[job_id]))
 
+@app.route('/api/rescore/run', methods=['POST'])
+def start_rescoring():
+    """Start rescoring all stocks from latest session with current algorithm settings"""
+    try:
+        import uuid
+        job_id = str(uuid.uuid4())
+        
+        # Start rescoring in background thread
+        def run_rescoring_background():
+            try:
+                rescoring_jobs[job_id] = {
+                    'status': 'running',
+                    'progress': 0,
+                    'total': 0
+                }
+                
+                # Progress callback
+                def on_progress(current, total):
+                    rescoring_jobs[job_id].update({
+                        'progress': current,
+                        'total': total
+                    })
+                
+                # Run rescoring
+                rescorer = StockRescorer(db, criteria)
+                summary = rescorer.rescore_saved_stocks(
+                    algorithm='weighted',
+                    progress_callback=on_progress
+                )
+                
+                rescoring_jobs[job_id] = {
+                    'status': 'complete',
+                    'summary': summary
+                }
+            except Exception as e:
+                logger.error(f"Rescoring failed: {e}", exc_info=True)
+                rescoring_jobs[job_id] = {
+                    'status': 'error',
+                    'error': str(e)
+                }
+        
+        thread = threading.Thread(target=run_rescoring_background, daemon=True)
+        thread.start()
+        
+        return jsonify({
+            'job_id': job_id,
+            'status': 'started'
+        })
+        
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/rescore/progress/<job_id>', methods=['GET'])
+def get_rescoring_progress(job_id):
+    """Get progress of a rescoring job"""
+    if job_id not in rescoring_jobs:
+        return jsonify({'error': 'Job not found'}), 404
+    
+    return jsonify(clean_nan_values(rescoring_jobs[job_id]))
+
 @app.route('/api/algorithm/config', methods=['GET', 'POST'])
 def algorithm_config():
     """Get or update algorithm configuration"""
@@ -1910,21 +1971,50 @@ def algorithm_config():
             # Reload settings in LynchCriteria to pick up new thresholds
             criteria.reload_settings()
 
-            # Re-score stocks from latest screening session with new settings
-            logger.info("Re-scoring stocks from latest screening session with updated settings...")
-            try:
-                rescorer = StockRescorer(db, criteria)
-                rescore_summary = rescorer.rescore_saved_stocks(algorithm='weighted')
-                logger.info(f"Re-scoring complete: {rescore_summary}")
-            except Exception as e:
-                logger.error(f"Re-scoring failed: {e}", exc_info=True)
-                # Don't fail the settings save if re-scoring fails
-                rescore_summary = {'error': str(e)}
+            # Start async rescoring job
+            import uuid
+            job_id = str(uuid.uuid4())
+            
+            def run_rescoring_background():
+                try:
+                    rescoring_jobs[job_id] = {
+                        'status': 'running',
+                        'progress': 0,
+                        'total': 0
+                    }
+                    
+                    # Progress callback
+                    def on_progress(current, total):
+                        rescoring_jobs[job_id].update({
+                            'progress': current,
+                            'total': total
+                        })
+                    
+                    # Run rescoring
+                    rescorer = StockRescorer(db, criteria)
+                    summary = rescorer.rescore_saved_stocks(
+                        algorithm='weighted',
+                        progress_callback=on_progress
+                    )
+                    
+                    rescoring_jobs[job_id] = {
+                        'status': 'complete',
+                        'summary': summary
+                    }
+                except Exception as e:
+                    logger.error(f"Rescoring failed: {e}", exc_info=True)
+                    rescoring_jobs[job_id] = {
+                        'status': 'error',
+                        'error': str(e)
+                    }
+            
+            thread = threading.Thread(target=run_rescoring_background, daemon=True)
+            thread.start()
 
             return jsonify({
                 'status': 'updated',
                 'config': config,
-                'rescore_summary': rescore_summary
+                'rescore_job_id': job_id
             })
         else:
             return jsonify({'error': 'No config provided'}), 400

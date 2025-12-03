@@ -56,12 +56,15 @@ export default function AlgorithmTuning() {
 
     const [validationRunning, setValidationRunning] = useState(false);
     const [optimizationRunning, setOptimizationRunning] = useState(false);
+    const [rescoringRunning, setRescoringRunning] = useState(false);
     const [validationJobId, setValidationJobId] = useState(null);
     const [optimizationJobId, setOptimizationJobId] = useState(null);
+    const [rescoringJobId, setRescoringJobId] = useState(null);
 
     const [analysis, setAnalysis] = useState(null);
     const [optimizationResult, setOptimizationResult] = useState(null);
     const [optimizationProgress, setOptimizationProgress] = useState(null);
+    const [rescoringProgress, setRescoringProgress] = useState(null);
     const [yearsBack, setYearsBack] = useState(5);
 
     // Load current configuration on mount
@@ -228,16 +231,56 @@ export default function AlgorithmTuning() {
 
     const saveConfiguration = async () => {
         try {
-            await fetch('http://localhost:8080/api/algorithm/config', {
+            setRescoringRunning(true);
+            setRescoringProgress(null);
+
+            const response = await fetch('http://localhost:8080/api/algorithm/config', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ config })
             });
-            alert('Configuration saved!');
+
+            const data = await response.json();
+
+            if (data.rescore_job_id) {
+                setRescoringJobId(data.rescore_job_id);
+                // Poll for rescoring progress
+                pollRescoringProgress(data.rescore_job_id);
+            } else {
+                alert('Configuration saved!');
+                setRescoringRunning(false);
+            }
+
             loadCurrentConfig();
         } catch (error) {
             console.error('Error saving configuration:', error);
+            setRescoringRunning(false);
         }
+    };
+
+    const pollRescoringProgress = async (jobId) => {
+        const interval = setInterval(async () => {
+            try {
+                const response = await fetch(`http://localhost:8080/api/rescore/progress/${jobId}`);
+                const data = await response.json();
+
+                setRescoringProgress(data);
+
+                if (data.status === 'complete') {
+                    clearInterval(interval);
+                    setRescoringRunning(false);
+                    setRescoringProgress(null);
+                    alert(`Configuration saved and re-scored ${data.summary?.success || 0} stocks!`);
+                } else if (data.status === 'error') {
+                    clearInterval(interval);
+                    setRescoringRunning(false);
+                    setRescoringProgress(null);
+                    alert('Rescoring error: ' + data.error);
+                }
+            } catch (error) {
+                console.error('Error polling rescoring:', error);
+            }
+        }, 1000);
     };
 
     const renderSlider = (key, label, min, max, step, isPercentage = false) => (
@@ -348,8 +391,11 @@ export default function AlgorithmTuning() {
                         <button
                             onClick={saveConfiguration}
                             className="btn-secondary"
+                            disabled={rescoringRunning}
                         >
-                            💾 Save Config
+                            {rescoringRunning
+                                ? `🔄 Re-scoring... ${rescoringProgress?.progress || 0}/${rescoringProgress?.total || 0}`
+                                : '💾 Save Config'}
                         </button>
                     </div>
                 </div>

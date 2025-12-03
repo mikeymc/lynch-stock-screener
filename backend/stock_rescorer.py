@@ -13,12 +13,13 @@ class StockRescorer:
         self.db = db
         self.criteria = criteria
 
-    def rescore_saved_stocks(self, algorithm: str = 'weighted') -> Dict[str, Any]:
+    def rescore_saved_stocks(self, algorithm: str = 'weighted', progress_callback=None) -> Dict[str, Any]:
         """
         Re-score all stocks from the latest screening session.
 
         Args:
             algorithm: Scoring algorithm to use (default: 'weighted')
+            progress_callback: Optional callback function(current, total) to report progress
 
         Returns:
             Summary dict with counts and any errors
@@ -51,7 +52,7 @@ class StockRescorer:
         logger.info(f"Re-scoring {len(symbols_to_rescore)} stocks from session {session_id}...")
 
         # Re-score in parallel (fast since using cached data)
-        results = self._rescore_batch(symbols_to_rescore, algorithm)
+        results = self._rescore_batch(symbols_to_rescore, algorithm, progress_callback)
 
         # Update database
         self._update_database(results)
@@ -67,9 +68,11 @@ class StockRescorer:
         logger.info(f"✓ Re-scoring complete: {summary['success']}/{summary['total']} successful")
         return summary
 
-    def _rescore_batch(self, symbols: List[str], algorithm: str) -> List[Dict[str, Any]]:
+    def _rescore_batch(self, symbols: List[str], algorithm: str, progress_callback=None) -> List[Dict[str, Any]]:
         """Re-score a batch of symbols in parallel."""
         results = []
+        total = len(symbols)
+        completed = 0
 
         # Use ThreadPoolExecutor for parallel processing
         with ThreadPoolExecutor(max_workers=20) as executor:
@@ -90,6 +93,11 @@ class StockRescorer:
                         'success': False,
                         'error': str(e)
                     })
+                
+                # Report progress
+                completed += 1
+                if progress_callback:
+                    progress_callback(completed, total)
 
         return results
 
