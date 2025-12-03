@@ -382,27 +382,50 @@ class EdgarFetcher:
             return []
 
         # Filter for annual reports (10-K for US, 20-F for foreign)
-        # Use dict to keep only the latest fiscal_end for each year
+        # Use dict to keep only the highest net_income for each fiscal year
         annual_net_income_by_year = {}
 
         for entry in net_income_data_list:
             if entry.get('form') in ['10-K', '20-F']:
                 fiscal_end = entry.get('end')
-                # Extract year from fiscal_end date (more reliable than fy field)
-                year = int(fiscal_end[:4]) if fiscal_end else entry.get('fy')
+                frame = entry.get('frame', '')
                 net_income = entry.get('val')
 
-                if year and net_income is not None and fiscal_end:
-                    # Keep the entry with the latest fiscal_end for each year
-                    if year not in annual_net_income_by_year or fiscal_end > annual_net_income_by_year[year]['fiscal_end']:
-                        annual_net_income_by_year[year] = {
+                # Skip quarterly entries (frames ending in Q1, Q2, Q3, Q4)
+                if frame and frame.endswith(('Q1', 'Q2', 'Q3', 'Q4')):
+                    continue
+
+                if net_income is not None and fiscal_end:
+                    # Use fiscal_end year as the key (this is the actual fiscal year)
+                    year = int(fiscal_end[:4])
+
+                    # Group by unique fiscal_end dates, keep highest absolute value
+                    if fiscal_end not in annual_net_income_by_year:
+                        annual_net_income_by_year[fiscal_end] = {
+                            'year': year,
+                            'net_income': net_income,
+                            'fiscal_end': fiscal_end
+                        }
+                    elif abs(net_income) > abs(annual_net_income_by_year[fiscal_end]['net_income']):
+                        # Keep highest absolute value (in case of duplicates)
+                        annual_net_income_by_year[fiscal_end] = {
                             'year': year,
                             'net_income': net_income,
                             'fiscal_end': fiscal_end
                         }
 
+        # Group by year, keeping highest absolute value per year
+        # (This handles cases where multiple fiscal_end dates map to same year)
+        by_year = {}
+        for fiscal_end, entry in annual_net_income_by_year.items():
+            year = entry['year']
+            if year not in by_year:
+                by_year[year] = entry
+            elif abs(entry['net_income']) > abs(by_year[year]['net_income']):
+                by_year[year] = entry
+
         # Convert dict to list and sort by year descending
-        annual_net_income = list(annual_net_income_by_year.values())
+        annual_net_income = list(by_year.values())
         annual_net_income.sort(key=lambda x: x['year'], reverse=True)
         logger.info(f"Successfully parsed {len(annual_net_income)} years of Net Income data from EDGAR")
         return annual_net_income
@@ -739,25 +762,84 @@ class EdgarFetcher:
         # Use dict to keep only the latest fiscal_end for each year
         annual_shares_by_year = {}
 
+        # Group by fiscal_end first to get all entries for same historical period
+        by_fiscal_end = {}
+
         for entry in shares_data_list:
             if entry.get('form') in ['10-K', '20-F']:
                 fiscal_end = entry.get('end')
-                # Extract year from fiscal_end date (more reliable than fy field)
-                year = int(fiscal_end[:4]) if fiscal_end else entry.get('fy')
                 shares = entry.get('val')
+                fy = entry.get('fy')  # Filing year
 
-                if year and shares is not None and fiscal_end:
-                    # Keep the entry with the latest fiscal_end for each year
-                    if year not in annual_shares_by_year or fiscal_end > annual_shares_by_year[year]['fiscal_end']:
-                        annual_shares_by_year[year] = {
-                            'year': year,
-                            'shares': shares,
-                            'fiscal_end': fiscal_end
-                        }
+                if fiscal_end and shares is not None:
+                    if fiscal_end not in by_fiscal_end:
+                        by_fiscal_end[fiscal_end] = []
+                    by_fiscal_end[fiscal_end].append({
+                        'fiscal_end': fiscal_end,
+                        'shares': shares,
+                        'fy': fy
+                    })
+
+        # For each fiscal_end, keep the entry from the LATEST filing (highest fy)
+        # because later filings have split-adjusted historical data
+        for fiscal_end, entries in by_fiscal_end.items():
+            # Sort by fy descending to get latest filing first
+            entries_sorted = sorted(entries, key=lambda x: x.get('fy') or 0, reverse=True)
+            latest_entry = entries_sorted[0]
+
+            # Extract year from fiscal_end date
+            year = int(fiscal_end[:4]) if fiscal_end else None
+
+            if year:
+                # Keep only the latest fiscal_end for each year (in case of restated periods)
+                if year not in annual_shares_by_year or fiscal_end > annual_shares_by_year[year]['fiscal_end']:
+                    annual_shares_by_year[year] = {
+                        'year': year,
+                        'shares': latest_entry['shares'],
+                        'fiscal_end': fiscal_end
+                    }
 
         # Convert dict to list and sort by year descending
         annual_shares = list(annual_shares_by_year.values())
         annual_shares.sort(key=lambda x: x['year'], reverse=True)
+
+        # Detect and apply stock splits to historical data
+        # If shares jump significantly (>1.5x) between consecutive years, it's likely a stock split
+        # Apply the split ratio backwards to earlier years
+        if len(annual_shares) >= 2:
+            for i in range(len(annual_shares) - 1):
+                current_year = annual_shares[i]
+                next_year = annual_shares[i + 1]
+
+                # Calculate ratio between consecutive years
+                if next_year['shares'] > 0:
+                    ratio = current_year['shares'] / next_year['shares']
+
+                    # If shares increased by >1.5x, likely a stock split
+                    if ratio > 1.5:
+                        # Determine split ratio (round to common splits: 2, 3, 4, 7, etc)
+                        if 1.8 < ratio < 2.2:
+                            split_ratio = 2
+                        elif 2.8 < ratio < 3.2:
+                            split_ratio = 3
+                        elif 3.5 < ratio < 4.5:
+                            split_ratio = 4
+                        elif 6.5 < ratio < 7.5:
+                            split_ratio = 7
+                        else:
+                            # Use actual ratio if it doesn't match common splits
+                            split_ratio = ratio
+
+                        logger.info(f"Detected {split_ratio}-for-1 stock split between {next_year['year']} and {current_year['year']}")
+
+                        # Apply split to all earlier years
+                        for j in range(i + 1, len(annual_shares)):
+                            annual_shares[j]['shares'] *= split_ratio
+                            logger.debug(f"Applied {split_ratio}x split adjustment to {annual_shares[j]['year']}")
+
+                        # Break after first split detection to avoid double-adjusting
+                        break
+
         logger.info(f"Successfully parsed {len(annual_shares)} years of shares outstanding data from EDGAR")
         return annual_shares
 
@@ -831,8 +913,8 @@ class EdgarFetcher:
         for entry in shares_data_list:
             if entry.get('form') in ['10-K', '20-F']:
                 fiscal_end = entry.get('end')
-                # Extract year from fiscal_end date (more reliable than fy field)
-                year = int(fiscal_end[:4]) if fiscal_end else entry.get('fy')
+                # Use fy field (fiscal year) as primary source, fall back to extracting from fiscal_end date
+                year = entry.get('fy') or (int(fiscal_end[:4]) if fiscal_end else None)
                 shares = entry.get('val')
 
                 if year and shares is not None and year not in seen_annual_years:
@@ -1012,28 +1094,27 @@ class EdgarFetcher:
                     for entry in revenue_data:
                         if entry.get('form') == '10-K':
                             fiscal_end = entry.get('end')
-                            # Extract year from fiscal_end date (more reliable than fy field)
-                            year = int(fiscal_end[:4]) if fiscal_end else entry.get('fy')
+                            frame = entry.get('frame', '')
                             revenue = entry.get('val')
 
-                            if year and revenue and fiscal_end:
-                                # Keep the entry with the latest fiscal_end for each year
-                                # If same fiscal_end, prefer the highest value (full year vs quarterly fragments)
-                                if year not in annual_revenue_by_year:
-                                    annual_revenue_by_year[year] = {
+                            # Skip quarterly entries (frames ending in Q1, Q2, Q3, Q4)
+                            if frame and frame.endswith(('Q1', 'Q2', 'Q3', 'Q4')):
+                                continue
+
+                            if revenue and fiscal_end:
+                                # Use fiscal_end year as the key (this is the actual fiscal year)
+                                year = int(fiscal_end[:4])
+
+                                # Group by unique fiscal_end dates, keep highest revenue
+                                if fiscal_end not in annual_revenue_by_year:
+                                    annual_revenue_by_year[fiscal_end] = {
                                         'year': year,
                                         'revenue': revenue,
                                         'fiscal_end': fiscal_end
                                     }
-                                elif fiscal_end > annual_revenue_by_year[year]['fiscal_end']:
-                                    annual_revenue_by_year[year] = {
-                                        'year': year,
-                                        'revenue': revenue,
-                                        'fiscal_end': fiscal_end
-                                    }
-                                elif fiscal_end == annual_revenue_by_year[year]['fiscal_end'] and revenue > annual_revenue_by_year[year]['revenue']:
-                                    # Same fiscal_end - keep the higher value
-                                    annual_revenue_by_year[year] = {
+                                elif revenue > annual_revenue_by_year[fiscal_end]['revenue']:
+                                    # Keep highest value (in case of duplicates)
+                                    annual_revenue_by_year[fiscal_end] = {
                                         'year': year,
                                         'revenue': revenue,
                                         'fiscal_end': fiscal_end
@@ -1073,28 +1154,27 @@ class EdgarFetcher:
                             for entry in revenue_data:
                                 if entry.get('form') == '20-F':
                                     fiscal_end = entry.get('end')
-                                    # Extract year from fiscal_end date (more reliable than fy field)
-                                    year = int(fiscal_end[:4]) if fiscal_end else entry.get('fy')
+                                    frame = entry.get('frame', '')
                                     revenue = entry.get('val')
 
-                                    if year and revenue and fiscal_end:
-                                        # Keep the entry with the latest fiscal_end for each year
-                                        # If same fiscal_end, prefer the highest value (full year vs quarterly fragments)
-                                        if year not in annual_revenue_by_year:
-                                            annual_revenue_by_year[year] = {
+                                    # Skip quarterly entries (frames ending in Q1, Q2, Q3, Q4)
+                                    if frame and frame.endswith(('Q1', 'Q2', 'Q3', 'Q4')):
+                                        continue
+
+                                    if revenue and fiscal_end:
+                                        # Use fiscal_end year as the key (this is the actual fiscal year)
+                                        year = int(fiscal_end[:4])
+
+                                        # Group by unique fiscal_end dates, keep highest revenue
+                                        if fiscal_end not in annual_revenue_by_year:
+                                            annual_revenue_by_year[fiscal_end] = {
                                                 'year': year,
                                                 'revenue': revenue,
                                                 'fiscal_end': fiscal_end
                                             }
-                                        elif fiscal_end > annual_revenue_by_year[year]['fiscal_end']:
-                                            annual_revenue_by_year[year] = {
-                                                'year': year,
-                                                'revenue': revenue,
-                                                'fiscal_end': fiscal_end
-                                            }
-                                        elif fiscal_end == annual_revenue_by_year[year]['fiscal_end'] and revenue > annual_revenue_by_year[year]['revenue']:
-                                            # Same fiscal_end - keep the higher value
-                                            annual_revenue_by_year[year] = {
+                                        elif revenue > annual_revenue_by_year[fiscal_end]['revenue']:
+                                            # Keep highest value (in case of duplicates)
+                                            annual_revenue_by_year[fiscal_end] = {
                                                 'year': year,
                                                 'revenue': revenue,
                                                 'fiscal_end': fiscal_end
@@ -1111,8 +1191,18 @@ class EdgarFetcher:
             logger.debug(f"No revenue data found in us-gaap or ifrs-full")
             return []
 
+        # Group by year, keeping highest revenue per year
+        # (This handles cases where multiple fiscal_end dates map to same year)
+        by_year = {}
+        for fiscal_end, entry in annual_revenue_by_year.items():
+            year = entry['year']
+            if year not in by_year:
+                by_year[year] = entry
+            elif entry['revenue'] > by_year[year]['revenue']:
+                by_year[year] = entry
+
         # Convert dict to list and sort by year descending
-        annual_revenue = list(annual_revenue_by_year.values())
+        annual_revenue = list(by_year.values())
         annual_revenue.sort(key=lambda x: x['year'], reverse=True)
         logger.info(f"Successfully parsed {len(annual_revenue)} years of revenue data from {len(fields_found)} field(s): {', '.join(fields_found)}")
         return annual_revenue
@@ -1142,21 +1232,41 @@ class EdgarFetcher:
 
             equity_entries.sort(key=lambda x: x.get('end', ''), reverse=True)
             equity = equity_entries[0].get('val')
+            fiscal_end = equity_entries[0].get('end', '')
 
-            # Get most recent liabilities value
-            liabilities_data = facts.get('Liabilities', {}).get('units', {}).get('USD', [])
-            if not liabilities_data:
-                return None
+            # Get total debt (long-term + short-term)
+            # LongTermDebtNoncurrent = long-term debt
+            long_term_debt_data = facts.get('LongTermDebtNoncurrent', {}).get('units', {}).get('USD', [])
+            if not long_term_debt_data:
+                # Fallback: try LongTermDebt which might include both
+                long_term_debt_data = facts.get('LongTermDebt', {}).get('units', {}).get('USD', [])
 
-            liabilities_entries = [e for e in liabilities_data if e.get('form') == '10-K']
-            if not liabilities_entries:
-                return None
+            # LongTermDebtCurrent = current portion of long-term debt (short-term)
+            short_term_debt_data = facts.get('LongTermDebtCurrent', {}).get('units', {}).get('USD', [])
 
-            liabilities_entries.sort(key=lambda x: x.get('end', ''), reverse=True)
-            liabilities = liabilities_entries[0].get('val')
+            # Get values matching the same fiscal period as equity
+            long_term_debt = None
+            if long_term_debt_data:
+                matching_entries = [e for e in long_term_debt_data if e.get('form') == '10-K' and e.get('end', '') == fiscal_end]
+                if matching_entries:
+                    long_term_debt = matching_entries[0].get('val', 0)
 
-            if equity and liabilities and equity > 0:
-                return liabilities / equity
+            short_term_debt = None
+            if short_term_debt_data:
+                matching_entries = [e for e in short_term_debt_data if e.get('form') == '10-K' and e.get('end', '') == fiscal_end]
+                if matching_entries:
+                    short_term_debt = matching_entries[0].get('val', 0)
+
+            # Calculate total debt
+            total_debt = 0
+            if long_term_debt is not None:
+                total_debt += long_term_debt
+            if short_term_debt is not None:
+                total_debt += short_term_debt
+
+            # Only calculate D/E if we have both debt and equity
+            if equity and equity > 0 and (long_term_debt is not None or short_term_debt is not None):
+                return total_debt / equity
 
             return None
 
@@ -1182,13 +1292,15 @@ class EdgarFetcher:
                 logger.debug("No StockholdersEquity data found")
                 return []
 
-            # Get liabilities data
-            liabilities_data = facts.get('Liabilities', {}).get('units', {}).get('USD', [])
-            if not liabilities_data:
-                logger.debug("No Liabilities data found")
-                return []
+            # Get debt data - try multiple fields
+            long_term_debt_data = facts.get('LongTermDebtNoncurrent', {}).get('units', {}).get('USD', [])
+            if not long_term_debt_data:
+                # Fallback to LongTermDebt
+                long_term_debt_data = facts.get('LongTermDebt', {}).get('units', {}).get('USD', [])
 
-            # Filter for 10-K entries and create lookup by fiscal year
+            short_term_debt_data = facts.get('LongTermDebtCurrent', {}).get('units', {}).get('USD', [])
+
+            # Filter for 10-K entries and create lookup by fiscal year and end date
             equity_by_year = {}
             for entry in equity_data:
                 if entry.get('form') == '10-K':
@@ -1198,30 +1310,52 @@ class EdgarFetcher:
                     if year and val and year not in equity_by_year:
                         equity_by_year[year] = {'val': val, 'fiscal_end': fiscal_end}
 
-            liabilities_by_year = {}
-            for entry in liabilities_data:
-                if entry.get('form') == '10-K':
-                    year = entry.get('fy')
-                    fiscal_end = entry.get('end')
-                    val = entry.get('val')
-                    if year and val and year not in liabilities_by_year:
-                        liabilities_by_year[year] = {'val': val, 'fiscal_end': fiscal_end}
+            long_term_debt_by_year = {}
+            if long_term_debt_data:
+                for entry in long_term_debt_data:
+                    if entry.get('form') == '10-K':
+                        year = entry.get('fy')
+                        fiscal_end = entry.get('end')
+                        val = entry.get('val')
+                        if year and val is not None and year not in long_term_debt_by_year:
+                            long_term_debt_by_year[year] = {'val': val, 'fiscal_end': fiscal_end}
 
-            # Calculate D/E ratio for each year where we have both values
+            short_term_debt_by_year = {}
+            if short_term_debt_data:
+                for entry in short_term_debt_data:
+                    if entry.get('form') == '10-K':
+                        year = entry.get('fy')
+                        fiscal_end = entry.get('end')
+                        val = entry.get('val')
+                        if year and val is not None and year not in short_term_debt_by_year:
+                            short_term_debt_by_year[year] = {'val': val, 'fiscal_end': fiscal_end}
+
+            # Calculate D/E ratio for each year where we have equity and at least one debt component
             debt_to_equity_history = []
             for year in equity_by_year.keys():
-                if year in liabilities_by_year:
-                    equity = equity_by_year[year]['val']
-                    liabilities = liabilities_by_year[year]['val']
-                    fiscal_end = equity_by_year[year]['fiscal_end']
+                equity = equity_by_year[year]['val']
+                fiscal_end = equity_by_year[year]['fiscal_end']
 
-                    if equity > 0:
-                        debt_to_equity = liabilities / equity
-                        debt_to_equity_history.append({
-                            'year': year,
-                            'debt_to_equity': debt_to_equity,
-                            'fiscal_end': fiscal_end
-                        })
+                # Calculate total debt for this year
+                total_debt = 0
+                has_debt_data = False
+
+                if year in long_term_debt_by_year:
+                    total_debt += long_term_debt_by_year[year]['val']
+                    has_debt_data = True
+
+                if year in short_term_debt_by_year:
+                    total_debt += short_term_debt_by_year[year]['val']
+                    has_debt_data = True
+
+                # Only calculate D/E if we have both equity and some debt data
+                if equity > 0 and has_debt_data:
+                    debt_to_equity = total_debt / equity
+                    debt_to_equity_history.append({
+                        'year': year,
+                        'debt_to_equity': debt_to_equity,
+                        'fiscal_end': fiscal_end
+                    })
 
             # Sort by year descending
             debt_to_equity_history.sort(key=lambda x: x['year'], reverse=True)
