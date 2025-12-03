@@ -25,6 +25,7 @@ from algorithm_validator import AlgorithmValidator
 from correlation_analyzer import CorrelationAnalyzer
 from algorithm_optimizer import AlgorithmOptimizer
 from finnhub_news import FinnhubNewsClient
+from stock_rescorer import StockRescorer
 
 from algorithm_optimizer import AlgorithmOptimizer
 import logging
@@ -1909,7 +1910,22 @@ def algorithm_config():
             # Reload settings in LynchCriteria to pick up new thresholds
             criteria.reload_settings()
 
-            return jsonify({'status': 'updated', 'config': config})
+            # Re-score stocks from latest screening session with new settings
+            logger.info("Re-scoring stocks from latest screening session with updated settings...")
+            try:
+                rescorer = StockRescorer(db, criteria)
+                rescore_summary = rescorer.rescore_saved_stocks(algorithm='weighted')
+                logger.info(f"Re-scoring complete: {rescore_summary}")
+            except Exception as e:
+                logger.error(f"Re-scoring failed: {e}", exc_info=True)
+                # Don't fail the settings save if re-scoring fails
+                rescore_summary = {'error': str(e)}
+
+            return jsonify({
+                'status': 'updated',
+                'config': config,
+                'rescore_summary': rescore_summary
+            })
         else:
             return jsonify({'error': 'No config provided'}), 400
 

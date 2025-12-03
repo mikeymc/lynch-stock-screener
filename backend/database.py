@@ -902,7 +902,8 @@ class Database:
             SELECT symbol, company_name, country, market_cap, sector, ipo_year,
                    price, pe_ratio, peg_ratio, debt_to_equity, institutional_ownership,
                    dividend_yield, earnings_cagr, revenue_cagr, consistency_score,
-                   peg_status, debt_status, institutional_ownership_status, overall_status
+                   peg_status, debt_status, institutional_ownership_status, overall_status,
+                   overall_score, scored_at
             FROM screening_results
             WHERE session_id = %s
             ORDER BY id ASC
@@ -931,7 +932,9 @@ class Database:
                 'peg_status': row[15],
                 'debt_status': row[16],
                 'institutional_ownership_status': row[17],
-                'overall_status': row[18]
+                'overall_status': row[18],
+                'overall_score': row[19],
+                'scored_at': row[20]
             })
 
         return results
@@ -950,8 +953,9 @@ class Database:
              price, pe_ratio, peg_ratio, debt_to_equity, institutional_ownership, dividend_yield,
              earnings_cagr, revenue_cagr, consistency_score,
              peg_status, peg_score, debt_status, debt_score,
-             institutional_ownership_status, institutional_ownership_score, overall_status)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+             institutional_ownership_status, institutional_ownership_score,
+             overall_status, overall_score, scored_at)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
         """
         args_insert = (
             session_id,
@@ -976,7 +980,9 @@ class Database:
             result_data.get('debt_score'),
             result_data.get('institutional_ownership_status'),
             result_data.get('institutional_ownership_score'),
-            result_data.get('overall_status')
+            result_data.get('overall_status'),
+            result_data.get('overall_score'),
+            datetime.now()
         )
         self.write_queue.put((sql_insert, args_insert))
 
@@ -1096,6 +1102,68 @@ class Database:
         result = cursor.fetchone()
         self.return_connection(conn)
         return result is not None
+
+    def get_screening_symbols(self, session_id: int) -> List[str]:
+        """Get all symbols from a specific screening session."""
+        conn = self.get_connection()
+        try:
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT DISTINCT symbol FROM screening_results WHERE session_id = %s",
+                (session_id,)
+            )
+            return [row[0] for row in cursor.fetchall()]
+        finally:
+            self.return_connection(conn)
+
+    def update_screening_result_scores(
+        self,
+        symbol: str,
+        overall_score: float = None,
+        overall_status: str = None,
+        peg_score: float = None,
+        debt_score: float = None,
+        institutional_ownership_score: float = None,
+        scored_at: datetime = None
+    ):
+        """Update scores for all screening_results rows matching a symbol."""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+
+        try:
+            cursor.execute("""
+                UPDATE screening_results
+                SET overall_score = %s,
+                    overall_status = %s,
+                    peg_score = %s,
+                    debt_score = %s,
+                    institutional_ownership_score = %s,
+                    scored_at = %s
+                WHERE symbol = %s
+            """, (
+                overall_score,
+                overall_status,
+                peg_score,
+                debt_score,
+                institutional_ownership_score,
+                scored_at or datetime.now(),
+                symbol
+            ))
+
+            conn.commit()
+            logger.info(f"Updated scores for {symbol} ({cursor.rowcount} rows affected)")
+
+        except Exception as e:
+            conn.rollback()
+            logger.error(f"Failed to update scores for {symbol}: {e}")
+            raise
+        finally:
+            self.return_connection(conn)
+
+    def get_latest_session_id(self) -> Optional[int]:
+        """Get the ID of the most recent screening session."""
+        session = self.get_latest_session()
+        return session['id'] if session else None
 
     def save_sec_filing(self, symbol: str, filing_type: str, filing_date: str, document_url: str, accession_number: str):
         conn = self.get_connection()
