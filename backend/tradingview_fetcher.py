@@ -18,9 +18,104 @@ logger = logging.getLogger(__name__)
 class TradingViewFetcher:
     """Fetches market data in bulk from TradingView screener API"""
     
+    # European exchanges that primarily list US ADRs and foreign duplicates
+    # These should be filtered to avoid duplicate analysis of US companies
+    EUROPEAN_ADR_EXCHANGES = {
+        'MIL',      # Milan (Italy) - lists US ADRs with numeric prefixes like 1AAPL
+        'EUROTLX',  # EuroTLX - lists US ADRs like 4AAPL
+        'LSX',      # London Stock Exchange International - lists US ADRs
+        'LSE',      # London Stock Exchange - lists US ADRs with codes like 0QZ6
+        'BX',       # XETRA (Germany) - lists US ADRs
+        'DUS',      # Düsseldorf (Germany) - lists US ADRs
+        'FWB',      # Frankfurt - lists US ADRs
+        'STU',      # Stuttgart - lists US ADRs
+        'MUN',      # Munich - lists US ADRs
+        'HAM',      # Hamburg - lists US ADRs
+        'BER',      # Berlin - lists US ADRs
+        'LSIN',     # London Stock Exchange International
+        'LS',       # Lang & Schwarz (Germany) - lists US ADRs
+        'HAN',      # Hannover (Germany) - lists US ADRs
+        'SWB',      # Stuttgart (Germany) - lists US ADRs
+        'XETR',     # XETRA (Germany) - lists US ADRs
+        'GETTEX',   # Gettex (Germany) - lists US ADRs
+        'TRADEGATE', # Tradegate (Germany) - lists US ADRs
+    }
+    
+    # Asian home exchanges where numeric tickers are legitimate
+    # These should NOT be filtered as they represent primary listings
+    ASIAN_HOME_EXCHANGES = {
+        'KRX',      # Korea Exchange - Korean stocks use numeric tickers (e.g., 000660 for SK hynix)
+        'TWSE',     # Taiwan Stock Exchange - Taiwanese stocks use numeric tickers
+        'HKEX',     # Hong Kong Exchange - Some HK stocks use numeric tickers
+        'TSE',      # Tokyo Stock Exchange
+        'SGX',      # Singapore Exchange
+    }
+    
     def __init__(self):
         """Initialize TradingView fetcher"""
         pass
+    
+    def _should_skip_ticker(self, ticker: str, exchange: str) -> bool:
+        """
+        Determine if a ticker should be filtered out (Hybrid Approach)
+        
+        Strategy:
+        1. Filter out tickers from European ADR exchanges (avoid US company duplicates)
+        2. Filter out non-common stock securities (preferred, warrants, units, etc.)
+        3. Allow numeric tickers from Asian home exchanges (legitimate local stocks)
+        4. Allow all other common stock tickers
+        
+        Args:
+            ticker: Stock ticker symbol
+            exchange: Exchange code from TradingView
+            
+        Returns:
+            True if ticker should be skipped, False otherwise
+        """
+        if not ticker or not exchange:
+            return True
+        
+        # Skip tickers from European ADR exchanges
+        if exchange in self.EUROPEAN_ADR_EXCHANGES:
+            logger.debug(f"Filtering {ticker} from European ADR exchange {exchange}")
+            return True
+        
+        # Filter out non-common stock securities by ticker pattern
+        ticker_upper = ticker.upper()
+        
+        # Preferred stock patterns: -P, -PR, .PR, /PR, _PR
+        if any(ticker_upper.endswith(suffix) for suffix in ['-P', '-PR', '.PR', '/PR', '_PR']):
+            logger.debug(f"Filtering preferred stock: {ticker}")
+            return True
+        
+        # Warrant patterns: -W, -WT, .W, .WT, /W, _W
+        if any(ticker_upper.endswith(suffix) for suffix in ['-W', '-WT', '.W', '.WT', '/W', '_W', '-WS']):
+            logger.debug(f"Filtering warrant: {ticker}")
+            return True
+        
+        # Unit patterns: -U, .U, /U, _U
+        if any(ticker_upper.endswith(suffix) for suffix in ['-U', '.U', '/U', '_U']):
+            logger.debug(f"Filtering unit: {ticker}")
+            return True
+        
+        # When-issued patterns: -WI, .WI, /WI, _WI
+        if any(ticker_upper.endswith(suffix) for suffix in ['-WI', '.WI', '/WI', '_WI']):
+            logger.debug(f"Filtering when-issued: {ticker}")
+            return True
+        
+        # Test/suspended tickers: starts with Z on some exchanges (but not Asian exchanges)
+        if ticker_upper.startswith('Z') and exchange not in self.ASIAN_HOME_EXCHANGES:
+            # Only filter if it looks like a test ticker (very short or has numbers)
+            if len(ticker) <= 2 or any(c.isdigit() for c in ticker):
+                logger.debug(f"Filtering test/suspended ticker: {ticker}")
+                return True
+        
+        # Allow all tickers from Asian home exchanges (including numeric ones)
+        if exchange in self.ASIAN_HOME_EXCHANGES:
+            return False
+        
+        # Allow all other tickers (US, Canada, legitimate European companies, etc.)
+        return False
     
     def fetch_all_stocks(self, limit: int = 10000, regions: List[str] = None) -> Dict[str, Dict[str, Any]]:
         """
@@ -88,17 +183,30 @@ class TradingViewFetcher:
                     # Fetch data (returns count and DataFrame)
                     count, df = q.get_scanner_data()
                     
-                    print(f"  ✓ {market}: {len(df)} stocks")
+                    fetched_count = len(df)
+                    filtered_count = 0
                     
                     # Convert DataFrame to dictionary keyed by ticker
                     for _, row in df.iterrows():
                         ticker = row.get('name')
+                        exchange = row.get('exchange')
+                        
                         if not ticker:
                             continue
                         
-                        # Skip duplicates
+                        # Apply hybrid filtering logic
+                        if self._should_skip_ticker(ticker, exchange):
+                            filtered_count += 1
+                            continue
+                        
+                        # Skip duplicates (in case same ticker appears in multiple markets)
                         if ticker not in all_results:
                             all_results[ticker] = self._normalize_row(row)
+                    
+                    if filtered_count > 0:
+                        print(f"  ✓ {market}: {len(df)} stocks ({filtered_count} filtered)")
+                    else:
+                        print(f"  ✓ {market}: {len(df)} stocks")
                     
                 except Exception as e:
                     logger.error(f"Error fetching {market} stocks: {e}")
