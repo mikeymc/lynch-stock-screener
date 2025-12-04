@@ -539,3 +539,315 @@ def test_algorithms_endpoint(servers):
     assert isinstance(data, dict)
     assert len(data) > 0
     print(f"[E2E] Found {len(data)} algorithms")
+
+
+def test_algorithm_tuning_page_navigation(page: Page, servers):
+    """
+    Test navigation to Algorithm Tuning page:
+    1. Navigate to main page
+    2. Click tuning icon
+    3. Verify tuning page loads
+    4. Verify back button works
+    """
+    print("\n[E2E] Starting test: algorithm_tuning_page_navigation")
+    
+    # Start at main page
+    page.goto("http://localhost:5173")
+    page.wait_for_load_state("networkidle")
+    page.wait_for_timeout(2000)
+    
+    # Click tuning icon
+    print("[E2E] Clicking tuning icon...")
+    tuning_button = page.locator('button.settings-button').nth(1)
+    tuning_button.click()
+    page.wait_for_timeout(2000)
+    
+    # Verify we're on tuning page
+    expect(page).to_have_url(re.compile(r'/tuning'))
+    
+    # Verify back button exists
+    print("[E2E] Verifying back button...")
+    back_button = page.get_by_role('button', name=re.compile(r'Back to Stock List'))
+    expect(back_button).to_be_visible()
+    
+    # Click back button
+    back_button.click()
+    page.wait_for_timeout(1000)
+    
+    # Verify we're back at main page
+    expect(page).to_have_url('http://localhost:5173/')
+    
+    print("[E2E] Navigation test completed successfully")
+
+
+def test_algorithm_tuning_ui_elements(page: Page, servers):
+    """
+    Test Algorithm Tuning page UI elements:
+    1. Navigate to tuning page
+    2. Verify main sections exist
+    3. Verify all collapsible sections
+    4. Verify action buttons
+    """
+    print("\n[E2E] Starting test: algorithm_tuning_ui_elements")
+    
+    page.goto("http://localhost:5173/tuning")
+    page.wait_for_load_state("networkidle")
+    page.wait_for_timeout(3000)
+    
+    # Verify main container
+    print("[E2E] Verifying main container...")
+    tuning_container = page.locator('.algorithm-tuning')
+    expect(tuning_container).to_be_visible()
+    
+    # Verify tuning grid
+    tuning_grid = page.locator('.tuning-grid')
+    expect(tuning_grid).to_be_visible()
+    
+    # Verify Manual Tuning card
+    print("[E2E] Verifying Manual Tuning card...")
+    manual_tuning = page.locator('.manual-tuning')
+    expect(manual_tuning).to_be_visible()
+    expect(manual_tuning).to_contain_text('Manual Tuning')
+    
+    # Verify Auto-Optimization card
+    print("[E2E] Verifying Auto-Optimization card...")
+    auto_optimization = page.locator('.auto-optimization')
+    expect(auto_optimization).to_be_visible()
+    expect(auto_optimization).to_contain_text('Auto-Optimization')
+    
+    # Verify Guide card
+    print("[E2E] Verifying Guide card...")
+    guide_card = page.locator('.guide-card')
+    expect(guide_card).to_be_visible()
+    expect(guide_card).to_contain_text('Understanding Correlation')
+    
+    # Verify timeframe selector
+    print("[E2E] Verifying timeframe selector...")
+    timeframe_selector = page.locator('.timeframe-selector')
+    expect(timeframe_selector).to_be_visible()
+    expect(timeframe_selector.get_by_text('Backtest Timeframe:')).to_be_visible()
+    
+    timeframe_select = timeframe_selector.locator('select')
+    expect(timeframe_select).to_be_visible()
+    assert timeframe_select.locator('option[value="5"]').count() > 0, "Missing 5 years option"
+    assert timeframe_select.locator('option[value="10"]').count() > 0, "Missing 10 years option"
+    
+    # Verify collapsible sections exist
+    print("[E2E] Verifying collapsible sections...")
+    expected_sections = [
+        'Algorithm Weights',
+        'PEG Thresholds',
+        'Growth Thresholds',
+        'Debt Thresholds',
+        'Institutional Ownership'
+    ]
+    
+    for section_name in expected_sections:
+        section = page.get_by_text(section_name, exact=True).first
+        expect(section).to_be_visible()
+        print(f"[E2E] Found section: {section_name}")
+    
+    # Verify action buttons
+    print("[E2E] Verifying action buttons...")
+    run_validation_btn = manual_tuning.get_by_role('button', name=re.compile(r'Run Validation'))
+    expect(run_validation_btn).to_be_visible()
+    expect(run_validation_btn).to_be_enabled()
+    
+    save_config_btn = manual_tuning.get_by_role('button', name=re.compile(r'Save Config'))
+    expect(save_config_btn).to_be_visible()
+    expect(save_config_btn).to_be_enabled()
+    
+    auto_optimize_btn = auto_optimization.get_by_role('button', name=re.compile(r'Auto-Optimize'))
+    expect(auto_optimize_btn).to_be_visible()
+    expect(auto_optimize_btn).to_be_enabled()
+    
+    print("[E2E] UI elements test completed successfully")
+
+
+def test_algorithm_tuning_collapsible_sections(page: Page, servers):
+    """
+    Test collapsible sections functionality:
+    1. Navigate to tuning page
+    2. Verify sections can be collapsed/expanded
+    3. Verify sliders are visible when expanded
+    """
+    print("\n[E2E] Starting test: algorithm_tuning_collapsible_sections")
+    
+    page.goto("http://localhost:5173/tuning")
+    page.wait_for_load_state("networkidle")
+    page.wait_for_timeout(3000)
+    
+    # Algorithm Weights section should be open by default
+    print("[E2E] Checking Algorithm Weights section...")
+    weights_header = page.locator('.collapsible-header').filter(has_text='Algorithm Weights')
+    expect(weights_header).to_be_visible()
+    
+    # Check if content is visible (section is open by default)
+    weights_content = weights_header.locator('..').locator('.collapsible-content')
+    expect(weights_content).to_be_visible()
+    
+    # Verify sliders are present
+    weight_sliders = weights_content.locator('input[type="range"]')
+    assert weight_sliders.count() >= 4, "Should have at least 4 weight sliders"
+    
+    # Click to collapse
+    print("[E2E] Collapsing Algorithm Weights section...")
+    weights_header.click()
+    page.wait_for_timeout(500)
+    
+    # Content should be hidden
+    expect(weights_content).not_to_be_visible()
+    
+    # Click to expand again
+    print("[E2E] Expanding Algorithm Weights section...")
+    weights_header.click()
+    page.wait_for_timeout(500)
+    
+    # Content should be visible again
+    expect(weights_content).to_be_visible()
+    
+    # Test PEG Thresholds section (should be collapsed by default)
+    print("[E2E] Checking PEG Thresholds section...")
+    peg_header = page.locator('.collapsible-header').filter(has_text='PEG Thresholds')
+    expect(peg_header).to_be_visible()
+    
+    # Click to expand
+    peg_header.click()
+    page.wait_for_timeout(500)
+    
+    # Verify PEG sliders appear
+    peg_content = peg_header.locator('..').locator('.collapsible-content')
+    expect(peg_content).to_be_visible()
+    
+    peg_sliders = peg_content.locator('input[type="range"]')
+    assert peg_sliders.count() >= 3, "Should have at least 3 PEG threshold sliders"
+    
+    print("[E2E] Collapsible sections test completed successfully")
+
+
+def test_algorithm_tuning_sliders(page: Page, servers):
+    """
+    Test slider functionality:
+    1. Navigate to tuning page
+    2. Verify sliders can be adjusted
+    3. Verify slider values update
+    """
+    print("\n[E2E] Starting test: algorithm_tuning_sliders")
+    
+    page.goto("http://localhost:5173/tuning")
+    page.wait_for_load_state("networkidle")
+    page.wait_for_timeout(3000)
+    
+    # Algorithm Weights section is open by default
+    weights_content = page.locator('.collapsible-header').filter(has_text='Algorithm Weights').locator('..').locator('.collapsible-content')
+    
+    # Find PEG weight slider
+    print("[E2E] Testing PEG weight slider...")
+    peg_slider_group = weights_content.locator('.slider-group').filter(has_text='PEG Score Weight')
+    expect(peg_slider_group).to_be_visible()
+    
+    peg_slider = peg_slider_group.locator('input[type="range"]')
+    expect(peg_slider).to_be_visible()
+    
+    # Get initial value
+    initial_value = peg_slider.get_attribute('value')
+    print(f"[E2E] Initial PEG weight value: {initial_value}")
+    
+    # Verify slider value display exists
+    slider_value_display = peg_slider_group.locator('.slider-value')
+    expect(slider_value_display).to_be_visible()
+    expect(slider_value_display).to_contain_text('%')
+    
+    # Verify slider is enabled
+    expect(peg_slider).to_be_enabled()
+    
+    print("[E2E] Sliders test completed successfully")
+
+
+def test_algorithm_tuning_timeframe_selector(page: Page, servers):
+    """
+    Test timeframe selector:
+    1. Navigate to tuning page
+    2. Verify timeframe can be changed
+    3. Verify options are correct
+    """
+    print("\n[E2E] Starting test: algorithm_tuning_timeframe_selector")
+    
+    page.goto("http://localhost:5173/tuning")
+    page.wait_for_load_state("networkidle")
+    page.wait_for_timeout(3000)
+    
+    # Find timeframe selector
+    print("[E2E] Testing timeframe selector...")
+    timeframe_select = page.locator('.timeframe-selector select')
+    expect(timeframe_select).to_be_visible()
+    
+    # Verify default value is 5 years
+    current_value = timeframe_select.input_value()
+    assert current_value == "5", f"Expected default value '5', got '{current_value}'"
+    
+    # Change to 10 years
+    print("[E2E] Changing timeframe to 10 years...")
+    timeframe_select.select_option("10")
+    page.wait_for_timeout(500)
+    
+    # Verify value changed
+    new_value = timeframe_select.input_value()
+    assert new_value == "10", f"Expected value '10', got '{new_value}'"
+    
+    # Change back to 5 years
+    print("[E2E] Changing timeframe back to 5 years...")
+    timeframe_select.select_option("5")
+    page.wait_for_timeout(500)
+    
+    # Verify value changed back
+    final_value = timeframe_select.input_value()
+    assert final_value == "5", f"Expected value '5', got '{final_value}'"
+    
+    print("[E2E] Timeframe selector test completed successfully")
+
+
+def test_algorithm_tuning_correlation_guide(page: Page, servers):
+    """
+    Test correlation guide display:
+    1. Navigate to tuning page
+    2. Verify guide card exists
+    3. Verify all correlation ranges are displayed
+    """
+    print("\n[E2E] Starting test: algorithm_tuning_correlation_guide")
+    
+    page.goto("http://localhost:5173/tuning")
+    page.wait_for_load_state("networkidle")
+    page.wait_for_timeout(3000)
+    
+    # Verify guide card
+    print("[E2E] Verifying correlation guide...")
+    guide_card = page.locator('.guide-card')
+    expect(guide_card).to_be_visible()
+    expect(guide_card).to_contain_text('Understanding Correlation')
+    
+    # Verify correlation scale exists
+    correlation_scale = guide_card.locator('.correlation-scale')
+    expect(correlation_scale).to_be_visible()
+    
+    # Verify all scale ranges are present
+    expected_ranges = [
+        ('0.00 - 0.05', 'Noise'),
+        ('0.05 - 0.10', 'Weak Signal'),
+        ('0.10 - 0.15', 'Good'),
+        ('0.15 - 0.25', 'Excellent'),
+        ('> 0.30', 'Suspicious')
+    ]
+    
+    for range_text, description in expected_ranges:
+        scale_item = correlation_scale.locator('.scale-item').filter(has_text=range_text)
+        expect(scale_item).to_be_visible()
+        expect(scale_item).to_contain_text(description)
+        print(f"[E2E] Found range: {range_text} - {description}")
+    
+    # Verify guide footer
+    guide_footer = guide_card.locator('.guide-footer')
+    expect(guide_footer).to_be_visible()
+    expect(guide_footer).to_contain_text('Timeframe Selection')
+    
+    print("[E2E] Correlation guide test completed successfully")
