@@ -1418,30 +1418,145 @@ class Database:
     def get_news_cache_status(self, symbol: str) -> Optional[Dict[str, Any]]:
         """
         Check if we have cached news for a symbol and when it was last updated
-        
+
         Args:
             symbol: Stock symbol
-            
+
         Returns:
             Dict with cache info or None if no cache
         """
         conn = self.get_connection()
         cursor = conn.cursor()
-        
+
         cursor.execute("""
             SELECT COUNT(*), MAX(last_updated)
             FROM news_articles
             WHERE symbol = %s
         """, (symbol,))
-        
+
         row = cursor.fetchone()
         self.return_connection(conn)
-        
+
         if not row or row[0] == 0:
             return None
-        
+
         return {
             'article_count': row[0],
+            'last_updated': row[1]
+        }
+
+    def save_material_event(self, symbol: str, event_data: Dict[str, Any]):
+        """
+        Save a material event (8-K) to database
+
+        Args:
+            symbol: Stock symbol
+            event_data: Dict containing event data (event_type, headline, etc.)
+        """
+        sql = """
+            INSERT INTO material_events
+            (symbol, event_type, headline, description, source, url,
+             filing_date, datetime, published_date, sec_accession_number,
+             sec_item_codes, last_updated)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            ON CONFLICT (symbol, sec_accession_number)
+            DO UPDATE SET
+                headline = EXCLUDED.headline,
+                description = EXCLUDED.description,
+                last_updated = EXCLUDED.last_updated
+        """
+        args = (
+            symbol,
+            event_data.get('event_type', '8k'),
+            event_data.get('headline'),
+            event_data.get('description'),
+            event_data.get('source', 'SEC'),
+            event_data.get('url'),
+            event_data.get('filing_date'),
+            event_data.get('datetime'),
+            event_data.get('published_date'),
+            event_data.get('sec_accession_number'),
+            event_data.get('sec_item_codes', []),
+            datetime.now()
+        )
+        self.write_queue.put((sql, args))
+
+    def get_material_events(self, symbol: str, limit: Optional[int] = None) -> List[Dict[str, Any]]:
+        """
+        Get material events for a stock, ordered by date descending (most recent first)
+
+        Args:
+            symbol: Stock symbol
+            limit: Optional limit on number of events to return
+
+        Returns:
+            List of event dicts
+        """
+        conn = self.get_connection()
+        cursor = conn.cursor()
+
+        query = """
+            SELECT id, symbol, event_type, headline, description, source, url,
+                   filing_date, datetime, published_date, sec_accession_number,
+                   sec_item_codes, last_updated
+            FROM material_events
+            WHERE symbol = %s
+            ORDER BY datetime DESC
+        """
+
+        if limit:
+            query += f" LIMIT {limit}"
+
+        cursor.execute(query, (symbol,))
+        rows = cursor.fetchall()
+        self.return_connection(conn)
+
+        return [
+            {
+                'id': row[0],
+                'symbol': row[1],
+                'event_type': row[2],
+                'headline': row[3],
+                'description': row[4],
+                'source': row[5],
+                'url': row[6],
+                'filing_date': row[7].isoformat() if row[7] else None,
+                'datetime': row[8],
+                'published_date': row[9].isoformat() if row[9] else None,
+                'sec_accession_number': row[10],
+                'sec_item_codes': row[11] or [],
+                'last_updated': row[12].isoformat() if row[12] else None
+            }
+            for row in rows
+        ]
+
+    def get_material_events_cache_status(self, symbol: str) -> Optional[Dict[str, Any]]:
+        """
+        Check if we have cached material events for a symbol and when they were last updated
+
+        Args:
+            symbol: Stock symbol
+
+        Returns:
+            Dict with cache info or None if no cache
+        """
+        conn = self.get_connection()
+        cursor = conn.cursor()
+
+        cursor.execute("""
+            SELECT COUNT(*), MAX(last_updated)
+            FROM material_events
+            WHERE symbol = %s
+        """, (symbol,))
+
+        row = cursor.fetchone()
+        self.return_connection(conn)
+
+        if not row or row[0] == 0:
+            return None
+
+        return {
+            'event_count': row[0],
             'last_updated': row[1]
         }
 
