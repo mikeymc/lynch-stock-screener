@@ -1363,15 +1363,17 @@ def get_lynch_analysis(symbol):
 
     # Get or generate analysis
     try:
-        # Fetch news articles for context
+        # Fetch material events and news articles for context
+        material_events = db.get_material_events(symbol, limit=10)
         news_articles = db.get_news_articles(symbol, limit=20)
-        
+
         analysis_text = lynch_analyst.get_or_generate_analysis(
             symbol,
             stock_data,
             history,
             sections=sections,
             news=news_articles,
+            material_events=material_events,
             use_cache=True
         )
 
@@ -1424,15 +1426,17 @@ def refresh_lynch_analysis(symbol):
 
     # Force regeneration
     try:
-        # Fetch news articles for context
+        # Fetch material events and news articles for context
+        material_events = db.get_material_events(symbol, limit=10)
         news_articles = db.get_news_articles(symbol, limit=20)
-        
+
         analysis_text = lynch_analyst.get_or_generate_analysis(
             symbol,
             stock_data,
             history,
             sections=sections,
             news=news_articles,
+            material_events=material_events,
             use_cache=False
         )
 
