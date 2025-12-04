@@ -91,15 +91,9 @@ def test_app_initialization_and_ui_elements(page: Page, servers):
     expect(filter_button).to_be_visible()
     expect(filter_button).to_have_attribute('title', 'Advanced Filters')
     
-    # Verify settings icon button
-    print("[E2E] Checking settings icon button...")
-    settings_button = controls.locator('button.settings-button').first
-    expect(settings_button).to_be_visible()
-    expect(settings_button).to_have_attribute('title', 'Settings')
-    
     # Verify tuning icon button
     print("[E2E] Checking tuning icon button...")
-    tuning_button = controls.locator('button.settings-button').nth(1)
+    tuning_button = controls.locator('button.settings-button').nth(0)
     expect(tuning_button).to_be_visible()
     expect(tuning_button).to_have_attribute('title', 'Tune Algorithm')
     
@@ -558,7 +552,7 @@ def test_algorithm_tuning_page_navigation(page: Page, servers):
     
     # Click tuning icon
     print("[E2E] Clicking tuning icon...")
-    tuning_button = page.locator('button.settings-button').nth(1)
+    tuning_button = page.locator('button.settings-button').nth(0)
     tuning_button.click()
     page.wait_for_timeout(2000)
     
