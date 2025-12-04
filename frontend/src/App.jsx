@@ -15,7 +15,7 @@ import LynchAnalysis from './components/LynchAnalysis'
 import ChatInterface from './components/ChatInterface'
 import StockDetail from './pages/StockDetail'
 import Settings from './pages/Settings'
-import Backtest from './pages/Backtest'
+
 import AlgorithmTuning from './pages/AlgorithmTuning'
 import AlgorithmSelector from './components/AlgorithmSelector'
 import StatusBar from './components/StatusBar'
@@ -784,17 +784,7 @@ function StockListView({
           </svg>
         </button>
 
-        <button
-          onClick={() => navigate('/backtest')}
-          className="settings-button"
-          title="Backtest Strategy"
-          style={{ marginLeft: '5px' }}
-        >
-          <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <polyline points="23 18 13.5 8.5 8.5 13.5 1 6"></polyline>
-            <polyline points="17 18 23 18 23 12"></polyline>
-          </svg>
-        </button>
+
 
         <button
           onClick={() => navigate('/tuning')}
@@ -1062,7 +1052,7 @@ function App() {
       <Route path="/settings" element={
         <Settings />
       } />
-      <Route path="/backtest" element={<Backtest />} />
+
       <Route path="/tuning" element={<AlgorithmTuning />} />
     </Routes>
   )
