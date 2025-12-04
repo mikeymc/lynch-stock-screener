@@ -803,6 +803,25 @@ class EdgarFetcher:
         annual_shares = list(annual_shares_by_year.values())
         annual_shares.sort(key=lambda x: x['year'], reverse=True)
 
+        # Normalize shares units: EDGAR reports shares in inconsistent units
+        # Some companies report in millions (e.g., 721.9) vs actual count (e.g., 721,900,000)
+        # This is due to inline XBRL (iXBRL) format adoption around 2021-2022
+        # Heuristic: shares < 10,000 are assumed to be in millions
+        normalized_count = 0
+        for entry in annual_shares:
+            shares = entry['shares']
+            
+            # Detect if shares are in millions (no public company has < 10,000 actual shares)
+            if shares < 10_000:
+                # Convert millions to actual shares
+                original_shares = shares
+                entry['shares'] = shares * 1_000_000
+                normalized_count += 1
+                logger.info(f"Normalized shares for year {entry['year']}: {original_shares:.2f}M -> {entry['shares']:,.0f}")
+        
+        if normalized_count > 0:
+            logger.info(f"Total years normalized from millions to actual: {normalized_count}/{len(annual_shares)}")
+
         # Detect and apply stock splits to historical data
         # If shares jump significantly (>1.5x) between consecutive years, it's likely a stock split
         # Apply the split ratio backwards to earlier years
@@ -927,6 +946,26 @@ class EdgarFetcher:
 
         # Add Q4 from annual reports
         annual_by_year = {entry['year']: entry for entry in annual_shares}
+
+        # Normalize shares units for both quarterly and annual data (same heuristic as annual)
+        normalized_quarterly = 0
+        for entry in quarterly_shares:
+            if entry['shares'] < 10_000:
+                original = entry['shares']
+                entry['shares'] = original * 1_000_000
+                normalized_quarterly += 1
+                logger.debug(f"Normalized quarterly shares for {entry['year']} {entry['quarter']}: {original:.2f}M -> {entry['shares']:,.0f}")
+        
+        normalized_annual_q4 = 0
+        for entry in annual_shares:
+            if entry['shares'] < 10_000:
+                original = entry['shares']
+                entry['shares'] = original * 1_000_000
+                normalized_annual_q4 += 1
+                logger.debug(f"Normalized annual Q4 shares for {entry['year']}: {original:.2f}M -> {entry['shares']:,.0f}")
+        
+        if normalized_quarterly > 0 or normalized_annual_q4 > 0:
+            logger.info(f"Quarterly shares normalization: {normalized_quarterly} quarters, {normalized_annual_q4} annual Q4s")
 
         for year, annual_entry in annual_by_year.items():
             # Add Q4 if we don't already have it from a 10-Q
