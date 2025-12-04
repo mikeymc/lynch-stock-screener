@@ -273,6 +273,253 @@ def test_search_functionality(page: Page, servers):
     print("[E2E] Search test completed successfully")
 
 
+def test_stock_detail_header_and_tabs(page: Page, servers):
+    """
+    Test stock detail page header and tab navigation:
+    1. Navigate to AAPL detail page
+    2. Verify header controls (Back, Refresh buttons)
+    3. Verify all tab buttons exist
+    4. Verify stock data table header
+    """
+    print("\n[E2E] Starting test: stock_detail_header_and_tabs")
+    
+    # Navigate directly to AAPL detail page
+    print("[E2E] Navigating to AAPL detail page...")
+    page.goto("http://localhost:5173/stock/AAPL")
+    page.wait_for_load_state("networkidle")
+    page.wait_for_timeout(3000)  # Wait for data to load
+    
+    # Verify controls
+    print("[E2E] Verifying header controls...")
+    controls = page.locator('.controls')
+    expect(controls).to_be_visible()
+    
+    # Verify Back button
+    back_button = controls.get_by_role('button', name='Back to List')
+    expect(back_button).to_be_visible()
+    expect(back_button).to_be_enabled()
+    
+    # Verify Refresh button
+    refresh_button = controls.get_by_role('button', name='Refresh Data')
+    expect(refresh_button).to_be_visible()
+    expect(refresh_button).to_be_enabled()
+    
+    # Verify all tab buttons
+    print("[E2E] Verifying tab buttons...")
+    expected_tabs = ['Charts', 'DCF Analysis', 'Reports', 'Analysis & Chat', 'News', 'Material Events']
+    for tab_name in expected_tabs:
+        tab_button = controls.get_by_role('button', name=tab_name)
+        expect(tab_button).to_be_visible()
+        print(f"[E2E] Found tab: {tab_name}")
+    
+    # Verify Charts tab is active by default
+    charts_tab = controls.get_by_role('button', name='Charts')
+    expect(charts_tab).to_have_class(re.compile(r'active'))
+    
+    # Verify stock data table
+    print("[E2E] Verifying stock data table...")
+    sticky_header = page.locator('.sticky-header')
+    expect(sticky_header).to_be_visible()
+    
+    table = sticky_header.locator('table')
+    expect(table).to_be_visible()
+    
+    # Verify stock row contains AAPL
+    tbody = table.locator('tbody')
+    expect(tbody).to_contain_text('AAPL')
+    expect(tbody).to_contain_text('Apple', ignore_case=True)
+    
+    print("[E2E] Header and tabs test completed successfully")
+
+
+def test_stock_detail_charts_tab(page: Page, servers):
+    """
+    Test the Charts tab on stock detail page:
+    1. Navigate to AAPL
+    2. Verify Charts tab is active
+    3. Verify chart elements are present
+    """
+    print("\n[E2E] Starting test: stock_detail_charts_tab")
+    
+    page.goto("http://localhost:5173/stock/AAPL")
+    page.wait_for_load_state("networkidle")
+    page.wait_for_timeout(3000)
+    
+    # Ensure Charts tab is active
+    print("[E2E] Verifying Charts tab...")
+    charts_tab = page.get_by_role('button', name='Charts')
+    expect(charts_tab).to_have_class(re.compile(r'active'))
+    
+    # Verify tabs content container
+    tabs_content = page.locator('.tabs-content')
+    expect(tabs_content).to_be_visible()
+    
+    # Charts should be visible (StockCharts component)
+    # Look for chart-specific elements
+    print("[E2E] Checking for chart elements...")
+    # The charts component should render canvas elements or chart containers
+    page.wait_for_timeout(2000)  # Wait for charts to render
+    
+    # Verify some content is present (charts load dynamically)
+    expect(tabs_content).not_to_be_empty()
+    
+    print("[E2E] Charts tab test completed successfully")
+
+
+def test_stock_detail_dcf_tab(page: Page, servers):
+    """
+    Test the DCF Analysis tab:
+    1. Navigate to AAPL
+    2. Click DCF Analysis tab
+    3. Verify DCF content is displayed
+    """
+    print("\n[E2E] Starting test: stock_detail_dcf_tab")
+    
+    page.goto("http://localhost:5173/stock/AAPL")
+    page.wait_for_load_state("networkidle")
+    page.wait_for_timeout(3000)
+    
+    # Click DCF Analysis tab
+    print("[E2E] Clicking DCF Analysis tab...")
+    dcf_tab = page.get_by_role('button', name='DCF Analysis')
+    dcf_tab.click()
+    page.wait_for_timeout(2000)
+    
+    # Verify tab is active
+    expect(dcf_tab).to_have_class(re.compile(r'active'))
+    
+    # Verify DCF content is visible
+    print("[E2E] Verifying DCF content...")
+    tabs_content = page.locator('.tabs-content')
+    expect(tabs_content).to_be_visible()
+    expect(tabs_content).not_to_be_empty()
+    
+    print("[E2E] DCF tab test completed successfully")
+
+
+def test_stock_detail_reports_tab(page: Page, servers):
+    """
+    Test the Reports tab:
+    1. Navigate to AAPL
+    2. Click Reports tab
+    3. Verify reports content loads
+    """
+    print("\n[E2E] Starting test: stock_detail_reports_tab")
+    
+    page.goto("http://localhost:5173/stock/AAPL")
+    page.wait_for_load_state("networkidle")
+    page.wait_for_timeout(3000)
+    
+    # Click Reports tab
+    print("[E2E] Clicking Reports tab...")
+    reports_tab = page.get_by_role('button', name='Reports')
+    reports_tab.click()
+    page.wait_for_timeout(3000)  # Reports may take time to load
+    
+    # Verify tab is active
+    expect(reports_tab).to_have_class(re.compile(r'active'))
+    
+    # Verify reports content
+    print("[E2E] Verifying Reports content...")
+    tabs_content = page.locator('.tabs-content')
+    expect(tabs_content).to_be_visible()
+    
+    print("[E2E] Reports tab test completed successfully")
+
+
+def test_stock_detail_analysis_chat_tab(page: Page, servers):
+    """
+    Test the Analysis & Chat tab:
+    1. Navigate to AAPL
+    2. Click Analysis & Chat tab
+    3. Verify chat interface is present
+    """
+    print("\n[E2E] Starting test: stock_detail_analysis_chat_tab")
+    
+    page.goto("http://localhost:5173/stock/AAPL")
+    page.wait_for_load_state("networkidle")
+    page.wait_for_timeout(3000)
+    
+    # Click Analysis & Chat tab
+    print("[E2E] Clicking Analysis & Chat tab...")
+    analysis_tab = page.get_by_role('button', name='Analysis & Chat')
+    analysis_tab.click()
+    page.wait_for_timeout(2000)
+    
+    # Verify tab is active
+    expect(analysis_tab).to_have_class(re.compile(r'active'))
+    
+    # Verify analysis/chat content
+    print("[E2E] Verifying Analysis & Chat content...")
+    tabs_content = page.locator('.tabs-content')
+    expect(tabs_content).to_be_visible()
+    expect(tabs_content).not_to_be_empty()
+    
+    print("[E2E] Analysis & Chat tab test completed successfully")
+
+
+def test_stock_detail_news_tab(page: Page, servers):
+    """
+    Test the News tab:
+    1. Navigate to AAPL
+    2. Click News tab
+    3. Verify news articles are displayed
+    """
+    print("\n[E2E] Starting test: stock_detail_news_tab")
+    
+    page.goto("http://localhost:5173/stock/AAPL")
+    page.wait_for_load_state("networkidle")
+    page.wait_for_timeout(3000)
+    
+    # Click News tab
+    print("[E2E] Clicking News tab...")
+    news_tab = page.get_by_role('button', name='News')
+    news_tab.click()
+    page.wait_for_timeout(2000)
+    
+    # Verify tab is active
+    expect(news_tab).to_have_class(re.compile(r'active'))
+    
+    # Verify news content
+    print("[E2E] Verifying News content...")
+    tabs_content = page.locator('.tabs-content')
+    expect(tabs_content).to_be_visible()
+    expect(tabs_content).not_to_be_empty()
+    
+    print("[E2E] News tab test completed successfully")
+
+
+def test_stock_detail_material_events_tab(page: Page, servers):
+    """
+    Test the Material Events tab:
+    1. Navigate to AAPL
+    2. Click Material Events tab
+    3. Verify events are displayed
+    """
+    print("\n[E2E] Starting test: stock_detail_material_events_tab")
+    
+    page.goto("http://localhost:5173/stock/AAPL")
+    page.wait_for_load_state("networkidle")
+    page.wait_for_timeout(3000)
+    
+    # Click Material Events tab
+    print("[E2E] Clicking Material Events tab...")
+    events_tab = page.get_by_role('button', name='Material Events')
+    events_tab.click()
+    page.wait_for_timeout(2000)
+    
+    # Verify tab is active
+    expect(events_tab).to_have_class(re.compile(r'active'))
+    
+    # Verify events content
+    print("[E2E] Verifying Material Events content...")
+    tabs_content = page.locator('.tabs-content')
+    expect(tabs_content).to_be_visible()
+    expect(tabs_content).not_to_be_empty()
+    
+    print("[E2E] Material Events tab test completed successfully")
+
+
 def test_backend_api_health(servers):
     """Test that the backend API is responding correctly."""
     print("\n[E2E] Testing backend health endpoint...")
