@@ -994,7 +994,7 @@ function App() {
   const [filter, setFilter] = useState('all')
   const [searchQuery, setSearchQuery] = useState('')
   const [currentPage, setCurrentPage] = useState(1)
-  const [sortBy, setSortBy] = useState('symbol')
+  const [sortBy, setSortBy] = useState('overall_status')
   const [sortDir, setSortDir] = useState('asc')
   const [watchlist, setWatchlist] = useState(new Set())
   const [algorithm, setAlgorithm] = useState('weighted')
