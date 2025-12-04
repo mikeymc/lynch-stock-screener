@@ -15,8 +15,18 @@ from playwright.sync_api import Page
 
 @pytest.fixture(scope="session")
 def backend_server():
-    """Start the Flask backend server for the test session."""
-    print("\n[E2E] Starting backend server...")
+    """Use existing backend server or start a new one for the test session."""
+    print("\n[E2E] Checking for existing backend server...")
+    
+    # Check if backend is already running
+    try:
+        response = requests.get('http://localhost:8080/api/health', timeout=2)
+        if response.status_code == 200:
+            print("[E2E] Using existing backend server on port 8080")
+            yield None  # No process to manage
+            return
+    except (requests.ConnectionError, requests.Timeout):
+        print("[E2E] No existing backend found, starting new one...")
     
     # Set environment variables for the backend
     env = os.environ.copy()
@@ -35,7 +45,8 @@ def backend_server():
         cwd='/Users/mikey/workspace/lynch-stock-screener',
         env=env,
         stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE
+        stderr=subprocess.PIPE,
+        text=True
     )
     
     # Wait for backend to be ready
@@ -48,8 +59,12 @@ def backend_server():
                 break
         except (requests.ConnectionError, requests.Timeout):
             if i == max_retries - 1:
+                # Get stderr output for debugging
+                stderr_output = backend_process.stderr.read() if backend_process.stderr else "No stderr available"
+                stdout_output = backend_process.stdout.read() if backend_process.stdout else "No stdout available"
                 backend_process.kill()
-                raise Exception("Backend server failed to start")
+                error_msg = f"Backend server failed to start.\nSTDOUT:\n{stdout_output}\nSTDERR:\n{stderr_output}"
+                raise Exception(error_msg)
             time.sleep(1)
     
     yield backend_process
@@ -65,8 +80,18 @@ def backend_server():
 
 @pytest.fixture(scope="session")
 def frontend_server():
-    """Start the Vite frontend dev server for the test session."""
-    print("\n[E2E] Starting frontend server...")
+    """Use existing frontend server or start a new one for the test session."""
+    print("\n[E2E] Checking for existing frontend server...")
+    
+    # Check if frontend is already running
+    try:
+        response = requests.get('http://localhost:5173', timeout=2)
+        if response.status_code == 200:
+            print("[E2E] Using existing frontend server on port 5173")
+            yield None  # No process to manage
+            return
+    except (requests.ConnectionError, requests.Timeout):
+        print("[E2E] No existing frontend found, starting new one...")
     
     # Start frontend process
     frontend_process = subprocess.Popen(

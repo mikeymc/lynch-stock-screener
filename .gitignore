@@ -62,3 +62,5 @@ backend/finviz_institutional_cache.json
 # SEC cache
 sec_cache/
 
+# Tests
+screenshots/
