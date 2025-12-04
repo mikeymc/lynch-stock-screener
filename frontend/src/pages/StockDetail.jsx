@@ -12,6 +12,7 @@ import AlgorithmSelector from '../components/AlgorithmSelector'
 import ErrorBoundary from '../components/ErrorBoundary'
 import DCFAnalysis from '../components/DCFAnalysis'
 import StockNews from '../components/StockNews'
+import MaterialEvents from '../components/MaterialEvents'
 
 const API_BASE = '/api'
 
@@ -33,6 +34,8 @@ export default function StockDetail({ watchlist, toggleWatchlist }) {
   const [loadingSections, setLoadingSections] = useState(false)
   const [newsData, setNewsData] = useState(null)
   const [loadingNews, setLoadingNews] = useState(false)
+  const [materialEventsData, setMaterialEventsData] = useState(null)
+  const [loadingMaterialEvents, setLoadingMaterialEvents] = useState(false)
 
 
 
@@ -153,6 +156,29 @@ export default function StockDetail({ watchlist, toggleWatchlist }) {
     fetchNewsData()
   }, [stock, symbol])
 
+  // Fetch material events data
+  useEffect(() => {
+    if (!stock) return
+
+    const fetchMaterialEvents = async () => {
+      setLoadingMaterialEvents(true)
+      try {
+        const response = await fetch(`${API_BASE}/stock/${symbol}/material-events`)
+        if (response.ok) {
+          const data = await response.json()
+          setMaterialEventsData(data)
+        }
+      } catch (err) {
+        console.error('Error fetching material events:', err)
+        setMaterialEventsData(null)
+      } finally {
+        setLoadingMaterialEvents(false)
+      }
+    }
+
+    fetchMaterialEvents()
+  }, [stock, symbol])
+
 
 
   const handleRefresh = async () => {
@@ -168,6 +194,7 @@ export default function StockDetail({ watchlist, toggleWatchlist }) {
           setFilingsData(null)
           setSectionsData(null)
           setNewsData(null)
+          setMaterialEventsData(null)
         }
       }
     } catch (err) {
@@ -233,6 +260,12 @@ export default function StockDetail({ watchlist, toggleWatchlist }) {
           >
             News
           </button>
+          <button
+            className={`tab-button ${activeTab === 'events' ? 'active' : ''}`}
+            onClick={() => setActiveTab('events')}
+          >
+            Material Events
+          </button>
         </div>
       </div>
 
@@ -288,6 +321,10 @@ export default function StockDetail({ watchlist, toggleWatchlist }) {
 
                 {activeTab === 'news' && (
                   <StockNews newsData={newsData} loading={loadingNews} />
+                )}
+
+                {activeTab === 'events' && (
+                  <MaterialEvents eventsData={materialEventsData} loading={loadingMaterialEvents} />
                 )}
               </div>
             </div>
