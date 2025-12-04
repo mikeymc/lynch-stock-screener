@@ -108,18 +108,19 @@ class LynchAnalyst:
                 
         return template_vars
 
-    def format_prompt(self, stock_data: Dict[str, Any], history: List[Dict[str, Any]], sections: Optional[Dict[str, Any]] = None, news: Optional[List[Dict[str, Any]]] = None) -> str:
+    def format_prompt(self, stock_data: Dict[str, Any], history: List[Dict[str, Any]], sections: Optional[Dict[str, Any]] = None, news: Optional[List[Dict[str, Any]]] = None, material_events: Optional[List[Dict[str, Any]]] = None) -> str:
         """
         Format a prompt for Gemini to generate a Peter Lynch-style analysis
-        
+
         Args:
             stock_data: Dict containing current stock metrics
             history: List of historical earnings/revenue data
             sections: Optional dict of filing sections
             news: Optional list of news articles
+            material_events: Optional list of material events (8-K filings)
         """
         template_vars = self._prepare_template_vars(stock_data, history)
-        
+
         # Debug: print template vars to see what's None
         print(f"DEBUG: template_vars for {stock_data.get('symbol')}: {template_vars}")
 
@@ -133,6 +134,39 @@ class LynchAnalyst:
             print(f"Traceback:")
             traceback.print_exc()
             raise
+
+        # Append material events (8-K filings) if available - prioritize these before news
+        if material_events and len(material_events) > 0:
+            events_text = "\n\n---\n\n## Material Corporate Events (SEC 8-K Filings)\n\n"
+            events_text += "The following are official SEC 8-K filings disclosing material corporate events. These are highly significant and should be weighted heavily in your analysis.\n\n"
+
+            # Include up to 10 most recent events
+            for i, event in enumerate(material_events[:10], 1):
+                from datetime import datetime
+                filing_date = event.get('filing_date', 'Unknown date')
+                if filing_date != 'Unknown date':
+                    try:
+                        # Format the date nicely if it's a string
+                        if isinstance(filing_date, str):
+                            dt = datetime.fromisoformat(filing_date.replace('Z', '+00:00'))
+                            filing_date = dt.strftime('%B %d, %Y')
+                    except:
+                        pass
+
+                headline = event.get('headline', 'No headline')
+                description = event.get('description', '')
+                item_codes = event.get('sec_item_codes', [])
+                accession = event.get('sec_accession_number', 'N/A')
+
+                events_text += f"**{i}. {headline}** (Filed: {filing_date})\n"
+                events_text += f"   SEC Form 8-K | Accession: {accession}\n"
+                if item_codes:
+                    events_text += f"   Item Codes: {', '.join(item_codes)}\n"
+                if description:
+                    events_text += f"   {description}\n"
+                events_text += "\n"
+
+            formatted_prompt += events_text
 
         # Append news articles if available
         if news and len(news) > 0:
@@ -195,7 +229,7 @@ class LynchAnalyst:
 
         return formatted_prompt
 
-    def generate_analysis(self, stock_data: Dict[str, Any], history: List[Dict[str, Any]], sections: Optional[Dict[str, Any]] = None, news: Optional[List[Dict[str, Any]]] = None) -> str:
+    def generate_analysis(self, stock_data: Dict[str, Any], history: List[Dict[str, Any]], sections: Optional[Dict[str, Any]] = None, news: Optional[List[Dict[str, Any]]] = None, material_events: Optional[List[Dict[str, Any]]] = None) -> str:
         """
         Generate a new Peter Lynch-style analysis using Gemini AI
 
@@ -204,6 +238,7 @@ class LynchAnalyst:
             history: List of dicts containing historical earnings/revenue data
             sections: Optional dict of filing sections
             news: Optional list of news articles
+            material_events: Optional list of material events (8-K filings)
 
         Returns:
             Generated analysis text
@@ -211,7 +246,7 @@ class LynchAnalyst:
         Raises:
             Exception: If API call fails
         """
-        prompt = self.format_prompt(stock_data, history, sections, news)
+        prompt = self.format_prompt(stock_data, history, sections, news, material_events)
 
         model = genai.GenerativeModel(self.model_version)
         response = model.generate_content(prompt)
@@ -343,6 +378,7 @@ Write a ~200 word analysis in the style of Peter Lynch. Be conversational, insig
         history: List[Dict[str, Any]],
         sections: Optional[Dict[str, Any]] = None,
         news: Optional[List[Dict[str, Any]]] = None,
+        material_events: Optional[List[Dict[str, Any]]] = None,
         use_cache: bool = True
     ) -> str:
         """
@@ -354,6 +390,7 @@ Write a ~200 word analysis in the style of Peter Lynch. Be conversational, insig
             history: List of dicts containing historical earnings/revenue data
             sections: Optional dict of filing sections
             news: Optional list of news articles
+            material_events: Optional list of material events (8-K filings)
             use_cache: Whether to use cached analysis if available
 
         Returns:
@@ -366,7 +403,7 @@ Write a ~200 word analysis in the style of Peter Lynch. Be conversational, insig
                 return cached['analysis_text']
 
         # Generate new analysis
-        analysis_text = self.generate_analysis(stock_data, history, sections, news)
+        analysis_text = self.generate_analysis(stock_data, history, sections, news, material_events)
 
         # Save to cache
         self.db.save_lynch_analysis(symbol, analysis_text, self.model_version)

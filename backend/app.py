@@ -26,6 +26,7 @@ from correlation_analyzer import CorrelationAnalyzer
 from algorithm_optimizer import AlgorithmOptimizer
 from finnhub_news import FinnhubNewsClient
 from stock_rescorer import StockRescorer
+from sec_8k_client import SEC8KClient
 
 from algorithm_optimizer import AlgorithmOptimizer
 import logging
@@ -72,6 +73,10 @@ optimizer = AlgorithmOptimizer(db)
 # Initialize Finnhub client for news
 finnhub_api_key = os.environ.get('FINNHUB_API_KEY', 'd4nkaqpr01qk2nucd6q0d4nkaqpr01qk2nucd6qg')
 finnhub_client = FinnhubNewsClient(finnhub_api_key)
+
+# Initialize SEC 8-K client for material events
+sec_user_agent = os.environ.get('SEC_USER_AGENT', 'Lynch Stock Screener info@lynchstocks.com')
+sec_8k_client = SEC8KClient(sec_user_agent)
 
 # Track running validation/optimization jobs
 validation_jobs = {}
@@ -1197,6 +1202,112 @@ def refresh_stock_news(symbol):
         return jsonify({'error': f'Failed to refresh news: {str(e)}'}), 500
 
 
+@app.route('/api/stock/<symbol>/material-events', methods=['GET'])
+def get_material_events(symbol):
+    """
+    Get material events (8-K filings) for a stock (from cache or fetch fresh)
+    """
+    symbol = symbol.upper()
+
+    try:
+        # Check cache status
+        cache_status = db.get_material_events_cache_status(symbol)
+
+        # If we have cache and it's recent (< 24 hours), return it
+        if cache_status and cache_status['last_updated']:
+            from datetime import datetime, timedelta
+            last_updated = cache_status['last_updated']
+            age_hours = (datetime.now() - last_updated).total_seconds() / 3600
+
+            if age_hours < 24:
+                print(f"Returning cached material events for {symbol} ({cache_status['event_count']} events)")
+                events = db.get_material_events(symbol)
+                return jsonify({
+                    'events': events,
+                    'cached': True,
+                    'last_updated': cache_status['last_updated'].isoformat(),
+                    'event_count': cache_status['event_count']
+                })
+
+        # Cache is stale or doesn't exist, fetch fresh events
+        print(f"Fetching fresh material events (8-Ks) for {symbol} from SEC")
+        raw_events = sec_8k_client.fetch_recent_8ks(symbol)
+
+        if not raw_events:
+            return jsonify({
+                'events': [],
+                'cached': False,
+                'last_updated': datetime.now().isoformat(),
+                'event_count': 0
+            })
+
+        # Save events to database
+        for event in raw_events:
+            db.save_material_event(symbol, event)
+
+        # Wait for writes to complete
+        db.flush()
+
+        # Return fresh events
+        events = db.get_material_events(symbol)
+        print(f"Fetched and cached {len(events)} material events for {symbol}")
+
+        return jsonify({
+            'events': events,
+            'cached': False,
+            'last_updated': datetime.now().isoformat(),
+            'event_count': len(events)
+        })
+
+    except Exception as e:
+        print(f"Error fetching material events for {symbol}: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': f'Failed to fetch material events: {str(e)}'}), 500
+
+
+@app.route('/api/stock/<symbol>/material-events/refresh', methods=['POST'])
+def refresh_material_events(symbol):
+    """
+    Force refresh material events (8-K filings) for a stock from SEC
+    """
+    symbol = symbol.upper()
+
+    try:
+        print(f"Force refreshing material events for {symbol}")
+        raw_events = sec_8k_client.fetch_recent_8ks(symbol)
+
+        if not raw_events:
+            return jsonify({
+                'events': [],
+                'last_updated': datetime.now().isoformat(),
+                'event_count': 0
+            })
+
+        # Save events to database
+        for event in raw_events:
+            db.save_material_event(symbol, event)
+
+        # Wait for writes to complete
+        db.flush()
+
+        # Return fresh events
+        events = db.get_material_events(symbol)
+        print(f"Refreshed {len(events)} material events for {symbol}")
+
+        return jsonify({
+            'events': events,
+            'last_updated': datetime.now().isoformat(),
+            'event_count': len(events)
+        })
+
+    except Exception as e:
+        print(f"Error refreshing material events for {symbol}: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': f'Failed to refresh material events: {str(e)}'}), 500
+
+
 @app.route('/api/stock/<symbol>/lynch-analysis', methods=['GET'])
 def get_lynch_analysis(symbol):
     """
@@ -1252,15 +1363,17 @@ def get_lynch_analysis(symbol):
 
     # Get or generate analysis
     try:
-        # Fetch news articles for context
+        # Fetch material events and news articles for context
+        material_events = db.get_material_events(symbol, limit=10)
         news_articles = db.get_news_articles(symbol, limit=20)
-        
+
         analysis_text = lynch_analyst.get_or_generate_analysis(
             symbol,
             stock_data,
             history,
             sections=sections,
             news=news_articles,
+            material_events=material_events,
             use_cache=True
         )
 
@@ -1313,15 +1426,17 @@ def refresh_lynch_analysis(symbol):
 
     # Force regeneration
     try:
-        # Fetch news articles for context
+        # Fetch material events and news articles for context
+        material_events = db.get_material_events(symbol, limit=10)
         news_articles = db.get_news_articles(symbol, limit=20)
-        
+
         analysis_text = lynch_analyst.get_or_generate_analysis(
             symbol,
             stock_data,
             history,
             sections=sections,
             news=news_articles,
+            material_events=material_events,
             use_cache=False
         )
 
