@@ -7,17 +7,24 @@ const AlgorithmSelector = ({ selectedAlgorithm, onAlgorithmChange }) => {
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
+    const controller = new AbortController()
+    const signal = controller.signal
+
     // Fetch algorithm metadata from API
-    fetch('/api/algorithms')
+    fetch('/api/algorithms', { signal })
       .then(res => res.json())
       .then(data => {
         setAlgorithms(data)
         setLoading(false)
       })
       .catch(err => {
-        console.error('Error fetching algorithms:', err)
-        setLoading(false)
+        if (err.name !== 'AbortError') {
+          console.error('Error fetching algorithms:', err)
+          setLoading(false)
+        }
       })
+
+    return () => controller.abort()
   }, [])
 
   if (loading) {

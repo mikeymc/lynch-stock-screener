@@ -44,15 +44,7 @@ export default function StockCharts({ historyData, loading, symbol }) {
     setActiveIndex(null);
   }, []);
 
-  if (loading) {
-    return <div className="loading">Loading historical data...</div>
-  }
-
-  if (!historyData) {
-    return null
-  }
-
-  const labels = historyData.labels || historyData.years || []
+  const labels = historyData?.labels || historyData?.years || []
 
   // Plugin to draw a dashed zero line
   const zeroLinePlugin = {
@@ -158,224 +150,233 @@ export default function StockCharts({ historyData, loading, symbol }) {
         symbol={symbol}
         onAnalysisGenerated={(sections) => setAnalyses(sections)}
       />
-      {/* SECTION 1: Growth & Profitability */}
-      <div className="chart-section">
-        <h3 className="section-title">Growth & Profitability</h3>
-        <div className="charts-row">
-          {/* Revenue */}
-          <div className="chart-container">
-            <Line plugins={[zeroLinePlugin, crosshairPlugin]}
-              data={{
-                labels: labels,
-                datasets: [
-                  {
-                    label: 'Revenue (Billions)',
-                    data: historyData.revenue.map(r => r / 1e9),
-                    borderColor: 'rgb(75, 192, 192)',
-                    backgroundColor: 'rgba(75, 192, 192, 0.2)',
-                    pointRadius: activeIndex !== null ? 3 : 0, // Show points only on hover/active
-                    pointHoverRadius: 5
-                  }
-                ]
-              }}
-              options={createChartOptions('Revenue', 'Billions ($)')}
-            />
-          </div>
 
-          {/* Net Income */}
-          <div className="chart-container">
-            <Line plugins={[zeroLinePlugin, crosshairPlugin]}
-              data={{
-                labels: labels,
-                datasets: [
-                  {
-                    label: 'Net Income (Billions)',
-                    data: historyData.net_income?.map(ni => ni ? ni / 1e9 : null) || [],
-                    borderColor: 'rgb(153, 102, 255)',
-                    backgroundColor: 'rgba(153, 102, 255, 0.2)',
-                    pointRadius: activeIndex !== null ? 3 : 0,
-                    pointHoverRadius: 5
-                  }
-                ]
-              }}
-              options={createChartOptions('Net Income', 'Billions ($)')}
-            />
-          </div>
+      {loading ? (
+        <div className="loading">Loading historical data...</div>
+      ) : !historyData ? (
+        <div className="no-data">No historical data available</div>
+      ) : (
+        <>
+          {/* SECTION 1: Growth & Profitability */}
+          <div className="chart-section">
+            <h3 className="section-title">Growth & Profitability</h3>
+            <div className="charts-row">
+              {/* Revenue */}
+              <div className="chart-container">
+                <Line plugins={[zeroLinePlugin, crosshairPlugin]}
+                  data={{
+                    labels: labels,
+                    datasets: [
+                      {
+                        label: 'Revenue (Billions)',
+                        data: historyData.revenue.map(r => r / 1e9),
+                        borderColor: 'rgb(75, 192, 192)',
+                        backgroundColor: 'rgba(75, 192, 192, 0.2)',
+                        pointRadius: activeIndex !== null ? 3 : 0, // Show points only on hover/active
+                        pointHoverRadius: 5
+                      }
+                    ]
+                  }}
+                  options={createChartOptions('Revenue', 'Billions ($)')}
+                />
+              </div>
 
-          {/* Operating Cash Flow */}
-          <div className="chart-container">
-            <Line plugins={[zeroLinePlugin, crosshairPlugin]}
-              data={{
-                labels: labels,
-                datasets: [
-                  {
-                    label: 'Operating Cash Flow (Billions)',
-                    data: historyData.operating_cash_flow?.map(ocf => ocf ? ocf / 1e9 : null) || [],
-                    borderColor: 'rgb(54, 162, 235)',
-                    backgroundColor: 'rgba(54, 162, 235, 0.2)',
-                    pointRadius: activeIndex !== null ? 3 : 0,
-                    pointHoverRadius: 5
-                  },
-                ],
-              }}
-              options={createChartOptions('Operating Cash Flow', 'Billions ($)')}
-            />
-          </div>
-        </div>
-        {analyses.growth && (
-          <div style={{ marginTop: '1rem', padding: '1rem', backgroundColor: '#1e293b', borderRadius: '0.5rem', border: '1px solid #334155' }}>
-            <div className="markdown-content">
-              <ReactMarkdown>{analyses.growth}</ReactMarkdown>
+              {/* Net Income */}
+              <div className="chart-container">
+                <Line plugins={[zeroLinePlugin, crosshairPlugin]}
+                  data={{
+                    labels: labels,
+                    datasets: [
+                      {
+                        label: 'Net Income (Billions)',
+                        data: historyData.net_income?.map(ni => ni ? ni / 1e9 : null) || [],
+                        borderColor: 'rgb(153, 102, 255)',
+                        backgroundColor: 'rgba(153, 102, 255, 0.2)',
+                        pointRadius: activeIndex !== null ? 3 : 0,
+                        pointHoverRadius: 5
+                      }
+                    ]
+                  }}
+                  options={createChartOptions('Net Income', 'Billions ($)')}
+                />
+              </div>
+
+              {/* Operating Cash Flow */}
+              <div className="chart-container">
+                <Line plugins={[zeroLinePlugin, crosshairPlugin]}
+                  data={{
+                    labels: labels,
+                    datasets: [
+                      {
+                        label: 'Operating Cash Flow (Billions)',
+                        data: historyData.operating_cash_flow?.map(ocf => ocf ? ocf / 1e9 : null) || [],
+                        borderColor: 'rgb(54, 162, 235)',
+                        backgroundColor: 'rgba(54, 162, 235, 0.2)',
+                        pointRadius: activeIndex !== null ? 3 : 0,
+                        pointHoverRadius: 5
+                      },
+                    ],
+                  }}
+                  options={createChartOptions('Operating Cash Flow', 'Billions ($)')}
+                />
+              </div>
             </div>
-          </div>
-        )}
-      </div>
-
-      {/* SECTION 2: Cash Management */}
-      <div className="chart-section">
-        <h3 className="section-title">Cash Management</h3>
-        <div className="charts-row">
-          {/* Capital Expenditures */}
-          <div className="chart-container">
-            <Line plugins={[zeroLinePlugin, crosshairPlugin]}
-              data={{
-                labels: labels,
-                datasets: [
-                  {
-                    label: 'Capital Expenditures (Billions)',
-                    data: historyData.capital_expenditures?.map(capex => capex ? Math.abs(capex) / 1e9 : null) || [],
-                    borderColor: 'rgb(239, 68, 68)',
-                    backgroundColor: 'rgba(239, 68, 68, 0.2)',
-                    pointRadius: activeIndex !== null ? 3 : 0,
-                    pointHoverRadius: 5
-                  },
-                ],
-              }}
-              options={createChartOptions('Capital Expenditures', 'Billions ($)')}
-            />
+            {analyses.growth && (
+              <div style={{ marginTop: '1rem', padding: '1rem', backgroundColor: '#1e293b', borderRadius: '0.5rem', border: '1px solid #334155' }}>
+                <div className="markdown-content">
+                  <ReactMarkdown>{analyses.growth}</ReactMarkdown>
+                </div>
+              </div>
+            )}
           </div>
 
-          {/* Free Cash Flow */}
-          <div className="chart-container">
-            <Line plugins={[zeroLinePlugin, crosshairPlugin]}
-              data={{
-                labels: labels,
-                datasets: [
-                  {
-                    label: 'Free Cash Flow (Billions)',
-                    data: historyData.free_cash_flow?.map(fcf => fcf ? fcf / 1e9 : null) || [],
-                    borderColor: 'rgb(34, 197, 94)',
-                    backgroundColor: 'rgba(34, 197, 94, 0.2)',
-                    pointRadius: activeIndex !== null ? 3 : 0,
-                    pointHoverRadius: 5
-                  },
-                ],
-              }}
-              options={createChartOptions('Free Cash Flow', 'Billions ($)')}
-            />
-          </div>
+          {/* SECTION 2: Cash Management */}
+          <div className="chart-section">
+            <h3 className="section-title">Cash Management</h3>
+            <div className="charts-row">
+              {/* Capital Expenditures */}
+              <div className="chart-container">
+                <Line plugins={[zeroLinePlugin, crosshairPlugin]}
+                  data={{
+                    labels: labels,
+                    datasets: [
+                      {
+                        label: 'Capital Expenditures (Billions)',
+                        data: historyData.capital_expenditures?.map(capex => capex ? Math.abs(capex) / 1e9 : null) || [],
+                        borderColor: 'rgb(239, 68, 68)',
+                        backgroundColor: 'rgba(239, 68, 68, 0.2)',
+                        pointRadius: activeIndex !== null ? 3 : 0,
+                        pointHoverRadius: 5
+                      },
+                    ],
+                  }}
+                  options={createChartOptions('Capital Expenditures', 'Billions ($)')}
+                />
+              </div>
 
-          {/* Dividend Yield */}
-          <div className="chart-container">
-            <Line plugins={[zeroLinePlugin, crosshairPlugin]}
-              data={{
-                labels: labels,
-                datasets: [
-                  {
-                    label: 'Dividend Yield (%)',
-                    data: historyData.dividend_yield,
-                    borderColor: 'rgb(255, 205, 86)',
-                    backgroundColor: 'rgba(255, 205, 86, 0.2)',
-                    pointRadius: activeIndex !== null ? 3 : 0,
-                    pointHoverRadius: 5
-                  }
-                ]
-              }}
-              options={createChartOptions('Dividend Yield', 'Yield (%)')}
-            />
-          </div>
-        </div>
-        {analyses.cash && (
-          <div style={{ marginTop: '1rem', padding: '1rem', backgroundColor: '#1e293b', borderRadius: '0.5rem', border: '1px solid #334155' }}>
-            <div className="markdown-content">
-              <ReactMarkdown>{analyses.cash}</ReactMarkdown>
+              {/* Free Cash Flow */}
+              <div className="chart-container">
+                <Line plugins={[zeroLinePlugin, crosshairPlugin]}
+                  data={{
+                    labels: labels,
+                    datasets: [
+                      {
+                        label: 'Free Cash Flow (Billions)',
+                        data: historyData.free_cash_flow?.map(fcf => fcf ? fcf / 1e9 : null) || [],
+                        borderColor: 'rgb(34, 197, 94)',
+                        backgroundColor: 'rgba(34, 197, 94, 0.2)',
+                        pointRadius: activeIndex !== null ? 3 : 0,
+                        pointHoverRadius: 5
+                      },
+                    ],
+                  }}
+                  options={createChartOptions('Free Cash Flow', 'Billions ($)')}
+                />
+              </div>
+
+              {/* Dividend Yield */}
+              <div className="chart-container">
+                <Line plugins={[zeroLinePlugin, crosshairPlugin]}
+                  data={{
+                    labels: labels,
+                    datasets: [
+                      {
+                        label: 'Dividend Yield (%)',
+                        data: historyData.dividend_yield,
+                        borderColor: 'rgb(255, 205, 86)',
+                        backgroundColor: 'rgba(255, 205, 86, 0.2)',
+                        pointRadius: activeIndex !== null ? 3 : 0,
+                        pointHoverRadius: 5
+                      }
+                    ]
+                  }}
+                  options={createChartOptions('Dividend Yield', 'Yield (%)')}
+                />
+              </div>
             </div>
-          </div>
-        )}
-      </div>
-
-      {/* SECTION 3: Market Valuation & Risk */}
-      <div className="chart-section">
-        <h3 className="section-title">Market Valuation & Risk</h3>
-        <div className="charts-row">
-          {/* Stock Price */}
-          <div className="chart-container">
-            <Line plugins={[zeroLinePlugin, crosshairPlugin]}
-              data={{
-                labels: labels,
-                datasets: [
-                  {
-                    label: 'Stock Price ($)',
-                    data: historyData.price,
-                    borderColor: 'rgb(255, 159, 64)',
-                    backgroundColor: 'rgba(255, 159, 64, 0.2)',
-                    pointRadius: activeIndex !== null ? 3 : 0,
-                    pointHoverRadius: 5
-                  },
-                ],
-              }}
-              options={createChartOptions('Stock Price', 'Price ($)')}
-            />
+            {analyses.cash && (
+              <div style={{ marginTop: '1rem', padding: '1rem', backgroundColor: '#1e293b', borderRadius: '0.5rem', border: '1px solid #334155' }}>
+                <div className="markdown-content">
+                  <ReactMarkdown>{analyses.cash}</ReactMarkdown>
+                </div>
+              </div>
+            )}
           </div>
 
-          {/* P/E Ratio */}
-          <div className="chart-container">
-            <Line plugins={[zeroLinePlugin, crosshairPlugin]}
-              data={{
-                labels: labels,
-                datasets: [
-                  {
-                    label: 'P/E Ratio',
-                    data: historyData.pe_ratio,
-                    borderColor: 'rgb(201, 203, 207)',
-                    backgroundColor: 'rgba(201, 203, 207, 0.2)',
-                    pointRadius: activeIndex !== null ? 3 : 0,
-                    pointHoverRadius: 5
-                  }
-                ]
-              }}
-              options={createChartOptions('P/E Ratio', 'P/E Ratio')}
-            />
-          </div>
+          {/* SECTION 3: Market Valuation & Risk */}
+          <div className="chart-section">
+            <h3 className="section-title">Market Valuation & Risk</h3>
+            <div className="charts-row">
+              {/* Stock Price */}
+              <div className="chart-container">
+                <Line plugins={[zeroLinePlugin, crosshairPlugin]}
+                  data={{
+                    labels: labels,
+                    datasets: [
+                      {
+                        label: 'Stock Price ($)',
+                        data: historyData.price,
+                        borderColor: 'rgb(255, 159, 64)',
+                        backgroundColor: 'rgba(255, 159, 64, 0.2)',
+                        pointRadius: activeIndex !== null ? 3 : 0,
+                        pointHoverRadius: 5
+                      },
+                    ],
+                  }}
+                  options={createChartOptions('Stock Price', 'Price ($)')}
+                />
+              </div>
 
-          {/* Debt-to-Equity */}
-          <div className="chart-container">
-            <Line plugins={[zeroLinePlugin, crosshairPlugin]}
-              data={{
-                labels: labels,
-                datasets: [
-                  {
-                    label: 'Debt-to-Equity Ratio',
-                    data: historyData.debt_to_equity,
-                    borderColor: 'rgb(255, 99, 132)',
-                    backgroundColor: 'rgba(255, 99, 132, 0.2)',
-                    pointRadius: activeIndex !== null ? 3 : 0,
-                    pointHoverRadius: 5
-                  }
-                ]
-              }}
-              options={createChartOptions('Debt-to-Equity', 'D/E Ratio')}
-            />
-          </div>
-        </div>
-        {analyses.valuation && (
-          <div style={{ marginTop: '1rem', padding: '1rem', backgroundColor: '#1e293b', borderRadius: '0.5rem', border: '1px solid #334155' }}>
-            <div className="markdown-content">
-              <ReactMarkdown>{analyses.valuation}</ReactMarkdown>
+              {/* P/E Ratio */}
+              <div className="chart-container">
+                <Line plugins={[zeroLinePlugin, crosshairPlugin]}
+                  data={{
+                    labels: labels,
+                    datasets: [
+                      {
+                        label: 'P/E Ratio',
+                        data: historyData.pe_ratio,
+                        borderColor: 'rgb(201, 203, 207)',
+                        backgroundColor: 'rgba(201, 203, 207, 0.2)',
+                        pointRadius: activeIndex !== null ? 3 : 0,
+                        pointHoverRadius: 5
+                      }
+                    ]
+                  }}
+                  options={createChartOptions('P/E Ratio', 'P/E Ratio')}
+                />
+              </div>
+
+              {/* Debt-to-Equity */}
+              <div className="chart-container">
+                <Line plugins={[zeroLinePlugin, crosshairPlugin]}
+                  data={{
+                    labels: labels,
+                    datasets: [
+                      {
+                        label: 'Debt-to-Equity Ratio',
+                        data: historyData.debt_to_equity,
+                        borderColor: 'rgb(255, 99, 132)',
+                        backgroundColor: 'rgba(255, 99, 132, 0.2)',
+                        pointRadius: activeIndex !== null ? 3 : 0,
+                        pointHoverRadius: 5
+                      }
+                    ]
+                  }}
+                  options={createChartOptions('Debt-to-Equity', 'D/E Ratio')}
+                />
+              </div>
             </div>
+            {analyses.valuation && (
+              <div style={{ marginTop: '1rem', padding: '1rem', backgroundColor: '#1e293b', borderRadius: '0.5rem', border: '1px solid #334155' }}>
+                <div className="markdown-content">
+                  <ReactMarkdown>{analyses.valuation}</ReactMarkdown>
+                </div>
+              </div>
+            )}
           </div>
-        )}
-      </div>
+        </>
+      )}
     </div>
   )
 }

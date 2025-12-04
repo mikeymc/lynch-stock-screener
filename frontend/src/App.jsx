@@ -202,9 +202,12 @@ function StockListView({
 
   // Load advanced filters on mount
   useEffect(() => {
+    const controller = new AbortController()
+    const signal = controller.signal
+
     const loadAdvancedFilters = async () => {
       try {
-        const response = await fetch(`${API_BASE}/settings`)
+        const response = await fetch(`${API_BASE}/settings`, { signal })
         if (response.ok) {
           const settings = await response.json()
           if (settings.advanced_filters && settings.advanced_filters.value) {
@@ -212,11 +215,15 @@ function StockListView({
           }
         }
       } catch (err) {
-        console.error('Error loading advanced filters:', err)
+        if (err.name !== 'AbortError') {
+          console.error('Error loading advanced filters:', err)
+        }
       }
     }
 
     loadAdvancedFilters()
+
+    return () => controller.abort()
   }, [])
 
   // Start with empty state (don't load cached session since algorithm may have changed)
@@ -228,9 +235,12 @@ function StockListView({
       return
     }
 
+    const controller = new AbortController()
+    const signal = controller.signal
+
     const loadLatestSession = async () => {
       try {
-        const response = await fetch(`${API_BASE}/sessions/latest`)
+        const response = await fetch(`${API_BASE}/sessions/latest`, { signal })
 
         if (response.ok) {
           const sessionData = await response.json()
@@ -282,16 +292,22 @@ function StockListView({
           throw new Error(`Failed to load session: ${response.status}`)
         }
       } catch (err) {
-        console.error('Error loading latest session:', err)
-        // Don't show error to user on initial load, just start with empty state
-        setStocks([])
-        setSummary(null)
+        if (err.name !== 'AbortError') {
+          console.error('Error loading latest session:', err)
+          // Don't show error to user on initial load, just start with empty state
+          setStocks([])
+          setSummary(null)
+        }
       } finally {
-        setLoadingSession(false)
+        if (!signal.aborted) {
+          setLoadingSession(false)
+        }
       }
     }
 
     loadLatestSession()
+
+    return () => controller.abort()
   }, [])
 
   // Resume polling if there's an active screening session
@@ -985,18 +1001,25 @@ function App() {
 
   // Load watchlist on mount
   useEffect(() => {
+    const controller = new AbortController()
+    const signal = controller.signal
+
     const loadWatchlist = async () => {
       try {
-        const response = await fetch(`${API_BASE}/watchlist`)
+        const response = await fetch(`${API_BASE}/watchlist`, { signal })
         if (response.ok) {
           const data = await response.json()
           setWatchlist(new Set(data.symbols))
         }
       } catch (err) {
-        console.error('Error loading watchlist:', err)
+        if (err.name !== 'AbortError') {
+          console.error('Error loading watchlist:', err)
+        }
       }
     }
     loadWatchlist()
+
+    return () => controller.abort()
   }, [])
 
   const toggleWatchlist = async (symbol) => {

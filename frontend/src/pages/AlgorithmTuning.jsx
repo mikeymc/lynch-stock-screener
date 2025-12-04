@@ -69,18 +69,25 @@ export default function AlgorithmTuning() {
 
     // Load current configuration on mount
     useEffect(() => {
-        loadCurrentConfig();
+        const controller = new AbortController();
+        const signal = controller.signal;
+
+        loadCurrentConfig(signal);
+
+        return () => controller.abort();
     }, []);
 
-    const loadCurrentConfig = async () => {
+    const loadCurrentConfig = async (signal) => {
         try {
-            const response = await fetch('http://localhost:8080/api/algorithm/config');
+            const response = await fetch('http://localhost:8080/api/algorithm/config', { signal });
             const data = await response.json();
             if (data.current) {
                 setConfig(data.current);
             }
         } catch (error) {
-            console.error('Error loading config:', error);
+            if (error.name !== 'AbortError') {
+                console.error('Error loading config:', error);
+            }
         }
     };
 
