@@ -358,23 +358,52 @@ export default function StockCharts({ historyData, loading, symbol }) {
                 />
               </div>
 
-              {/* P/E Ratio */}
+              {/* P/E Ratio - Uses weekly data for granular display */}
               <div className="chart-container">
                 <Line plugins={[zeroLinePlugin, crosshairPlugin]}
                   data={{
-                    labels: labels,
+                    labels: historyData.weekly_pe_ratios?.dates?.length > 0
+                      ? historyData.weekly_pe_ratios.dates
+                      : labels,
                     datasets: [
                       {
                         label: 'P/E Ratio',
-                        data: historyData.pe_ratio,
+                        data: historyData.weekly_pe_ratios?.values?.length > 0
+                          ? historyData.weekly_pe_ratios.values
+                          : historyData.pe_ratio,
                         borderColor: 'rgb(201, 203, 207)',
                         backgroundColor: 'rgba(201, 203, 207, 0.2)',
-                        pointRadius: activeIndex !== null ? 3 : 0,
-                        pointHoverRadius: 5
+                        pointRadius: 0, // Hide points for dense weekly data
+                        pointHoverRadius: 3,
+                        borderWidth: 1.5,
+                        tension: 0.1
                       }
                     ]
                   }}
-                  options={createChartOptions('P/E Ratio', 'P/E Ratio')}
+                  options={{
+                    ...createChartOptions('P/E Ratio', 'P/E Ratio'),
+                    scales: {
+                      ...createChartOptions('P/E Ratio', 'P/E Ratio').scales,
+                      x: {
+                        type: 'category',
+                        ticks: {
+                          callback: function (value, index, values) {
+                            const label = this.getLabelForValue(value);
+                            if (historyData.weekly_pe_ratios?.dates?.length > 0) {
+                              if (label && label.includes('-01-')) {
+                                return label.substring(0, 4);
+                              }
+                              return null;
+                            }
+                            return label;
+                          },
+                          maxRotation: 0,
+                          autoSkip: true,
+                          maxTicksLimit: 12
+                        }
+                      }
+                    }
+                  }}
                 />
               </div>
 

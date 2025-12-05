@@ -928,9 +928,39 @@ def get_stock_history(symbol):
     # Use the earliest year in earnings history as start year
     start_year = min(entry['year'] for entry in earnings_history) if earnings_history else None
     weekly_prices = {}
+    weekly_pe_ratios = {}
     if price_client.is_available():
         try:
             weekly_prices = price_client.get_weekly_price_history(symbol.upper(), start_year)
+            
+            # Calculate weekly P/E ratios using EPS from earnings history
+            # For each week, use the EPS from the corresponding fiscal year
+            if weekly_prices.get('dates') and weekly_prices.get('prices'):
+                # Build a mapping of year -> EPS from earnings history
+                eps_by_year = {}
+                for entry in earnings_history:
+                    if entry.get('eps') and entry.get('eps') > 0:
+                        eps_by_year[entry['year']] = entry['eps']
+                
+                # Calculate P/E for each week
+                weekly_pe_dates = []
+                weekly_pe_values = []
+                for i, date_str in enumerate(weekly_prices['dates']):
+                    year = int(date_str[:4])
+                    price = weekly_prices['prices'][i]
+                    
+                    # Use EPS from the current year, or fall back to previous year
+                    eps = eps_by_year.get(year) or eps_by_year.get(year - 1)
+                    
+                    if eps and eps > 0 and price:
+                        pe = price / eps
+                        weekly_pe_dates.append(date_str)
+                        weekly_pe_values.append(round(pe, 2))
+                
+                weekly_pe_ratios = {
+                    'dates': weekly_pe_dates,
+                    'values': weekly_pe_values
+                }
         except Exception as e:
             print(f"Error fetching weekly prices for {symbol}: {e}")
 
@@ -949,7 +979,8 @@ def get_stock_history(symbol):
         'free_cash_flow': free_cash_flow_values,
         'history': earnings_history,
         'wacc': wacc_data,
-        'weekly_prices': weekly_prices
+        'weekly_prices': weekly_prices,
+        'weekly_pe_ratios': weekly_pe_ratios
     }
 
     # Clean NaN values before returning
