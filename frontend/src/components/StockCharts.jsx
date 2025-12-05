@@ -307,23 +307,54 @@ export default function StockCharts({ historyData, loading, symbol }) {
           <div className="chart-section">
             <h3 className="section-title">Market Valuation & Risk</h3>
             <div className="charts-row">
-              {/* Stock Price */}
+              {/* Stock Price - Uses weekly data for granular display */}
               <div className="chart-container">
                 <Line plugins={[zeroLinePlugin, crosshairPlugin]}
                   data={{
-                    labels: labels,
+                    labels: historyData.weekly_prices?.dates?.length > 0
+                      ? historyData.weekly_prices.dates
+                      : labels,
                     datasets: [
                       {
                         label: 'Stock Price ($)',
-                        data: historyData.price,
+                        data: historyData.weekly_prices?.prices?.length > 0
+                          ? historyData.weekly_prices.prices
+                          : historyData.price,
                         borderColor: 'rgb(255, 159, 64)',
                         backgroundColor: 'rgba(255, 159, 64, 0.2)',
-                        pointRadius: activeIndex !== null ? 3 : 0,
-                        pointHoverRadius: 5
+                        pointRadius: 0, // Hide points for dense weekly data
+                        pointHoverRadius: 3,
+                        borderWidth: 1.5,
+                        tension: 0.1 // Slight smoothing
                       },
                     ],
                   }}
-                  options={createChartOptions('Stock Price', 'Price ($)')}
+                  options={{
+                    ...createChartOptions('Stock Price', 'Price ($)'),
+                    scales: {
+                      ...createChartOptions('Stock Price', 'Price ($)').scales,
+                      x: {
+                        type: 'category',
+                        ticks: {
+                          // Show only year labels, not every week
+                          callback: function (value, index, values) {
+                            const label = this.getLabelForValue(value);
+                            // For weekly data, only show label if it's January (first week of year)
+                            if (historyData.weekly_prices?.dates?.length > 0) {
+                              if (label && label.includes('-01-')) {
+                                return label.substring(0, 4); // Return just the year
+                              }
+                              return null; // Hide other labels
+                            }
+                            return label; // For annual data, show as-is
+                          },
+                          maxRotation: 0,
+                          autoSkip: true,
+                          maxTicksLimit: 12
+                        }
+                      }
+                    }
+                  }}
                 />
               </div>
 

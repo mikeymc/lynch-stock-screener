@@ -924,6 +924,16 @@ def get_stock_history(symbol):
     stock_metrics = db.get_stock_metrics(symbol.upper())
     wacc_data = calculate_wacc(stock_metrics) if stock_metrics else None
 
+    # Get weekly price history for granular chart display
+    # Use the earliest year in earnings history as start year
+    start_year = min(entry['year'] for entry in earnings_history) if earnings_history else None
+    weekly_prices = {}
+    if price_client.is_available():
+        try:
+            weekly_prices = price_client.get_weekly_price_history(symbol.upper(), start_year)
+        except Exception as e:
+            print(f"Error fetching weekly prices for {symbol}: {e}")
+
     response_data = {
         'labels': labels,
         'eps': eps_values,
@@ -938,7 +948,8 @@ def get_stock_history(symbol):
         'capital_expenditures': capital_expenditures_values,
         'free_cash_flow': free_cash_flow_values,
         'history': earnings_history,
-        'wacc': wacc_data
+        'wacc': wacc_data,
+        'weekly_prices': weekly_prices
     }
 
     # Clean NaN values before returning

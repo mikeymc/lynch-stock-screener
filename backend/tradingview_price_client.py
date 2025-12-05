@@ -257,6 +257,51 @@ class TradingViewPriceClient:
         
         return True
     
+    def get_weekly_price_history(self, symbol: str, start_year: int = None) -> dict:
+        """
+        Get weekly price history for a symbol.
+        
+        Uses cached daily data and resamples to weekly (Friday close).
+        
+        Args:
+            symbol: Stock ticker symbol
+            start_year: Optional start year filter (e.g., 2013)
+            
+        Returns:
+            Dict with 'dates' and 'prices' arrays, or empty dict if unavailable
+        """
+        df = self._get_symbol_history(symbol)
+        if df is None or df.empty:
+            return {'dates': [], 'prices': []}
+        
+        try:
+            # Filter by start year if specified
+            if start_year:
+                start_date = f"{start_year}-01-01"
+                df = df[df.index >= start_date]
+            
+            # Resample to weekly (Friday close)
+            weekly = df['close'].resample('W-FRI').last()
+            
+            # Drop any NaN values
+            weekly = weekly.dropna()
+            
+            # Convert to lists
+            dates = [d.strftime('%Y-%m-%d') for d in weekly.index]
+            prices = [float(p) for p in weekly.values]
+            
+            logger.info(f"Generated {len(dates)} weekly prices for {symbol}" + 
+                       (f" from {start_year}" if start_year else ""))
+            
+            return {
+                'dates': dates,
+                'prices': prices
+            }
+            
+        except Exception as e:
+            logger.error(f"Error generating weekly prices for {symbol}: {type(e).__name__}: {e}")
+            return {'dates': [], 'prices': []}
+    
     def clear_cache(self):
         """Clear the price cache"""
         self._price_cache.clear()
