@@ -198,8 +198,8 @@ def test_stock_history_uses_schwab_api_when_available(client, test_db, monkeypat
         test_db.save_earnings_history(symbol, year, eps, revenue, fiscal_end=fiscal_end)
 
     # Mock SchwabClient to return historical prices
-    mock_schwab_client = MagicMock()
-    mock_schwab_client.is_available.return_value = True
+    mock_price_client = MagicMock()
+    mock_price_client.is_available.return_value = True
 
     # Return different prices for each fiscal year-end date
     price_data = {
@@ -212,10 +212,10 @@ def test_stock_history_uses_schwab_api_when_available(client, test_db, monkeypat
     def mock_get_price(sym, date):
         return price_data.get(date)
 
-    mock_schwab_client.get_historical_price.side_effect = mock_get_price
+    mock_price_client.get_historical_price.side_effect = mock_get_price
 
     # Replace app's schwab_client instance with our mock
-    monkeypatch.setattr(app_module, 'schwab_client', mock_schwab_client)
+    monkeypatch.setattr(app_module, 'price_client', mock_price_client)
 
     response = client.get(f'/api/stock/{symbol}/history')
 
@@ -230,11 +230,11 @@ def test_stock_history_uses_schwab_api_when_available(client, test_db, monkeypat
     assert 'price' in data
 
     # Verify Schwab API was called with correct fiscal year-end dates
-    assert mock_schwab_client.get_historical_price.call_count == 4
-    mock_schwab_client.get_historical_price.assert_any_call(symbol, "2020-09-26")
-    mock_schwab_client.get_historical_price.assert_any_call(symbol, "2021-09-25")
-    mock_schwab_client.get_historical_price.assert_any_call(symbol, "2022-09-24")
-    mock_schwab_client.get_historical_price.assert_any_call(symbol, "2023-09-30")
+    assert mock_price_client.get_historical_price.call_count == 4
+    mock_price_client.get_historical_price.assert_any_call(symbol, "2020-09-26")
+    mock_price_client.get_historical_price.assert_any_call(symbol, "2021-09-25")
+    mock_price_client.get_historical_price.assert_any_call(symbol, "2022-09-24")
+    mock_price_client.get_historical_price.assert_any_call(symbol, "2023-09-30")
 
     # Verify P/E ratios are calculated from Schwab prices
     # 2020: 108.77 / 3.28 = 33.16
@@ -273,8 +273,8 @@ def test_stock_history_falls_back_to_yfinance_when_schwab_fails(client, test_db,
         test_db.save_earnings_history(symbol, year, eps, revenue, fiscal_end=fiscal_end)
 
     # Mock SchwabClient to be unavailable
-    mock_schwab_client = MagicMock()
-    mock_schwab_client.is_available.return_value = False
+    mock_price_client = MagicMock()
+    mock_price_client.is_available.return_value = False
 
     # Mock yfinance to return fallback prices
     mock_ticker = MagicMock()
@@ -295,7 +295,7 @@ def test_stock_history_falls_back_to_yfinance_when_schwab_fails(client, test_db,
 
     mock_ticker.history.side_effect = mock_get_history
 
-    monkeypatch.setattr(app_module, 'schwab_client', mock_schwab_client)
+    monkeypatch.setattr(app_module, 'price_client', mock_price_client)
 
     with patch('yfinance.Ticker', return_value=mock_ticker):
         response = client.get(f'/api/stock/{symbol}/history')
@@ -335,8 +335,8 @@ def test_stock_history_uses_fiscal_year_end_dates(client, test_db, monkeypatch):
         test_db.save_earnings_history(symbol, year, eps, revenue, fiscal_end=fiscal_end)
 
     # Mock SchwabClient
-    mock_schwab_client = MagicMock()
-    mock_schwab_client.is_available.return_value = True
+    mock_price_client = MagicMock()
+    mock_price_client.is_available.return_value = True
 
     price_data = {
         "2021-01-31": 139.49,
@@ -347,24 +347,24 @@ def test_stock_history_uses_fiscal_year_end_dates(client, test_db, monkeypatch):
     def mock_get_price(sym, date):
         return price_data.get(date)
 
-    mock_schwab_client.get_historical_price.side_effect = mock_get_price
+    mock_price_client.get_historical_price.side_effect = mock_get_price
 
-    monkeypatch.setattr(app_module, 'schwab_client', mock_schwab_client)
+    monkeypatch.setattr(app_module, 'price_client', mock_price_client)
 
     response = client.get(f'/api/stock/{symbol}/history')
 
     assert response.status_code == 200
 
     # Verify Schwab was called with fiscal year-end dates (January 31), not calendar year-end (December 31)
-    mock_schwab_client.get_historical_price.assert_any_call(symbol, "2021-01-31")
-    mock_schwab_client.get_historical_price.assert_any_call(symbol, "2022-01-31")
-    mock_schwab_client.get_historical_price.assert_any_call(symbol, "2023-01-31")
+    mock_price_client.get_historical_price.assert_any_call(symbol, "2021-01-31")
+    mock_price_client.get_historical_price.assert_any_call(symbol, "2022-01-31")
+    mock_price_client.get_historical_price.assert_any_call(symbol, "2023-01-31")
 
     # Verify it was NOT called with December 31 dates
     for year in [2021, 2022, 2023]:
         assert not any(
             call[0][1] == f"{year}-12-31"
-            for call in mock_schwab_client.get_historical_price.call_args_list
+            for call in mock_price_client.get_historical_price.call_args_list
         )
 
 

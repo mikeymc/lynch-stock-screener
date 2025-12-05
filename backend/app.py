@@ -16,7 +16,7 @@ from database import Database
 from data_fetcher import DataFetcher
 from earnings_analyzer import EarningsAnalyzer
 from lynch_criteria import LynchCriteria, ALGORITHM_METADATA
-from schwab_client import SchwabClient
+from tradingview_price_client import TradingViewPriceClient
 from lynch_analyst import LynchAnalyst
 from conversation_manager import ConversationManager
 from wacc_calculator import calculate_wacc
@@ -62,7 +62,8 @@ db = Database(
 fetcher = DataFetcher(db)
 analyzer = EarningsAnalyzer(db)
 criteria = LynchCriteria(db, analyzer)
-schwab_client = SchwabClient()
+# Historical price provider - using TradingView (replaces Schwab)
+price_client = TradingViewPriceClient()
 lynch_analyst = LynchAnalyst(db)
 conversation_manager = ConversationManager(db)
 backtester = Backtester(db)
@@ -868,12 +869,12 @@ def get_stock_history(symbol):
 
         # Fetch historical price for this year's fiscal year-end
         if fiscal_end:
-            # Try Schwab API first if available
-            if schwab_client.is_available():
+            # Try TradingView API first if available
+            if price_client.is_available():
                 try:
-                    price = schwab_client.get_historical_price(symbol.upper(), fiscal_end)
+                    price = price_client.get_historical_price(symbol.upper(), fiscal_end)
                 except Exception as e:
-                    print(f"Schwab API error for {symbol} on {fiscal_end}: {e}")
+                    print(f"TradingView API error for {symbol} on {fiscal_end}: {e}")
                     price = None
 
             # Fall back to yfinance if Schwab failed or unavailable
@@ -881,7 +882,7 @@ def get_stock_history(symbol):
                 try:
                     # Use fiscal year-end date for yfinance
                     # Fetch a few days before and after to handle weekends/holidays
-                    from datetime import datetime, timedelta
+                    from datetime import timedelta
                     fiscal_date = datetime.strptime(fiscal_end, '%Y-%m-%d')
                     start_date = (fiscal_date - timedelta(days=7)).strftime('%Y-%m-%d')
                     end_date = (fiscal_date + timedelta(days=3)).strftime('%Y-%m-%d')
@@ -908,15 +909,16 @@ def get_stock_history(symbol):
                 print(f"Error fetching historical price for {symbol} year {year}: {e}")
                 price = None
         # todo: switch pe ratio to market cap / net income
-        # Calculate P/E ratio if we have price and positive EPS
+        # Always include price in chart if we have it
+        prices.append(price)
+        
+        # Calculate P/E ratio only if we have price and positive EPS
         if price is not None and eps is not None and eps > 0:
             pe_ratio = price / eps
             pe_ratios.append(pe_ratio)
-            prices.append(price)
         else:
-            # No price data or negative EPS
+            # Can't calculate P/E (missing price or EPS)
             pe_ratios.append(None)
-            prices.append(None)
 
     # Calculate WACC
     stock_metrics = db.get_stock_metrics(symbol.upper())
@@ -1103,7 +1105,7 @@ def get_stock_news(symbol):
         
         # If we have cache and it's recent (< 24 hours), return it
         if cache_status and cache_status['last_updated']:
-            from datetime import datetime, timedelta
+            from datetime import timedelta
             last_updated = cache_status['last_updated']
             age_hours = (datetime.now() - last_updated).total_seconds() / 3600
             
@@ -1215,7 +1217,7 @@ def get_material_events(symbol):
 
         # If we have cache and it's recent (< 24 hours), return it
         if cache_status and cache_status['last_updated']:
-            from datetime import datetime, timedelta
+            from datetime import timedelta
             last_updated = cache_status['last_updated']
             age_hours = (datetime.now() - last_updated).total_seconds() / 3600
 

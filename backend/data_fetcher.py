@@ -400,8 +400,58 @@ class DataFetcher:
         # Create mapping of year to debt_to_equity for easy lookup
         debt_to_equity_by_year = {entry['year']: entry['debt_to_equity'] for entry in debt_to_equity_history}
 
-        # Create mapping of year to EPS for easy lookup (for backward compatibility)
-        eps_by_year = {entry['year']: entry['eps'] for entry in calculated_eps_history}
+        # Create mapping of year to EPS - prioritize calculated EPS, fallback to direct EPS
+        # calculated_eps_history = Net Income / Shares Outstanding (split-adjusted)
+        # eps_history = Direct EPS from SEC filings (may not be split-adjusted for older years)
+        calculated_eps_by_year = {entry['year']: entry['eps'] for entry in calculated_eps_history}
+        direct_eps_by_year = {entry['year']: entry['eps'] for entry in edgar_data.get('eps_history', [])}
+        
+        # Detect stock splits by looking for sudden large drops in direct EPS between adjacent years
+        # This indicates a stock split occurred (e.g., 20:1 split would show EPS dropping by ~95%)
+        split_year = None
+        split_adjustment_factor = 1.0
+        best_split_ratio = 0
+        
+        if len(direct_eps_by_year) >= 2:
+            sorted_years = sorted(direct_eps_by_year.keys())
+            common_splits = [2, 3, 4, 5, 10, 20, 50, 100]
+            
+            for i in range(len(sorted_years) - 1):
+                year1, year2 = sorted_years[i], sorted_years[i + 1]
+                eps1, eps2 = direct_eps_by_year[year1], direct_eps_by_year[year2]
+                
+                if eps1 and eps2 and eps1 > 0 and eps2 > 0:
+                    # Check for sudden drop (split would cause EPS to drop significantly)
+                    ratio = eps1 / eps2
+                    # Use 30% tolerance to account for earnings changes in the same year as split
+                    for split in common_splits:
+                        if 0.7 * split <= ratio <= 1.3 * split:
+                            # Only use this split if it's larger than previous matches
+                            # This ensures we catch the biggest split (e.g., 20:1 not 2:1)
+                            if split > best_split_ratio:
+                                split_year = year2
+                                split_adjustment_factor = split
+                                best_split_ratio = split
+                            break
+        
+        if split_year:
+            logger.info(f"[{symbol}] Detected {int(split_adjustment_factor)}:1 stock split in {split_year} - will adjust pre-split EPS")
+        
+        # Merge: use calculated EPS if available, otherwise fall back to split-adjusted direct EPS
+        eps_by_year = {}
+        all_years = set(calculated_eps_by_year.keys()) | set(direct_eps_by_year.keys())
+        for year in all_years:
+            if year in calculated_eps_by_year:
+                eps_by_year[year] = calculated_eps_by_year[year]
+            elif year in direct_eps_by_year:
+                # Apply split adjustment to direct EPS for years before the split
+                raw_eps = direct_eps_by_year[year]
+                if split_year and year < split_year:
+                    adjusted_eps = raw_eps / split_adjustment_factor
+                    eps_by_year[year] = adjusted_eps
+                    logger.debug(f"[{symbol}] Split-adjusted EPS for {year}: ${raw_eps:.2f} -> ${adjusted_eps:.2f}")
+                else:
+                    eps_by_year[year] = raw_eps
 
         # Create mapping of year to Cash Flow for easy lookup
         cash_flow_by_year = {entry['year']: entry for entry in cash_flow_history}
