@@ -74,9 +74,6 @@ export default function UnifiedChartAnalysis({ symbol, onAnalysisGenerated }) {
     return (
         <div style={{ marginBottom: '2rem' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
-                <h3 style={{ margin: 0, color: '#e2e8f0', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                    <span style={{ fontSize: '1.5rem' }}>👓</span> Peter's Chart Analysis
-                </h3>
                 {!loading && (
                     <button
                         onClick={() => generateAnalysis(hasAnyAnalysis)}
