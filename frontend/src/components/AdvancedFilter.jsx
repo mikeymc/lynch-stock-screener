@@ -118,17 +118,10 @@ export default function AdvancedFilter({ filters, onFiltersChange, isOpen, onTog
 
     return (
         <div className="advanced-filter-panel">
-            <div className="advanced-filter-header">
-                <h3>Advanced Filters</h3>
-                <button onClick={handleClearFilters} className="clear-filters-button">
-                    Clear All
-                </button>
-            </div>
-
             <div className="advanced-filter-content">
                 {/* Region/Country Filters */}
-                <div className="filter-group">
-                    <label className="filter-label">Region/Country</label>
+                <div className="filter-group region-group">
+                    <label className="filter-label">Region</label>
                     <div className="filter-chips">
                         {Object.keys(REGION_COUNTRIES).map(region => (
                             <button
@@ -143,11 +136,11 @@ export default function AdvancedFilter({ filters, onFiltersChange, isOpen, onTog
                 </div>
 
                 {/* Institutional Ownership */}
-                <div className="filter-group">
-                    <label className="filter-label">Institutional Ownership (max %)</label>
+                <div className="filter-group compact">
+                    <label className="filter-label">Inst. Own (max%)</label>
                     <input
                         type="number"
-                        placeholder="e.g., 75"
+                        placeholder="75"
                         min="0"
                         max="100"
                         step="1"
@@ -158,11 +151,11 @@ export default function AdvancedFilter({ filters, onFiltersChange, isOpen, onTog
                 </div>
 
                 {/* Revenue Growth */}
-                <div className="filter-group">
-                    <label className="filter-label">5Y Revenue Growth (min %)</label>
+                <div className="filter-group compact">
+                    <label className="filter-label">Rev. Growth (min%)</label>
                     <input
                         type="number"
-                        placeholder="e.g., 15"
+                        placeholder="15"
                         step="0.1"
                         value={localFilters.revenueGrowth.min ?? ''}
                         onChange={(e) => handleRevenueGrowthChange(e.target.value)}
@@ -171,11 +164,11 @@ export default function AdvancedFilter({ filters, onFiltersChange, isOpen, onTog
                 </div>
 
                 {/* Income Growth */}
-                <div className="filter-group">
-                    <label className="filter-label">5Y Income Growth (min %)</label>
+                <div className="filter-group compact">
+                    <label className="filter-label">Inc. Growth (min%)</label>
                     <input
                         type="number"
-                        placeholder="e.g., 15"
+                        placeholder="15"
                         step="0.1"
                         value={localFilters.incomeGrowth.min ?? ''}
                         onChange={(e) => handleIncomeGrowthChange(e.target.value)}
@@ -184,11 +177,11 @@ export default function AdvancedFilter({ filters, onFiltersChange, isOpen, onTog
                 </div>
 
                 {/* Debt to Equity */}
-                <div className="filter-group">
-                    <label className="filter-label">Debt-to-Equity (max)</label>
+                <div className="filter-group compact">
+                    <label className="filter-label">D/E (max)</label>
                     <input
                         type="number"
-                        placeholder="e.g., 0.6"
+                        placeholder="0.6"
                         step="0.1"
                         value={localFilters.debtToEquity.max ?? ''}
                         onChange={(e) => handleDebtToEquityChange(e.target.value)}
@@ -197,16 +190,22 @@ export default function AdvancedFilter({ filters, onFiltersChange, isOpen, onTog
                 </div>
 
                 {/* Market Cap */}
-                <div className="filter-group">
-                    <label className="filter-label">Market Cap (max $B)</label>
+                <div className="filter-group compact">
+                    <label className="filter-label">Mkt Cap (max $B)</label>
                     <input
                         type="number"
-                        placeholder="e.g., 10"
+                        placeholder="10"
                         step="0.1"
                         value={localFilters.marketCap?.max ?? ''}
                         onChange={(e) => handleMarketCapChange(e.target.value)}
                         className="filter-input"
                     />
+                </div>
+
+                <div className="filter-group reset-group">
+                    <button onClick={handleClearFilters} className="clear-filters-button">
+                        Reset
+                    </button>
                 </div>
             </div>
         </div>
