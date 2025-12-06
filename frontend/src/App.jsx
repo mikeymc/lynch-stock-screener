@@ -119,10 +119,11 @@ function StockListView({
   const [advancedFilters, setAdvancedFilters] = useState({
     countries: [],
     regions: [],
-    institutionalOwnership: { min: null, max: null },
+    institutionalOwnership: { max: null },
     revenueGrowth: { min: null },
     incomeGrowth: { min: null },
-    debtToEquity: { max: null }
+    debtToEquity: { max: null },
+    marketCap: { max: null }
   })
   const [showAdvancedFilters, setShowAdvancedFilters] = useState(false)
 
@@ -559,13 +560,7 @@ function StockListView({
       }
 
       // Institutional ownership filter
-      if (advancedFilters.institutionalOwnership.min !== null) {
-        const instOwn = stock.institutional_ownership
-        if (instOwn === null || instOwn === undefined || instOwn < advancedFilters.institutionalOwnership.min / 100) {
-          return false
-        }
-      }
-      if (advancedFilters.institutionalOwnership.max !== null) {
+      if (advancedFilters.institutionalOwnership?.max !== null) {
         const instOwn = stock.institutional_ownership
         if (instOwn === null || instOwn === undefined || instOwn > advancedFilters.institutionalOwnership.max / 100) {
           return false
@@ -592,6 +587,14 @@ function StockListView({
       if (advancedFilters.debtToEquity.max !== null) {
         const de = stock.debt_to_equity
         if (de === null || de === undefined || de > advancedFilters.debtToEquity.max) {
+          return false
+        }
+      }
+
+      // Market cap filter
+      if (advancedFilters.marketCap?.max !== null && advancedFilters.marketCap?.max !== undefined) {
+        const mc = stock.market_cap
+        if (mc === null || mc === undefined || mc / 1e9 > advancedFilters.marketCap.max) {
           return false
         }
       }

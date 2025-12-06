@@ -38,14 +38,11 @@ export default function AdvancedFilter({ filters, onFiltersChange, isOpen, onTog
         onFiltersChange(updatedFilters)
     }
 
-    const handleInstOwnershipChange = (type, value) => {
+    const handleInstOwnershipChange = (value) => {
         const numValue = value === '' ? null : parseFloat(value)
         const updatedFilters = {
             ...localFilters,
-            institutionalOwnership: {
-                ...localFilters.institutionalOwnership,
-                [type]: numValue
-            }
+            institutionalOwnership: { max: numValue }
         }
         setLocalFilters(updatedFilters)
         onFiltersChange(updatedFilters)
@@ -81,14 +78,25 @@ export default function AdvancedFilter({ filters, onFiltersChange, isOpen, onTog
         onFiltersChange(updatedFilters)
     }
 
+    const handleMarketCapChange = (value) => {
+        const numValue = value === '' ? null : parseFloat(value)
+        const updatedFilters = {
+            ...localFilters,
+            marketCap: { max: numValue }
+        }
+        setLocalFilters(updatedFilters)
+        onFiltersChange(updatedFilters)
+    }
+
     const handleClearFilters = () => {
         const emptyFilters = {
             countries: [],
             regions: [],
-            institutionalOwnership: { min: null, max: null },
+            institutionalOwnership: { max: null },
             revenueGrowth: { min: null },
             incomeGrowth: { min: null },
-            debtToEquity: { max: null }
+            debtToEquity: { max: null },
+            marketCap: { max: null }
         }
         setLocalFilters(emptyFilters)
         onFiltersChange(emptyFilters)
@@ -98,11 +106,11 @@ export default function AdvancedFilter({ filters, onFiltersChange, isOpen, onTog
         let count = 0
         if (localFilters.regions.length > 0) count++
         if (localFilters.countries.length > 0) count++
-        if (localFilters.institutionalOwnership.min !== null) count++
-        if (localFilters.institutionalOwnership.max !== null) count++
+        if (localFilters.institutionalOwnership?.max !== null) count++
         if (localFilters.revenueGrowth.min !== null) count++
         if (localFilters.incomeGrowth.min !== null) count++
         if (localFilters.debtToEquity.max !== null) count++
+        if (localFilters.marketCap?.max !== null) count++
         return count
     }
 
@@ -136,30 +144,17 @@ export default function AdvancedFilter({ filters, onFiltersChange, isOpen, onTog
 
                 {/* Institutional Ownership */}
                 <div className="filter-group">
-                    <label className="filter-label">Institutional Ownership (%)</label>
-                    <div className="filter-range">
-                        <input
-                            type="number"
-                            placeholder="Min"
-                            min="0"
-                            max="100"
-                            step="1"
-                            value={localFilters.institutionalOwnership.min ?? ''}
-                            onChange={(e) => handleInstOwnershipChange('min', e.target.value)}
-                            className="filter-input"
-                        />
-                        <span className="range-separator">to</span>
-                        <input
-                            type="number"
-                            placeholder="Max"
-                            min="0"
-                            max="100"
-                            step="1"
-                            value={localFilters.institutionalOwnership.max ?? ''}
-                            onChange={(e) => handleInstOwnershipChange('max', e.target.value)}
-                            className="filter-input"
-                        />
-                    </div>
+                    <label className="filter-label">Institutional Ownership (max %)</label>
+                    <input
+                        type="number"
+                        placeholder="e.g., 75"
+                        min="0"
+                        max="100"
+                        step="1"
+                        value={localFilters.institutionalOwnership?.max ?? ''}
+                        onChange={(e) => handleInstOwnershipChange(e.target.value)}
+                        className="filter-input"
+                    />
                 </div>
 
                 {/* Revenue Growth */}
@@ -197,6 +192,19 @@ export default function AdvancedFilter({ filters, onFiltersChange, isOpen, onTog
                         step="0.1"
                         value={localFilters.debtToEquity.max ?? ''}
                         onChange={(e) => handleDebtToEquityChange(e.target.value)}
+                        className="filter-input"
+                    />
+                </div>
+
+                {/* Market Cap */}
+                <div className="filter-group">
+                    <label className="filter-label">Market Cap (max $B)</label>
+                    <input
+                        type="number"
+                        placeholder="e.g., 10"
+                        step="0.1"
+                        value={localFilters.marketCap?.max ?? ''}
+                        onChange={(e) => handleMarketCapChange(e.target.value)}
                         className="filter-input"
                     />
                 </div>
