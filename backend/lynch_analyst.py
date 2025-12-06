@@ -154,17 +154,25 @@ class LynchAnalyst:
                         pass
 
                 headline = event.get('headline', 'No headline')
-                description = event.get('description', '')
+                content_text = event.get('content_text', '')
                 item_codes = event.get('sec_item_codes', [])
                 accession = event.get('sec_accession_number', 'N/A')
 
                 events_text += f"**{i}. {headline}** (Filed: {filing_date})\n"
                 events_text += f"   SEC Form 8-K | Accession: {accession}\n"
                 if item_codes:
-                    events_text += f"   Item Codes: {', '.join(item_codes)}\n"
-                if description:
-                    events_text += f"   {description}\n"
-                events_text += "\n"
+                    events_text += f"   Item Codes: {', '.join(item_codes)}\n\n"
+
+                # Include actual filing content if available
+                if content_text:
+                    events_text += f"{content_text}\n\n"
+                else:
+                    # Fallback to description if no content
+                    description = event.get('description', '')
+                    if description:
+                        events_text += f"   {description}\n\n"
+
+                events_text += "---\n\n"
 
             formatted_prompt += events_text
 

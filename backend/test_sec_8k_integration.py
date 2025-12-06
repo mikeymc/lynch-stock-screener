@@ -37,19 +37,41 @@ def test_sec_8k_integration():
         print(f"   Item Codes: {filing['sec_item_codes']}")
         print(f"   Accession: {filing['sec_accession_number']}")
         print(f"   URL: {filing['url'][:80]}..." if filing['url'] and len(filing['url']) > 80 else f"   URL: {filing['url']}")
+
+        # Test content_text extraction
+        content_text = filing.get('content_text')
+        if content_text:
+            print(f"   Content Length: {len(content_text)} characters")
+            print(f"   Content Preview: {content_text[:200]}...")
+        else:
+            print("   Content Text: None")
         print()
 
         # Verify required fields
         print("4. Verifying required fields...")
         required_fields = ['event_type', 'headline', 'source', 'filing_date',
                           'datetime', 'published_date', 'sec_accession_number',
-                          'sec_item_codes']
+                          'sec_item_codes', 'content_text']
 
         for field in required_fields:
             assert field in filing, f"Missing required field: {field}"
-            assert filing[field] is not None, f"Field {field} is None"
+            if field == 'content_text':
+                # content_text can be None if extraction failed, but field should exist
+                assert field in filing, f"Missing field: {field}"
+            else:
+                assert filing[field] is not None, f"Field {field} is None"
 
         print("✓ All required fields present")
+
+        # Verify content_text extraction quality
+        if filing['content_text']:
+            content_len = len(filing['content_text'])
+            print(f"✓ Content text extracted: {content_len} characters")
+            assert content_len > 100, "Content text too short - extraction may have failed"
+            assert content_len <= 10100, "Content text too long - truncation may have failed"
+            assert "Item" in filing['content_text'] or content_len > 1000, "Content may not have skipped boilerplate"
+        else:
+            print("⚠ Content text extraction returned None")
         print()
 
         # Test database integration
@@ -74,6 +96,12 @@ def test_sec_8k_integration():
             print(f"   Headline: {event['headline']}")
             print(f"   Item Codes: {event['sec_item_codes']}")
             print(f"   Filing Date: {event['filing_date']}")
+
+            # Verify content_text was saved and retrieved
+            if 'content_text' in event and event['content_text']:
+                print(f"   Content Saved: ✓ ({len(event['content_text'])} chars)")
+            else:
+                print(f"   Content Saved: None")
         print()
 
     else:

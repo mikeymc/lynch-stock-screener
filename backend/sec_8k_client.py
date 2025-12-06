@@ -130,6 +130,54 @@ class SEC8KClient:
             logger.error(f"Error fetching 8-Ks for {symbol}: {e}")
             return []
 
+    def extract_filing_text(self, filing, max_chars: int = 10000) -> Optional[str]:
+        """
+        Extract plain text from 8-K filing with intelligent content extraction
+
+        Strategy: Skip header boilerplate, extract the meaty material event content
+
+        Args:
+            filing: Filing object from edgartools
+            max_chars: Maximum characters to extract (default: 10000)
+
+        Returns:
+            Extracted content or None if extraction fails
+        """
+        try:
+            full_text = filing.text()
+
+            if not full_text:
+                return None
+
+            if len(full_text) <= max_chars:
+                return full_text
+
+            # Strategy 1: Look for Item sections (8-K structure)
+            # Item markers indicate start of actual material content
+            import re
+            item_match = re.search(r'(?i)Item\s+\d+\.\d+', full_text)
+
+            if item_match:
+                # Found item marker - extract from there
+                start_pos = item_match.start()
+                content = full_text[start_pos:start_pos + max_chars]
+            else:
+                # Strategy 2: Skip first 500 chars (likely header/boilerplate)
+                # Then extract max_chars from there
+                skip_chars = min(500, len(full_text) // 4)  # Skip first 25% or 500 chars
+                content = full_text[skip_chars:skip_chars + max_chars]
+
+            # Truncate at sentence boundary to avoid mid-sentence cutoff
+            last_sentence = content.rfind('. ')
+            if last_sentence > len(content) * 0.8:  # Only if not losing >20%
+                content = content[:last_sentence + 1]
+
+            return content + "\n\n[Content truncated for length]"
+
+        except Exception as e:
+            logger.error(f"Error extracting filing text: {e}")
+            return None
+
     def format_8k_event(self, filing, symbol: str) -> Dict[str, Any]:
         """
         Convert 8-K filing to standardized event format
@@ -190,6 +238,9 @@ class SEC8KClient:
         else:
             published_iso = str(filing_date)
 
+        # Extract filing text content
+        content_text = self.extract_filing_text(filing)
+
         return {
             'event_type': '8k',
             'headline': headline,
@@ -200,7 +251,8 @@ class SEC8KClient:
             'datetime': filing_datetime,
             'published_date': published_iso,
             'sec_accession_number': accession,
-            'sec_item_codes': item_codes
+            'sec_item_codes': item_codes,
+            'content_text': content_text
         }
 
     def _extract_item_codes(self, filing) -> List[str]:

@@ -497,6 +497,21 @@ class Database:
             )
         """)
 
+        # Migration: Add content_text column to material_events table if it doesn't exist
+        try:
+            cursor.execute("""
+                DO $$
+                BEGIN
+                    BEGIN
+                        ALTER TABLE material_events ADD COLUMN content_text TEXT;
+                    EXCEPTION
+                        WHEN duplicate_column THEN NULL;
+                    END;
+                END $$;
+            """)
+        except Exception as e:
+            logger.warning(f"Migration warning for content_text column: {e}")
+
         conn.commit()
 
     def save_stock_basic(self, symbol: str, company_name: str, exchange: str, sector: str = None,
@@ -1457,12 +1472,13 @@ class Database:
             INSERT INTO material_events
             (symbol, event_type, headline, description, source, url,
              filing_date, datetime, published_date, sec_accession_number,
-             sec_item_codes, last_updated)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+             sec_item_codes, content_text, last_updated)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             ON CONFLICT (symbol, sec_accession_number)
             DO UPDATE SET
                 headline = EXCLUDED.headline,
                 description = EXCLUDED.description,
+                content_text = EXCLUDED.content_text,
                 last_updated = EXCLUDED.last_updated
         """
         args = (
@@ -1477,6 +1493,7 @@ class Database:
             event_data.get('published_date'),
             event_data.get('sec_accession_number'),
             event_data.get('sec_item_codes', []),
+            event_data.get('content_text'),
             datetime.now()
         )
         self.write_queue.put((sql, args))
@@ -1498,7 +1515,7 @@ class Database:
         query = """
             SELECT id, symbol, event_type, headline, description, source, url,
                    filing_date, datetime, published_date, sec_accession_number,
-                   sec_item_codes, last_updated
+                   sec_item_codes, content_text, last_updated
             FROM material_events
             WHERE symbol = %s
             ORDER BY datetime DESC
@@ -1525,7 +1542,8 @@ class Database:
                 'published_date': row[9].isoformat() if row[9] else None,
                 'sec_accession_number': row[10],
                 'sec_item_codes': row[11] or [],
-                'last_updated': row[12].isoformat() if row[12] else None
+                'content_text': row[12],
+                'last_updated': row[13].isoformat() if row[13] else None
             }
             for row in rows
         ]

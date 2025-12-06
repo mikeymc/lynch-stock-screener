@@ -12,7 +12,11 @@ import os
 import numpy as np
 import yfinance as yf
 from datetime import datetime
+from dotenv import load_dotenv
 from database import Database
+
+# Load environment variables from .env file
+load_dotenv()
 from data_fetcher import DataFetcher
 from earnings_analyzer import EarningsAnalyzer
 from lynch_criteria import LynchCriteria, ALGORITHM_METADATA
