@@ -297,18 +297,6 @@ export default function StockDetail({ watchlist, toggleWatchlist }) {
             Charts
           </button>
           <button
-            className={`tab-button ${activeTab === 'dcf' ? 'active' : ''}`}
-            onClick={() => setActiveTab('dcf')}
-          >
-            DCF Analysis
-          </button>
-          <button
-            className={`tab-button ${activeTab === 'reports' ? 'active' : ''}`}
-            onClick={() => setActiveTab('reports')}
-          >
-            Reports
-          </button>
-          <button
             className={`tab-button ${activeTab === 'analysis' ? 'active' : ''}`}
             onClick={() => setActiveTab('analysis')}
           >
@@ -325,6 +313,18 @@ export default function StockDetail({ watchlist, toggleWatchlist }) {
             onClick={() => setActiveTab('events')}
           >
             Material Events
+          </button>
+          <button
+            className={`tab-button ${activeTab === 'dcf' ? 'active' : ''}`}
+            onClick={() => setActiveTab('dcf')}
+          >
+            DCF Analysis
+          </button>
+          <button
+            className={`tab-button ${activeTab === 'reports' ? 'active' : ''}`}
+            onClick={() => setActiveTab('reports')}
+          >
+            Reports
           </button>
         </div>
       </div>
