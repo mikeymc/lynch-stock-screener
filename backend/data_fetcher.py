@@ -458,6 +458,7 @@ class DataFetcher:
 
         # Track years that need D/E data
         years_needing_de = []
+        years_needing_cf = []
 
         # Store all revenue years (with or without net income)
         for rev_entry in revenue_history:
@@ -503,6 +504,11 @@ class DataFetcher:
             capital_expenditures = cf_data.get('capital_expenditures')
             free_cash_flow = cf_data.get('free_cash_flow')
 
+            # Determine missing CF data
+            missing_cf = (operating_cash_flow is None or free_cash_flow is None)
+            if missing_cf:
+                 years_needing_cf.append(year)
+
             self.db.save_earnings_history(symbol, year, float(eps) if eps else None, float(revenue), fiscal_end=fiscal_end, debt_to_equity=debt_to_equity, net_income=float(net_income) if net_income else None, dividend_amount=float(dividend) if dividend is not None else None, dividend_yield=dividend_yield, operating_cash_flow=float(operating_cash_flow) if operating_cash_flow is not None else None, capital_expenditures=float(capital_expenditures) if capital_expenditures is not None else None, free_cash_flow=float(free_cash_flow) if free_cash_flow is not None else None)
             logger.debug(f"[{symbol}] Stored EDGAR for {year}: Revenue: ${revenue:,.0f}" + (f", NI: ${net_income:,.0f}" if net_income else " (no NI)") + (f", Div: ${dividend:.2f}" if dividend else "") + (f", Yield: {dividend_yield:.2f}%" if dividend_yield else "") + (f", FCF: ${free_cash_flow:,.0f}" if free_cash_flow else ""))
 
@@ -514,6 +520,10 @@ class DataFetcher:
         if years_needing_de:
             logger.info(f"[{symbol}] EDGAR missing D/E for {len(years_needing_de)} years. Fetching from yfinance balance sheet")
             self._backfill_debt_to_equity(symbol, years_needing_de)
+
+        if years_needing_cf:
+            logger.info(f"[{symbol}] EDGAR missing Cash Flow for {len(years_needing_cf)} years. Fetching from yfinance cashflow")
+            self._backfill_cash_flow(symbol, years_needing_cf)
 
     # todo: can this be collapsed with _store_edgar_earnings?
     def _store_edgar_quarterly_earnings(self, symbol: str, edgar_data: Dict[str, Any], price_history: Optional[pd.DataFrame] = None):
@@ -637,22 +647,27 @@ class DataFetcher:
             Debt-to-equity ratio or None if data unavailable
         """
         try:
-            # Try to get Total Liabilities
-            liabilities = None
+            # Try to get Total Debt (preferred) or Total Liabilities
+            debt_or_liab = None
             equity = None
 
-            # List of possible keys for Liabilities
-            liab_keys = [
+            # List of possible keys for Debt (preferred)
+            # 'Total Debt' is explicit interest-bearing debt
+            # 'Total Liabilities' includes everything (payables, deferred tax, etc.) and gives a much higher ratio
+            debt_keys = [
+                'Total Debt',
                 'Total Liabilities Net Minority Interest',
                 'Total Liab',
                 'Total Liabilities',
                 'Total Liabilities Net Minority Interest'
             ]
             
-            for key in liab_keys:
+            for key in debt_keys:
                 if key in balance_sheet.index:
-                    liabilities = balance_sheet.loc[key, col]
-                    break
+                    debt_or_liab = balance_sheet.loc[key, col]
+                    if pd.notna(debt_or_liab):
+                        logger.debug(f"Using {key} for D/E calculation: {debt_or_liab}")
+                        break
 
             # List of possible keys for Equity
             equity_keys = [
@@ -668,13 +683,83 @@ class DataFetcher:
                     break
 
             # Calculate D/E ratio if both values are available and valid
-            if pd.notna(liabilities) and pd.notna(equity) and equity != 0:
-                return float(liabilities / equity)
+            if pd.notna(debt_or_liab) and pd.notna(equity) and equity != 0:
+                return float(debt_or_liab / equity)
 
             return None
         except Exception as e:
             logger.debug(f"Error calculating D/E ratio: {e}")
             return None
+
+    def _backfill_cash_flow(self, symbol: str, years: List[int]):
+        """
+        Backfill missing cash flow data (OCF, CapEx, FCF) from yfinance
+        """
+        try:
+            # We need the cashflow statement properly
+            ticker = yf.Ticker(symbol)
+            cashflow = ticker.cashflow
+            
+            if cashflow is None or cashflow.empty:
+                logger.warning(f"[{symbol}] No cashflow data available from yfinance")
+                return
+
+            cf_filled_count = 0
+            
+            # Helper to safely get value from Series/DataFrame
+            def get_val(df, keys):
+                for key in keys:
+                    if key in df.index:
+                        return df.loc[key]
+                return None
+
+            for col in cashflow.columns:
+                year = col.year if hasattr(col, 'year') else None
+                if year and year in years:
+                    # Extract metrics for this year
+                    # Use standard yfinance keys
+                    ocf = get_val(cashflow[col], ['Operating Cash Flow', 'Total Cash From Operating Activities'])
+                    capex = get_val(cashflow[col], ['Capital Expenditure', 'Capital Expenditures', 'Total Capital Expenditures'])
+                    fcf = get_val(cashflow[col], ['Free Cash Flow'])
+
+                    # Prepare updates
+                    updates = []
+                    params = []
+
+                    if ocf is not None and not pd.isna(ocf):
+                        updates.append("operating_cash_flow = %s")
+                        params.append(float(ocf))
+                    
+                    if capex is not None and not pd.isna(capex):
+                        updates.append("capital_expenditures = %s")
+                        # yfinance usually reports CapEx as negative, which aligns with our standard
+                        params.append(float(capex))
+                    
+                    if fcf is not None and not pd.isna(fcf):
+                        updates.append("free_cash_flow = %s")
+                        params.append(float(fcf))
+
+                    if updates:
+                        conn = self.db.get_connection()
+                        try:
+                            cursor = conn.cursor()
+                            # Construct dynamic UPDATE query
+                            query = f"UPDATE earnings_history SET {', '.join(updates)} WHERE symbol = %s AND year = %s AND period = 'annual'"
+                            params.extend([symbol, year])
+                            
+                            cursor.execute(query, tuple(params))
+                            conn.commit()
+                            cf_filled_count += 1
+                            logger.debug(f"[{symbol}] Backfilled Cash Flow for {year}: OCF={ocf}, CapEx={capex}, FCF={fcf}")
+                        finally:
+                            self.db.return_connection(conn)
+            
+            if cf_filled_count > 0:
+                logger.info(f"[{symbol}] Successfully backfilled Cash Flow for {cf_filled_count}/{len(years)} years from yfinance")
+
+        except Exception as e:
+            logger.error(f"[{symbol}] Error backfilling Cash Flow data: {e}")
+
 
     def _get_yf_dividends(self, symbol: str):
         """Fetch yfinance dividends with socket timeout protection"""

@@ -1331,13 +1331,47 @@ class EdgarFetcher:
                 logger.debug("No StockholdersEquity data found")
                 return []
 
-            # Get debt data - try multiple fields
-            long_term_debt_data = facts.get('LongTermDebtNoncurrent', {}).get('units', {}).get('USD', [])
-            if not long_term_debt_data:
-                # Fallback to LongTermDebt
-                long_term_debt_data = facts.get('LongTermDebt', {}).get('units', {}).get('USD', [])
+            # Get debt data - merge multiple fields to avoid gaps
+            # Use a prioritized list of tags commonly used for Debt
+            # Aggregate tags first, followed by specific instrument types
+            lt_debt_tags = [
+                'LongTermDebtNoncurrent', 
+                'LongTermDebt',
+                'SeniorLongTermNotes',
+                'ConvertibleDebt',
+                'ConvertibleLongTermNotesPayable',
+                'NotesPayable',
+                'LongTermNotesPayable',
+                'DebtInstrumentCarryingAmount',
+                'LongTermDebtAndCapitalLeaseObligations',
+                'CapitalLeaseObligationsNoncurrent',
+                'OtherLongTermDebtNoncurrent'
+            ]
+            
+            long_term_debt_data = []
+            for tag in lt_debt_tags:
+                data = facts.get(tag, {}).get('units', {}).get('USD', [])
+                if data:
+                    long_term_debt_data.extend(data)
 
-            short_term_debt_data = facts.get('LongTermDebtCurrent', {}).get('units', {}).get('USD', [])
+            # Get short-term debt data from multiple sources
+            st_debt_tags = [
+                'LongTermDebtCurrent',
+                'DebtCurrent',
+                'NotesPayableCurrent',
+                'ConvertibleNotesPayableCurrent',
+                'ShortTermBorrowings',
+                'CommercialPaper',
+                'LinesOfCreditCurrent',
+                'CapitalLeaseObligationsCurrent',
+                'OtherLongTermDebtCurrent'
+            ]
+            
+            short_term_debt_data = []
+            for tag in st_debt_tags:
+                data = facts.get(tag, {}).get('units', {}).get('USD', [])
+                if data:
+                    short_term_debt_data.extend(data)
 
             # Filter for 10-K entries and create lookup by fiscal year and end date
             equity_by_year = {}
@@ -1349,6 +1383,7 @@ class EdgarFetcher:
                     if year and val and year not in equity_by_year:
                         equity_by_year[year] = {'val': val, 'fiscal_end': fiscal_end}
 
+            # Build long-term debt by year (first entry per year wins)
             long_term_debt_by_year = {}
             if long_term_debt_data:
                 for entry in long_term_debt_data:
@@ -1359,6 +1394,7 @@ class EdgarFetcher:
                         if year and val is not None and year not in long_term_debt_by_year:
                             long_term_debt_by_year[year] = {'val': val, 'fiscal_end': fiscal_end}
 
+            # Build short-term debt by year
             short_term_debt_by_year = {}
             if short_term_debt_data:
                 for entry in short_term_debt_data:
@@ -1388,7 +1424,8 @@ class EdgarFetcher:
                     has_debt_data = True
 
                 # Only calculate D/E if we have both equity and some debt data
-                if equity > 0 and has_debt_data:
+                # Allow negative equity (deficit) which results in negative D/E ratio
+                if equity != 0 and has_debt_data:
                     debt_to_equity = total_debt / equity
                     debt_to_equity_history.append({
                         'year': year,
