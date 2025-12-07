@@ -10,52 +10,119 @@ import subprocess
 import time
 import requests
 import os
+import psycopg2
 from playwright.sync_api import Page
 
 
 @pytest.fixture(scope="session")
-def backend_server():
-    """Use existing backend server or start a new one for the test session."""
-    print("\n[E2E] Checking for existing backend server...")
-    
-    # Check if backend is already running
-    try:
-        response = requests.get('http://localhost:8080/api/health', timeout=2)
-        if response.status_code == 200:
-            print("[E2E] Using existing backend server on port 8080")
-            yield None  # No process to manage
-            return
-    except (requests.ConnectionError, requests.Timeout):
-        print("[E2E] No existing backend found, starting new one...")
-    
+def test_database():
+    """Create test database from template for test session, drop after completion."""
+    TEMPLATE_DB = 'lynch_stocks_template'
+    TEST_DB = 'lynch_stocks_test'
+
+    print("\n[TEST DB] Setting up test database...")
+
+    # Connect to postgres database for admin operations
+    conn = psycopg2.connect(
+        database='postgres',
+        user='lynch',
+        password='lynch_dev_password',
+        host='localhost',
+        port=5432
+    )
+    conn.autocommit = True
+    cursor = conn.cursor()
+
+    # Verify template exists
+    cursor.execute(
+        "SELECT 1 FROM pg_database WHERE datname = %s AND datistemplate = TRUE",
+        (TEMPLATE_DB,)
+    )
+    if not cursor.fetchone():
+        cursor.close()
+        conn.close()
+        raise Exception(
+            f"Template database '{TEMPLATE_DB}' not found.\n"
+            f"Run 'python backend/tests/create_test_template.py' first."
+        )
+
+    # Terminate any existing connections to test database
+    cursor.execute(f"""
+        SELECT pg_terminate_backend(pg_stat_activity.pid)
+        FROM pg_stat_activity
+        WHERE pg_stat_activity.datname = '{TEST_DB}'
+          AND pid <> pg_backend_pid()
+    """)
+
+    # Drop existing test database if it exists
+    cursor.execute(f"DROP DATABASE IF EXISTS {TEST_DB}")
+
+    # Create test database from template
+    print(f"[TEST DB] Creating test database from template...")
+    cursor.execute(f"CREATE DATABASE {TEST_DB} TEMPLATE {TEMPLATE_DB}")
+    print(f"[TEST DB] ✓ Test database created: {TEST_DB}")
+
+    yield TEST_DB
+
+    # Cleanup: Drop test database
+    print(f"\n[TEST DB] Cleaning up test database...")
+
+    # Terminate all connections to test database
+    cursor.execute(f"""
+        SELECT pg_terminate_backend(pg_stat_activity.pid)
+        FROM pg_stat_activity
+        WHERE pg_stat_activity.datname = '{TEST_DB}'
+          AND pid <> pg_backend_pid()
+    """)
+
+    # Drop test database
+    cursor.execute(f"DROP DATABASE IF EXISTS {TEST_DB}")
+    print(f"[TEST DB] ✓ Test database dropped")
+
+    cursor.close()
+    conn.close()
+
+
+@pytest.fixture(scope="session")
+def backend_server(test_database):
+    """Start isolated backend server for tests on port 8081 with test database."""
+    print("\n[E2E] Starting isolated backend server for tests...")
+
+    # Use port 8081 for test backend to avoid conflicts with dev server
+    test_port = 8081
+
     # Set environment variables for the backend
     env = os.environ.copy()
     env.update({
         'DB_HOST': 'localhost',
         'DB_PORT': '5432',
-        'DB_NAME': 'lynch_stocks',
+        'DB_NAME': test_database,
         'DB_USER': 'lynch',
         'DB_PASSWORD': 'lynch_dev_password',
-        'FLASK_ENV': 'development'
+        'FLASK_ENV': 'development',
+        'PORT': str(test_port)
     })
-    
+    print(f"[E2E] Starting backend on port {test_port} with test database: {test_database}")
+    print(f"[E2E] Environment: DB_NAME={env['DB_NAME']}, DB_HOST={env['DB_HOST']}, PORT={env['PORT']}")
+
     # Start backend process
+    # Note: stdout=None, stderr=None allows backend output to print to console for debugging
     backend_process = subprocess.Popen(
         ['python3', 'backend/app.py'],
         cwd='/Users/mikey/workspace/lynch-stock-screener',
         env=env,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
+        stdout=None,  # Let backend print to console
+        stderr=None,  # Let backend errors print to console
         text=True
     )
-    
+
     # Wait for backend to be ready
     max_retries = 30
     for i in range(max_retries):
         try:
-            response = requests.get('http://localhost:8080/api/health', timeout=2)
+            response = requests.get(f'http://localhost:{test_port}/api/health', timeout=2)
             if response.status_code == 200:
-                print(f"[E2E] Backend ready after {i+1} attempts")
+                print(f"[E2E] Backend ready after {i+1} attempts on port {test_port}")
                 break
         except (requests.ConnectionError, requests.Timeout):
             if i == max_retries - 1:
@@ -66,9 +133,9 @@ def backend_server():
                 error_msg = f"Backend server failed to start.\nSTDOUT:\n{stdout_output}\nSTDERR:\n{stderr_output}"
                 raise Exception(error_msg)
             time.sleep(1)
-    
+
     yield backend_process
-    
+
     # Cleanup
     print("\n[E2E] Stopping backend server...")
     backend_process.terminate()
@@ -80,43 +147,46 @@ def backend_server():
 
 @pytest.fixture(scope="session")
 def frontend_server():
-    """Use existing frontend server or start a new one for the test session."""
-    print("\n[E2E] Checking for existing frontend server...")
-    
-    # Check if frontend is already running
-    try:
-        response = requests.get('http://localhost:5173', timeout=2)
-        if response.status_code == 200:
-            print("[E2E] Using existing frontend server on port 5173")
-            yield None  # No process to manage
-            return
-    except (requests.ConnectionError, requests.Timeout):
-        print("[E2E] No existing frontend found, starting new one...")
-    
+    """Start isolated frontend server for tests on port 5174."""
+    print("\n[E2E] Starting isolated frontend server for tests...")
+
+    # Use port 5174 for test frontend to avoid conflicts with dev server
+    test_port = 5174
+
+    # Set environment variables for the frontend
+    env = os.environ.copy()
+    env.update({
+        'PORT': str(test_port),
+        'VITE_API_URL': 'http://localhost:8081'  # Point to test backend on 8081
+    })
+
+    print(f"[E2E] Starting frontend on port {test_port}, pointing to backend on port 8081")
+
     # Start frontend process
     frontend_process = subprocess.Popen(
-        ['npm', 'run', 'dev'],
+        ['npm', 'run', 'dev', '--', '--port', str(test_port)],
         cwd='/Users/mikey/workspace/lynch-stock-screener/frontend',
+        env=env,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE
     )
-    
+
     # Wait for frontend to be ready
     max_retries = 30
     for i in range(max_retries):
         try:
-            response = requests.get('http://localhost:5173', timeout=2)
+            response = requests.get(f'http://localhost:{test_port}', timeout=2)
             if response.status_code == 200:
-                print(f"[E2E] Frontend ready after {i+1} attempts")
+                print(f"[E2E] Frontend ready after {i+1} attempts on port {test_port}")
                 break
         except (requests.ConnectionError, requests.Timeout):
             if i == max_retries - 1:
                 frontend_process.kill()
                 raise Exception("Frontend server failed to start")
             time.sleep(1)
-    
+
     yield frontend_process
-    
+
     # Cleanup
     print("\n[E2E] Stopping frontend server...")
     frontend_process.terminate()
@@ -133,6 +203,49 @@ def servers(backend_server, frontend_server):
         'backend': backend_server,
         'frontend': frontend_server
     }
+
+
+@pytest.fixture(scope="function", autouse=True)
+def clear_test_session_data(test_database, page):
+    """Clear session data before each test to ensure clean state."""
+    # This fixture runs before each test function
+    # It clears data that might persist across tests within the session
+
+    # Connect to test database
+    conn = psycopg2.connect(
+        database=test_database,
+        user='lynch',
+        password='lynch_dev_password',
+        host='localhost',
+        port=5432
+    )
+    cursor = conn.cursor()
+
+    # Clear only session-specific data that tests might modify
+    # DO NOT clear screening_results/screening_sessions - those are stable test data
+    cursor.execute('DELETE FROM app_settings')
+    cursor.execute('DELETE FROM watchlist')
+    cursor.execute('DELETE FROM conversations')
+    cursor.execute('DELETE FROM messages')
+    cursor.execute('DELETE FROM message_sources')
+
+    conn.commit()
+    cursor.close()
+    conn.close()
+
+    # Clear browser storage (localStorage and sessionStorage)
+    # This ensures filters don't persist in the browser between tests
+    try:
+        page.goto("http://localhost:5174")
+        page.evaluate("() => { localStorage.clear(); sessionStorage.clear(); }")
+    except Exception as e:
+        # Ignore errors if page hasn't loaded yet
+        pass
+
+    # Test runs here (yield allows test to execute)
+    yield
+
+    # Cleanup after test (if needed) - currently none
 
 
 @pytest.hookimpl(tryfirst=True, hookwrapper=True)
