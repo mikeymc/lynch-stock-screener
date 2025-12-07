@@ -187,32 +187,7 @@ def test_app_initialization_and_ui_elements(page: Page, servers):
     peg_text = peg_cell.inner_text()
     # PEG should be a number or N/A
     assert peg_text == 'N/A' or peg_text.replace('.', '').replace('-', '').isdigit(), f"PEG should be numeric or N/A, got: {peg_text}"
-    
-    # ===== PAGINATION VERIFICATION =====
-    # print("[E2E] Verifying pagination controls...")
-    # pagination = page.locator('.pagination')
-    # expect(pagination).to_be_visible()
-    
-    # # Verify Previous button
-    # prev_button = pagination.get_by_role('button', name='Previous')
-    # expect(prev_button).to_be_visible()
-    # expect(prev_button).to_be_disabled()  # Should be disabled on first page
-    
-    # # Verify Next button
-    # next_button = pagination.get_by_role('button', name='Next')
-    # expect(next_button).to_be_visible()
-    # expect(next_button).to_be_enabled()  # Should be enabled if there are more pages
-    
-    # # Verify page info
-    # page_info = pagination.locator('.page-info')
-    # expect(page_info).to_be_visible()
-    # expect(page_info).to_contain_text('Page 1 of')
-    
-    # # Verify pagination info text
-    # pagination_info = page.locator('.pagination-info')
-    # expect(pagination_info).to_be_visible()
-    # expect(pagination_info).to_contain_text('Showing 1-100 of')
-    
+        
     print("[E2E] Test completed successfully")
 
 
