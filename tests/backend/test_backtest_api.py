@@ -4,7 +4,7 @@ import json
 import time
 
 class TestBacktestAPI(unittest.TestCase):
-    BASE_URL = "http://localhost:8080/api"
+    BASE_URL = "http://localhost:8081/api"
 
     def test_backtest_endpoint(self):
         url = f"{self.BASE_URL}/backtest"
