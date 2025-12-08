@@ -31,9 +31,13 @@ from algorithm_optimizer import AlgorithmOptimizer
 from finnhub_news import FinnhubNewsClient
 from stock_rescorer import StockRescorer
 from sec_8k_client import SEC8KClient
+from fly_machines import get_fly_manager
 
 from algorithm_optimizer import AlgorithmOptimizer
 import logging
+
+# Feature flag for background job processing
+USE_BACKGROUND_JOBS = os.environ.get('USE_BACKGROUND_JOBS', 'true').lower() == 'true'
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -350,6 +354,94 @@ def health():
     return jsonify({'status': 'healthy'})
 
 
+# ============================================================
+# Background Job API Endpoints
+# ============================================================
+
+# API token for external job creation (GitHub Actions, etc.)
+API_AUTH_TOKEN = os.environ.get('API_AUTH_TOKEN')
+
+
+def check_api_auth():
+    """Check bearer token authentication. Returns error response or None if authorized."""
+    if not API_AUTH_TOKEN:
+        # No token configured - allow all requests (local dev)
+        return None
+
+    auth_header = request.headers.get('Authorization', '')
+    if not auth_header.startswith('Bearer '):
+        return jsonify({'error': 'Authorization header required'}), 401
+
+    token = auth_header[7:]  # Remove 'Bearer ' prefix
+    if token != API_AUTH_TOKEN:
+        return jsonify({'error': 'Invalid token'}), 401
+
+    return None
+
+
+@app.route('/api/jobs', methods=['POST'])
+def create_job():
+    """Create a new background job (requires API token if configured)"""
+    # Check auth for external requests (skip for internal calls from /api/screen/start)
+    if request.headers.get('X-Internal-Request') != 'true':
+        auth_error = check_api_auth()
+        if auth_error:
+            return auth_error
+
+    try:
+        data = request.get_json()
+
+        if not data or 'type' not in data:
+            return jsonify({'error': 'Job type is required'}), 400
+
+        job_type = data['type']
+        params = data.get('params', {})
+
+        job_id = db.create_background_job(job_type, params)
+
+        return jsonify({
+            'job_id': job_id,
+            'status': 'pending'
+        })
+
+    except Exception as e:
+        print(f"Error creating job: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/jobs/<int:job_id>', methods=['GET'])
+def get_job(job_id):
+    """Get background job status and details"""
+    try:
+        job = db.get_background_job(job_id)
+
+        if not job:
+            return jsonify({'error': 'Job not found'}), 404
+
+        return jsonify(job)
+
+    except Exception as e:
+        print(f"Error getting job {job_id}: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/jobs/<int:job_id>/cancel', methods=['POST'])
+def cancel_job(job_id):
+    """Cancel a background job"""
+    try:
+        job = db.get_background_job(job_id)
+
+        if not job:
+            return jsonify({'error': 'Job not found'}), 404
+
+        db.cancel_job(job_id)
+
+        return jsonify({'status': 'cancelled'})
+
+    except Exception as e:
+        print(f"Error cancelling job {job_id}: {e}")
+        return jsonify({'error': str(e)}), 500
+
 
 @app.route('/api/algorithms', methods=['GET'])
 def get_algorithms():
@@ -411,58 +503,85 @@ def get_stock(symbol):
 
 @app.route('/api/screen/start', methods=['POST'])
 def start_screening():
-    """Start a new screening session in background thread"""
-    data = request.get_json()
+    """Start a new screening session via background job queue or thread"""
+    data = request.get_json() or {}
     limit = data.get('limit')
     force_refresh = data.get('force_refresh', False)
     algorithm = data.get('algorithm', 'weighted')
-    
+
     try:
         print(f"[START] Starting screening with limit={limit}, algorithm={algorithm}")
-        
-        # Get symbols
-        symbols = fetcher.get_nyse_nasdaq_symbols()
-        if not symbols:
-            print("[START] ERROR: No symbols returned from fetcher")
-            return jsonify({'error': 'Unable to fetch stock symbols'}), 500
-        
-        print(f"[START] Fetched {len(symbols)} symbols")
-        
-        if limit:
-            symbols = symbols[:limit]
-        
-        total = len(symbols)
-        print(f"[START] Will screen {total} symbols")
-        
-        # Create session
-        session_id = db.create_session(algorithm=algorithm, total_count=total)
+        print(f"[START] USE_BACKGROUND_JOBS={USE_BACKGROUND_JOBS}")
+
+        # Create session first (needed for both approaches)
+        session_id = db.create_session(algorithm=algorithm, total_count=0)
         print(f"[START] Created session {session_id}")
-        
-        # Start background thread
-        thread = threading.Thread(
-            target=run_screening_background,
-            args=(session_id, symbols, algorithm, force_refresh),
-            daemon=True
-        )
-        
-        # Track active screening BEFORE starting thread to avoid race condition
-        with screening_lock:
-            active_screenings[session_id] = {
-                'thread': thread,
-                'started_at': datetime.now().isoformat()
-            }
-        print(f"[START] Session {session_id} registered in active_screenings")
-        
-        # Now start the thread
-        thread.start()
-        print(f"[START] Started background thread for session {session_id}")
-        
-        return jsonify({
-            'session_id': session_id,
-            'total_count': total,
-            'status': 'started'
-        })
-        
+
+        if USE_BACKGROUND_JOBS:
+            # Create background job and wake up worker
+            job_id = db.create_background_job('full_screening', {
+                'session_id': session_id,
+                'algorithm': algorithm,
+                'force_refresh': force_refresh,
+                'limit': limit
+            })
+            print(f"[START] Created background job {job_id} for session {session_id}")
+
+            # Start worker machine if configured
+            fly_manager = get_fly_manager()
+            worker_started = fly_manager.ensure_worker_running()
+            print(f"[START] Worker start result: {worker_started}")
+
+            return jsonify({
+                'session_id': session_id,
+                'job_id': job_id,
+                'status': 'pending',
+                'use_background_jobs': True
+            })
+        else:
+            # Fall back to in-process threading (original behavior)
+            symbols = fetcher.get_nyse_nasdaq_symbols()
+            if not symbols:
+                print("[START] ERROR: No symbols returned from fetcher")
+                return jsonify({'error': 'Unable to fetch stock symbols'}), 500
+
+            print(f"[START] Fetched {len(symbols)} symbols")
+
+            if limit:
+                symbols = symbols[:limit]
+
+            total = len(symbols)
+            print(f"[START] Will screen {total} symbols")
+
+            # Update session with total count
+            db.update_session_total_count(session_id, total)
+
+            # Start background thread
+            thread = threading.Thread(
+                target=run_screening_background,
+                args=(session_id, symbols, algorithm, force_refresh),
+                daemon=True
+            )
+
+            # Track active screening BEFORE starting thread to avoid race condition
+            with screening_lock:
+                active_screenings[session_id] = {
+                    'thread': thread,
+                    'started_at': datetime.now().isoformat()
+                }
+            print(f"[START] Session {session_id} registered in active_screenings")
+
+            # Now start the thread
+            thread.start()
+            print(f"[START] Started background thread for session {session_id}")
+
+            return jsonify({
+                'session_id': session_id,
+                'total_count': total,
+                'status': 'started',
+                'use_background_jobs': False
+            })
+
     except Exception as e:
         print(f"Error starting screening: {e}")
         import traceback

@@ -1,0 +1,70 @@
+# ABOUTME: GitHub Actions workflow to trigger scheduled background jobs
+# ABOUTME: Runs daily screening and weekly SEC data refresh via the job API
+
+name: Scheduled Jobs
+
+on:
+  schedule:
+    # Daily screening at 9 AM UTC (4 AM ET) on weekdays
+    - cron: '0 9 * * 1-5'
+    # Weekly SEC refresh at 8 AM UTC on Sundays
+    - cron: '0 8 * * 0'
+  workflow_dispatch:
+    inputs:
+      job_type:
+        description: 'Job type to run'
+        required: true
+        default: 'full_screening'
+        type: choice
+        options:
+          - full_screening
+          - sec_refresh
+
+jobs:
+  trigger-job:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Determine job type
+        id: job-type
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "type=${{ inputs.job_type }}" >> $GITHUB_OUTPUT
+          elif [ "$(date -u +%u)" = "7" ]; then
+            # Sunday - run SEC refresh
+            echo "type=sec_refresh" >> $GITHUB_OUTPUT
+          else
+            # Weekday - run screening
+            echo "type=full_screening" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Trigger background job
+        run: |
+          JOB_TYPE="${{ steps.job-type.outputs.type }}"
+          echo "Triggering job: $JOB_TYPE"
+
+          RESPONSE=$(curl -s -w "\n%{http_code}" -X POST \
+            "${{ secrets.API_URL }}/api/jobs" \
+            -H "Content-Type: application/json" \
+            -H "Authorization: Bearer ${{ secrets.API_TOKEN }}" \
+            -d "{\"type\": \"$JOB_TYPE\", \"params\": {\"algorithm\": \"weighted\"}}")
+
+          HTTP_CODE=$(echo "$RESPONSE" | tail -n1)
+          BODY=$(echo "$RESPONSE" | sed '$d')
+
+          echo "Response: $BODY"
+          echo "HTTP Code: $HTTP_CODE"
+
+          if [ "$HTTP_CODE" -ne 200 ]; then
+            echo "Failed to trigger job"
+            exit 1
+          fi
+
+          JOB_ID=$(echo "$BODY" | jq -r '.job_id')
+          echo "Job ID: $JOB_ID"
+          echo "job_id=$JOB_ID" >> $GITHUB_OUTPUT
+
+      - name: Monitor job (optional)
+        if: success()
+        run: |
+          echo "Job triggered successfully. Monitor at:"
+          echo "${{ secrets.API_URL }}/api/jobs/${{ steps.job-type.outputs.job_id }}"

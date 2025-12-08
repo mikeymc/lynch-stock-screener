@@ -408,6 +408,33 @@ class Database:
         """)
 
         cursor.execute("""
+            CREATE TABLE IF NOT EXISTS background_jobs (
+                id SERIAL PRIMARY KEY,
+                job_type TEXT NOT NULL,
+                status TEXT NOT NULL DEFAULT 'pending',
+                claimed_by TEXT,
+                claimed_at TIMESTAMP,
+                claim_expires_at TIMESTAMP,
+                params JSONB NOT NULL DEFAULT '{}',
+                progress_pct INTEGER DEFAULT 0,
+                progress_message TEXT,
+                processed_count INTEGER DEFAULT 0,
+                total_count INTEGER DEFAULT 0,
+                result JSONB,
+                error_message TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                started_at TIMESTAMP,
+                completed_at TIMESTAMP
+            )
+        """)
+
+        cursor.execute("""
+            CREATE INDEX IF NOT EXISTS idx_background_jobs_pending
+            ON background_jobs(status, created_at)
+            WHERE status = 'pending'
+        """)
+
+        cursor.execute("""
             CREATE TABLE IF NOT EXISTS screening_results (
                 id SERIAL PRIMARY KEY,
                 session_id INTEGER,
@@ -1822,14 +1849,246 @@ class Database:
         cursor.execute("SELECT * FROM algorithm_configurations ORDER BY created_at DESC")
         rows = cursor.fetchall()
         self.return_connection(conn)
-        
+
         # Get column names from cursor description to map correctly
         # This is safer than hardcoding indices since we just added columns
         colnames = [desc[0] for desc in cursor.description]
-        
+
         results = []
         for row in rows:
             row_dict = dict(zip(colnames, row))
             results.append(row_dict)
-            
+
         return results
+
+    # Background Jobs Methods
+
+    def create_background_job(self, job_type: str, params: Dict[str, Any]) -> int:
+        """Create a new background job and return its ID"""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        cursor.execute("""
+            INSERT INTO background_jobs (job_type, params, status, created_at)
+            VALUES (%s, %s, 'pending', NOW())
+            RETURNING id
+        """, (job_type, json.dumps(params)))
+        job_id = cursor.fetchone()[0]
+        conn.commit()
+        self.return_connection(conn)
+        return job_id
+
+    def get_background_job(self, job_id: int) -> Optional[Dict[str, Any]]:
+        """Get a background job by ID"""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT id, job_type, status, claimed_by, claimed_at, claim_expires_at,
+                   params, progress_pct, progress_message, processed_count, total_count,
+                   result, error_message, created_at, started_at, completed_at
+            FROM background_jobs
+            WHERE id = %s
+        """, (job_id,))
+        row = cursor.fetchone()
+        self.return_connection(conn)
+
+        if not row:
+            return None
+
+        return {
+            'id': row[0],
+            'job_type': row[1],
+            'status': row[2],
+            'claimed_by': row[3],
+            'claimed_at': row[4],
+            'claim_expires_at': row[5],
+            'params': row[6] if isinstance(row[6], dict) else json.loads(row[6]) if row[6] else {},
+            'progress_pct': row[7],
+            'progress_message': row[8],
+            'processed_count': row[9],
+            'total_count': row[10],
+            'result': row[11] if isinstance(row[11], dict) else json.loads(row[11]) if row[11] else None,
+            'error_message': row[12],
+            'created_at': row[13],
+            'started_at': row[14],
+            'completed_at': row[15]
+        }
+
+    def claim_pending_job(self, worker_id: str, claim_minutes: int = 10) -> Optional[Dict[str, Any]]:
+        """
+        Atomically claim a pending job using FOR UPDATE SKIP LOCKED.
+        Returns the claimed job or None if no pending jobs available.
+        """
+        conn = self.get_connection()
+        cursor = conn.cursor()
+
+        try:
+            cursor.execute("""
+                WITH claimable AS (
+                    SELECT id FROM background_jobs
+                    WHERE status = 'pending'
+                    ORDER BY created_at ASC
+                    LIMIT 1
+                    FOR UPDATE SKIP LOCKED
+                )
+                UPDATE background_jobs
+                SET status = 'claimed',
+                    claimed_by = %s,
+                    claimed_at = NOW(),
+                    claim_expires_at = NOW() + INTERVAL '%s minutes'
+                WHERE id = (SELECT id FROM claimable)
+                RETURNING id, job_type, status, claimed_by, claimed_at, claim_expires_at,
+                          params, progress_pct, progress_message, processed_count, total_count,
+                          result, error_message, created_at, started_at, completed_at
+            """, (worker_id, claim_minutes))
+
+            row = cursor.fetchone()
+            conn.commit()
+
+            if not row:
+                return None
+
+            return {
+                'id': row[0],
+                'job_type': row[1],
+                'status': row[2],
+                'claimed_by': row[3],
+                'claimed_at': row[4],
+                'claim_expires_at': row[5],
+                'params': row[6] if isinstance(row[6], dict) else json.loads(row[6]) if row[6] else {},
+                'progress_pct': row[7],
+                'progress_message': row[8],
+                'processed_count': row[9],
+                'total_count': row[10],
+                'result': row[11] if isinstance(row[11], dict) else json.loads(row[11]) if row[11] else None,
+                'error_message': row[12],
+                'created_at': row[13],
+                'started_at': row[14],
+                'completed_at': row[15]
+            }
+        finally:
+            self.return_connection(conn)
+
+    def update_job_progress(self, job_id: int, progress_pct: int = None,
+                           progress_message: str = None, processed_count: int = None,
+                           total_count: int = None):
+        """Update job progress information"""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+
+        updates = []
+        values = []
+
+        if progress_pct is not None:
+            updates.append("progress_pct = %s")
+            values.append(progress_pct)
+        if progress_message is not None:
+            updates.append("progress_message = %s")
+            values.append(progress_message)
+        if processed_count is not None:
+            updates.append("processed_count = %s")
+            values.append(processed_count)
+        if total_count is not None:
+            updates.append("total_count = %s")
+            values.append(total_count)
+
+        if updates:
+            values.append(job_id)
+            cursor.execute(f"""
+                UPDATE background_jobs
+                SET {', '.join(updates)}
+                WHERE id = %s
+            """, tuple(values))
+            conn.commit()
+
+        self.return_connection(conn)
+
+    def update_job_status(self, job_id: int, status: str):
+        """Update job status"""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        cursor.execute("""
+            UPDATE background_jobs
+            SET status = %s,
+                started_at = CASE WHEN %s = 'running' AND started_at IS NULL THEN NOW() ELSE started_at END
+            WHERE id = %s
+        """, (status, status, job_id))
+        conn.commit()
+        self.return_connection(conn)
+
+    def complete_job(self, job_id: int, result: Dict[str, Any]):
+        """Mark job as completed with result"""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        cursor.execute("""
+            UPDATE background_jobs
+            SET status = 'completed',
+                result = %s,
+                completed_at = NOW(),
+                progress_pct = 100
+            WHERE id = %s
+        """, (json.dumps(result), job_id))
+        conn.commit()
+        self.return_connection(conn)
+
+    def fail_job(self, job_id: int, error_message: str):
+        """Mark job as failed with error message"""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        cursor.execute("""
+            UPDATE background_jobs
+            SET status = 'failed',
+                error_message = %s,
+                completed_at = NOW()
+            WHERE id = %s
+        """, (error_message, job_id))
+        conn.commit()
+        self.return_connection(conn)
+
+    def cancel_job(self, job_id: int):
+        """Cancel a job"""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        cursor.execute("""
+            UPDATE background_jobs
+            SET status = 'cancelled',
+                completed_at = NOW()
+            WHERE id = %s
+        """, (job_id,))
+        conn.commit()
+        self.return_connection(conn)
+
+    def extend_job_claim(self, job_id: int, minutes: int = 10):
+        """Extend job claim expiry (heartbeat)"""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        cursor.execute("""
+            UPDATE background_jobs
+            SET claim_expires_at = NOW() + INTERVAL '%s minutes'
+            WHERE id = %s
+        """, (minutes, job_id))
+        conn.commit()
+        self.return_connection(conn)
+
+    def get_pending_jobs_count(self) -> int:
+        """Get count of pending jobs"""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT COUNT(*) FROM background_jobs WHERE status = 'pending'")
+        count = cursor.fetchone()[0]
+        self.return_connection(conn)
+        return count
+
+    def release_job(self, job_id: int):
+        """Release a claimed job back to pending status"""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        cursor.execute("""
+            UPDATE background_jobs
+            SET status = 'pending',
+                claimed_by = NULL,
+                claimed_at = NULL,
+                claim_expires_at = NULL
+            WHERE id = %s
+        """, (job_id,))
+        conn.commit()
+        self.return_connection(conn)

@@ -314,12 +314,14 @@ function StockListView({
   // Resume polling if there's an active screening session
   useEffect(() => {
     const activeSessionId = localStorage.getItem('activeScreeningSession')
+    const activeJobId = localStorage.getItem('activeJobId')
     if (activeSessionId) {
       const sessionIdNum = parseInt(activeSessionId)
+      const jobIdNum = activeJobId ? parseInt(activeJobId) : null
       setActiveSessionId(sessionIdNum)
       setLoading(true)
       setProgress('Resuming screening...')
-      pollScreeningProgress(sessionIdNum)
+      pollScreeningProgress(sessionIdNum, jobIdNum)
     }
   }, [])
 
@@ -349,16 +351,24 @@ function StockListView({
         throw new Error(`API returned ${response.status}: ${response.statusText}`)
       }
 
-      const { session_id, total_count } = await response.json()
+      const data = await response.json()
+      const { session_id, job_id, total_count, use_background_jobs } = data
 
       // Store session_id in localStorage and state
       localStorage.setItem('activeScreeningSession', session_id)
+      if (job_id) {
+        localStorage.setItem('activeJobId', job_id)
+      }
       setActiveSessionId(session_id)
 
-      setProgress(`Screening ${total_count} stocks...`)
+      if (use_background_jobs) {
+        setProgress('Screening queued... waiting for worker to start')
+      } else {
+        setProgress(`Screening ${total_count} stocks...`)
+      }
 
-      // Start polling for progress
-      pollScreeningProgress(session_id)
+      // Start polling for progress (works for both modes - worker updates session table)
+      pollScreeningProgress(session_id, job_id)
 
     } catch (err) {
       console.error('Error starting screening:', err)
@@ -372,6 +382,24 @@ function StockListView({
     if (!activeSessionId) return
 
     try {
+      // Try to cancel via job API first if we have a job_id
+      const jobId = localStorage.getItem('activeJobId')
+      if (jobId) {
+        const jobResponse = await fetch(`${API_BASE}/jobs/${jobId}/cancel`, {
+          method: 'POST'
+        })
+        if (jobResponse.ok) {
+          setProgress('Screening cancelled')
+          setLoading(false)
+          setActiveSessionId(null)
+          localStorage.removeItem('activeScreeningSession')
+          localStorage.removeItem('activeJobId')
+          setTimeout(() => setProgress(''), 3000)
+          return
+        }
+      }
+
+      // Fall back to session stop endpoint
       const response = await fetch(`${API_BASE}/screen/stop/${activeSessionId}`, {
         method: 'POST'
       })
@@ -390,6 +418,7 @@ function StockListView({
         setLoading(false)
         setActiveSessionId(null)
         localStorage.removeItem('activeScreeningSession')
+        localStorage.removeItem('activeJobId')
 
         // Clear progress after a delay
         setTimeout(() => setProgress(''), 3000)
@@ -403,25 +432,87 @@ function StockListView({
     }
   }
 
-  const pollScreeningProgress = async (sessionId) => {
+  const pollScreeningProgress = async (sessionId, jobId = null) => {
     const pollInterval = setInterval(async () => {
       try {
-        // Get progress
+        // If we have a job_id, poll the job endpoint for detailed progress
+        if (jobId) {
+          const jobResponse = await fetch(`${API_BASE}/jobs/${jobId}`)
+          if (jobResponse.ok) {
+            const job = await jobResponse.json()
+
+            // Show job progress message if available
+            if (job.progress_message) {
+              const percent = job.progress_pct || 0
+              setProgress(`${job.progress_message} (${percent}%)`)
+            } else if (job.status === 'pending') {
+              setProgress('Screening queued... waiting for worker')
+            } else if (job.status === 'claimed') {
+              setProgress('Worker starting...')
+            }
+
+            // Check if job completed or failed
+            if (job.status === 'completed' || job.status === 'failed' || job.status === 'cancelled') {
+              clearInterval(pollInterval)
+              setActiveSessionId(null)
+              localStorage.removeItem('activeScreeningSession')
+              localStorage.removeItem('activeJobId')
+
+              if (job.status === 'completed') {
+                // Fetch final results from session
+                const resultsResponse = await fetch(`${API_BASE}/screen/results/${sessionId}`)
+                if (resultsResponse.ok) {
+                  const { results } = await resultsResponse.json()
+                  setStocks(results)
+                }
+
+                // Build summary from job result
+                const result = job.result || {}
+                setSummary({
+                  totalAnalyzed: result.total_analyzed || 0,
+                  strong_buy_count: result.pass_count || 0,
+                  buy_count: result.close_count || 0,
+                  hold_count: 0,
+                  caution_count: 0,
+                  avoid_count: result.fail_count || 0,
+                  algorithm: 'weighted'
+                })
+                setProgress('Screening complete!')
+              } else if (job.status === 'failed') {
+                setError(`Screening failed: ${job.error_message || 'Unknown error'}`)
+                setProgress('')
+              } else {
+                setProgress('Screening cancelled')
+              }
+
+              setLoading(false)
+              setTimeout(() => setProgress(''), 3000)
+              return
+            }
+          }
+        }
+
+        // Also poll session progress endpoint for results
         const progressResponse = await fetch(`${API_BASE}/screen/progress/${sessionId}`)
         if (!progressResponse.ok) {
-          clearInterval(pollInterval)
-          setError('Failed to get screening progress')
-          setLoading(false)
+          // Session might not exist yet if worker hasn't started - don't error out
+          if (progressResponse.status !== 404) {
+            clearInterval(pollInterval)
+            setError('Failed to get screening progress')
+            setLoading(false)
+          }
           return
         }
 
         const progress = await progressResponse.json()
 
-        // Update progress message
-        const percent = progress.total_count > 0
-          ? Math.round((progress.processed_count / progress.total_count) * 100)
-          : 0
-        setProgress(`Screening: ${progress.processed_count}/${progress.total_count} (${percent}%) - ${progress.current_symbol || ''}`)
+        // Update progress message (if not already set by job endpoint)
+        if (!jobId) {
+          const percent = progress.total_count > 0
+            ? Math.round((progress.processed_count / progress.total_count) * 100)
+            : 0
+          setProgress(`Screening: ${progress.processed_count}/${progress.total_count} (${percent}%) - ${progress.current_symbol || ''}`)
+        }
 
         // Fetch and update results incrementally
         const resultsResponse = await fetch(`${API_BASE}/screen/results/${sessionId}`)
@@ -430,8 +521,8 @@ function StockListView({
           setStocks(results)
         }
 
-        // Check if complete or cancelled
-        if (progress.status === 'complete' || progress.status === 'cancelled') {
+        // Check if complete or cancelled (for non-job mode)
+        if (!jobId && (progress.status === 'complete' || progress.status === 'cancelled')) {
           clearInterval(pollInterval)
 
           // Clear active session

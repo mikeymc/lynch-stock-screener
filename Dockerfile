@@ -26,7 +26,7 @@ COPY backend/requirements.txt ./
 # Install Python dependencies
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy backend code
+# Copy backend code (includes worker.py for background job processing)
 COPY backend/ ./
 
 # Copy frontend build from stage 1
@@ -35,5 +35,6 @@ COPY --from=frontend-builder /frontend/dist ./static
 # Expose port
 EXPOSE 8080
 
-# Run the application
+# Default command runs the web server
+# Worker machines are created via Fly Machines API with: python worker.py
 CMD ["gunicorn", "--config", "gunicorn.conf.py", "app:app"]
