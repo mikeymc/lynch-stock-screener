@@ -52,12 +52,24 @@ app = Flask(__name__, static_folder='static', static_url_path='')
 CORS(app)
 
 # PostgreSQL connection parameters
-# Use environment variables for production, defaults for local development
-db_host = os.environ.get('DB_HOST', 'localhost')
-db_port = int(os.environ.get('DB_PORT', '5432'))
-db_name = os.environ.get('DB_NAME', 'lynch_stocks')
-db_user = os.environ.get('DB_USER', 'lynch')
-db_password = os.environ.get('DB_PASSWORD', 'lynch_dev_password')
+# Parse DATABASE_URL if available (Fly.io), otherwise use individual env vars
+database_url = os.environ.get('DATABASE_URL')
+if database_url:
+    # Parse postgres://user:password@host:port/database
+    from urllib.parse import urlparse
+    parsed = urlparse(database_url)
+    db_host = parsed.hostname
+    db_port = parsed.port or 5432
+    db_name = parsed.path.lstrip('/')
+    db_user = parsed.username
+    db_password = parsed.password
+else:
+    # Use individual environment variables for local development
+    db_host = os.environ.get('DB_HOST', 'localhost')
+    db_port = int(os.environ.get('DB_PORT', '5432'))
+    db_name = os.environ.get('DB_NAME', 'lynch_stocks')
+    db_user = os.environ.get('DB_USER', 'lynch')
+    db_password = os.environ.get('DB_PASSWORD', 'lynch_dev_password')
 
 print(f"Connecting to PostgreSQL: {db_user}@{db_host}:{db_port}/{db_name}")
 db = Database(
