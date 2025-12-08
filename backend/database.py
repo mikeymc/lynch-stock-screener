@@ -518,6 +518,18 @@ class Database:
             )
         """)
 
+        # Migration: ensure app_settings.key has primary key (for existing databases)
+        cursor.execute("""
+            SELECT COUNT(*) FROM information_schema.table_constraints
+            WHERE table_name = 'app_settings' AND constraint_type = 'PRIMARY KEY'
+        """)
+        if cursor.fetchone()[0] == 0:
+            cursor.execute("""
+                DELETE FROM app_settings a USING app_settings b
+                WHERE a.ctid < b.ctid AND a.key = b.key
+            """)
+            cursor.execute("ALTER TABLE app_settings ADD PRIMARY KEY (key)")
+
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS news_articles (
                 id SERIAL PRIMARY KEY,
