@@ -260,7 +260,7 @@ class AlgorithmOptimizer:
                 gradients[key] = (correlation_plus - correlation_minus) / (2 * epsilon)
             
             # Update weights in direction of gradient
-            for key in config.keys():
+            for key in ['weight_peg', 'weight_consistency', 'weight_debt', 'weight_ownership']:
                 config[key] += learning_rate * gradients[key]
             
             # Normalize to ensure weights sum to 1
@@ -601,15 +601,17 @@ class AlgorithmOptimizer:
 
     def _normalize_weights(self, config: Dict[str, float]) -> Dict[str, float]:
         """Ensure all weights are positive and sum to 1"""
+        weight_keys = ['weight_peg', 'weight_consistency', 'weight_debt', 'weight_ownership']
+
         # Make all weights positive
-        for key in config.keys():
+        for key in weight_keys:
             config[key] = max(0.01, config[key])  # Minimum 1%
-        
+
         # Normalize to sum to 1
-        total = sum(config.values())
-        for key in config.keys():
+        total = sum(config[key] for key in weight_keys)
+        for key in weight_keys:
             config[key] /= total
-        
+
         return config
 
     def _calculate_peg_score_with_thresholds(self, value: float, excellent: float, good: float, fair: float) -> float:

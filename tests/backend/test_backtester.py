@@ -36,18 +36,19 @@ class TestBacktester(unittest.TestCase):
         # Setup mock data
         self.mock_db.get_price_history.return_value = [{'close': 150.0}]
         self.mock_db.get_earnings_history.return_value = [
-            {'year': 2022, 'eps': 5.0, 'debt_to_equity': 0.5},
-            {'year': 2021, 'eps': 4.0},
-            {'year': 2020, 'eps': 3.0}
+            {'year': 2022, 'eps': 5.0, 'net_income': 100000000, 'revenue': 500000000, 'debt_to_equity': 0.5},
+            {'year': 2021, 'eps': 4.0, 'net_income': 80000000, 'revenue': 400000000},
+            {'year': 2020, 'eps': 3.0, 'net_income': 60000000, 'revenue': 300000000}
         ]
         self.mock_db.get_stock_metrics.return_value = {
+            'price': 150.0,
             'market_cap': 2000000000,
             'sector': 'Technology',
             'country': 'US',
             'institutional_ownership': 0.6
         }
-        
-        # Mock criteria
+
+        # Mock criteria - the key change is mocking evaluate_stock instead of _evaluate_weighted
         self.backtester.criteria = MagicMock()
         self.backtester.criteria.calculate_peg_ratio.return_value = 1.5
         self.backtester.criteria.evaluate_peg.return_value = 'PASS'
@@ -56,16 +57,18 @@ class TestBacktester(unittest.TestCase):
         self.backtester.criteria.calculate_debt_score.return_value = 100
         self.backtester.criteria.evaluate_institutional_ownership.return_value = 'PASS'
         self.backtester.criteria.calculate_institutional_ownership_score.return_value = 100
-        self.backtester.criteria._evaluate_weighted.return_value = {
+        # This is the critical fix - mock evaluate_stock instead of _evaluate_weighted
+        self.backtester.criteria.evaluate_stock.return_value = {
             'overall_score': 85,
             'rating_label': 'BUY'
         }
 
         result = self.backtester.get_historical_score('AAPL', '2023-01-01')
-        
+
         self.assertIsNotNone(result)
         self.assertEqual(result['overall_score'], 85)
         self.mock_db.get_price_history.assert_called()
+        self.backtester.criteria.evaluate_stock.assert_called_once()
 
 if __name__ == '__main__':
     unittest.main()
