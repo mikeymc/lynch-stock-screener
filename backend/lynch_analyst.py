@@ -249,7 +249,14 @@ class LynchAnalyst:
         
         return response.text
 
-    def generate_unified_chart_analysis(self, stock_data: Dict[str, Any], history: List[Dict[str, Any]]) -> Dict[str, str]:
+    def generate_unified_chart_analysis(
+        self,
+        stock_data: Dict[str, Any],
+        history: List[Dict[str, Any]],
+        sections: Optional[Dict[str, Any]] = None,
+        news: Optional[List[Dict[str, Any]]] = None,
+        material_events: Optional[List[Dict[str, Any]]] = None
+    ) -> Dict[str, str]:
         """
         Generate a unified Peter Lynch-style analysis for all three chart sections.
         The analysis will be cohesive with shared context across sections.
@@ -257,6 +264,9 @@ class LynchAnalyst:
         Args:
             stock_data: Dict containing current stock metrics
             history: List of dicts containing historical earnings/revenue data
+            sections: Optional dict of filing sections
+            news: Optional list of news articles
+            material_events: Optional list of material events (8-K filings)
 
         Returns:
             Dict with keys 'growth', 'cash', 'valuation' containing analysis text for each section
@@ -264,16 +274,116 @@ class LynchAnalyst:
         # Load the unified prompt template
         script_dir = os.path.dirname(os.path.abspath(__file__))
         prompt_path = os.path.join(script_dir, "chart_analysis_prompt.md")
-        
+
         with open(prompt_path, 'r') as f:
             prompt_template = f.read()
 
         # Prepare template variables
         template_vars = self._prepare_template_vars(stock_data, history)
-        
+
         # Format the prompt
         final_prompt = prompt_template.format(**template_vars)
-        
+
+        # Append material events (8-K filings) if available - prioritize these before news
+        if material_events and len(material_events) > 0:
+            events_text = "\n\n---\n\n## Material Corporate Events (SEC 8-K Filings)\n\n"
+            events_text += "The following are official SEC 8-K filings disclosing material corporate events. These are highly significant and should be weighted heavily in your analysis.\n\n"
+
+            # Include up to 10 most recent events
+            for i, event in enumerate(material_events[:10], 1):
+                from datetime import datetime
+                filing_date = event.get('filing_date', 'Unknown date')
+                if filing_date != 'Unknown date':
+                    try:
+                        # Format the date nicely if it's a string
+                        if isinstance(filing_date, str):
+                            dt = datetime.fromisoformat(filing_date.replace('Z', '+00:00'))
+                            filing_date = dt.strftime('%B %d, %Y')
+                    except:
+                        pass
+
+                headline = event.get('headline', 'No headline')
+                content_text = event.get('content_text', '')
+                item_codes = event.get('sec_item_codes', [])
+                accession = event.get('sec_accession_number', 'N/A')
+
+                events_text += f"**{i}. {headline}** (Filed: {filing_date})\n"
+                events_text += f"   SEC Form 8-K | Accession: {accession}\n"
+                if item_codes:
+                    events_text += f"   Item Codes: {', '.join(item_codes)}\n\n"
+
+                # Include actual filing content if available
+                if content_text:
+                    events_text += f"{content_text}\n\n"
+                else:
+                    # Fallback to description if no content
+                    description = event.get('description', '')
+                    if description:
+                        events_text += f"   {description}\n\n"
+
+                events_text += "---\n\n"
+
+            final_prompt += events_text
+
+        # Append news articles if available
+        if news and len(news) > 0:
+            news_text = "\n\n---\n\n## Recent News Articles\n\n"
+            news_text += "Consider the following news when forming your analysis. Look for trends, catalysts, risks, and how they align with the financial data. Maintain a neutral analytical tone while referencing or discussing sentiment observed in the news.\n\n"
+
+            # Include up to 20 most recent articles
+            for i, article in enumerate(news[:20], 1):
+                from datetime import datetime
+                pub_date = article.get('published_date', 'Unknown date')
+                if pub_date != 'Unknown date':
+                    try:
+                        # Format the date nicely
+                        dt = datetime.fromisoformat(pub_date.replace('Z', '+00:00'))
+                        pub_date = dt.strftime('%B %d, %Y')
+                    except:
+                        pass
+
+                headline = article.get('headline', 'No headline')
+                summary = article.get('summary', '')
+                source = article.get('source', 'Unknown source')
+
+                news_text += f"**{i}. {headline}** ({source} - {pub_date})\n"
+                if summary:
+                    news_text += f"   {summary}\n\n"
+                else:
+                    news_text += "\n"
+
+            final_prompt += news_text
+
+        # Append SEC filing sections if available
+        if sections:
+            sections_text = "\n\n---\n\n## Additional Context from SEC Filings\n\n"
+
+            if 'business' in sections:
+                sections_text += f"### Business Description (Item 1 from 10-K)\n"
+                sections_text += f"Filed: {sections['business'].get('filing_date', 'N/A')}\n"
+                sections_text += f"{sections['business'].get('content', 'Not available')}\n\n"
+
+            if 'risk_factors' in sections:
+                sections_text += f"### Risk Factors (Item 1A from 10-K)\n"
+                sections_text += f"Filed: {sections['risk_factors'].get('filing_date', 'N/A')}\n"
+                sections_text += f"{sections['risk_factors'].get('content', 'Not available')}\n\n"
+
+            if 'mda' in sections:
+                filing_type = sections['mda'].get('filing_type', '10-K')
+                item_num = '7' if filing_type == '10-K' else '2'
+                sections_text += f"### Management's Discussion & Analysis (Item {item_num} from {filing_type})\n"
+                sections_text += f"Filed: {sections['mda'].get('filing_date', 'N/A')}\n"
+                sections_text += f"{sections['mda'].get('content', 'Not available')}\n\n"
+
+            if 'market_risk' in sections:
+                filing_type = sections['market_risk'].get('filing_type', '10-K')
+                item_num = '7A' if filing_type == '10-K' else '3'
+                sections_text += f"### Market Risk Disclosures (Item {item_num} from {filing_type})\n"
+                sections_text += f"Filed: {sections['market_risk'].get('filing_date', 'N/A')}\n"
+                sections_text += f"{sections['market_risk'].get('content', 'Not available')}\n\n"
+
+            final_prompt += sections_text
+
         # Generate unified analysis
         model = genai.GenerativeModel(self.model_version)
         response = model.generate_content(final_prompt)

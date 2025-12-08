@@ -54,3 +54,34 @@ Provide your analysis in three sections with clear headers. Use markdown formatt
 - Point out both positives and concerns
 - Make connections between sections
 - End with a clear takeaway about the investment quality
+
+---
+
+## Integration Guidelines for Additional Context
+
+When news articles, material events (8-K filings), and SEC filing sections are provided below, integrate them thoughtfully into your analysis:
+
+**For Growth & Profitability:**
+- Cite major acquisitions or divestitures from 8-Ks explicitly (with dates)
+- Use business description from 10-K to explain revenue drivers and competitive position
+- Reference product launches, market expansion news for growth catalysts
+- Maintain neutral tone while discussing sentiment trends observed in news coverage
+
+**For Cash Flow:**
+- Cite dividend announcements or debt activity from 8-Ks explicitly
+- Use MD&A to understand CapEx plans and capital allocation strategy
+- Reference liquidity discussions from risk factors when relevant
+- Note any major financing events or cash deployment strategies
+
+**For Valuation:**
+- Cite material events that affect the investment thesis (restructurings, strategic changes)
+- Use risk factors to discuss valuation concerns objectively
+- Reference market sentiment from news as a factor in current pricing
+- Consider how material events might impact long-term value
+
+**Citation Style:**
+- **Explicit citations**: Major material events deserve explicit mention with dates (e.g., "The acquisition announced in their June 2024 8-K...")
+- **Implicit use**: Other context should inform your observations naturally without overwhelming the analysis with citations
+- **Neutral analytical tone**: You may reference or discuss sentiment observed in news, but maintain an objective stance (e.g., "Recent news coverage suggests growing investor optimism about..." rather than adopting that optimism yourself)
+
+**Balance**: Don't let the additional context overshadow the financial data. The charts tell the story; the context explains it.

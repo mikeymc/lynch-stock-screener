@@ -1555,13 +1555,29 @@ def get_unified_chart_analysis(symbol):
         return jsonify({})
 
     try:
-        # Generate unified analysis
-        sections = lynch_analyst.generate_unified_chart_analysis(stock_data, history)
-        
+        # Get filing sections if available (for US stocks only)
+        sections_data = None
+        country = stock_metrics.get('country', '')
+        if not country or country.upper() in ['US', 'USA', 'UNITED STATES']:
+            sections_data = db.get_filing_sections(symbol)
+
+        # Fetch material events and news articles for context
+        material_events = db.get_material_events(symbol, limit=10)
+        news_articles = db.get_news_articles(symbol, limit=20)
+
+        # Generate unified analysis with full context
+        sections = lynch_analyst.generate_unified_chart_analysis(
+            stock_data,
+            history,
+            sections=sections_data,
+            news=news_articles,
+            material_events=material_events
+        )
+
         # Save each section to cache
         for section_name, analysis_text in sections.items():
             db.set_chart_analysis(symbol, section_name, analysis_text, lynch_analyst.model_version)
-        
+
         return jsonify({
             'sections': sections,
             'cached': False,
