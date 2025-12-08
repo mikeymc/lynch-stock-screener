@@ -20,6 +20,9 @@ FROM python:3.12-slim
 
 WORKDIR /app
 
+# Install git (required for tvDatafeed which installs from GitHub)
+RUN apt-get update && apt-get install -y git && rm -rf /var/lib/apt/lists/*
+
 # Copy backend requirements
 COPY backend/requirements.txt ./
 
