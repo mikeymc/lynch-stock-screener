@@ -1063,6 +1063,17 @@ class DataFetcher:
                 )
             """)
 
+            # Migration: ensure symbol_cache.id has primary key (for existing databases)
+            cursor.execute("""
+                DO $$
+                BEGIN
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.table_constraints
+                                   WHERE table_name = 'symbol_cache' AND constraint_type = 'PRIMARY KEY') THEN
+                        ALTER TABLE symbol_cache ADD PRIMARY KEY (id);
+                    END IF;
+                END $$;
+            """)
+
             # Check if we have recent cached symbols (less than 24 hours old)
             cursor.execute("""
                 SELECT symbols, last_updated FROM symbol_cache
