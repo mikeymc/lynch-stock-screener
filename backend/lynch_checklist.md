@@ -52,7 +52,7 @@ What follows is a summary of the things you’d like to learn about stocks in ea
 - Is there a raider in the wings to help shareholders reap the benefits of the assets?
 
 ## SOME POINTERS
-- Understand the nature of the companies you own and the specific reasons for holding the stock. (It is really going up!” doesn’t count.)
+- Understand the nature of the companies you own and the specific reasons for holding the stock. ("It is really going up!” doesn’t count.)
 - By putting your stocks into categories you’ll have a better idea of what to expect from them.
 - Big companies have small moves, small companies have big moves.
 - Consider the size of a company if you expect it to profit from a specific product.
