@@ -2,7 +2,7 @@
 # ABOUTME: Parses filings into structured events with rate limiting
 
 from edgar import Company, set_identity
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 from datetime import datetime, timedelta
 import time
 import logging
