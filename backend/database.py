@@ -477,8 +477,25 @@ class Database:
                 institutional_ownership_status TEXT,
                 institutional_ownership_score REAL,
                 overall_status TEXT,
+                overall_score REAL,
+                scored_at TIMESTAMP,
                 FOREIGN KEY (session_id) REFERENCES screening_sessions(id) ON DELETE CASCADE
             )
+        """)
+
+        # Migration: add overall_score and scored_at columns if missing
+        cursor.execute("""
+            DO $$
+            BEGIN
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                               WHERE table_name = 'screening_results' AND column_name = 'overall_score') THEN
+                    ALTER TABLE screening_results ADD COLUMN overall_score REAL;
+                END IF;
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                               WHERE table_name = 'screening_results' AND column_name = 'scored_at') THEN
+                    ALTER TABLE screening_results ADD COLUMN scored_at TIMESTAMP;
+                END IF;
+            END $$;
         """)
 
         cursor.execute("""
