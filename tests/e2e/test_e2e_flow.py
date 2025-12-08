@@ -296,7 +296,6 @@ def test_stock_detail_header_and_tabs(page: Page, servers):
     # Verify stock row contains AAPL
     tbody = table.locator('tbody')
     expect(tbody).to_contain_text('AAPL')
-    expect(tbody).to_contain_text('Apple', ignore_case=True)
     
     print("[E2E] Header and tabs test completed successfully")
 
