@@ -181,15 +181,19 @@ class Database:
         # Migration: ensure stocks.symbol has primary key (for existing databases)
         cursor.execute("""
             SELECT COUNT(*) FROM information_schema.table_constraints
-            WHERE table_name = 'stocks' AND constraint_type = 'PRIMARY KEY'
+            WHERE table_name = 'stocks'
+            AND table_schema = 'public'
+            AND constraint_type = 'PRIMARY KEY'
         """)
         if cursor.fetchone()[0] == 0:
-            # Remove duplicates first, keeping the most recently updated
+            print("Migrating stocks: adding PRIMARY KEY...")
             cursor.execute("""
                 DELETE FROM stocks a USING stocks b
                 WHERE a.ctid < b.ctid AND a.symbol = b.symbol
             """)
             cursor.execute("ALTER TABLE stocks ADD PRIMARY KEY (symbol)")
+            conn.commit()
+            print("Migration complete: stocks PRIMARY KEY added")
 
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS stock_metrics (
@@ -521,14 +525,19 @@ class Database:
         # Migration: ensure app_settings.key has primary key (for existing databases)
         cursor.execute("""
             SELECT COUNT(*) FROM information_schema.table_constraints
-            WHERE table_name = 'app_settings' AND constraint_type = 'PRIMARY KEY'
+            WHERE table_name = 'app_settings'
+            AND table_schema = 'public'
+            AND constraint_type = 'PRIMARY KEY'
         """)
         if cursor.fetchone()[0] == 0:
+            print("Migrating app_settings: adding PRIMARY KEY...")
             cursor.execute("""
                 DELETE FROM app_settings a USING app_settings b
                 WHERE a.ctid < b.ctid AND a.key = b.key
             """)
             cursor.execute("ALTER TABLE app_settings ADD PRIMARY KEY (key)")
+            conn.commit()
+            print("Migration complete: app_settings PRIMARY KEY added")
 
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS news_articles (
