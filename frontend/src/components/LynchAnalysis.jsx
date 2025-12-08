@@ -89,11 +89,11 @@ function LynchAnalysis({ symbol, stockName, onAnalysisLoaded }) {
     return (
       <div className="lynch-analysis-container">
         <div className="lynch-analysis-header">
-          <h3>Peter Lynch Analysis</h3>
+          <h3>AIAnalysis</h3>
         </div>
         <div className="lynch-analysis-loading">
           <div className="spinner"></div>
-          <p>Checking for analysis...</p>
+          <p>Checking for AI analysis...</p>
         </div>
       </div>
     )
@@ -103,10 +103,10 @@ function LynchAnalysis({ symbol, stockName, onAnalysisLoaded }) {
     return (
       <div className="lynch-analysis-container">
         <div className="lynch-analysis-header">
-          <h3>Peter Lynch Analysis</h3>
+          <h3>AI Analysis</h3>
         </div>
         <div className="lynch-analysis-error">
-          <p>Failed to load analysis: {error}</p>
+          <p>Failed to load AI analysis: {error}</p>
           <button onClick={() => fetchAnalysis(false, null, true)} className="retry-button">
             Retry
           </button>
@@ -119,7 +119,7 @@ function LynchAnalysis({ symbol, stockName, onAnalysisLoaded }) {
     return (
       <div className="lynch-analysis-container">
         <div className="lynch-analysis-header">
-          <h3>Peter Lynch Analysis</h3>
+          <h3>AI Analysis</h3>
         </div>
         <div className="lynch-analysis-empty">
           <p>No analysis generated yet for {stockName}.</p>
@@ -135,7 +135,7 @@ function LynchAnalysis({ symbol, stockName, onAnalysisLoaded }) {
     <div className="lynch-analysis-container">
       <div className="lynch-analysis-header">
         <div>
-          <h3>Peter Lynch Analysis: {stockName}</h3>
+          <h3>AI Analysis: {stockName}</h3>
           <p className="analysis-metadata">
             {cached ? '📦 Cached' : '✨ Freshly Generated'} • Generated {formatDate(generatedAt)}
           </p>
