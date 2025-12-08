@@ -45,18 +45,6 @@ class LynchAnalyst:
         if api_key:
             genai.configure(api_key=api_key)
 
-    def format_prompt(self, stock_data: Dict[str, Any], history: List[Dict[str, Any]], sections: Optional[Dict[str, Any]] = None) -> str:
-        """
-        Format a prompt for Gemini to generate a Peter Lynch-style analysis
-
-        Args:
-            stock_data: Dict containing current stock metrics
-            history: List of dicts containing historical earnings/revenue data
-            sections: Optional dict of filing sections (business, risk_factors, mda, market_risk)
-
-        Returns:
-            Formatted prompt string
-        """
     def _prepare_template_vars(self, stock_data: Dict[str, Any], history: List[Dict[str, Any]]) -> Dict[str, Any]:
         """Helper to prepare template variables from stock data and history"""
         # Format historical data for the prompt
