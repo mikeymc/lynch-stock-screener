@@ -178,6 +178,19 @@ class Database:
             )
         """)
 
+        # Migration: ensure stocks.symbol has primary key (for existing databases)
+        cursor.execute("""
+            SELECT COUNT(*) FROM information_schema.table_constraints
+            WHERE table_name = 'stocks' AND constraint_type = 'PRIMARY KEY'
+        """)
+        if cursor.fetchone()[0] == 0:
+            # Remove duplicates first, keeping the most recently updated
+            cursor.execute("""
+                DELETE FROM stocks a USING stocks b
+                WHERE a.ctid < b.ctid AND a.symbol = b.symbol
+            """)
+            cursor.execute("ALTER TABLE stocks ADD PRIMARY KEY (symbol)")
+
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS stock_metrics (
                 symbol TEXT PRIMARY KEY,
