@@ -16,7 +16,7 @@ from dotenv import load_dotenv
 from database import Database
 import debugpy
 
-debugpy.listen(5679)
+debugpy.listen(15679)
 print("Waiting for debugger attach")
 debugpy.wait_for_client()
 
