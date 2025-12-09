@@ -43,4 +43,4 @@ EXPOSE 8080
 # CMD ["gunicorn", "--config", "gunicorn.conf.py", "app:app"]
 
 # Debug command
-CMD ["python", "-Xfrozen_modules=off", "-m", "debugpy", "--listen", "0.0.0.0:15679", "--wait-for-client", "/app/app.py"]
+CMD ["python", "-Xfrozen_modules=off", "-m", "debugpy", "--listen", "0.0.0.0:15679", "/app/app.py"]
