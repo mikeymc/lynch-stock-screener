@@ -14,11 +14,6 @@ import yfinance as yf
 from datetime import datetime
 from dotenv import load_dotenv
 from database import Database
-import debugpy
-
-debugpy.listen(15679)
-print("Waiting for debugger attach")
-debugpy.wait_for_client()
 
 # Load environment variables from .env file
 load_dotenv()
