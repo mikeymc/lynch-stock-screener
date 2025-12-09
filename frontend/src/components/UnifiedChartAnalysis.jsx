@@ -106,7 +106,7 @@ export default function UnifiedChartAnalysis({ symbol, onAnalysisGenerated }) {
                     fontStyle: 'italic',
                     textAlign: 'center'
                 }}>
-                    Consulting with Peter Lynch... Generating comprehensive analysis across all sections...
+                    Generating comprehensive analysis across all sections...
                 </div>
             )}
 
