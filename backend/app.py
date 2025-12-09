@@ -2267,7 +2267,12 @@ def get_backtest_results():
         return jsonify({'error': str(e)}), 500
 
 if __name__ == '__main__':
-    # Always run the app, even when debugging
-    port = int(os.environ.get('PORT', 8080))
-    print(f"Starting Flask app on port {port}...", flush=True)
-    app.run(debug=False, host='0.0.0.0', port=port)
+    try:
+        # Always run the app, even when debugging
+        port = int(os.environ.get('PORT', 8080))
+        print(f"Starting Flask app on port {port}...", flush=True)
+        app.run(debug=False, host='0.0.0.0', port=port)
+    except Exception as e:
+        print(f"CRITICAL ERROR IN MAIN: {e}", flush=True)
+        import time
+        time.sleep(3600)

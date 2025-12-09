@@ -123,6 +123,7 @@ class BackgroundWorker:
         """Execute full stock screening"""
         from data_fetcher import DataFetcher
         from lynch_criteria import LynchCriteria
+        from earnings_analyzer import EarningsAnalyzer
         from tradingview_fetcher import TradingViewFetcher
         from finviz_fetcher import FinvizFetcher
 
@@ -135,7 +136,8 @@ class BackgroundWorker:
 
         # Initialize fetchers
         fetcher = DataFetcher(self.db)
-        criteria = LynchCriteria(self.db)
+        analyzer = EarningsAnalyzer(self.db)
+        criteria = LynchCriteria(self.db, analyzer)
 
         # Bulk prefetch market data
         self.db.update_job_progress(job_id, progress_pct=5, progress_message='Fetching market data from TradingView...')
