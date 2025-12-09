@@ -17,6 +17,8 @@ from database import Database
 
 # Load environment variables from .env file
 load_dotenv()
+print("DEBUGGER ATTACHED: Starting app initialization...", flush=True)
+
 from data_fetcher import DataFetcher
 from earnings_analyzer import EarningsAnalyzer
 from lynch_criteria import LynchCriteria, ALGORITHM_METADATA
