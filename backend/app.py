@@ -17,8 +17,6 @@ from database import Database
 
 # Load environment variables from .env file
 load_dotenv()
-print("DEBUGGER ATTACHED: Starting app initialization...", flush=True)
-
 from data_fetcher import DataFetcher
 from earnings_analyzer import EarningsAnalyzer
 from lynch_criteria import LynchCriteria, ALGORITHM_METADATA
@@ -2269,6 +2267,7 @@ def get_backtest_results():
         return jsonify({'error': str(e)}), 500
 
 if __name__ == '__main__':
-    if not os.environ.get('FLY_DEBUG'):
-        port = int(os.environ.get('PORT', 8080))
-        app.run(debug=False, host='0.0.0.0', port=port)
+    # Always run the app, even when debugging
+    port = int(os.environ.get('PORT', 8080))
+    print(f"Starting Flask app on port {port}...", flush=True)
+    app.run(debug=False, host='0.0.0.0', port=port)
