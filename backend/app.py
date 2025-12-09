@@ -2267,5 +2267,6 @@ def get_backtest_results():
         return jsonify({'error': str(e)}), 500
 
 if __name__ == '__main__':
-    port = int(os.environ.get('PORT', 8080))
-    app.run(debug=False, host='0.0.0.0', port=port)
+    if not os.environ.get('FLY_DEBUG'):
+        port = int(os.environ.get('PORT', 8080))
+        app.run(debug=False, host='0.0.0.0', port=port)
