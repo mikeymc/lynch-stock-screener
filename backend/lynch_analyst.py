@@ -19,7 +19,7 @@ class LynchAnalyst:
             checklist_path: Path to the Lynch checklist file
         """
         self.db = db
-        self.model_version = "gemini-2.5-flash"
+        self.model_version = "gemini-3-pro-preview" #"gemini-2.5-flash"
 
         # Use absolute paths relative to this file's location
         script_dir = os.path.dirname(os.path.abspath(__file__))

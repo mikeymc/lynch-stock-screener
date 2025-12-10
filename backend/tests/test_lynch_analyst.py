@@ -62,7 +62,7 @@ def test_lynch_analyst_initialization(analyst):
     """Test that LynchAnalyst initializes properly"""
     assert analyst is not None
     assert analyst.db is not None
-    assert analyst.model_version == "gemini-2.5-flash"
+    assert analyst.model_version == "gemini-3-pro" #"gemini-2.5-flash"
 
 
 def test_format_prompt_includes_key_metrics(analyst, sample_stock_data, sample_history):
@@ -144,7 +144,7 @@ def test_get_or_generate_uses_cache(analyst, test_db, sample_stock_data, sample_
     # Save a cached analysis
     cached_text = "This is a cached analysis"
     test_db.save_stock_basic("AAPL", "Apple Inc.", "NASDAQ", "Technology")
-    test_db.save_lynch_analysis("AAPL", cached_text, "gemini-pro")
+    test_db.save_lynch_analysis("AAPL", cached_text, "gemini-3-pro-preview")
 
     # Should return cached analysis without calling API
     result = analyst.get_or_generate_analysis("AAPL", sample_stock_data, sample_history, use_cache=True)
