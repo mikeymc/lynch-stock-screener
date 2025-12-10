@@ -777,11 +777,11 @@ function StockListView({
     let count = 0
     if (advancedFilters.regions.length > 0) count++
     if (advancedFilters.countries.length > 0) count++
-    if (advancedFilters.institutionalOwnership.min !== null) count++
-    if (advancedFilters.institutionalOwnership.max !== null) count++
+    if (advancedFilters.institutionalOwnership?.max !== null) count++
     if (advancedFilters.revenueGrowth.min !== null) count++
     if (advancedFilters.incomeGrowth.min !== null) count++
     if (advancedFilters.debtToEquity.max !== null) count++
+    if (advancedFilters.marketCap?.max !== null) count++
     return count
   }
 
