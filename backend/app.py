@@ -1934,14 +1934,23 @@ def start_validation():
         # Start validation in background thread
         def run_validation_background():
             try:
-                validation_jobs[job_id] = {'status': 'running', 'progress': 0}
-                
+                validation_jobs[job_id] = {'status': 'running', 'progress': 0, 'total': 0}
+
+                # Progress callback to update validation_jobs
+                def on_progress(data):
+                    validation_jobs[job_id].update({
+                        'progress': data['progress'],
+                        'total': data['total'],
+                        'current_symbol': data.get('current_symbol')
+                    })
+
                 summary = validator.run_sp500_backtests(
                     years_back=years_back,
                     max_workers=5,
                     limit=limit,
                     force_rerun=force,
-                    overrides=config
+                    overrides=config,
+                    progress_callback=on_progress
                 )
                 
                 # Run correlation analysis

@@ -50,15 +50,16 @@ class AlgorithmValidator:
                 'NKE', 'DIS', 'CRM', 'CSCO', 'ACN', 'TMO', 'VZ', 'ABT', 'NFLX'
             ]
     
-    def run_sp500_backtests(self, years_back: int, max_workers: int = 5, limit: int = None, force_rerun: bool = False, overrides: Dict[str, float] = None) -> Dict[str, Any]:
+    def run_sp500_backtests(self, years_back: int, max_workers: int = 5, limit: int = None, force_rerun: bool = False, overrides: Dict[str, float] = None, progress_callback=None) -> Dict[str, Any]:
         """
         Run backtests on all S&P 500 stocks
-        
+
         Args:
             years_back: Number of years to backtest
             max_workers: Number of parallel threads
             limit: Optional limit on number of stocks to process (for testing)
-        
+            progress_callback: Optional callback function called with progress updates
+
         Returns:
             Dict with results summary
         """
@@ -90,7 +91,15 @@ class AlgorithmValidator:
             for future in as_completed(future_to_symbol):
                 symbol = future_to_symbol[future]
                 processed += 1
-                
+
+                # Report progress if callback provided
+                if progress_callback:
+                    progress_callback({
+                        'progress': processed,
+                        'total': total_symbols,
+                        'current_symbol': symbol
+                    })
+
                 try:
                     result = future.result()
                     if result and 'error' not in result:
