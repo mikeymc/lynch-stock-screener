@@ -282,7 +282,7 @@ export default function StockCharts({ historyData, loading, symbol }) {
                     datasets: [
                       {
                         label: 'Dividend Yield (%)',
-                        data: historyData.dividend_yield,
+                        data: historyData.dividend_yield || [],
                         borderColor: 'rgb(255, 205, 86)',
                         backgroundColor: 'rgba(255, 205, 86, 0.2)',
                         pointRadius: activeIndex !== null ? 3 : 0,
