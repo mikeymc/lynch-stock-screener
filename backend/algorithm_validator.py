@@ -30,8 +30,8 @@ class AlgorithmValidator:
 
             with urllib.request.urlopen(req) as response:
                 tables = pd.read_html(response.read())
-                # S&P 500 table is the second table (index 1), first is a warning
-                sp500_table = tables[1]
+                # S&P 500 table is the first table (index 0)
+                sp500_table = tables[0]
                 symbols = sp500_table['Symbol'].tolist()
 
                 # Clean symbols (remove dots for BRK.B -> BRK-B format)
