@@ -1701,33 +1701,32 @@ class EdgarFetcher:
         Returns:
             List of dictionaries with year, quarter (optional), amount, and fiscal_end values
         """
-        dividend_data_list = None
-        
-        # Priority 1: Cash Paid (Actual)
-        keys_to_try = [
+        # Merge data from all available dividend tags
+        all_dividend_data = []
+
+        # US-GAAP tags to try
+        us_gaap_keys = [
             'CommonStockDividendsPerShareCashPaid',
             'CommonStockDividendsPerShareDeclared',
             'DividendsPayableAmountPerShare'
         ]
 
-        # Try US-GAAP first
+        # Try US-GAAP - collect from ALL available tags
         try:
             us_gaap = company_facts['facts']['us-gaap']
-            for key in keys_to_try:
+            for key in us_gaap_keys:
                 if key in us_gaap:
                     units = us_gaap[key]['units']
                     if 'USD/shares' in units:
-                        dividend_data_list = units['USD/shares']
-                        logger.info(f"Found dividend data using US-GAAP key: {key}")
-                        break
+                        all_dividend_data.extend(units['USD/shares'])
+                        logger.debug(f"Found dividend data using US-GAAP key: {key}")
         except (KeyError, TypeError):
             pass
 
-        # Fall back to IFRS
-        if dividend_data_list is None:
+        # Fall back to IFRS if no US-GAAP data found
+        if not all_dividend_data:
             try:
                 ifrs = company_facts['facts']['ifrs-full']
-                # IFRS keys might differ, try generic search or specific known keys
                 ifrs_keys = [
                     'DividendsRecognisedAsDistributionsToOwnersPerShare',
                     'DividendsProposedOrDeclaredBeforeFinancialStatementsAuthorisedForIssuePerShare'
@@ -1738,35 +1737,34 @@ class EdgarFetcher:
                         # Find USD/shares or similar
                         for unit_name, entries in units.items():
                             if 'shares' in unit_name:
-                                dividend_data_list = entries
-                                logger.info(f"Found dividend data using IFRS key: {key}")
+                                all_dividend_data.extend(entries)
+                                logger.debug(f"Found dividend data using IFRS key: {key}")
                                 break
-                        if dividend_data_list:
-                            break
             except (KeyError, TypeError):
                 pass
 
-        if dividend_data_list is None:
+        if not all_dividend_data:
             logger.debug("Could not parse dividend history from EDGAR")
             return []
 
-        dividends = []
-        seen_entries = set()
+        # Build dictionary to deduplicate and keep best entry for each (year, period, quarter)
+        dividends_dict = {}
 
-        for entry in dividend_data_list:
+        for entry in all_dividend_data:
             fiscal_end = entry.get('end')
             # Extract year from fiscal_end date
             year = int(fiscal_end[:4]) if fiscal_end else entry.get('fy')
             form = entry.get('form')
             amount = entry.get('val')
-            
+            filed = entry.get('filed')
+
             if not year or amount is None:
                 continue
 
             # Determine period
             period = 'annual'
             quarter = None
-            
+
             if form in ['10-Q', '6-K']:
                 fp = entry.get('fp')
                 if fp in ['Q1', 'Q2', 'Q3']:
@@ -1774,26 +1772,35 @@ class EdgarFetcher:
                     quarter = fp
             elif form in ['10-K', '20-F']:
                 period = 'annual'
-            
-            # Create a unique key to avoid duplicates
-            # (year, period, quarter, amount)
-            entry_key = (year, period, quarter)
-            
-            # For annual data, we want the latest filing
-            if period == 'annual':
-                # If we already have an entry for this year, check if this one is newer/better
-                # Simple approach: just store all and filter later or rely on database constraints
-                # But here we return a list. Let's deduplicate by keeping the one with latest filed date
-                pass
 
-            dividends.append({
-                'year': year,
-                'period': period,
-                'quarter': quarter,
-                'amount': amount,
-                'fiscal_end': fiscal_end,
-                'filed': entry.get('filed')
-            })
+            # Create a unique key to avoid duplicates
+            entry_key = (year, period, quarter)
+
+            # Keep the entry with the latest filed date for each key
+            if entry_key not in dividends_dict:
+                dividends_dict[entry_key] = {
+                    'year': year,
+                    'period': period,
+                    'quarter': quarter,
+                    'amount': amount,
+                    'fiscal_end': fiscal_end,
+                    'filed': filed
+                }
+            else:
+                # If we already have this entry, keep the one with latest filed date
+                existing = dividends_dict[entry_key]
+                if filed and existing.get('filed'):
+                    if filed > existing['filed']:
+                        dividends_dict[entry_key] = {
+                            'year': year,
+                            'period': period,
+                            'quarter': quarter,
+                            'amount': amount,
+                            'fiscal_end': fiscal_end,
+                            'filed': filed
+                        }
+
+        dividends = list(dividends_dict.values())
 
         # Sort by year descending
         dividends.sort(key=lambda x: x['year'], reverse=True)
