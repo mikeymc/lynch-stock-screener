@@ -936,6 +936,19 @@ def get_stock_history(symbol):
     if not earnings_history:
         return jsonify({'error': f'No historical data found for {symbol}'}), 404
 
+    # Backfill missing debt-to-equity data on-demand for annual data
+    if period_type == 'annual':
+        years_needing_de = [entry['year'] for entry in earnings_history if entry.get('debt_to_equity') is None]
+        if years_needing_de:
+            logger.info(f"[{symbol}] Backfilling D/E for {len(years_needing_de)} years on-demand")
+            try:
+                data_fetcher = DataFetcher(db)
+                data_fetcher._backfill_debt_to_equity(symbol.upper(), years_needing_de)
+                # Re-fetch earnings history to get the updated data
+                earnings_history = db.get_earnings_history(symbol.upper(), period_type)
+            except Exception as e:
+                logger.error(f"[{symbol}] Error backfilling D/E: {e}")
+
     # Sort by year ascending, then by quarter for charting
     def sort_key(entry):
         year = entry['year']

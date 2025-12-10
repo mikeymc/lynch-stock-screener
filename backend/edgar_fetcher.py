@@ -1325,10 +1325,23 @@ class EdgarFetcher:
         try:
             facts = company_facts['facts']['us-gaap']
 
-            # Get equity data
-            equity_data = facts.get('StockholdersEquity', {}).get('units', {}).get('USD', [])
+            # Get equity data - try multiple tags in order of preference
+            equity_tags = [
+                'StockholdersEquity',
+                'StockholdersEquityIncludingPortionAttributableToNoncontrollingInterest',
+                'CommonStockholdersEquity',
+                'LiabilitiesAndStockholdersEquity'  # Last resort - total assets
+            ]
+
+            equity_data = []
+            for tag in equity_tags:
+                equity_data = facts.get(tag, {}).get('units', {}).get('USD', [])
+                if equity_data:
+                    logger.debug(f"Using equity tag: {tag}")
+                    break
+
             if not equity_data:
-                logger.debug("No StockholdersEquity data found")
+                logger.debug("No equity data found in EDGAR")
                 return []
 
             # Get debt data - merge multiple fields to avoid gaps
