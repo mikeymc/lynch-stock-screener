@@ -79,7 +79,7 @@ export default function AlgorithmTuning() {
 
     const loadCurrentConfig = async (signal) => {
         try {
-            const response = await fetch('http://localhost:8080/api/algorithm/config', { signal });
+            const response = await fetch('/api/algorithm/config', { signal });
             const data = await response.json();
             if (data.current) {
                 setConfig(data.current);
@@ -123,7 +123,7 @@ export default function AlgorithmTuning() {
         setAnalysis(null);
 
         try {
-            const response = await fetch('http://localhost:8080/api/validate/run', {
+            const response = await fetch('/api/validate/run', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -147,7 +147,7 @@ export default function AlgorithmTuning() {
     const pollValidationProgress = async (jobId) => {
         const interval = setInterval(async () => {
             try {
-                const response = await fetch(`http://localhost:8080/api/validate/progress/${jobId}`);
+                const response = await fetch(`/api/validate/progress/${jobId}`);
                 const data = await response.json();
 
                 if (data.status === 'complete') {
@@ -171,7 +171,7 @@ export default function AlgorithmTuning() {
         setOptimizationProgress(null);
 
         try {
-            const response = await fetch('http://localhost:8080/api/optimize/run', {
+            const response = await fetch('/api/optimize/run', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -194,7 +194,7 @@ export default function AlgorithmTuning() {
             // Poll for progress
             const pollInterval = setInterval(async () => {
                 try {
-                    const statusRes = await fetch(`http://localhost:8080/api/optimize/progress/${jobId}`);
+                    const statusRes = await fetch(`/api/optimize/progress/${jobId}`);
                     const statusData = await statusRes.json();
 
                     if (statusData.error) {
@@ -241,7 +241,7 @@ export default function AlgorithmTuning() {
             setRescoringRunning(true);
             setRescoringProgress(null);
 
-            const response = await fetch('http://localhost:8080/api/algorithm/config', {
+            const response = await fetch('/api/algorithm/config', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ config })
@@ -268,7 +268,7 @@ export default function AlgorithmTuning() {
     const pollRescoringProgress = async (jobId) => {
         const interval = setInterval(async () => {
             try {
-                const response = await fetch(`http://localhost:8080/api/rescore/progress/${jobId}`);
+                const response = await fetch(`/api/rescore/progress/${jobId}`);
                 const data = await response.json();
 
                 setRescoringProgress(data);
