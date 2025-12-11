@@ -12,6 +12,10 @@ RUN npm install
 # Copy frontend source
 COPY frontend/ ./
 
+# Set production API base (use relative path for production)
+ARG VITE_API_BASE=/api
+ENV VITE_API_BASE=${VITE_API_BASE}
+
 # Build the frontend
 RUN npm run build
 
