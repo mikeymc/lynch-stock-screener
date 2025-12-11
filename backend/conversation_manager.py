@@ -217,6 +217,26 @@ class ConversationManager:
 
         # Generate response using Gemini
         response = self.model.generate_content(prompt)
+
+        # Check if response was blocked or has no content
+        if not response.parts:
+            error_msg = "Gemini API returned no content. "
+
+            # Check prompt feedback for blocking
+            if hasattr(response, 'prompt_feedback'):
+                feedback = response.prompt_feedback
+                error_msg += f"Prompt feedback: {feedback}"
+
+            # Check finish reason
+            if hasattr(response, 'candidates') and response.candidates:
+                candidate = response.candidates[0]
+                if hasattr(candidate, 'finish_reason'):
+                    error_msg += f" Finish reason: {candidate.finish_reason}"
+                if hasattr(candidate, 'safety_ratings'):
+                    error_msg += f" Safety ratings: {candidate.safety_ratings}"
+
+            raise Exception(error_msg)
+
         assistant_message = response.text
 
         # Save user message
