@@ -2293,10 +2293,7 @@ if __name__ == '__main__':
     if os.environ.get('ENABLE_DEBUGPY', 'false').lower() == 'true':
         import debugpy
         debugpy.listen(('0.0.0.0', 15679))
-        print("⚠️  Debugpy listening on port 15679", flush=True)
-        print("⚠️  Waiting for debugger to attach...", flush=True)
-        debugpy.wait_for_client()
-        print("✅ Debugger attached!", flush=True)
+        print("⚠️  Debugpy listening on port 15679 - ready for debugger to attach", flush=True)
 
     try:
         # Always run the app, even when debugging
