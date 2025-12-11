@@ -1,6 +1,8 @@
 import { useState, useEffect } from 'react'
 import './AlgorithmSelector.css'
 
+const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:5001/api'
+
 const AlgorithmSelector = ({ selectedAlgorithm, onAlgorithmChange }) => {
   const [algorithms, setAlgorithms] = useState({})
   const [showHelp, setShowHelp] = useState(false)
@@ -11,7 +13,7 @@ const AlgorithmSelector = ({ selectedAlgorithm, onAlgorithmChange }) => {
     const signal = controller.signal
 
     // Fetch algorithm metadata from API
-    fetch('/api/algorithms', { signal })
+    fetch(`${API_BASE}/algorithms`, { signal, credentials: 'include' })
       .then(res => res.json())
       .then(data => {
         setAlgorithms(data)

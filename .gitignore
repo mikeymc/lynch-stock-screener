@@ -49,6 +49,9 @@ yarn-error.log*
 .env
 .env.local
 
+# Flask session files
+backend/flask_session/
+
 # Schwab API tokens
 tokens/
 *.json

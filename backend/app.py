@@ -1,8 +1,9 @@
 # ABOUTME: Flask REST API for Lynch stock screener
 # ABOUTME: Provides endpoints for screening stocks and retrieving stock analysis
 
-from flask import Flask, jsonify, request, Response, stream_with_context, send_from_directory
+from flask import Flask, jsonify, request, Response, stream_with_context, send_from_directory, session, redirect
 from flask_cors import CORS
+from flask_session import Session
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import threading
 import json
@@ -11,7 +12,7 @@ import time
 import os
 import numpy as np
 import yfinance as yf
-from datetime import datetime
+from datetime import datetime, timedelta
 from dotenv import load_dotenv
 from database import Database
 
@@ -32,12 +33,13 @@ from finnhub_news import FinnhubNewsClient
 from stock_rescorer import StockRescorer
 from sec_8k_client import SEC8KClient
 from fly_machines import get_fly_manager
+from auth import init_oauth_client, require_user_auth
 
 from algorithm_optimizer import AlgorithmOptimizer
 import logging
 
 # Feature flag for background job processing
-USE_BACKGROUND_JOBS = os.environ.get('USE_BACKGROUND_JOBS', 'true').lower() == 'true'
+USE_BACKGROUND_JOBS = os.environ.get('USE_BACKGROUND_JOBS', 'false').lower() == 'true'
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -49,7 +51,31 @@ logging.getLogger('urllib3').setLevel(logging.WARNING)
 logging.getLogger('peewee').setLevel(logging.WARNING)
 
 app = Flask(__name__, static_folder='static', static_url_path='')
-CORS(app)
+
+# Configure Flask sessions
+app.config['SECRET_KEY'] = os.getenv('SESSION_SECRET_KEY', 'dev-secret-key-change-in-production')
+app.config['SESSION_TYPE'] = os.getenv('SESSION_TYPE', 'filesystem')
+app.config['SESSION_PERMANENT'] = True
+app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(days=30)
+
+# Session cookie settings
+# Only use secure cookies in production (HTTPS)
+is_production = os.getenv('ENVIRONMENT', 'development') == 'production'
+app.config['SESSION_COOKIE_SECURE'] = is_production
+app.config['SESSION_COOKIE_HTTPONLY'] = True
+app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
+
+# Initialize session
+Session(app)
+
+# Configure CORS with credentials support
+frontend_url = os.getenv('FRONTEND_URL', 'http://localhost:5173')
+CORS(app,
+     resources={r"/api/*": {"origins": [frontend_url]}},
+     supports_credentials=True,
+     allow_headers=["Content-Type", "Authorization"],
+     methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"]
+)
 
 # PostgreSQL connection parameters
 # Parse DATABASE_URL if available (Fly.io), otherwise use individual env vars
@@ -364,6 +390,104 @@ resume_incomplete_sessions()
 @app.route('/api/health', methods=['GET'])
 def health():
     return jsonify({'status': 'healthy'})
+
+
+# ============================================================
+# OAuth Authentication Endpoints
+# ============================================================
+
+@app.route('/api/auth/google/url', methods=['GET'])
+def get_google_auth_url():
+    """Get Google OAuth authorization URL"""
+    try:
+        flow = init_oauth_client()
+        authorization_url, state = flow.authorization_url(
+            access_type='offline',
+            include_granted_scopes='true'
+        )
+        # Store state in session for CSRF protection
+        session['oauth_state'] = state
+        return jsonify({'url': authorization_url})
+    except Exception as e:
+        logger.error(f"Error generating OAuth URL: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/auth/google/callback', methods=['GET'])
+def google_auth_callback():
+    """Handle OAuth callback from Google"""
+    try:
+        # Get authorization code from query params
+        code = request.args.get('code')
+        if not code:
+            return jsonify({'error': 'No authorization code provided'}), 400
+
+        # Verify state for CSRF protection
+        state = request.args.get('state')
+        if state != session.get('oauth_state'):
+            return jsonify({'error': 'Invalid state parameter'}), 400
+
+        # Exchange code for tokens
+        flow = init_oauth_client()
+        flow.fetch_token(code=code)
+
+        # Get user info from ID token
+        credentials = flow.credentials
+        from google.oauth2 import id_token
+        from google.auth.transport import requests as google_requests
+
+        id_info = id_token.verify_oauth2_token(
+            credentials.id_token,
+            google_requests.Request(),
+            os.getenv('GOOGLE_CLIENT_ID')
+        )
+
+        # Extract user information
+        google_id = id_info.get('sub')
+        email = id_info.get('email')
+        name = id_info.get('name')
+        picture = id_info.get('picture')
+
+        # Create or update user in database
+        user_id = db.create_user(google_id, email, name, picture)
+
+        # Set session
+        session['user_id'] = user_id
+        session['user_email'] = email
+        session['user_name'] = name
+        session['user_picture'] = picture
+
+        # Clear OAuth state
+        session.pop('oauth_state', None)
+
+        # Redirect to frontend
+        frontend_url = os.getenv('FRONTEND_URL', 'http://localhost:5173')
+        return redirect(frontend_url)
+
+    except Exception as e:
+        logger.error(f"OAuth callback error: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/auth/user', methods=['GET'])
+def get_current_user():
+    """Get current logged-in user info"""
+    if 'user_id' not in session:
+        return jsonify({'error': 'Not authenticated'}), 401
+
+    return jsonify({
+        'id': session.get('user_id'),
+        'email': session.get('user_email'),
+        'name': session.get('user_name'),
+        'picture': session.get('user_picture')
+    })
+
+
+@app.route('/api/auth/logout', methods=['POST'])
+def logout():
+    """Logout user and clear session"""
+    session.clear()
+    return jsonify({'message': 'Logged out successfully'})
 
 
 # ============================================================
@@ -1733,9 +1857,10 @@ def get_unified_chart_analysis(symbol):
 
 
 @app.route('/api/watchlist', methods=['GET'])
-def get_watchlist():
+@require_user_auth
+def get_watchlist(user_id):
     try:
-        symbols = db.get_watchlist()
+        symbols = db.get_watchlist(user_id)
         return jsonify({'symbols': symbols})
     except Exception as e:
         print(f"Error getting watchlist: {e}")
@@ -1743,9 +1868,10 @@ def get_watchlist():
 
 
 @app.route('/api/watchlist/<symbol>', methods=['POST'])
-def add_to_watchlist(symbol):
+@require_user_auth
+def add_to_watchlist(symbol, user_id):
     try:
-        db.add_to_watchlist(symbol.upper())
+        db.add_to_watchlist(user_id, symbol.upper())
         return jsonify({'success': True})
     except Exception as e:
         print(f"Error adding {symbol} to watchlist: {e}")
@@ -1753,9 +1879,10 @@ def add_to_watchlist(symbol):
 
 
 @app.route('/api/watchlist/<symbol>', methods=['DELETE'])
-def remove_from_watchlist(symbol):
+@require_user_auth
+def remove_from_watchlist(symbol, user_id):
     try:
-        db.remove_from_watchlist(symbol.upper())
+        db.remove_from_watchlist(user_id, symbol.upper())
         return jsonify({'success': True})
     except Exception as e:
         print(f"Error removing {symbol} from watchlist: {e}")
