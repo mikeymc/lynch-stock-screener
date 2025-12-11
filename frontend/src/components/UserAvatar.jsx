@@ -1,4 +1,5 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useLayoutEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { useAuth } from '../context/AuthContext';
 
 const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:5001/api';
@@ -7,19 +8,57 @@ export default function UserAvatar() {
   const { user, logout } = useAuth();
   const [showDropdown, setShowDropdown] = useState(false);
   const dropdownRef = useRef(null);
+  const buttonRef = useRef(null);
+  const [dropdownPosition, setDropdownPosition] = useState({ top: 0, left: 0 });
 
   useEffect(() => {
-    function handleClickOutside(event) {
-      if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
+    const updatePosition = () => {
+      if (showDropdown && buttonRef.current && dropdownRef.current) {
+        const buttonRect = buttonRef.current.getBoundingClientRect();
+        const dropdownWidth = dropdownRef.current.offsetWidth;
+        setDropdownPosition({
+          top: buttonRect.bottom + 8,           // 8px gap below button
+          left: buttonRect.right - dropdownWidth // Align right edges
+        });
+      }
+    };
+
+    const handleClickOutside = (event) => {
+      if (
+        buttonRef.current &&
+        !buttonRef.current.contains(event.target) &&
+        dropdownRef.current &&
+        !dropdownRef.current.contains(event.target)
+      ) {
         setShowDropdown(false);
       }
-    }
-
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => {
-      document.removeEventListener('mousedown', handleClickOutside);
     };
-  }, []);
+
+    if (showDropdown) {
+      updatePosition();
+      window.addEventListener('scroll', updatePosition, true);
+      window.addEventListener('resize', updatePosition);
+      document.addEventListener('mousedown', handleClickOutside);
+
+      return () => {
+        window.removeEventListener('scroll', updatePosition, true);
+        window.removeEventListener('resize', updatePosition);
+        document.removeEventListener('mousedown', handleClickOutside);
+      };
+    }
+  }, [showDropdown]);
+
+  // Recalculate position after dropdown is rendered
+  useLayoutEffect(() => {
+    if (showDropdown && buttonRef.current && dropdownRef.current) {
+      const buttonRect = buttonRef.current.getBoundingClientRect();
+      const dropdownWidth = dropdownRef.current.offsetWidth;
+      setDropdownPosition({
+        top: buttonRect.bottom + 8,
+        left: buttonRect.right - dropdownWidth
+      });
+    }
+  }, [showDropdown]);
 
   const handleLogout = async () => {
     await logout();
@@ -29,8 +68,9 @@ export default function UserAvatar() {
   if (!user) return null;
 
   return (
-    <div className="relative" ref={dropdownRef}>
+    <>
       <button
+        ref={buttonRef}
         onClick={() => setShowDropdown(!showDropdown)}
         className="hover:opacity-80 transition-opacity focus:outline-none focus:ring-2 focus:ring-blue-500"
         style={{
@@ -75,20 +115,35 @@ export default function UserAvatar() {
         )}
       </button>
 
-      {showDropdown && (
-        <div className="absolute right-0 mt-2 w-48 bg-white rounded-md shadow-lg py-1 z-50 border border-gray-200">
-          <div className="px-4 py-2 border-b border-gray-100">
-            <p className="text-sm font-medium text-gray-900 truncate">{user.name}</p>
-            <p className="text-xs text-gray-500 truncate">{user.email}</p>
-          </div>
+      {showDropdown && createPortal(
+        <div
+          ref={dropdownRef}
+          className="rounded-md shadow-lg border"
+          style={{
+            position: 'fixed',
+            top: `${dropdownPosition.top}px`,
+            left: `${dropdownPosition.left}px`,
+            zIndex: 1000,
+            backgroundColor: '#334155',
+            borderColor: '#475569'
+          }}
+        >
           <button
             onClick={handleLogout}
-            className="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 transition-colors"
+            className="block w-full text-left px-4 py-2 text-sm transition-colors whitespace-nowrap"
+            style={{
+              color: '#f1f5f9',
+              background: 'transparent',
+              padding: '0.5rem 1rem'
+            }}
+            onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#475569'}
+            onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
           >
-            Logout
+            Sign out
           </button>
-        </div>
+        </div>,
+        document.body
       )}
-    </div>
+    </>
   );
 }
