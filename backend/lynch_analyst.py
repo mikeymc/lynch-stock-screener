@@ -449,6 +449,7 @@ class LynchAnalyst:
 
     def get_or_generate_analysis(
         self,
+        user_id: int,
         symbol: str,
         stock_data: Dict[str, Any],
         history: List[Dict[str, Any]],
@@ -461,6 +462,7 @@ class LynchAnalyst:
         Get cached analysis or generate a new one
 
         Args:
+            user_id: User ID for scoping the analysis
             symbol: Stock symbol
             stock_data: Dict containing current stock metrics
             history: List of dicts containing historical earnings/revenue data
@@ -474,14 +476,14 @@ class LynchAnalyst:
         """
         # Check cache first
         if use_cache:
-            cached = self.db.get_lynch_analysis(symbol)
+            cached = self.db.get_lynch_analysis(user_id, symbol)
             if cached:
                 return cached['analysis_text']
 
         # Generate new analysis
         analysis_text = self.generate_analysis(stock_data, history, sections, news, material_events)
 
-        # Save to cache
-        self.db.save_lynch_analysis(symbol, analysis_text, self.model_version)
+        # Save to cache for this user
+        self.db.save_lynch_analysis(user_id, symbol, analysis_text, self.model_version)
 
         return analysis_text

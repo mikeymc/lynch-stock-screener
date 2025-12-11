@@ -30,11 +30,12 @@ class ConversationManager:
 
         self.model = genai.GenerativeModel("gemini-3-pro-preview")
 
-    def create_conversation(self, symbol: str, title: Optional[str] = None) -> int:
+    def create_conversation(self, user_id: int, symbol: str, title: Optional[str] = None) -> int:
         """
         Create a new conversation for a stock
 
         Args:
+            user_id: User ID
             symbol: Stock ticker symbol
             title: Optional conversation title
 
@@ -45,10 +46,10 @@ class ConversationManager:
         cursor = conn.cursor()
 
         cursor.execute("""
-            INSERT INTO conversations (symbol, title, created_at, updated_at)
-            VALUES (%s, %s, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            INSERT INTO conversations (user_id, symbol, title, created_at, updated_at)
+            VALUES (%s, %s, %s, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
             RETURNING id
-        """, (symbol, title))
+        """, (user_id, symbol, title))
 
         conversation_id = cursor.fetchone()[0]
         conn.commit()
@@ -81,17 +82,17 @@ class ConversationManager:
             'updated_at': row[4]
         }
 
-    def list_conversations(self, symbol: str) -> List[Dict[str, Any]]:
-        """Get all conversations for a stock"""
+    def list_conversations(self, user_id: int, symbol: str) -> List[Dict[str, Any]]:
+        """Get all conversations for a user and stock"""
         conn = self.db.get_connection()
         cursor = conn.cursor()
 
         cursor.execute("""
             SELECT id, symbol, title, created_at, updated_at
             FROM conversations
-            WHERE symbol = %s
+            WHERE user_id = %s AND symbol = %s
             ORDER BY updated_at DESC
-        """, (symbol,))
+        """, (user_id, symbol))
 
         rows = cursor.fetchall()
         self.db.return_connection(conn)
@@ -311,21 +312,22 @@ class ConversationManager:
         except Exception as e:
             yield {'type': 'error', 'data': str(e)}
 
-    def get_or_create_conversation(self, symbol: str) -> int:
+    def get_or_create_conversation(self, user_id: int, symbol: str) -> int:
         """
-        Get the most recent conversation for a stock, or create a new one
+        Get the most recent conversation for a user and stock, or create a new one
 
         Args:
+            user_id: User ID
             symbol: Stock ticker symbol
 
         Returns:
             Conversation ID
         """
-        conversations = self.list_conversations(symbol)
+        conversations = self.list_conversations(user_id, symbol)
 
         if conversations:
             # Return most recent conversation
             return conversations[0]['id']
         else:
             # Create new conversation
-            return self.create_conversation(symbol, title=f"Chat about {symbol}")
+            return self.create_conversation(user_id, symbol, title=f"Chat about {symbol}")

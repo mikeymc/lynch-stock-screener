@@ -1625,7 +1625,8 @@ def refresh_material_events(symbol):
 
 
 @app.route('/api/stock/<symbol>/lynch-analysis', methods=['GET'])
-def get_lynch_analysis(symbol):
+@require_user_auth
+def get_lynch_analysis(symbol, user_id):
     """
     Get Peter Lynch-style analysis for a stock.
     Returns cached analysis if available, otherwise generates a new one.
@@ -1657,8 +1658,8 @@ def get_lynch_analysis(symbol):
     if not country or country.upper() in ['USA', 'UNITED STATES']:
         sections = db.get_filing_sections(symbol)
 
-    # Check if analysis exists in cache before generating
-    cached_analysis = db.get_lynch_analysis(symbol)
+    # Check if analysis exists in cache for this user
+    cached_analysis = db.get_lynch_analysis(user_id, symbol)
     was_cached = cached_analysis is not None
 
     # If only_cached is requested, return what we have (or None)
@@ -1684,6 +1685,7 @@ def get_lynch_analysis(symbol):
         news_articles = db.get_news_articles(symbol, limit=20)
 
         analysis_text = lynch_analyst.get_or_generate_analysis(
+            user_id,
             symbol,
             stock_data,
             history,
@@ -1695,7 +1697,7 @@ def get_lynch_analysis(symbol):
 
         # Get timestamp (fetch again if it was just generated)
         if not was_cached:
-            cached_analysis = db.get_lynch_analysis(symbol)
+            cached_analysis = db.get_lynch_analysis(user_id, symbol)
 
         return jsonify({
             'analysis': analysis_text,
@@ -1708,7 +1710,8 @@ def get_lynch_analysis(symbol):
 
 
 @app.route('/api/stock/<symbol>/lynch-analysis/refresh', methods=['POST'])
-def refresh_lynch_analysis(symbol):
+@require_user_auth
+def refresh_lynch_analysis(symbol, user_id):
     """
     Force regeneration of Peter Lynch-style analysis for a stock,
     bypassing the cache.
@@ -1747,6 +1750,7 @@ def refresh_lynch_analysis(symbol):
         news_articles = db.get_news_articles(symbol, limit=20)
 
         analysis_text = lynch_analyst.get_or_generate_analysis(
+            user_id,
             symbol,
             stock_data,
             history,
@@ -1756,7 +1760,7 @@ def refresh_lynch_analysis(symbol):
             use_cache=False
         )
 
-        cached_analysis = db.get_lynch_analysis(symbol)
+        cached_analysis = db.get_lynch_analysis(user_id, symbol)
 
         return jsonify({
             'analysis': analysis_text,
@@ -1769,14 +1773,15 @@ def refresh_lynch_analysis(symbol):
 
 
 @app.route('/api/stock/<symbol>/unified-chart-analysis', methods=['POST'])
-def get_unified_chart_analysis(symbol):
+@require_user_auth
+def get_unified_chart_analysis(symbol, user_id):
     """
     Generate unified Peter Lynch-style analysis for all three chart sections.
     Returns all three sections with shared context and cohesive narrative.
     """
     symbol = symbol.upper()
     data = request.get_json() or {}
-    
+
     # Check if stock exists
     stock_metrics = db.get_stock_metrics(symbol)
     if not stock_metrics:
@@ -1799,11 +1804,11 @@ def get_unified_chart_analysis(symbol):
     # Check cache first
     force_refresh = data.get('force_refresh', False)
     only_cached = data.get('only_cached', False)
-    
-    # Check if all three sections are cached
-    cached_growth = db.get_chart_analysis(symbol, 'growth')
-    cached_cash = db.get_chart_analysis(symbol, 'cash')
-    cached_valuation = db.get_chart_analysis(symbol, 'valuation')
+
+    # Check if all three sections are cached for this user
+    cached_growth = db.get_chart_analysis(user_id, symbol, 'growth')
+    cached_cash = db.get_chart_analysis(user_id, symbol, 'cash')
+    cached_valuation = db.get_chart_analysis(user_id, symbol, 'valuation')
     
     all_cached = cached_growth and cached_cash and cached_valuation
     
@@ -1842,9 +1847,9 @@ def get_unified_chart_analysis(symbol):
             material_events=material_events
         )
 
-        # Save each section to cache
+        # Save each section to cache for this user
         for section_name, analysis_text in sections.items():
-            db.set_chart_analysis(symbol, section_name, analysis_text, lynch_analyst.model_version)
+            db.set_chart_analysis(user_id, symbol, section_name, analysis_text, lynch_analyst.model_version)
 
         return jsonify({
             'sections': sections,
@@ -1892,10 +1897,11 @@ def remove_from_watchlist(symbol, user_id):
 # Chat / RAG Endpoints
 
 @app.route('/api/chat/<symbol>/conversations', methods=['GET'])
-def list_conversations(symbol):
+@require_user_auth
+def list_conversations(symbol, user_id):
     """List all conversations for a stock"""
     try:
-        conversations = conversation_manager.list_conversations(symbol.upper())
+        conversations = conversation_manager.list_conversations(user_id, symbol.upper())
         return jsonify({'conversations': conversations})
     except Exception as e:
         print(f"Error listing conversations for {symbol}: {e}")
@@ -1903,13 +1909,14 @@ def list_conversations(symbol):
 
 
 @app.route('/api/chat/<symbol>/new', methods=['POST'])
-def create_conversation(symbol):
+@require_user_auth
+def create_conversation(symbol, user_id):
     """Create a new conversation for a stock"""
     try:
         data = request.get_json() or {}
         title = data.get('title')
 
-        conversation_id = conversation_manager.create_conversation(symbol.upper(), title)
+        conversation_id = conversation_manager.create_conversation(user_id, symbol.upper(), title)
 
         return jsonify({
             'conversation_id': conversation_id,
@@ -1922,7 +1929,8 @@ def create_conversation(symbol):
 
 
 @app.route('/api/chat/conversation/<int:conversation_id>/messages', methods=['GET'])
-def get_messages(conversation_id):
+@require_user_auth
+def get_messages(conversation_id, user_id):
     """Get all messages in a conversation"""
     try:
         messages = conversation_manager.get_messages(conversation_id)
@@ -1938,7 +1946,8 @@ def get_messages(conversation_id):
 
 
 @app.route('/api/chat/<symbol>/message', methods=['POST'])
-def send_message(symbol):
+@require_user_auth
+def send_message(symbol, user_id):
     """
     Send a message and get AI response.
     Creates a new conversation if none exists, or uses the most recent one.
@@ -1953,7 +1962,7 @@ def send_message(symbol):
 
         # Get or create conversation
         if not conversation_id or conversation_id == 0 or conversation_id == '0':
-            conversation_id = conversation_manager.get_or_create_conversation(symbol.upper())
+            conversation_id = conversation_manager.get_or_create_conversation(user_id, symbol.upper())
 
         # Send message and get response
         result = conversation_manager.send_message(conversation_id, user_message)
@@ -1974,7 +1983,8 @@ def send_message(symbol):
 
 
 @app.route('/api/chat/<symbol>/message/stream', methods=['POST'])
-def send_message_stream(symbol):
+@require_user_auth
+def send_message_stream(symbol, user_id):
     """
     Send a message and stream AI response using Server-Sent Events.
     Creates a new conversation if none exists, or uses the most recent one.
@@ -1990,7 +2000,7 @@ def send_message_stream(symbol):
 
         # Get or create conversation
         if not conversation_id or conversation_id == 0 or conversation_id == '0':
-            conversation_id = conversation_manager.get_or_create_conversation(symbol.upper())
+            conversation_id = conversation_manager.get_or_create_conversation(user_id, symbol.upper())
 
         def generate():
             """Generate Server-Sent Events"""
