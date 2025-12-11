@@ -2289,6 +2289,15 @@ def get_backtest_results():
         return jsonify({'error': str(e)}), 500
 
 if __name__ == '__main__':
+    # Start debugpy if ENABLE_DEBUGPY environment variable is set
+    if os.environ.get('ENABLE_DEBUGPY', 'false').lower() == 'true':
+        import debugpy
+        debugpy.listen(('0.0.0.0', 15679))
+        print("⚠️  Debugpy listening on port 15679", flush=True)
+        print("⚠️  Waiting for debugger to attach...", flush=True)
+        debugpy.wait_for_client()
+        print("✅ Debugger attached!", flush=True)
+
     try:
         # Always run the app, even when debugging
         port = int(os.environ.get('PORT', 8080))

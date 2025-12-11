@@ -40,7 +40,5 @@ EXPOSE 8080
 
 # Default command runs the web server
 # Worker machines are created via Fly Machines API with: python worker.py
-# CMD ["gunicorn", "--config", "gunicorn.conf.py", "app:app"]
-
-# Debug command
-CMD ["python", "-Xfrozen_modules=off", "-m", "debugpy", "--listen", "0.0.0.0:15679", "/app/app.py"]
+# For debugging, set ENABLE_DEBUGPY=true environment variable
+CMD ["python", "-u", "app.py"]
