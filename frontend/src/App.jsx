@@ -20,6 +20,9 @@ import AlgorithmTuning from './pages/AlgorithmTuning'
 import AlgorithmSelector from './components/AlgorithmSelector'
 import StatusBar from './components/StatusBar'
 import AdvancedFilter from './components/AdvancedFilter'
+import { useAuth } from './context/AuthContext'
+import LoginModal from './components/LoginModal'
+import UserAvatar from './components/UserAvatar'
 import './App.css'
 
 ChartJS.register(
@@ -32,7 +35,7 @@ ChartJS.register(
   Legend
 )
 
-const API_BASE = '/api'
+const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:5001/api'
 
 // FilingSections component displays expandable filing content
 function FilingSections({ sections }) {
@@ -907,6 +910,8 @@ function StockListView({
             </svg>
           </button>
         )}
+
+        <UserAvatar />
       </div>
 
       {loading && (
@@ -1076,6 +1081,7 @@ function StockListView({
 }
 
 function App() {
+  const { user, loading } = useAuth()
   const [stocks, setStocks] = useState([])
   const [summary, setSummary] = useState(null)
   const [filter, setFilter] = useState('all')
@@ -1088,12 +1094,17 @@ function App() {
 
   // Load watchlist on mount
   useEffect(() => {
+    if (!user) return
+
     const controller = new AbortController()
     const signal = controller.signal
 
     const loadWatchlist = async () => {
       try {
-        const response = await fetch(`${API_BASE}/watchlist`, { signal })
+        const response = await fetch(`${API_BASE}/watchlist`, {
+          signal,
+          credentials: 'include'
+        })
         if (response.ok) {
           const data = await response.json()
           setWatchlist(new Set(data.symbols))
@@ -1107,26 +1118,41 @@ function App() {
     loadWatchlist()
 
     return () => controller.abort()
-  }, [])
+  }, [user])
 
   const toggleWatchlist = async (symbol) => {
     const isInWatchlist = watchlist.has(symbol)
 
     try {
       if (isInWatchlist) {
-        await fetch(`${API_BASE}/watchlist/${symbol}`, { method: 'DELETE' })
+        await fetch(`${API_BASE}/watchlist/${symbol}`, {
+          method: 'DELETE',
+          credentials: 'include'
+        })
         setWatchlist(prev => {
           const newSet = new Set(prev)
           newSet.delete(symbol)
           return newSet
         })
       } else {
-        await fetch(`${API_BASE}/watchlist/${symbol}`, { method: 'POST' })
+        await fetch(`${API_BASE}/watchlist/${symbol}`, {
+          method: 'POST',
+          credentials: 'include'
+        })
         setWatchlist(prev => new Set([...prev, symbol]))
       }
     } catch (err) {
       console.error('Error toggling watchlist:', err)
     }
+  }
+
+  // Show login modal if not authenticated
+  if (loading) {
+    return <div className="flex items-center justify-center h-screen">Loading...</div>
+  }
+
+  if (!user) {
+    return <LoginModal />
   }
 
   return (

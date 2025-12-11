@@ -1,5 +1,6 @@
 flask
 flask-cors
+flask-session
 yfinance
 pandas
 requests
@@ -7,6 +8,8 @@ pytest
 python-dotenv
 tvDatafeed @ git+https://github.com/rongardF/tvdatafeed.git
 google-generativeai
+google-auth
+google-auth-oauthlib
 edgartools
 gunicorn
 tradingview-screener

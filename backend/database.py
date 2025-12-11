@@ -259,11 +259,50 @@ class Database:
         """)
 
         cursor.execute("""
+            CREATE TABLE IF NOT EXISTS users (
+                id SERIAL PRIMARY KEY,
+                google_id TEXT UNIQUE NOT NULL,
+                email TEXT UNIQUE NOT NULL,
+                name TEXT,
+                picture TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                last_login TIMESTAMP
+            )
+        """)
+
+        cursor.execute("""
             CREATE TABLE IF NOT EXISTS watchlist (
                 symbol TEXT PRIMARY KEY,
                 added_at TIMESTAMP,
                 FOREIGN KEY (symbol) REFERENCES stocks(symbol)
             )
+        """)
+
+        # Migration: Add user_id to watchlist table
+        cursor.execute("""
+            DO $$
+            BEGIN
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                               WHERE table_name = 'watchlist' AND column_name = 'user_id') THEN
+                    -- Add user_id column (nullable initially)
+                    ALTER TABLE watchlist ADD COLUMN user_id INTEGER REFERENCES users(id) ON DELETE CASCADE;
+
+                    -- Wipe existing data (as per requirement)
+                    DELETE FROM watchlist;
+
+                    -- Drop old primary key constraint
+                    ALTER TABLE watchlist DROP CONSTRAINT watchlist_pkey;
+
+                    -- Add id column as new primary key
+                    ALTER TABLE watchlist ADD COLUMN id SERIAL PRIMARY KEY;
+
+                    -- Add unique constraint on user_id and symbol
+                    ALTER TABLE watchlist ADD CONSTRAINT watchlist_user_symbol_unique UNIQUE(user_id, symbol);
+
+                    -- Make user_id required
+                    ALTER TABLE watchlist ALTER COLUMN user_id SET NOT NULL;
+                END IF;
+            END $$;
         """)
 
         cursor.execute("""
@@ -1164,34 +1203,81 @@ class Database:
         conn.commit()
         self.return_connection(conn)
 
-    def add_to_watchlist(self, symbol: str):
-        sql = """
-            INSERT INTO watchlist (symbol, added_at)
-            VALUES (%s, %s)
-            ON CONFLICT (symbol) DO NOTHING
-        """
-        args = (symbol, datetime.now())
-        self.write_queue.put((sql, args))
-
-    def remove_from_watchlist(self, symbol: str):
-        sql = "DELETE FROM watchlist WHERE symbol = %s"
-        args = (symbol,)
-        self.write_queue.put((sql, args))
-
-    def get_watchlist(self) -> List[str]:
+    def create_user(self, google_id: str, email: str, name: str = None, picture: str = None) -> int:
+        """Create a new user and return their user_id"""
         conn = self.get_connection()
         try:
             cursor = conn.cursor()
-            cursor.execute("SELECT symbol FROM watchlist ORDER BY added_at DESC")
+            cursor.execute("""
+                INSERT INTO users (google_id, email, name, picture, created_at, last_login)
+                VALUES (%s, %s, %s, %s, %s, %s)
+                ON CONFLICT (google_id) DO UPDATE SET
+                    email = EXCLUDED.email,
+                    name = EXCLUDED.name,
+                    picture = EXCLUDED.picture,
+                    last_login = EXCLUDED.last_login
+                RETURNING id
+            """, (google_id, email, name, picture, datetime.now(), datetime.now()))
+            user_id = cursor.fetchone()[0]
+            conn.commit()
+            return user_id
+        finally:
+            self.return_connection(conn)
+
+    def get_user_by_google_id(self, google_id: str) -> Optional[Dict[str, Any]]:
+        """Get user by Google ID"""
+        conn = self.get_connection()
+        try:
+            cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+            cursor.execute("SELECT * FROM users WHERE google_id = %s", (google_id,))
+            return cursor.fetchone()
+        finally:
+            self.return_connection(conn)
+
+    def get_user_by_id(self, user_id: int) -> Optional[Dict[str, Any]]:
+        """Get user by user_id"""
+        conn = self.get_connection()
+        try:
+            cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+            cursor.execute("SELECT * FROM users WHERE id = %s", (user_id,))
+            return cursor.fetchone()
+        finally:
+            self.return_connection(conn)
+
+    def update_last_login(self, user_id: int):
+        """Update user's last login timestamp"""
+        sql = "UPDATE users SET last_login = %s WHERE id = %s"
+        args = (datetime.now(), user_id)
+        self.write_queue.put((sql, args))
+
+    def add_to_watchlist(self, user_id: int, symbol: str):
+        sql = """
+            INSERT INTO watchlist (user_id, symbol, added_at)
+            VALUES (%s, %s, %s)
+            ON CONFLICT (user_id, symbol) DO NOTHING
+        """
+        args = (user_id, symbol, datetime.now())
+        self.write_queue.put((sql, args))
+
+    def remove_from_watchlist(self, user_id: int, symbol: str):
+        sql = "DELETE FROM watchlist WHERE user_id = %s AND symbol = %s"
+        args = (user_id, symbol)
+        self.write_queue.put((sql, args))
+
+    def get_watchlist(self, user_id: int) -> List[str]:
+        conn = self.get_connection()
+        try:
+            cursor = conn.cursor()
+            cursor.execute("SELECT symbol FROM watchlist WHERE user_id = %s ORDER BY added_at DESC", (user_id,))
             symbols = [row[0] for row in cursor.fetchall()]
             return symbols
         finally:
             self.return_connection(conn)
 
-    def is_in_watchlist(self, symbol: str) -> bool:
+    def is_in_watchlist(self, user_id: int, symbol: str) -> bool:
         conn = self.get_connection()
         cursor = conn.cursor()
-        cursor.execute("SELECT 1 FROM watchlist WHERE symbol = %s", (symbol,))
+        cursor.execute("SELECT 1 FROM watchlist WHERE user_id = %s AND symbol = %s", (user_id, symbol))
         result = cursor.fetchone()
         self.return_connection(conn)
         return result is not None
