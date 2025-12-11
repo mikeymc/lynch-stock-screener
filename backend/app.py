@@ -39,7 +39,7 @@ from algorithm_optimizer import AlgorithmOptimizer
 import logging
 
 # Feature flag for background job processing
-USE_BACKGROUND_JOBS = os.environ.get('USE_BACKGROUND_JOBS', 'true').lower() == 'true'
+USE_BACKGROUND_JOBS = os.environ.get('USE_BACKGROUND_JOBS', 'false').lower() == 'true'
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
