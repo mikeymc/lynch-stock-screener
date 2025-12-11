@@ -89,7 +89,7 @@ function LynchAnalysis({ symbol, stockName, onAnalysisLoaded }) {
     return (
       <div className="lynch-analysis-container">
         <div className="lynch-analysis-header">
-          <h3>AIAnalysis</h3>
+          <h3>AI Analysis</h3>
         </div>
         <div className="lynch-analysis-loading">
           <div className="spinner"></div>

@@ -239,6 +239,11 @@ export default function StockDetail({ watchlist, toggleWatchlist }) {
     return () => controller.abort()
   }, [stock, symbol])
 
+  // Scroll to top when switching tabs
+  useEffect(() => {
+    window.scrollTo({ top: 0, behavior: 'smooth' })
+  }, [activeTab])
+
 
 
   const handleRefresh = async () => {

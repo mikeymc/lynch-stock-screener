@@ -48,13 +48,13 @@ export default function ChatInterface({ symbol, lynchAnalysis }) {
   const messagesEndRef = useRef(null)
   const eventSourceRef = useRef(null)
 
-  const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }
+  // const scrollToBottom = () => {
+  //   messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+  // }
 
-  useEffect(() => {
-    scrollToBottom()
-  }, [messages, streamingMessage])
+  // useEffect(() => {
+  //   scrollToBottom()
+  // }, [messages, streamingMessage])
 
   useEffect(() => {
     return () => {
@@ -205,24 +205,6 @@ export default function ChatInterface({ symbol, lynchAnalysis }) {
 
   return (
     <div className="chat-container">
-      <div className="chat-header">
-        <div className="chat-header-content">
-          <div>
-            <h3>💬 Ask Questions</h3>
-            <p className="chat-subtitle">Discuss the analysis with Peter Lynch</p>
-          </div>
-          {messages.length > 0 && (
-            <button
-              className="new-conversation-button"
-              onClick={startNewConversation}
-              disabled={loading}
-            >
-              ➕ New Conversation
-            </button>
-          )}
-        </div>
-      </div>
-
       <div className="chat-messages">
         {loadingHistory && (
           <div className="chat-loading-history">
@@ -246,7 +228,7 @@ export default function ChatInterface({ symbol, lynchAnalysis }) {
 
         {loading && (
           <div className="chat-message assistant streaming">
-            <div className="chat-message-header">🎩 Peter Lynch</div>
+            <div className="chat-message-header">🎩 Thinking...</div>
             <div className="chat-message-content markdown-content">
               {streamingMessage ? (
                 <ReactMarkdown>{streamingMessage}</ReactMarkdown>
@@ -273,7 +255,7 @@ export default function ChatInterface({ symbol, lynchAnalysis }) {
           value={inputMessage}
           onChange={(e) => setInputMessage(e.target.value)}
           onKeyPress={handleKeyPress}
-          placeholder="Ask Peter Lynch a question..."
+          placeholder="Chat..."
           rows="2"
           disabled={loading}
         />
