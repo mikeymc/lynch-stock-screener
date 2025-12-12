@@ -21,8 +21,8 @@ def test_app_initialization_and_ui_elements(page: Page, servers):
     print("\n[E2E] Starting test: app_initialization_and_ui_elements")
     
     # Navigate to the app
-    print("[E2E] Navigating to http://localhost:5174")
-    page.goto("http://localhost:5174")
+    print("[E2E] Navigating to http://localhost:5174?user=admin")
+    page.goto("http://localhost:5174?user=admin")
     page.wait_for_load_state("networkidle")
     
     # Verify page loaded
@@ -491,7 +491,7 @@ def test_stock_detail_material_events_tab(page: Page, servers):
 def test_backend_api_health(servers):
     """Test that the backend API is responding correctly."""
     print("\n[E2E] Testing backend health endpoint...")
-    response = requests.get('http://localhost:8080/api/health')
+    response = requests.get('http://localhost:8081/api/health')
     assert response.status_code == 200
     data = response.json()
     assert data['status'] == 'healthy'
@@ -501,7 +501,7 @@ def test_backend_api_health(servers):
 def test_algorithms_endpoint(servers):
     """Test that the algorithms endpoint returns data."""
     print("\n[E2E] Testing algorithms endpoint...")
-    response = requests.get('http://localhost:8080/api/algorithms')
+    response = requests.get('http://localhost:8081/api/algorithms')
     assert response.status_code == 200
     data = response.json()
     assert isinstance(data, dict)
@@ -520,7 +520,7 @@ def test_algorithm_tuning_page_navigation(page: Page, servers):
     print("\n[E2E] Starting test: algorithm_tuning_page_navigation")
     
     # Start at main page
-    page.goto("http://localhost:5174")
+    page.goto("http://localhost:5174?user=admin")
     page.wait_for_load_state("networkidle")
     page.wait_for_timeout(2000)
     

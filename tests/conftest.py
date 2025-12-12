@@ -3,6 +3,16 @@ Shared pytest fixtures for all test suites.
 """
 import pytest
 import psycopg2
+import os
+
+
+@pytest.fixture(scope="session", autouse=True)
+def configure_test_environment():
+    """Configure environment variables for all tests."""
+    # Use smaller connection pool for tests to avoid exceeding PostgreSQL max_connections
+    os.environ['DB_POOL_SIZE'] = '10'
+    yield
+    # Cleanup if needed
 
 
 @pytest.fixture(scope="session")

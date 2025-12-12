@@ -33,7 +33,9 @@ def backend_server(test_database):
         'DB_USER': 'lynch',
         'DB_PASSWORD': 'lynch_dev_password',
         'FLASK_ENV': 'development',
-        'PORT': str(test_port)
+        'PORT': str(test_port),
+        'ENABLE_TEST_AUTH': 'true',
+        'DB_POOL_SIZE': '10'  # Smaller pool for tests
     })
     print(f"[E2E] Starting backend on port {test_port} with test database: {test_database}")
     print(f"[E2E] Environment: DB_NAME={env['DB_NAME']}, DB_HOST={env['DB_HOST']}, PORT={env['PORT']}")
@@ -147,7 +149,7 @@ def servers(backend_server, frontend_server):
 
 
 @pytest.fixture(scope="function", autouse=True)
-def clear_test_session_data(test_database, page):
+def clear_test_session_data(test_database, page, servers):
     """Clear session data before each test to ensure clean state."""
     # This fixture runs before each test function
     # It clears data that might persist across tests within the session
@@ -182,6 +184,31 @@ def clear_test_session_data(test_database, page):
     except Exception as e:
         # Ignore errors if page hasn't loaded yet
         pass
+
+    # Perform test login to authenticate the session
+    print("[E2E] Performing test login...")
+    try:
+        response = requests.post('http://localhost:8081/api/auth/test-login')
+        if response.status_code == 200:
+            print("[E2E] Test login successful")
+            # Get session cookie from response and set it in the browser
+            if 'set-cookie' in response.headers:
+                cookies = response.cookies
+                # Navigate to the app domain first so we can set cookies
+                page.goto("http://localhost:5174")
+                # Set each cookie in the browser context
+                for cookie_name, cookie_value in cookies.items():
+                    page.context.add_cookies([{
+                        'name': cookie_name,
+                        'value': cookie_value,
+                        'domain': 'localhost',
+                        'path': '/'
+                    }])
+                print(f"[E2E] Set {len(cookies)} authentication cookies in browser")
+        else:
+            print(f"[E2E] Test login failed with status {response.status_code}: {response.text}")
+    except Exception as e:
+        print(f"[E2E] Test login error: {e}")
 
     # Test runs here (yield allows test to execute)
     yield

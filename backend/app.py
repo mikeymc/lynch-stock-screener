@@ -490,6 +490,42 @@ def logout():
     return jsonify({'message': 'Logged out successfully'})
 
 
+@app.route('/api/auth/test-login', methods=['POST'])
+def test_login():
+    """Test-only login endpoint for e2e tests"""
+    # Only allow in test mode
+    if os.environ.get('ENABLE_TEST_AUTH') != 'true':
+        return jsonify({'error': 'Test auth not enabled'}), 403
+
+    # Create or get test user
+    test_google_id = 'test_google_id_12345'
+    test_email = 'test@example.com'
+    test_name = 'Test User'
+    test_picture = 'https://example.com/test.jpg'
+
+    try:
+        user_id = db.create_user(test_google_id, test_email, test_name, test_picture)
+
+        # Set session
+        session['user_id'] = user_id
+        session['user_email'] = test_email
+        session['user_name'] = test_name
+        session['user_picture'] = test_picture
+
+        return jsonify({
+            'message': 'Test login successful',
+            'user': {
+                'id': user_id,
+                'email': test_email,
+                'name': test_name,
+                'picture': test_picture
+            }
+        })
+    except Exception as e:
+        logger.error(f"Test login error: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
 # ============================================================
 # Background Job API Endpoints
 # ============================================================

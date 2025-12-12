@@ -37,9 +37,11 @@ class Database:
 
         # Connection pool for concurrent reads
         # Pool size must accommodate parallel screening workers (40) + some overhead
-        self.pool_size = 50
+        # Can be overridden via DB_POOL_SIZE env var (useful for tests)
+        self.pool_size = int(os.environ.get('DB_POOL_SIZE', 50))
+        min_connections = min(5, self.pool_size)  # Don't exceed pool_size
         self.connection_pool = psycopg2.pool.ThreadedConnectionPool(
-            minconn=5,
+            minconn=min_connections,
             maxconn=self.pool_size,
             **self.db_params
         )
