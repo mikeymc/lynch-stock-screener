@@ -38,11 +38,15 @@ def backend_server(test_database):
     print(f"[E2E] Starting backend on port {test_port} with test database: {test_database}")
     print(f"[E2E] Environment: DB_NAME={env['DB_NAME']}, DB_HOST={env['DB_HOST']}, PORT={env['PORT']}")
 
-    # Start backend process
+    # Start backend process using the venv python
     # Note: stdout=None, stderr=None allows backend output to print to console for debugging
+    # Get project root (two directories up from this conftest.py file)
+    project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
+    venv_python = os.path.join(project_root, 'backend', '.venv', 'bin', 'python3')
+
     backend_process = subprocess.Popen(
-        ['python3', 'backend/app.py'],
-        cwd='/Users/mikey/workspace/lynch-stock-screener',
+        [venv_python, 'backend/app.py'],
+        cwd=project_root,
         env=env,
         stdout=None,  # Let backend print to console
         stderr=None,  # Let backend errors print to console
@@ -96,9 +100,13 @@ def frontend_server():
     print(f"[E2E] Starting frontend on port {test_port}, pointing to backend on port 8081")
 
     # Start frontend process
+    # Get project root (two directories up from this conftest.py file)
+    project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
+    frontend_dir = os.path.join(project_root, 'frontend')
+
     frontend_process = subprocess.Popen(
         ['npm', 'run', 'dev', '--', '--port', str(test_port)],
-        cwd='/Users/mikey/workspace/lynch-stock-screener/frontend',
+        cwd=frontend_dir,
         env=env,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE
@@ -207,7 +215,8 @@ def pytest_runtest_makereport(item, call):
             page = item.funcargs["page"]
 
             # Create screenshots directory if it doesn't exist
-            screenshots_dir = "/Users/mikey/workspace/lynch-stock-screener/tests/screenshots"
+            project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
+            screenshots_dir = os.path.join(project_root, 'tests', 'screenshots')
             os.makedirs(screenshots_dir, exist_ok=True)
 
             # Generate filename with test name
