@@ -21,14 +21,44 @@ def client():
 
 
 @pytest.fixture
-def test_db():
-    db_path = "test_app_stocks.db"
-    if os.path.exists(db_path):
-        os.remove(db_path)
-    test_database = Database(db_path)
-    yield test_database
-    if os.path.exists(db_path):
-        os.remove(db_path)
+def test_db(test_database):
+    """Create Database instance using test PostgreSQL database"""
+    db = Database(
+        host='localhost',
+        port=5432,
+        database=test_database,
+        user='lynch',
+        password='lynch_dev_password'
+    )
+
+    # Clean up test data before each test
+    conn = db.get_connection()
+    cursor = conn.cursor()
+
+    # Clear test-specific data (preserve screening_results from template)
+    cursor.execute('DELETE FROM stock_metrics')
+    cursor.execute('DELETE FROM earnings_history')
+    cursor.execute('DELETE FROM stocks WHERE symbol NOT IN (SELECT symbol FROM screening_results)')
+    cursor.execute('DELETE FROM lynch_analyses')
+    cursor.execute('DELETE FROM screening_sessions')
+
+    conn.commit()
+    cursor.close()
+    db.return_connection(conn)
+
+    yield db
+
+    # Cleanup after test
+    conn = db.get_connection()
+    cursor = conn.cursor()
+    cursor.execute('DELETE FROM stock_metrics')
+    cursor.execute('DELETE FROM earnings_history')
+    cursor.execute('DELETE FROM stocks WHERE symbol NOT IN (SELECT symbol FROM screening_results)')
+    cursor.execute('DELETE FROM lynch_analyses')
+    cursor.execute('DELETE FROM screening_sessions')
+    conn.commit()
+    cursor.close()
+    db.return_connection(conn)
 
 
 def test_health_endpoint(client):
