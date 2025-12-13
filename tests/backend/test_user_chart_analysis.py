@@ -8,36 +8,6 @@ from datetime import datetime
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../..')))
 
-from database import Database
-
-
-@pytest.fixture
-def test_db(test_database):
-    """Create Database instance using test PostgreSQL database"""
-    db = Database(database=test_database)
-
-    # Clean up before each test
-    conn = db.get_connection()
-    try:
-        cursor = conn.cursor()
-        cursor.execute("DELETE FROM chart_analyses")
-        cursor.execute("DELETE FROM users")
-        conn.commit()
-    finally:
-        db.return_connection(conn)
-
-    yield db
-
-    # Clean up after test
-    conn = db.get_connection()
-    try:
-        cursor = conn.cursor()
-        cursor.execute("DELETE FROM chart_analyses")
-        cursor.execute("DELETE FROM users")
-        conn.commit()
-    finally:
-        db.return_connection(conn)
-
 
 def test_save_chart_analysis_for_user(test_db):
     """Test saving a chart analysis for a specific user"""
