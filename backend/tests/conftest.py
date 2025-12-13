@@ -83,12 +83,11 @@ def test_database():
     conn.close()
 
 
-@pytest.fixture
-def test_db(test_database):
-    """Shared test_db fixture for all tests in backend/tests.
+@pytest.fixture(scope="session")
+def shared_db(test_database):
+    """Session-scoped Database instance shared across all tests.
 
-    Creates a Database instance using the PostgreSQL test database.
-    Cleans up test data before and after each test.
+    Creates a single Database instance to avoid connection pool exhaustion.
     """
     import sys
     import os
@@ -106,6 +105,19 @@ def test_db(test_database):
         user='lynch',
         password='lynch_dev_password'
     )
+
+    yield db
+
+    # No cleanup needed - session ends
+
+
+@pytest.fixture
+def test_db(shared_db):
+    """Function-scoped fixture that cleans up test data before/after each test.
+
+    Uses the shared Database instance but ensures clean state for each test.
+    """
+    db = shared_db
 
     # Clean up test data before each test
     conn = db.get_connection()
