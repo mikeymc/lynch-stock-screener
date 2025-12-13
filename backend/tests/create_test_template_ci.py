@@ -114,9 +114,47 @@ def create_template_from_dump():
     print("   ✓ Database marked as template")
     print("\n✓ Template database created successfully for CI")
 
+def create_default_database():
+    """Create default lynch_stocks database from template for tests that import app.py."""
+    db_host = os.environ.get('DB_HOST', 'localhost')
+    db_port = int(os.environ.get('DB_PORT', 5432))
+    db_user = os.environ.get('DB_USER', 'lynch')
+    db_password = os.environ.get('DB_PASSWORD', 'lynch_dev_password')
+
+    print("\n[Extra] Creating default lynch_stocks database from template...")
+
+    conn = psycopg2.connect(
+        host=db_host,
+        port=db_port,
+        user=db_user,
+        password=db_password,
+        database='postgres'
+    )
+    conn.set_isolation_level(ISOLATION_LEVEL_AUTOCOMMIT)
+    cursor = conn.cursor()
+
+    # Terminate connections to lynch_stocks database
+    cursor.execute("""
+        SELECT pg_terminate_backend(pg_stat_activity.pid)
+        FROM pg_stat_activity
+        WHERE pg_stat_activity.datname = 'lynch_stocks'
+          AND pid <> pg_backend_pid()
+    """)
+
+    # Create lynch_stocks database from template
+    cursor.execute("DROP DATABASE IF EXISTS lynch_stocks")
+    cursor.execute("CREATE DATABASE lynch_stocks TEMPLATE lynch_stocks_template")
+
+    cursor.close()
+    conn.close()
+
+    print("   ✓ Default database created from template")
+    print("   (This allows tests to import app.py at module level)")
+
 if __name__ == '__main__':
     try:
         create_template_from_dump()
+        create_default_database()
     except Exception as e:
         print(f"\n✗ Error creating template: {e}")
         import traceback
