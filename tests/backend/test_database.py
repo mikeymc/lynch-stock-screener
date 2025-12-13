@@ -269,6 +269,13 @@ def test_get_nonexistent_lynch_analysis(test_db):
 
 def test_update_lynch_analysis(test_db):
     """Test updating an existing Lynch analysis (refresh)"""
+    # Create test user
+    conn = test_db.get_connection()
+    cursor = conn.cursor()
+    cursor.execute("INSERT INTO users (id, google_id, email, name) VALUES (1, 'test123', 'test@example.com', 'Test User') ON CONFLICT DO NOTHING")
+    conn.commit()
+    test_db.return_connection(conn)
+
     test_db.save_stock_basic("AAPL", "Apple Inc.", "NASDAQ", "Technology")
     test_db.flush()  # Ensure stock exists before saving analysis
 
@@ -288,6 +295,13 @@ def test_update_lynch_analysis(test_db):
 
 def test_lynch_analysis_has_timestamp(test_db):
     """Test that generated_at timestamp is saved correctly"""
+    # Create test user
+    conn = test_db.get_connection()
+    cursor = conn.cursor()
+    cursor.execute("INSERT INTO users (id, google_id, email, name) VALUES (1, 'test123', 'test@example.com', 'Test User') ON CONFLICT DO NOTHING")
+    conn.commit()
+    test_db.return_connection(conn)
+
     test_db.save_stock_basic("AAPL", "Apple Inc.", "NASDAQ", "Technology")
     test_db.flush()  # Ensure stock exists before saving analysis
 
