@@ -672,8 +672,10 @@ class LynchCriteria:
         if self.inst_own_min <= value <= self.inst_own_max:
             return "PASS"
         else:
-            # Check if it's close (within 10% of range)
-            if (self.inst_own_min - 0.10) <= value <= (self.inst_own_max + 0.10):
+            # Check if it's close to either boundary (within 5 percentage points)
+            close_to_min = abs(value - self.inst_own_min) <= 0.05
+            close_to_max = abs(value - self.inst_own_max) <= 0.05
+            if close_to_min or close_to_max:
                 return "CLOSE"
             return "FAIL"
 

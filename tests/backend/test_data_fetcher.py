@@ -16,7 +16,10 @@ from database import Database
 
 @pytest.fixture
 def fetcher(test_db):
-    return DataFetcher(test_db)
+    f = DataFetcher(test_db)
+    yield f
+    # Flush to prevent writes from leaking into next test
+    f.db.flush()
 
 
 def test_fetch_stock_data_from_cache(fetcher, test_db):
@@ -193,6 +196,8 @@ def test_fetch_stock_data_stores_in_db(fetcher, test_db):
 
             fetcher.fetch_stock_data("TEST")
 
+            test_db.flush()  # Ensure data is committed
+
             cached = test_db.get_stock_metrics("TEST")
             assert cached is not None
             assert cached['symbol'] == "TEST"
@@ -267,6 +272,8 @@ def test_hybrid_fetch_uses_edgar_for_fundamentals(mock_ticker, test_db):
 
         fetcher = DataFetcher(test_db)
         result = fetcher.fetch_stock_data("AAPL")
+
+        test_db.flush()  # Ensure data is committed
 
         assert result is not None
 
@@ -362,6 +369,18 @@ def test_logging_edgar_success_with_year_counts(mock_ticker, test_db, caplog):
                 {'year': 2016, 'eps': 2.3, 'net_income': 23000000000},
                 {'year': 2015, 'eps': 2.0, 'net_income': 20000000000},
                 {'year': 2014, 'eps': 1.8, 'net_income': 18000000000}
+            ],
+            'net_income_annual': [
+                {'year': 2023, 'net_income': 50000000000},
+                {'year': 2022, 'net_income': 45000000000},
+                {'year': 2021, 'net_income': 40000000000},
+                {'year': 2020, 'net_income': 35000000000},
+                {'year': 2019, 'net_income': 30000000000},
+                {'year': 2018, 'net_income': 28000000000},
+                {'year': 2017, 'net_income': 25000000000},
+                {'year': 2016, 'net_income': 23000000000},
+                {'year': 2015, 'net_income': 20000000000},
+                {'year': 2014, 'net_income': 18000000000}
             ],
             'revenue_history': [
                 {'year': 2023, 'revenue': 100000000000},
@@ -475,7 +494,6 @@ def test_hybrid_partial_edgar_data_uses_available_years(mock_ticker, test_db):
     """Test that when EDGAR has mismatched EPS/revenue years, we store what we can"""
     from edgar_fetcher import EdgarFetcher
     with patch.object(EdgarFetcher, 'fetch_stock_fundamentals') as mock_edgar:
-        # EDGAR returns 10 EPS years but only 8 revenue years
         mock_edgar.return_value = {
             'ticker': 'TEST',
             'cik': '0000123456',
@@ -536,8 +554,11 @@ def test_hybrid_partial_edgar_data_uses_available_years(mock_ticker, test_db):
         fetcher = DataFetcher(test_db)
         result = fetcher.fetch_stock_data("TEST")
 
+        test_db.flush()  # Ensure data is committed
+
         assert result is not None
         # Should have stored 8 years (where both EPS and revenue match)
+        # EDGAR provided 10 years of net_income but only 8 years of revenue (2016-2023)
         earnings = test_db.get_earnings_history("TEST")
         assert len(earnings) == 8
         assert earnings[0]['year'] == 2023
@@ -595,6 +616,8 @@ def test_hybrid_uses_edgar_when_sufficient_years(mock_ticker, test_db):
 
         fetcher = DataFetcher(test_db)
         result = fetcher.fetch_stock_data("TEST")
+
+        test_db.flush()  # Ensure data is committed
 
         assert result is not None
         earnings = test_db.get_earnings_history("TEST")
@@ -660,6 +683,8 @@ def test_hybrid_falls_back_when_insufficient_edgar_years(mock_ticker, test_db):
 
         fetcher = DataFetcher(test_db)
         result = fetcher.fetch_stock_data("TEST")
+
+        test_db.flush()  # Ensure data is committed
 
         assert result is not None
         # Should use yfinance (4 years) instead of EDGAR (3 years)

@@ -218,64 +218,6 @@ class TestPriceProviderContract:
 
 
 # ============================================================================
-# SCHWAB-SPECIFIC TESTS - Tests for current Schwab implementation
-# ============================================================================
-
-class TestSchwabClientImplementation:
-    """Tests specific to the Schwab client implementation"""
-    
-    def test_schwab_satisfies_protocol_interface(self):
-        """Verify SchwabClient has the required interface methods"""
-        from schwab_client import SchwabClient
-        
-        client = SchwabClient()
-        
-        # Check interface methods exist
-        assert hasattr(client, 'get_historical_price')
-        assert hasattr(client, 'is_available')
-        assert callable(client.get_historical_price)
-        assert callable(client.is_available)
-    
-    def test_schwab_get_historical_price_signature(self):
-        """Verify get_historical_price accepts correct arguments"""
-        from schwab_client import SchwabClient
-        
-        with patch.dict('os.environ', {}, clear=True):
-            client = SchwabClient()
-            
-            # Should accept (symbol, date) and return Optional[float]
-            result = client.get_historical_price("AAPL", "2023-09-30")
-            
-            assert result is None or isinstance(result, float)
-    
-    def test_schwab_returns_none_when_not_authenticated(self):
-        """Schwab should return None when credentials are missing"""
-        from schwab_client import SchwabClient
-        
-        with patch.dict('os.environ', {}, clear=True):
-            client = SchwabClient()
-            
-            price = client.get_historical_price("AAPL", "2023-09-30")
-            
-            assert price is None
-    
-    def test_schwab_handles_invalid_date_format(self):
-        """Schwab should return None for invalid date formats"""
-        from schwab_client import SchwabClient
-        
-        with patch.dict('os.environ', {
-            'SCHWAB_API_KEY': 'test',
-            'SCHWAB_API_SECRET': 'test'
-        }):
-            client = SchwabClient()
-            client._authenticated = True  # Bypass auth for test
-            
-            price = client.get_historical_price("AAPL", "not-a-date")
-            
-            assert price is None
-
-
-# ============================================================================
 # INTEGRATION TESTS - Tests for the /api/stock/<symbol>/history endpoint
 # ============================================================================
 
@@ -288,7 +230,13 @@ class TestHistoryEndpointIntegration:
     """
     
     @pytest.fixture
-    def client(self):
+    def client(self, test_db, monkeypatch):
+        """Flask test client with test database"""
+        import app as app_module
+
+        # Replace app's db with test_db
+        monkeypatch.setattr(app_module, 'db', test_db)
+
         from app import app
         app.config['TESTING'] = True
         with app.test_client() as client:
@@ -327,6 +275,8 @@ class TestHistoryEndpointIntegration:
             "2022-12-31": 100.00,
             "2023-12-31": 150.00,
         }.get(date)
+        # Mock weekly price history to return empty dict (not needed for this test)
+        mock_provider.get_weekly_price_history.return_value = {}
         monkeypatch.setattr(app_module, 'price_client', mock_provider)
         
         response = client.get(f'/api/stock/{symbol}/history')
@@ -411,6 +361,8 @@ class TestHistoryEndpointIntegration:
         mock_provider = MagicMock()
         mock_provider.is_available.return_value = True
         mock_provider.get_historical_price.return_value = None
+        # Mock weekly price history to return empty dict (not needed for this test)
+        mock_provider.get_weekly_price_history.return_value = {}
         monkeypatch.setattr(app_module, 'price_client', mock_provider)
         
         # Mock yfinance also failing

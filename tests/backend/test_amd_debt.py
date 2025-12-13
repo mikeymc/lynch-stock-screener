@@ -7,9 +7,8 @@ import logging
 
 logging.basicConfig(level=logging.INFO)
 
-def test_amd():
-    db = Database("stocks.db")
-    fetcher = DataFetcher(db)
+def test_amd(test_db):
+    fetcher = DataFetcher(test_db)
 
     print("Fetching AMD data...")
     result = fetcher.fetch_stock_data("AMD", force_refresh=True)
@@ -25,7 +24,7 @@ def test_amd():
 
     # Check earnings history for debt-to-equity data
     print("\nChecking earnings history...")
-    earnings_history = db.get_earnings_history("AMD")
+    earnings_history = test_db.get_earnings_history("AMD")
 
     if not earnings_history:
         print("✗ No earnings history found")

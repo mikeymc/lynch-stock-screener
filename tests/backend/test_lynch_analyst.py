@@ -40,11 +40,11 @@ def sample_stock_data():
 @pytest.fixture
 def sample_history():
     return [
-        {'year': 2023, 'eps': 6.13, 'revenue': 383000000000},
-        {'year': 2022, 'eps': 6.11, 'revenue': 394000000000},
-        {'year': 2021, 'eps': 5.61, 'revenue': 366000000000},
-        {'year': 2020, 'eps': 3.28, 'revenue': 275000000000},
-        {'year': 2019, 'eps': 2.97, 'revenue': 260000000000}
+        {'year': 2023, 'net_income': 6130000000, 'revenue': 383000000000},
+        {'year': 2022, 'net_income': 6110000000, 'revenue': 394000000000},
+        {'year': 2021, 'net_income': 5610000000, 'revenue': 366000000000},
+        {'year': 2020, 'net_income': 3280000000, 'revenue': 275000000000},
+        {'year': 2019, 'net_income': 2970000000, 'revenue': 260000000000}
     ]
 
 
@@ -52,7 +52,7 @@ def test_lynch_analyst_initialization(analyst):
     """Test that LynchAnalyst initializes properly"""
     assert analyst is not None
     assert analyst.db is not None
-    assert analyst.model_version == "gemini-3-pro" #"gemini-2.5-flash"
+    assert analyst.model_version == "gemini-3-pro-preview" #"gemini-2.5-flash"
 
 
 def test_format_prompt_includes_key_metrics(analyst, sample_stock_data, sample_history):
@@ -131,13 +131,17 @@ def test_generate_analysis_handles_api_error(mock_model_class, analyst, sample_s
 
 def test_get_or_generate_uses_cache(analyst, test_db, sample_stock_data, sample_history):
     """Test that get_or_generate_analysis uses cached analysis when available"""
+    # Create a test user
+    user_id = test_db.create_user("google_test", "test@example.com", "Test User", None)
+
     # Save a cached analysis
     cached_text = "This is a cached analysis"
     test_db.save_stock_basic("AAPL", "Apple Inc.", "NASDAQ", "Technology")
-    test_db.save_lynch_analysis("AAPL", cached_text, "gemini-3-pro-preview")
+    test_db.flush()  # Ensure stock is committed before saving analysis
+    test_db.save_lynch_analysis(user_id, "AAPL", cached_text, "gemini-3-pro-preview")
 
     # Should return cached analysis without calling API
-    result = analyst.get_or_generate_analysis("AAPL", sample_stock_data, sample_history, use_cache=True)
+    result = analyst.get_or_generate_analysis(user_id, "AAPL", sample_stock_data, sample_history, use_cache=True)
 
     assert result == cached_text
 
@@ -145,6 +149,9 @@ def test_get_or_generate_uses_cache(analyst, test_db, sample_stock_data, sample_
 @patch('google.generativeai.GenerativeModel')
 def test_get_or_generate_bypasses_cache_when_requested(mock_model_class, analyst, test_db, sample_stock_data, sample_history):
     """Test that get_or_generate_analysis can bypass cache"""
+    # Create a test user
+    user_id = test_db.create_user("google_test", "test@example.com", "Test User", None)
+
     # Setup mock
     mock_model = Mock()
     mock_response = Mock()
@@ -154,10 +161,11 @@ def test_get_or_generate_bypasses_cache_when_requested(mock_model_class, analyst
 
     # Save a cached analysis
     test_db.save_stock_basic("AAPL", "Apple Inc.", "NASDAQ", "Technology")
-    test_db.save_lynch_analysis("AAPL", "Old cached analysis", "gemini-pro")
+    test_db.flush()  # Ensure stock is committed before saving analysis
+    test_db.save_lynch_analysis(user_id, "AAPL", "Old cached analysis", "gemini-pro")
 
     # Request fresh analysis
-    result = analyst.get_or_generate_analysis("AAPL", sample_stock_data, sample_history, use_cache=False)
+    result = analyst.get_or_generate_analysis(user_id, "AAPL", sample_stock_data, sample_history, use_cache=False)
 
     # Should call API and return fresh analysis
     assert mock_model.generate_content.called
@@ -167,6 +175,9 @@ def test_get_or_generate_bypasses_cache_when_requested(mock_model_class, analyst
 @patch('google.generativeai.GenerativeModel')
 def test_get_or_generate_saves_to_cache(mock_model_class, analyst, test_db, sample_stock_data, sample_history):
     """Test that newly generated analysis is saved to cache"""
+    # Create a test user
+    user_id = test_db.create_user("google_test", "test@example.com", "Test User", None)
+
     # Setup mock
     mock_model = Mock()
     mock_response = Mock()
@@ -176,9 +187,10 @@ def test_get_or_generate_saves_to_cache(mock_model_class, analyst, test_db, samp
 
     # Generate analysis
     test_db.save_stock_basic("AAPL", "Apple Inc.", "NASDAQ", "Technology")
-    result = analyst.get_or_generate_analysis("AAPL", sample_stock_data, sample_history, use_cache=False)
+    test_db.flush()  # Ensure stock is committed before saving analysis
+    result = analyst.get_or_generate_analysis(user_id, "AAPL", sample_stock_data, sample_history, use_cache=False)
 
     # Verify it was saved to database
-    cached = test_db.get_lynch_analysis("AAPL")
+    cached = test_db.get_lynch_analysis(user_id, "AAPL")
     assert cached is not None
     assert cached['analysis_text'] == "Fresh analysis to be cached"

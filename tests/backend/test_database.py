@@ -16,26 +16,27 @@ def test_init_schema_creates_tables(test_db):
     conn = test_db.get_connection()
     cursor = conn.cursor()
 
-    cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='stocks'")
+    cursor.execute("SELECT table_name FROM information_schema.tables WHERE table_schema='public' AND table_name='stocks'")
     assert cursor.fetchone() is not None
 
-    cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='stock_metrics'")
+    cursor.execute("SELECT table_name FROM information_schema.tables WHERE table_schema='public' AND table_name='stock_metrics'")
     assert cursor.fetchone() is not None
 
-    cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='earnings_history'")
+    cursor.execute("SELECT table_name FROM information_schema.tables WHERE table_schema='public' AND table_name='earnings_history'")
     assert cursor.fetchone() is not None
 
-    conn.close()
+    test_db.return_connection(conn)
 
 
 def test_save_and_retrieve_stock_basic(test_db):
     test_db.save_stock_basic("AAPL", "Apple Inc.", "NASDAQ", "Technology")
+    test_db.flush()
 
     conn = test_db.get_connection()
     cursor = conn.cursor()
-    cursor.execute("SELECT symbol, company_name, exchange, sector FROM stocks WHERE symbol = ?", ("AAPL",))
+    cursor.execute("SELECT symbol, company_name, exchange, sector FROM stocks WHERE symbol = %s", ("AAPL",))
     row = cursor.fetchone()
-    conn.close()
+    test_db.return_connection(conn)
 
     assert row[0] == "AAPL"
     assert row[1] == "Apple Inc."
@@ -45,8 +46,7 @@ def test_save_and_retrieve_stock_basic(test_db):
 
 def test_save_and_retrieve_stock_metrics(test_db):
     test_db.save_stock_basic("AAPL", "Apple Inc.", "NASDAQ", "Technology")
-
-    metrics = {
+    test_db.save_stock_metrics("AAPL", {
         'price': 150.25,
         'pe_ratio': 25.5,
         'market_cap': 2500000000000,
@@ -54,8 +54,8 @@ def test_save_and_retrieve_stock_metrics(test_db):
         'institutional_ownership': 0.45,
         'revenue': 394000000000,
         'dividend_yield': 2.79
-    }
-    test_db.save_stock_metrics("AAPL", metrics)
+    })
+    test_db.flush()
 
     retrieved = test_db.get_stock_metrics("AAPL")
 
@@ -88,6 +88,8 @@ def test_stock_metrics_with_null_dividend_yield(test_db):
     }
     test_db.save_stock_metrics("TSLA", metrics)
 
+    test_db.flush()  # Ensure data is committed
+
     retrieved = test_db.get_stock_metrics("TSLA")
 
     assert retrieved is not None
@@ -97,12 +99,14 @@ def test_stock_metrics_with_null_dividend_yield(test_db):
 
 def test_save_and_retrieve_earnings_history(test_db):
     test_db.save_stock_basic("AAPL", "Apple Inc.", "NASDAQ", "Technology")
+    test_db.flush()  # Ensure stock is committed before earnings history
 
     test_db.save_earnings_history("AAPL", 2019, 2.97, 260000000000)
     test_db.save_earnings_history("AAPL", 2020, 3.28, 275000000000)
     test_db.save_earnings_history("AAPL", 2021, 5.61, 366000000000)
     test_db.save_earnings_history("AAPL", 2022, 6.11, 394000000000)
     test_db.save_earnings_history("AAPL", 2023, 6.13, 383000000000)
+    test_db.flush()  # Ensure data is committed
 
     history = test_db.get_earnings_history("AAPL")
 
@@ -116,11 +120,14 @@ def test_save_and_retrieve_earnings_history(test_db):
 def test_save_and_retrieve_earnings_with_fiscal_end(test_db):
     """Test that fiscal year-end dates are stored and retrieved correctly"""
     test_db.save_stock_basic("AAPL", "Apple Inc.", "NASDAQ", "Technology")
+    test_db.flush()  # Ensure stock is committed before earnings history
 
     # Save earnings with fiscal year-end dates (Apple's fiscal year ends in September)
     test_db.save_earnings_history("AAPL", 2023, 6.13, 383000000000, fiscal_end="2023-09-30")
     test_db.save_earnings_history("AAPL", 2022, 6.11, 394000000000, fiscal_end="2022-09-24")
     test_db.save_earnings_history("AAPL", 2021, 5.61, 366000000000, fiscal_end="2021-09-25")
+
+    test_db.flush()  # Ensure data is committed
 
     history = test_db.get_earnings_history("AAPL")
 
@@ -145,6 +152,8 @@ def test_cache_validity_fresh_data(test_db):
         'revenue': 394000000000
     }
     test_db.save_stock_metrics("AAPL", metrics)
+
+    test_db.flush()  # Ensure data is committed
 
     assert test_db.is_cache_valid("AAPL", max_age_hours=24) is True
 
@@ -180,6 +189,8 @@ def test_update_existing_metrics(test_db):
     metrics['price'] = 155.50
     test_db.save_stock_metrics("AAPL", metrics)
 
+    test_db.flush()  # Ensure data is committed
+
     retrieved = test_db.get_stock_metrics("AAPL")
     assert retrieved['price'] == 155.50
 
@@ -188,6 +199,8 @@ def test_get_all_cached_stocks(test_db):
     test_db.save_stock_basic("AAPL", "Apple Inc.", "NASDAQ", "Technology")
     test_db.save_stock_basic("MSFT", "Microsoft Corp.", "NASDAQ", "Technology")
     test_db.save_stock_basic("GOOGL", "Alphabet Inc.", "NASDAQ", "Technology")
+
+    test_db.flush()  # Ensure data is committed
 
     stocks = test_db.get_all_cached_stocks()
     assert len(stocks) == 3
@@ -198,9 +211,12 @@ def test_get_all_cached_stocks(test_db):
 
 def test_update_earnings_history(test_db):
     test_db.save_stock_basic("AAPL", "Apple Inc.", "NASDAQ", "Technology")
+    test_db.flush()  # Ensure stock is committed before earnings history
 
     test_db.save_earnings_history("AAPL", 2023, 6.13, 383000000000)
     test_db.save_earnings_history("AAPL", 2023, 6.15, 385000000000)
+
+    test_db.flush()  # Ensure data is committed
 
     history = test_db.get_earnings_history("AAPL")
     assert len(history) == 1
@@ -212,22 +228,31 @@ def test_lynch_analyses_table_exists(test_db):
     conn = test_db.get_connection()
     cursor = conn.cursor()
 
-    cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='lynch_analyses'")
+    cursor.execute("SELECT table_name FROM information_schema.tables WHERE table_schema='public' AND table_name='lynch_analyses'")
     assert cursor.fetchone() is not None
 
-    conn.close()
+    test_db.return_connection(conn)
 
 
 def test_save_and_retrieve_lynch_analysis(test_db):
     """Test saving and retrieving a Lynch analysis"""
+    # Create test user
+    conn = test_db.get_connection()
+    cursor = conn.cursor()
+    cursor.execute("INSERT INTO users (id, google_id, email, name) VALUES (1, 'test123', 'test@example.com', 'Test User') ON CONFLICT DO NOTHING")
+    conn.commit()
+    test_db.return_connection(conn)
+
     test_db.save_stock_basic("AAPL", "Apple Inc.", "NASDAQ", "Technology")
+    test_db.flush()
 
     analysis_text = "Apple is a solid growth company with strong earnings momentum. The PEG ratio of 1.2 suggests it's reasonably valued for its growth rate. With low debt and high institutional ownership, this is a textbook Peter Lynch growth stock. The consistent earnings growth over the past 5 years demonstrates strong management execution."
     model_version = "gemini-pro"
 
-    test_db.save_lynch_analysis("AAPL", analysis_text, model_version)
+    test_db.save_lynch_analysis(1, "AAPL", analysis_text, model_version)
+    test_db.flush()
 
-    retrieved = test_db.get_lynch_analysis("AAPL")
+    retrieved = test_db.get_lynch_analysis(1, "AAPL")
 
     assert retrieved is not None
     assert retrieved['symbol'] == "AAPL"
@@ -238,38 +263,43 @@ def test_save_and_retrieve_lynch_analysis(test_db):
 
 def test_get_nonexistent_lynch_analysis(test_db):
     """Test retrieving analysis for stock that doesn't have one"""
-    result = test_db.get_lynch_analysis("NONEXISTENT")
+    result = test_db.get_lynch_analysis(1, "NONEXISTENT")
     assert result is None
 
 
 def test_update_lynch_analysis(test_db):
     """Test updating an existing Lynch analysis (refresh)"""
     test_db.save_stock_basic("AAPL", "Apple Inc.", "NASDAQ", "Technology")
+    test_db.flush()  # Ensure stock exists before saving analysis
 
     # Save initial analysis
     initial_analysis = "Initial analysis text"
-    test_db.save_lynch_analysis("AAPL", initial_analysis, "gemini-pro")
+    test_db.save_lynch_analysis(1, "AAPL", initial_analysis, "gemini-pro")
 
     # Update with new analysis
     updated_analysis = "Updated analysis text with new insights"
-    test_db.save_lynch_analysis("AAPL", updated_analysis, "gemini-pro")
+    test_db.save_lynch_analysis(1, "AAPL", updated_analysis, "gemini-pro")
 
-    retrieved = test_db.get_lynch_analysis("AAPL")
+    test_db.flush()  # Ensure data is committed
+
+    retrieved = test_db.get_lynch_analysis(1, "AAPL")
     assert retrieved['analysis_text'] == updated_analysis
 
 
 def test_lynch_analysis_has_timestamp(test_db):
     """Test that generated_at timestamp is saved correctly"""
     test_db.save_stock_basic("AAPL", "Apple Inc.", "NASDAQ", "Technology")
+    test_db.flush()  # Ensure stock exists before saving analysis
 
     before_save = datetime.now()
-    test_db.save_lynch_analysis("AAPL", "Test analysis", "gemini-pro")
+    test_db.save_lynch_analysis(1, "AAPL", "Test analysis", "gemini-pro")
+    test_db.flush()  # Ensure data is committed
     after_save = datetime.now()
 
-    retrieved = test_db.get_lynch_analysis("AAPL")
+    retrieved = test_db.get_lynch_analysis(1, "AAPL")
 
     assert retrieved is not None
-    generated_at = datetime.fromisoformat(retrieved['generated_at'])
+    generated_at = retrieved['generated_at']
 
     # Check that timestamp is between before and after save
     assert before_save <= generated_at <= after_save
@@ -282,10 +312,10 @@ def test_screening_sessions_table_exists(test_db):
     conn = test_db.get_connection()
     cursor = conn.cursor()
 
-    cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='screening_sessions'")
+    cursor.execute("SELECT table_name FROM information_schema.tables WHERE table_schema='public' AND table_name='screening_sessions'")
     assert cursor.fetchone() is not None
 
-    conn.close()
+    test_db.return_connection(conn)
 
 
 def test_screening_results_table_exists(test_db):
@@ -293,15 +323,15 @@ def test_screening_results_table_exists(test_db):
     conn = test_db.get_connection()
     cursor = conn.cursor()
 
-    cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='screening_results'")
+    cursor.execute("SELECT table_name FROM information_schema.tables WHERE table_schema='public' AND table_name='screening_results'")
     assert cursor.fetchone() is not None
 
-    conn.close()
+    test_db.return_connection(conn)
 
 
 def test_create_session(test_db):
     """Test creating a new screening session"""
-    session_id = test_db.create_session(total_analyzed=50, pass_count=5, close_count=10, fail_count=35)
+    session_id = test_db.create_session("test_algo", 100, total_analyzed=50, pass_count=5, close_count=10, fail_count=35)
 
     assert session_id is not None
     assert isinstance(session_id, int)
@@ -309,9 +339,9 @@ def test_create_session(test_db):
     # Verify session was saved
     conn = test_db.get_connection()
     cursor = conn.cursor()
-    cursor.execute("SELECT id, total_analyzed, pass_count, close_count, fail_count FROM screening_sessions WHERE id = ?", (session_id,))
+    cursor.execute("SELECT id, total_analyzed, pass_count, close_count, fail_count FROM screening_sessions WHERE id = %s", (session_id,))
     row = cursor.fetchone()
-    conn.close()
+    test_db.return_connection(conn)
 
     assert row is not None
     assert row[0] == session_id
@@ -323,7 +353,7 @@ def test_create_session(test_db):
 
 def test_save_screening_result(test_db):
     """Test saving a stock result to a screening session"""
-    session_id = test_db.create_session(total_analyzed=1, pass_count=1, close_count=0, fail_count=0)
+    session_id = test_db.create_session("test_algo", 100, total_analyzed=1, pass_count=1, close_count=0, fail_count=0)
 
     result_data = {
         'symbol': 'AAPL',
@@ -348,12 +378,14 @@ def test_save_screening_result(test_db):
 
     test_db.save_screening_result(session_id, result_data)
 
+    test_db.flush()  # Ensure data is committed
+
     # Verify result was saved
     conn = test_db.get_connection()
     cursor = conn.cursor()
-    cursor.execute("SELECT symbol, company_name, overall_status FROM screening_results WHERE session_id = ?", (session_id,))
+    cursor.execute("SELECT symbol, company_name, overall_status FROM screening_results WHERE session_id = %s", (session_id,))
     row = cursor.fetchone()
-    conn.close()
+    test_db.return_connection(conn)
 
     assert row is not None
     assert row[0] == 'AAPL'
@@ -364,7 +396,7 @@ def test_save_screening_result(test_db):
 def test_get_latest_session_with_results(test_db):
     """Test retrieving the latest screening session with all results"""
     # Create first session
-    session1_id = test_db.create_session(total_analyzed=2, pass_count=1, close_count=1, fail_count=0)
+    session1_id = test_db.create_session("test_algo", 100, total_analyzed=2, pass_count=1, close_count=1, fail_count=0)
     result1 = {
         'symbol': 'AAPL', 'company_name': 'Apple Inc.', 'country': 'United States',
         'market_cap': 2500000000000, 'sector': 'Technology', 'ipo_year': 1980,
@@ -376,7 +408,7 @@ def test_get_latest_session_with_results(test_db):
     test_db.save_screening_result(session1_id, result1)
 
     # Create second session (most recent)
-    session2_id = test_db.create_session(total_analyzed=1, pass_count=0, close_count=0, fail_count=1)
+    session2_id = test_db.create_session("test_algo", 100, total_analyzed=1, pass_count=0, close_count=0, fail_count=1)
     result2 = {
         'symbol': 'MSFT', 'company_name': 'Microsoft Corp.', 'country': 'United States',
         'market_cap': 2000000000000, 'sector': 'Technology', 'ipo_year': 1986,
@@ -386,6 +418,8 @@ def test_get_latest_session_with_results(test_db):
         'institutional_ownership_status': 'FAIL', 'overall_status': 'FAIL'
     }
     test_db.save_screening_result(session2_id, result2)
+
+    test_db.flush()  # Ensure data is committed
 
     # Retrieve latest session
     latest = test_db.get_latest_session()
@@ -411,7 +445,7 @@ def test_cleanup_old_sessions(test_db):
     # Create 5 sessions
     session_ids = []
     for i in range(5):
-        session_id = test_db.create_session(total_analyzed=i, pass_count=0, close_count=0, fail_count=i)
+        session_id = test_db.create_session("test_algo", 100, total_analyzed=i, pass_count=0, close_count=0, fail_count=i)
         session_ids.append(session_id)
 
     # Keep only 2 most recent
@@ -422,7 +456,7 @@ def test_cleanup_old_sessions(test_db):
     cursor = conn.cursor()
     cursor.execute("SELECT id FROM screening_sessions ORDER BY created_at DESC")
     remaining_sessions = cursor.fetchall()
-    conn.close()
+    test_db.return_connection(conn)
 
     assert len(remaining_sessions) == 2
     # Most recent 2 should be kept
@@ -433,7 +467,7 @@ def test_cleanup_old_sessions(test_db):
 def test_cleanup_cascades_to_results(test_db):
     """Test that deleting a session also deletes its results"""
     # Create session with results
-    session_id = test_db.create_session(total_analyzed=1, pass_count=1, close_count=0, fail_count=0)
+    session_id = test_db.create_session("test_algo", 100, total_analyzed=1, pass_count=1, close_count=0, fail_count=0)
     result_data = {
         'symbol': 'AAPL', 'company_name': 'Apple Inc.', 'country': 'United States',
         'market_cap': 2500000000000, 'sector': 'Technology', 'ipo_year': 1980,
@@ -445,7 +479,7 @@ def test_cleanup_cascades_to_results(test_db):
     test_db.save_screening_result(session_id, result_data)
 
     # Create a newer session
-    test_db.create_session(total_analyzed=0, pass_count=0, close_count=0, fail_count=0)
+    test_db.create_session("test_algo", 100, total_analyzed=0, pass_count=0, close_count=0, fail_count=0)
 
     # Cleanup, keeping only 1
     test_db.cleanup_old_sessions(keep_count=1)
@@ -453,8 +487,8 @@ def test_cleanup_cascades_to_results(test_db):
     # Verify old session's results were deleted
     conn = test_db.get_connection()
     cursor = conn.cursor()
-    cursor.execute("SELECT COUNT(*) FROM screening_results WHERE session_id = ?", (session_id,))
+    cursor.execute("SELECT COUNT(*) FROM screening_results WHERE session_id = %s", (session_id,))
     count = cursor.fetchone()[0]
-    conn.close()
+    test_db.return_connection(conn)
 
     assert count == 0

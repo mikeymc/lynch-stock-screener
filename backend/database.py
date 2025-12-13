@@ -65,7 +65,8 @@ class Database:
         print("Database writer thread started")
 
     def flush(self):
-        """Wait for all pending writes to complete"""
+        """Wait for all pending writes to complete and commit"""
+        self.write_queue.put("FLUSH")
         self.write_queue.join()
 
     def get_connection(self):
@@ -119,6 +120,23 @@ class Database:
                         if batch:
                             conn.commit()
                         break
+
+                    if task == "FLUSH":
+                        # Flush forces an immediate commit
+                        if batch:
+                            try:
+                                for sql, args in batch:
+                                    sanitized_args = self._sanitize_numpy_types(args)
+                                    cursor.execute(sql, sanitized_args)
+                                conn.commit()
+                                last_commit = time.time()
+                                batch = []
+                            except Exception as e:
+                                print(f"Database batch write error: {e}")
+                                conn.rollback()
+                                batch = []
+                        self.write_queue.task_done()
+                        continue
 
                     batch.append(task)
                     self.write_queue.task_done()
@@ -688,6 +706,27 @@ class Database:
                 last_updated TIMESTAMP,
                 FOREIGN KEY (symbol) REFERENCES stocks(symbol),
                 UNIQUE(symbol, finnhub_id)
+            )
+        """)
+
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS material_events (
+                id SERIAL PRIMARY KEY,
+                symbol TEXT NOT NULL,
+                event_type TEXT NOT NULL,
+                headline TEXT NOT NULL,
+                description TEXT,
+                source TEXT NOT NULL DEFAULT 'SEC',
+                url TEXT,
+                filing_date DATE,
+                datetime INTEGER,
+                published_date TIMESTAMP,
+                sec_accession_number TEXT,
+                sec_item_codes TEXT[],
+                content_text TEXT,
+                last_updated TIMESTAMP,
+                FOREIGN KEY (symbol) REFERENCES stocks(symbol),
+                UNIQUE(symbol, sec_accession_number)
             )
         """)
 

@@ -9,11 +9,10 @@ from lynch_criteria import LynchCriteria
 from database import Database
 from earnings_analyzer import EarningsAnalyzer
 
-def test_new_methods():
+def test_new_methods(test_db):
     """Test the new metric-specific evaluation methods"""
-    db = Database(":memory:")
-    analyzer = EarningsAnalyzer(db)
-    criteria = LynchCriteria(db, analyzer)
+    analyzer = EarningsAnalyzer(test_db)
+    criteria = LynchCriteria(test_db, analyzer)
 
     print("Testing PEG evaluation methods...")
 

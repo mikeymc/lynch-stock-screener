@@ -66,33 +66,31 @@ def test_sec_data_access():
     conn.close()
     print("\n✓ All SEC data tests passed!")
 
-def test_stock_operations(db):
+def test_stock_operations(test_db):
     """Test basic stock operations"""
     print("\nTesting stock operations...")
 
     # Save a test stock
-    db.save_stock_basic(
+    test_db.save_stock_basic(
         symbol="TEST",
         company_name="Test Company",
         exchange="NASDAQ",
         sector="Technology"
     )
+    test_db.flush()  # Ensure stock is committed
     print("✓ Saved test stock")
 
     # Save test metrics
-    db.save_stock_metrics("TEST", {
+    test_db.save_stock_metrics("TEST", {
         'price': 100.0,
         'pe_ratio': 25.0,
         'market_cap': 1000000000
     })
+    test_db.flush()  # Ensure metrics are committed
     print("✓ Saved test stock metrics")
 
-    # Wait for async write to complete
-    import time
-    time.sleep(1)
-
     # Retrieve stock
-    metrics = db.get_stock_metrics("TEST")
+    metrics = test_db.get_stock_metrics("TEST")
     if metrics:
         print(f"✓ Retrieved test stock: {metrics['company_name']} @ ${metrics['price']}")
     else:

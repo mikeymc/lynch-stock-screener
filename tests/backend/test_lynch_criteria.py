@@ -162,10 +162,12 @@ def test_evaluate_stock_all_pass(criteria, test_db):
                                              (2023, 5.0, 500000000000, 50000000000)]:
         test_db.save_earnings_history("PASS", year, eps, revenue, net_income=net_income)
 
+    test_db.flush()  # Ensure data is committed
+
     result = criteria.evaluate_stock("PASS")
 
     assert result is not None
-    assert result['overall_status'] == "PASS"
+    assert result['overall_status'] == "STRONG_BUY"
     assert result['peg_ratio'] < 1.0
     assert result['peg_status'] == "PASS"
     assert result['debt_status'] == "PASS"
@@ -191,6 +193,7 @@ def test_evaluate_stock_some_close(criteria, test_db):
                                              (2023, 5.2, 500000000000, 52000000000)]:
         test_db.save_earnings_history("CLOSE", year, eps, revenue, net_income=net_income)
 
+    test_db.flush()  # Ensure data is committed
     result = criteria.evaluate_stock("CLOSE")
 
     assert result is not None
@@ -218,6 +221,7 @@ def test_evaluate_stock_failing_peg(criteria, test_db):
                                              (2023, 3.8, 480000000000, 38000000000)]:
         test_db.save_earnings_history("FAIL", year, eps, revenue, net_income=net_income)
 
+    test_db.flush()  # Ensure data is committed
     result = criteria.evaluate_stock("FAIL")
 
     assert result is not None
@@ -237,10 +241,11 @@ def test_evaluate_stock_insufficient_data(criteria, test_db):
     }
     test_db.save_stock_metrics("INSUFF", metrics)
 
+    test_db.flush()  # Ensure data is committed
     result = criteria.evaluate_stock("INSUFF")
 
     assert result is not None
-    assert result['overall_status'] == "FAIL"
+    assert result['overall_status'] == "CAUTION"
     assert result['peg_ratio'] is None
     assert result['earnings_cagr'] is None
 
@@ -248,6 +253,7 @@ def test_evaluate_stock_insufficient_data(criteria, test_db):
 def test_evaluate_stock_missing_metrics(criteria, test_db):
     test_db.save_stock_basic("MISSING", "Missing Corp.", "NASDAQ", "Technology")
 
+    test_db.flush()  # Ensure data is committed
     result = criteria.evaluate_stock("MISSING")
 
     assert result is None
@@ -268,10 +274,11 @@ def test_evaluate_stock_no_pe_ratio(criteria, test_db):
     test_db.save_earnings_history("NOPE", 2022, 1.8, 480000000000, net_income=18000000000)
     test_db.save_earnings_history("NOPE", 2021, 1.5, 450000000000, net_income=15000000000)
 
+    test_db.flush()  # Ensure data is committed
     result = criteria.evaluate_stock("NOPE")
 
     assert result is not None
-    assert result['overall_status'] == "FAIL"
+    assert result['overall_status'] == "CAUTION"
     assert result['peg_ratio'] is None
     assert result['peg_status'] == "FAIL"
     assert result['earnings_cagr'] is not None

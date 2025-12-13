@@ -7,8 +7,8 @@ import sys
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../..')))
 
-from backend.database import Database
-from backend.conversation_manager import ConversationManager
+from database import Database
+from conversation_manager import ConversationManager
 
 
 @pytest.fixture
@@ -52,6 +52,10 @@ def test_create_conversation_for_user(test_db, conv_manager):
     # Create test user
     user_id = test_db.create_user("google_123", "test@example.com", "Test User", None)
 
+    # Create stock (required for foreign key)
+    test_db.save_stock_basic("AAPL", "Apple Inc.", "NASDAQ", "Technology")
+    test_db.flush()  # Ensure stock exists before creating conversation
+
     # Create conversation for user
     conv_id = conv_manager.create_conversation(user_id, "AAPL", "Apple Discussion")
 
@@ -70,6 +74,10 @@ def test_different_users_have_separate_conversations(test_db, conv_manager):
     # Create two users
     user1_id = test_db.create_user("google_123", "user1@example.com", "User One", None)
     user2_id = test_db.create_user("google_456", "user2@example.com", "User Two", None)
+
+    # Create stock (required for foreign key)
+    test_db.save_stock_basic("AAPL", "Apple Inc.", "NASDAQ", "Technology")
+    test_db.flush()  # Ensure stock exists before creating conversation
 
     # Each user creates a conversation for the same symbol
     conv1_id = conv_manager.create_conversation(user1_id, "AAPL", "User 1's Apple Chat")
@@ -90,6 +98,11 @@ def test_different_users_have_separate_conversations(test_db, conv_manager):
 def test_add_message_to_conversation(test_db, conv_manager):
     """Test adding messages to a user's conversation"""
     user_id = test_db.create_user("google_123", "test@example.com", "Test User", None)
+
+    # Create stock (required for foreign key)
+    test_db.save_stock_basic("AAPL", "Apple Inc.", "NASDAQ", "Technology")
+    test_db.flush()  # Ensure stock exists before creating conversation
+
     conv_id = conv_manager.create_conversation(user_id, "AAPL", "Test Chat")
 
     # Add messages
@@ -117,6 +130,10 @@ def test_user_cannot_see_other_user_conversations(test_db, conv_manager):
     """Test that a user cannot see another user's conversations"""
     user1_id = test_db.create_user("google_123", "user1@example.com", "User One", None)
     user2_id = test_db.create_user("google_456", "user2@example.com", "User Two", None)
+
+    # Create stock (required for foreign key)
+    test_db.save_stock_basic("AAPL", "Apple Inc.", "NASDAQ", "Technology")
+    test_db.flush()  # Ensure stock exists before creating conversation
 
     # User 1 creates a conversation
     conv_manager.create_conversation(user1_id, "AAPL", "User 1's Chat")

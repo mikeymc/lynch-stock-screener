@@ -1,22 +1,187 @@
-"""
-Pytest fixtures for backend unit and integration tests.
-"""
+# ABOUTME: Pytest fixtures for tests/backend directory
+# ABOUTME: Provides test_database fixture for PostgreSQL test database setup
 
+import pytest
+import psycopg2
 import sys
 import os
-import pytest
 
-# Add backend directory to Python path for imports
+# Add backend directory to Python path for all test imports
 backend_path = os.path.join(os.path.dirname(__file__), '..', '..', 'backend')
 sys.path.insert(0, os.path.abspath(backend_path))
+
+
+@pytest.fixture(scope="session", autouse=True)
+def configure_test_environment():
+    """Configure environment variables for all tests."""
+    import os
+    # Use smaller connection pool for tests to avoid exceeding PostgreSQL max_connections
+    os.environ['DB_POOL_SIZE'] = '10'
+    yield
+
+
+@pytest.fixture(scope="session")
+def test_database():
+    """Create empty test database with schema only (no template data) for unit tests."""
+    TEST_DB = 'lynch_stocks_backend_test'
+
+    print("\n[BACKEND TEST DB] Setting up empty test database for unit tests...")
+
+    # Connect to postgres database for admin operations
+    conn = psycopg2.connect(
+        database='postgres',
+        user='lynch',
+        password='lynch_dev_password',
+        host='localhost',
+        port=5432
+    )
+    conn.autocommit = True
+    cursor = conn.cursor()
+
+    # Terminate any existing connections to test database
+    cursor.execute(f"""
+        SELECT pg_terminate_backend(pg_stat_activity.pid)
+        FROM pg_stat_activity
+        WHERE pg_stat_activity.datname = '{TEST_DB}'
+          AND pid <> pg_backend_pid()
+    """)
+
+    # Drop existing test database if it exists
+    cursor.execute(f"DROP DATABASE IF EXISTS {TEST_DB}")
+
+    # Create empty test database (no template - schema will be created by Database class)
+    print(f"[BACKEND TEST DB] Creating empty test database...")
+    cursor.execute(f"CREATE DATABASE {TEST_DB}")
+    print(f"[BACKEND TEST DB] ✓ Empty test database created: {TEST_DB}")
+    print(f"[BACKEND TEST DB] Schema will be initialized by Database class")
+
+    cursor.close()
+    conn.close()
+
+    yield TEST_DB
+
+    # Cleanup: Drop test database
+    print(f"\n[BACKEND TEST DB] Cleaning up test database...")
+
+    conn = psycopg2.connect(
+        database='postgres',
+        user='lynch',
+        password='lynch_dev_password',
+        host='localhost',
+        port=5432
+    )
+    conn.autocommit = True
+    cursor = conn.cursor()
+
+    # Terminate all connections to test database
+    cursor.execute(f"""
+        SELECT pg_terminate_backend(pg_stat_activity.pid)
+        FROM pg_stat_activity
+        WHERE pg_stat_activity.datname = '{TEST_DB}'
+          AND pid <> pg_backend_pid()
+    """)
+
+    # Drop test database
+    cursor.execute(f"DROP DATABASE IF EXISTS {TEST_DB}")
+    print(f"[BACKEND TEST DB] ✓ Test database dropped")
+
+    cursor.close()
+    conn.close()
+
+
+@pytest.fixture(scope="session")
+def shared_db(test_database):
+    """Session-scoped Database instance shared across all tests.
+
+    Creates a single Database instance to avoid connection pool exhaustion.
+    """
+    import sys
+    import os
+
+    # Add backend directory to path for imports
+    backend_path = os.path.join(os.path.dirname(__file__), '..')
+    sys.path.insert(0, os.path.abspath(backend_path))
+
+    from database import Database
+
+    db = Database(
+        host='localhost',
+        port=5432,
+        database=test_database,
+        user='lynch',
+        password='lynch_dev_password'
+    )
+
+    yield db
+
+    # No cleanup needed - session ends
+
+
+@pytest.fixture
+def test_db(shared_db):
+    """Function-scoped fixture that cleans up test data before/after each test.
+
+    Uses the shared Database instance but ensures clean state for each test.
+    """
+    db = shared_db
+
+    # Flush async write queue before cleaning tables
+    db.flush()
+
+    # Clean up test data before each test
+    conn = db.get_connection()
+    cursor = conn.cursor()
+
+    # Clear all data - try each table individually to handle tables that may not exist
+    tables_to_clear = [
+        'message_sources', 'messages', 'conversations', 'watchlist',
+        'price_history', 'stock_metrics', 'earnings_history',
+        'lynch_analyses', 'chart_analyses', 'news_articles',
+        'filing_sections', 'sec_filings', 'screening_results',
+        'screening_sessions', 'stocks'
+    ]
+
+    for table in tables_to_clear:
+        try:
+            cursor.execute(f'DELETE FROM {table}')
+        except Exception:
+            # Table doesn't exist yet, skip
+            pass
+
+    conn.commit()
+    cursor.close()
+    db.return_connection(conn)
+
+    yield db
+
+    # Flush async write queue before cleaning tables
+    db.flush()
+
+    # Cleanup after test
+    conn = db.get_connection()
+    cursor = conn.cursor()
+
+    for table in tables_to_clear:
+        try:
+            cursor.execute(f'DELETE FROM {table}')
+        except Exception:
+            # Table doesn't exist, skip
+            pass
+
+    conn.commit()
+    cursor.close()
+    db.return_connection(conn)
 
 
 @pytest.fixture(scope="function")
 def test_client(test_database):
     """Create Flask test client with test database.
 
-    Note: test_database fixture is defined in tests/conftest.py (shared)
+    Note: test_database fixture is defined above.
     """
+    import os
+    import sys
+
     # Set test database environment variables BEFORE importing app
     os.environ['DB_NAME'] = test_database
     os.environ['DB_HOST'] = 'localhost'
@@ -24,8 +189,11 @@ def test_client(test_database):
     os.environ['DB_USER'] = 'lynch'
     os.environ['DB_PASSWORD'] = 'lynch_dev_password'
 
+    # Add backend directory to path for imports
+    backend_path = os.path.join(os.path.dirname(__file__), '..', '..', 'backend')
+    sys.path.insert(0, os.path.abspath(backend_path))
+
     # Import app AFTER setting env vars
-    # This ensures app.py uses test database
     from app import app
     app.config['TESTING'] = True
 
@@ -47,9 +215,8 @@ def mock_yfinance():
             'symbol': 'AAPL',
             'shortName': 'Apple Inc.',
             'country': 'United States',
-            'marketCap': 3000000000000,  # $3T
-            'sector': 'Technology',
-            'regularMarketPrice': 180.00,
+            'marketCap': 3000000000000,
+            'price': 180.00,
             'currentPrice': 180.00,
             'trailingPE': 30.0,
             'forwardPE': 28.0,
@@ -57,7 +224,7 @@ def mock_yfinance():
             'trailingEps': 6.00
         }
 
-        # Mock fast_info property (used by some data fetchers)
+        # Mock fast_info property
         mock_fast_info = mock.MagicMock()
         mock_fast_info.last_price = 180.00
         mock_fast_info.market_cap = 3000000000000

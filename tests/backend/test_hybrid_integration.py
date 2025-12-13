@@ -7,19 +7,13 @@ from lynch_criteria import LynchCriteria
 from earnings_analyzer import EarningsAnalyzer
 import os
 
-def test_hybrid_fetch():
+def test_hybrid_fetch(test_db):
     """Test hybrid data fetching with a real stock"""
 
-    # Clean up test database if it exists
-    test_db_path = "test_hybrid.db"
-    if os.path.exists(test_db_path):
-        os.remove(test_db_path)
-
     # Initialize components
-    db = Database(test_db_path)
-    fetcher = DataFetcher(db)
-    analyzer = EarningsAnalyzer(db)
-    criteria = LynchCriteria(db, analyzer)
+    fetcher = DataFetcher(test_db)
+    analyzer = EarningsAnalyzer(test_db)
+    criteria = LynchCriteria(test_db, analyzer)
 
     print("\n" + "="*80)
     print("Testing Hybrid EDGAR + yfinance Data Fetcher")
@@ -48,7 +42,7 @@ def test_hybrid_fetch():
     print(f"  - Debt-to-Equity: {stock_data.get('debt_to_equity', 'N/A')}")
 
     # Get earnings history
-    earnings_history = db.get_earnings_history(symbol)
+    earnings_history = test_db.get_earnings_history(symbol)
     print(f"\nEarnings History ({len(earnings_history)} years):")
     for entry in sorted(earnings_history, key=lambda x: x['year'], reverse=True)[:5]:
         print(f"  - {entry['year']}: EPS = ${entry['eps']:.2f}, Revenue = ${entry['revenue']:,.0f}")
@@ -72,9 +66,8 @@ def test_hybrid_fetch():
     print("✅ Hybrid integration test completed successfully!")
     print("="*80 + "\n")
 
-    # Clean up
-    if os.path.exists(test_db_path):
-        os.remove(test_db_path)
-
 if __name__ == "__main__":
-    test_hybrid_fetch()
+    # This test requires the test_db fixture from conftest.py
+    # Run with: pytest tests/backend/test_hybrid_integration.py -v
+    print("This test must be run with pytest to access the test_db fixture")
+    print("Usage: pytest tests/backend/test_hybrid_integration.py -v")

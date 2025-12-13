@@ -14,7 +14,13 @@ from database import Database
 
 
 @pytest.fixture
-def client():
+def client(test_db, monkeypatch):
+    """Flask test client with test database"""
+    import app as app_module
+
+    # Replace app's db with test_db
+    monkeypatch.setattr(app_module, 'db', test_db)
+
     app.config['TESTING'] = True
     with app.test_client() as client:
         yield client
@@ -30,10 +36,7 @@ def test_health_endpoint(client):
 
 def test_stock_history_endpoint_returns_historical_data(client, test_db, monkeypatch):
     """Test that /api/stock/<symbol>/history returns historical EPS, revenue, and calculated P/E ratios"""
-
-    # Replace app's db with test_db
     import app as app_module
-    monkeypatch.setattr(app_module, 'db', test_db)
 
     # Set up test data in database
     symbol = "AAPL"
@@ -49,6 +52,13 @@ def test_stock_history_endpoint_returns_historical_data(client, test_db, monkeyp
 
     for year, eps, revenue in earnings_data:
         test_db.save_earnings_history(symbol, year, eps, revenue)
+
+    test_db.flush()  # Ensure data is committed before API call
+
+    # Mock price_client to be unavailable so endpoint falls back to yfinance
+    mock_price_client = MagicMock()
+    mock_price_client.is_available.return_value = False
+    monkeypatch.setattr(app_module, 'price_client', mock_price_client)
 
     # Mock yfinance to return historical prices
     mock_ticker = MagicMock()
@@ -125,9 +135,7 @@ def test_stock_history_endpoint_handles_missing_stock(client):
 
 def test_stock_history_endpoint_handles_negative_eps(client, test_db, monkeypatch):
     """Test that /api/stock/<symbol>/history handles years with negative EPS by setting P/E to None"""
-
     import app as app_module
-    monkeypatch.setattr(app_module, 'db', test_db)
 
     symbol = "WOOF"
     test_db.save_stock_basic(symbol, "Petco", "NASDAQ", "Consumer")
@@ -141,6 +149,13 @@ def test_stock_history_endpoint_handles_negative_eps(client, test_db, monkeypatc
 
     for year, eps, revenue in earnings_data:
         test_db.save_earnings_history(symbol, year, eps, revenue)
+
+    test_db.flush()  # Ensure data is committed
+
+    # Mock price_client to be unavailable so endpoint falls back to yfinance
+    mock_price_client = MagicMock()
+    mock_price_client.is_available.return_value = False
+    monkeypatch.setattr(app_module, 'price_client', mock_price_client)
 
     # Mock yfinance
     mock_ticker = MagicMock()
@@ -169,9 +184,7 @@ def test_stock_history_endpoint_handles_negative_eps(client, test_db, monkeypatc
 
 def test_stock_history_uses_schwab_api_when_available(client, test_db, monkeypatch):
     """Test that /api/stock/<symbol>/history uses Schwab API when available"""
-
     import app as app_module
-    monkeypatch.setattr(app_module, 'db', test_db)
 
     # Set up test data with fiscal year-end dates (Apple's fiscal year ends in September)
     symbol = "AAPL"
@@ -186,6 +199,8 @@ def test_stock_history_uses_schwab_api_when_available(client, test_db, monkeypat
 
     for year, eps, revenue, fiscal_end in earnings_data:
         test_db.save_earnings_history(symbol, year, eps, revenue, fiscal_end=fiscal_end)
+
+    test_db.flush()  # Ensure data is committed
 
     # Mock SchwabClient to return historical prices
     mock_price_client = MagicMock()
@@ -203,6 +218,8 @@ def test_stock_history_uses_schwab_api_when_available(client, test_db, monkeypat
         return price_data.get(date)
 
     mock_price_client.get_historical_price.side_effect = mock_get_price
+    # Mock weekly price history to return empty dict (not needed for this test)
+    mock_price_client.get_weekly_price_history.return_value = {}
 
     # Replace app's schwab_client instance with our mock
     monkeypatch.setattr(app_module, 'price_client', mock_price_client)
@@ -245,9 +262,7 @@ def test_stock_history_uses_schwab_api_when_available(client, test_db, monkeypat
 
 def test_stock_history_falls_back_to_yfinance_when_schwab_fails(client, test_db, monkeypatch):
     """Test that /api/stock/<symbol>/history falls back to yfinance when Schwab API fails"""
-
     import app as app_module
-    monkeypatch.setattr(app_module, 'db', test_db)
 
     symbol = "MSFT"
     test_db.save_stock_basic(symbol, "Microsoft", "NASDAQ", "Technology")
@@ -261,6 +276,8 @@ def test_stock_history_falls_back_to_yfinance_when_schwab_fails(client, test_db,
 
     for year, eps, revenue, fiscal_end in earnings_data:
         test_db.save_earnings_history(symbol, year, eps, revenue, fiscal_end=fiscal_end)
+
+    test_db.flush()  # Ensure data is committed
 
     # Mock SchwabClient to be unavailable
     mock_price_client = MagicMock()
@@ -307,9 +324,7 @@ def test_stock_history_falls_back_to_yfinance_when_schwab_fails(client, test_db,
 
 def test_stock_history_uses_fiscal_year_end_dates(client, test_db, monkeypatch):
     """Test that history endpoint uses fiscal year-end dates instead of calendar year-end"""
-
     import app as app_module
-    monkeypatch.setattr(app_module, 'db', test_db)
 
     symbol = "WMT"
     test_db.save_stock_basic(symbol, "Walmart", "NYSE", "Retail")
@@ -323,6 +338,8 @@ def test_stock_history_uses_fiscal_year_end_dates(client, test_db, monkeypatch):
 
     for year, eps, revenue, fiscal_end in earnings_data:
         test_db.save_earnings_history(symbol, year, eps, revenue, fiscal_end=fiscal_end)
+
+    test_db.flush()  # Ensure data is committed
 
     # Mock SchwabClient
     mock_price_client = MagicMock()
@@ -338,6 +355,8 @@ def test_stock_history_uses_fiscal_year_end_dates(client, test_db, monkeypatch):
         return price_data.get(date)
 
     mock_price_client.get_historical_price.side_effect = mock_get_price
+    # Mock weekly price history to return empty dict (not needed for this test)
+    mock_price_client.get_weekly_price_history.return_value = {}
 
     monkeypatch.setattr(app_module, 'price_client', mock_price_client)
 
@@ -363,11 +382,12 @@ def test_lynch_analysis_endpoint_returns_cached_analysis(client, test_db, monkey
     import app as app_module
     from lynch_analyst import LynchAnalyst
 
-    monkeypatch.setattr(app_module, 'db', test_db)
     monkeypatch.setattr(app_module, 'lynch_analyst', LynchAnalyst(test_db))
 
     # Set up test data
     symbol = "AAPL"
+    # Create a test user
+    user_id = test_db.create_user("google_test", "test@example.com", "Test User", None)
     test_db.save_stock_basic(symbol, "Apple Inc.", "NASDAQ", "Technology")
     test_db.save_stock_metrics(symbol, {
         'price': 150.25,
@@ -379,9 +399,17 @@ def test_lynch_analysis_endpoint_returns_cached_analysis(client, test_db, monkey
     })
     test_db.save_earnings_history(symbol, 2023, 6.13, 383000000000)
 
+    test_db.flush()  # Ensure stock exists before saving analysis
+
     # Save a cached analysis
     cached_analysis = "This is a cached Peter Lynch analysis of Apple. Strong fundamentals and growth trajectory."
-    test_db.save_lynch_analysis(symbol, cached_analysis, "gemini-pro")
+    test_db.save_lynch_analysis(user_id, symbol, cached_analysis, "gemini-pro")
+
+    test_db.flush()  # Ensure data is committed
+
+    # Set session user_id for authentication
+    with client.session_transaction() as sess:
+        sess['user_id'] = user_id
 
     # Request analysis
     response = client.get(f'/api/stock/{symbol}/lynch-analysis')
@@ -399,7 +427,6 @@ def test_lynch_analysis_endpoint_generates_fresh_analysis(mock_model_class, clie
     import app as app_module
     from lynch_analyst import LynchAnalyst
 
-    monkeypatch.setattr(app_module, 'db', test_db)
     monkeypatch.setattr(app_module, 'lynch_analyst', LynchAnalyst(test_db))
 
     # Setup mock Gemini response
@@ -422,6 +449,15 @@ def test_lynch_analysis_endpoint_generates_fresh_analysis(mock_model_class, clie
     })
     test_db.save_earnings_history(symbol, 2023, 6.13, 383000000000)
 
+    test_db.flush()  # Ensure data is committed
+
+    # Create a test user for authentication
+    user_id = test_db.create_user("google_test", "test@example.com", "Test User", None)
+
+    # Set session user_id for authentication
+    with client.session_transaction() as sess:
+        sess['user_id'] = user_id
+
     # Request analysis
     response = client.get(f'/api/stock/{symbol}/lynch-analysis')
 
@@ -438,7 +474,6 @@ def test_lynch_analysis_refresh_endpoint(mock_model_class, client, test_db, monk
     import app as app_module
     from lynch_analyst import LynchAnalyst
 
-    monkeypatch.setattr(app_module, 'db', test_db)
     monkeypatch.setattr(app_module, 'lynch_analyst', LynchAnalyst(test_db))
 
     # Setup mock Gemini response
@@ -450,6 +485,8 @@ def test_lynch_analysis_refresh_endpoint(mock_model_class, client, test_db, monk
 
     # Set up test stock and earnings data
     symbol = "AAPL"
+    # Create a test user
+    user_id = test_db.create_user("google_test", "test@example.com", "Test User", None)
     test_db.save_stock_basic(symbol, "Apple Inc.", "NASDAQ", "Technology")
     test_db.save_stock_metrics(symbol, {
         'price': 150.25,
@@ -461,8 +498,16 @@ def test_lynch_analysis_refresh_endpoint(mock_model_class, client, test_db, monk
     })
     test_db.save_earnings_history(symbol, 2023, 6.13, 383000000000)
 
+    test_db.flush()  # Ensure stock exists before saving analysis
+
     # Save old cached analysis
-    test_db.save_lynch_analysis(symbol, "Old cached analysis", "gemini-pro")
+    test_db.save_lynch_analysis(user_id, symbol, "Old cached analysis", "gemini-pro")
+
+    test_db.flush()  # Ensure data is committed
+
+    # Set session user_id for authentication
+    with client.session_transaction() as sess:
+        sess['user_id'] = user_id
 
     # Request refresh
     response = client.post(f'/api/stock/{symbol}/lynch-analysis/refresh')
@@ -474,14 +519,19 @@ def test_lynch_analysis_refresh_endpoint(mock_model_class, client, test_db, monk
     assert 'generated_at' in data
 
     # Verify the cache was updated
-    cached = test_db.get_lynch_analysis(symbol)
+    cached = test_db.get_lynch_analysis(user_id, symbol)
     assert cached['analysis_text'] == "Updated Peter Lynch analysis with latest data."
 
 
 def test_lynch_analysis_endpoint_returns_404_for_unknown_stock(client, test_db, monkeypatch):
     """Test that /api/stock/<symbol>/lynch-analysis returns 404 for unknown stock"""
-    import app as app_module
-    monkeypatch.setattr(app_module, 'db', test_db)
+
+    # Create a test user for authentication
+    user_id = test_db.create_user("google_test", "test@example.com", "Test User", None)
+
+    # Set session user_id for authentication
+    with client.session_transaction() as sess:
+        sess['user_id'] = user_id
 
     response = client.get('/api/stock/UNKNOWN/lynch-analysis')
 
@@ -494,11 +544,9 @@ def test_lynch_analysis_endpoint_returns_404_for_unknown_stock(client, test_db, 
 
 def test_get_latest_session_returns_most_recent_screening(client, test_db, monkeypatch):
     """Test that GET /api/sessions/latest returns the most recent screening session"""
-    import app as app_module
-    monkeypatch.setattr(app_module, 'db', test_db)
 
     # Create a session with results
-    session_id = test_db.create_session(total_analyzed=2, pass_count=1, close_count=0, fail_count=1)
+    session_id = test_db.create_session("test_algo", 100, total_analyzed=2, pass_count=1, close_count=0, fail_count=1)
 
     result1 = {
         'symbol': 'AAPL', 'company_name': 'Apple Inc.', 'country': 'United States',
@@ -520,6 +568,8 @@ def test_get_latest_session_returns_most_recent_screening(client, test_db, monke
     }
     test_db.save_screening_result(session_id, result2)
 
+    test_db.flush()  # Ensure data is committed
+
     response = client.get('/api/sessions/latest')
 
     assert response.status_code == 200
@@ -538,8 +588,6 @@ def test_get_latest_session_returns_most_recent_screening(client, test_db, monke
 
 def test_get_latest_session_returns_404_when_no_sessions(client, test_db, monkeypatch):
     """Test that GET /api/sessions/latest returns 404 when no sessions exist"""
-    import app as app_module
-    monkeypatch.setattr(app_module, 'db', test_db)
 
     response = client.get('/api/sessions/latest')
 

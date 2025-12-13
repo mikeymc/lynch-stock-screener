@@ -794,7 +794,7 @@ class DataFetcher:
                 logger.info(f"[{symbol}] yfinance returned {year_count} years of annual data")
 
                 if year_count < 5:
-                    logger.debug(f"[{symbol}] Limited data: only {year_count} years available from yfinance")
+                    logger.warning(f"[{symbol}] Limited data: only {year_count} years available from yfinance")
 
                 for col in financials.columns:
                     year = col.year if hasattr(col, 'year') else None

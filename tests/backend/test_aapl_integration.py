@@ -3,14 +3,12 @@
 # ABOUTME: Verifies split-adjusted EPS across Apple's 2014 and 2020 stock splits
 
 from data_fetcher import DataFetcher
-from database import Database
 
-def test_aapl_edgar_eps():
+def test_aapl_edgar_eps(test_db):
     """Test AAPL with EDGAR-calculated EPS"""
 
     # Initialize
-    db = Database('stocks.db')
-    fetcher = DataFetcher(db)
+    fetcher = DataFetcher(test_db)
 
     print("=" * 80)
     print("Testing AAPL with EDGAR-calculated EPS")
@@ -30,7 +28,7 @@ def test_aapl_edgar_eps():
     print(f"  Market Cap: ${result.get('market_cap', 'N/A'):,}")
 
     # Get earnings history
-    earnings = db.get_earnings_history('AAPL')
+    earnings = test_db.get_earnings_history('AAPL')
 
     if not earnings:
         print("\nERROR: No earnings history found")

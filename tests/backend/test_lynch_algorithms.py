@@ -43,6 +43,29 @@ class TestLynchCriteriaAlgorithms:
         """Create a LynchCriteria instance with mocked dependencies."""
         mock_db = Mock()
         mock_analyzer = Mock()
+
+        # Mock get_all_settings to return proper settings structure
+        mock_db.get_all_settings.return_value = {
+            'peg_excellent': {'value': 1.0},
+            'peg_good': {'value': 1.5},
+            'peg_fair': {'value': 2.0},
+            'debt_excellent': {'value': 0.5},
+            'debt_good': {'value': 1.0},
+            'debt_moderate': {'value': 2.0},
+            'inst_own_min': {'value': 0.4},
+            'inst_own_max': {'value': 0.8},
+            'revenue_growth_excellent': {'value': 15.0},
+            'revenue_growth_good': {'value': 10.0},
+            'revenue_growth_fair': {'value': 5.0},
+            'income_growth_excellent': {'value': 15.0},
+            'income_growth_good': {'value': 10.0},
+            'income_growth_fair': {'value': 5.0},
+            'weight_peg': {'value': 0.35},
+            'weight_consistency': {'value': 0.25},
+            'weight_debt': {'value': 0.20},
+            'weight_ownership': {'value': 0.20}
+        }
+
         return LynchCriteria(mock_db, mock_analyzer)
 
     @pytest.fixture
@@ -380,6 +403,29 @@ class TestAlgorithmConsistency:
     def mock_criteria(self):
         mock_db = Mock()
         mock_analyzer = Mock()
+
+        # Mock get_all_settings to return proper settings structure
+        mock_db.get_all_settings.return_value = {
+            'peg_excellent': {'value': 1.0},
+            'peg_good': {'value': 1.5},
+            'peg_fair': {'value': 2.0},
+            'debt_excellent': {'value': 0.5},
+            'debt_good': {'value': 1.0},
+            'debt_moderate': {'value': 2.0},
+            'inst_own_min': {'value': 0.4},
+            'inst_own_max': {'value': 0.8},
+            'revenue_growth_excellent': {'value': 15.0},
+            'revenue_growth_good': {'value': 10.0},
+            'revenue_growth_fair': {'value': 5.0},
+            'income_growth_excellent': {'value': 15.0},
+            'income_growth_good': {'value': 10.0},
+            'income_growth_fair': {'value': 5.0},
+            'weight_peg': {'value': 0.35},
+            'weight_consistency': {'value': 0.25},
+            'weight_debt': {'value': 0.20},
+            'weight_ownership': {'value': 0.20}
+        }
+
         return LynchCriteria(mock_db, mock_analyzer)
 
     def test_weighted_deterministic(self, mock_criteria):
