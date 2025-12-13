@@ -361,27 +361,6 @@ class Database:
             END $$;
         """)
 
-        # Migration: Add user_id to conversations table
-        cursor.execute("""
-            DO $$
-            BEGIN
-                IF NOT EXISTS (
-                    SELECT 1 FROM information_schema.columns
-                    WHERE table_name = 'conversations' AND column_name = 'user_id'
-                ) THEN
-                    -- Add user_id column
-                    ALTER TABLE conversations ADD COLUMN user_id INTEGER REFERENCES users(id) ON DELETE CASCADE;
-
-                    -- Clear existing conversations since we can't assign user_id retroactively
-                    DELETE FROM messages;
-                    DELETE FROM conversations;
-
-                    -- Make user_id required
-                    ALTER TABLE conversations ALTER COLUMN user_id SET NOT NULL;
-                END IF;
-            END $$;
-        """)
-
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS sec_filings (
                 id SERIAL PRIMARY KEY,
@@ -636,6 +615,27 @@ class Database:
             )
         """)
 
+        # Migration: Add user_id to conversations table
+        cursor.execute("""
+            DO $$
+            BEGIN
+                IF NOT EXISTS (
+                    SELECT 1 FROM information_schema.columns
+                    WHERE table_name = 'conversations' AND column_name = 'user_id'
+                ) THEN
+                    -- Add user_id column
+                    ALTER TABLE conversations ADD COLUMN user_id INTEGER REFERENCES users(id) ON DELETE CASCADE;
+
+                    -- Clear existing conversations since we can't assign user_id retroactively
+                    DELETE FROM messages;
+                    DELETE FROM conversations;
+
+                    -- Make user_id required
+                    ALTER TABLE conversations ALTER COLUMN user_id SET NOT NULL;
+                END IF;
+            END $$;
+        """)
+
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS message_sources (
                 id SERIAL PRIMARY KEY,
@@ -690,21 +690,6 @@ class Database:
                 UNIQUE(symbol, finnhub_id)
             )
         """)
-
-        # Migration: Add content_text column to material_events table if it doesn't exist
-        try:
-            cursor.execute("""
-                DO $$
-                BEGIN
-                    BEGIN
-                        ALTER TABLE material_events ADD COLUMN content_text TEXT;
-                    EXCEPTION
-                        WHEN duplicate_column THEN NULL;
-                    END;
-                END $$;
-            """)
-        except Exception as e:
-            logger.warning(f"Migration warning for content_text column: {e}")
 
         conn.commit()
 

@@ -123,28 +123,21 @@ def test_db(shared_db):
     conn = db.get_connection()
     cursor = conn.cursor()
 
-    # Get template stocks to preserve
-    cursor.execute('SELECT DISTINCT symbol FROM screening_results')
-    template_symbols = [row[0] for row in cursor.fetchall()]
+    # Clear all data - try each table individually to handle tables that may not exist
+    tables_to_clear = [
+        'message_sources', 'messages', 'conversations', 'watchlist',
+        'price_history', 'stock_metrics', 'earnings_history',
+        'lynch_analyses', 'chart_analyses', 'news_articles',
+        'filing_sections', 'sec_filings', 'screening_results',
+        'screening_sessions', 'stocks'
+    ]
 
-    if template_symbols:
-        template_list = ','.join(["'%s'" % s for s in template_symbols])
-
-        # Clear test-specific data - delete in order respecting foreign keys
-        cursor.execute(f'DELETE FROM watchlist WHERE symbol NOT IN ({template_list})')
-        cursor.execute(f'DELETE FROM price_history WHERE symbol NOT IN ({template_list})')
-        cursor.execute(f'DELETE FROM stock_metrics WHERE symbol NOT IN ({template_list})')
-        cursor.execute(f'DELETE FROM earnings_history WHERE symbol NOT IN ({template_list})')
-        cursor.execute(f'DELETE FROM lynch_analyses WHERE symbol NOT IN ({template_list})')
-        cursor.execute(f'DELETE FROM chart_analyses WHERE symbol NOT IN ({template_list})')
-        cursor.execute(f'DELETE FROM conversations WHERE symbol NOT IN ({template_list})')
-        cursor.execute(f'DELETE FROM news_articles WHERE symbol NOT IN ({template_list})')
-        cursor.execute(f'DELETE FROM material_events WHERE symbol NOT IN ({template_list})')
-        cursor.execute(f'DELETE FROM sec_filings WHERE symbol NOT IN ({template_list})')
-        cursor.execute(f'DELETE FROM filing_sections WHERE symbol NOT IN ({template_list})')
-        cursor.execute(f'DELETE FROM stocks WHERE symbol NOT IN ({template_list})')
-
-    cursor.execute('DELETE FROM screening_sessions WHERE id > 1')  # Keep session 1 from template
+    for table in tables_to_clear:
+        try:
+            cursor.execute(f'DELETE FROM {table}')
+        except Exception:
+            # Table doesn't exist yet, skip
+            pass
 
     conn.commit()
     cursor.close()
@@ -156,26 +149,12 @@ def test_db(shared_db):
     conn = db.get_connection()
     cursor = conn.cursor()
 
-    cursor.execute('SELECT DISTINCT symbol FROM screening_results')
-    template_symbols = [row[0] for row in cursor.fetchall()]
-
-    if template_symbols:
-        template_list = ','.join(["'%s'" % s for s in template_symbols])
-
-        cursor.execute(f'DELETE FROM watchlist WHERE symbol NOT IN ({template_list})')
-        cursor.execute(f'DELETE FROM price_history WHERE symbol NOT IN ({template_list})')
-        cursor.execute(f'DELETE FROM stock_metrics WHERE symbol NOT IN ({template_list})')
-        cursor.execute(f'DELETE FROM earnings_history WHERE symbol NOT IN ({template_list})')
-        cursor.execute(f'DELETE FROM lynch_analyses WHERE symbol NOT IN ({template_list})')
-        cursor.execute(f'DELETE FROM chart_analyses WHERE symbol NOT IN ({template_list})')
-        cursor.execute(f'DELETE FROM conversations WHERE symbol NOT IN ({template_list})')
-        cursor.execute(f'DELETE FROM news_articles WHERE symbol NOT IN ({template_list})')
-        cursor.execute(f'DELETE FROM material_events WHERE symbol NOT IN ({template_list})')
-        cursor.execute(f'DELETE FROM sec_filings WHERE symbol NOT IN ({template_list})')
-        cursor.execute(f'DELETE FROM filing_sections WHERE symbol NOT IN ({template_list})')
-        cursor.execute(f'DELETE FROM stocks WHERE symbol NOT IN ({template_list})')
-
-    cursor.execute('DELETE FROM screening_sessions WHERE id > 1')
+    for table in tables_to_clear:
+        try:
+            cursor.execute(f'DELETE FROM {table}')
+        except Exception:
+            # Table doesn't exist, skip
+            pass
 
     conn.commit()
     cursor.close()
