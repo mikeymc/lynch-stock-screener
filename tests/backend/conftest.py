@@ -133,12 +133,13 @@ def test_db(shared_db):
     cursor = conn.cursor()
 
     # Clear all data - try each table individually to handle tables that may not exist
+    # Order matters: delete from child tables before parent tables (due to foreign keys)
     tables_to_clear = [
         'message_sources', 'messages', 'conversations', 'watchlist',
         'price_history', 'stock_metrics', 'earnings_history',
         'lynch_analyses', 'chart_analyses', 'news_articles',
         'filing_sections', 'sec_filings', 'screening_results',
-        'screening_sessions', 'stocks'
+        'screening_sessions', 'stocks', 'users'
     ]
 
     for table in tables_to_clear:
