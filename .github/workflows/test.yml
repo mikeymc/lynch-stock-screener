@@ -51,7 +51,7 @@ jobs:
         DB_USER: lynch
         DB_PASSWORD: lynch_dev_password
       run: |
-        python backend/tests/create_test_template_ci.py
+        python tests/backend/create_test_template_ci.py
 
     - name: Run tests
       env:
@@ -60,4 +60,4 @@ jobs:
         DB_USER: lynch
         DB_PASSWORD: lynch_dev_password
       run: |
-        uv run pytest backend/tests/ -v
+        uv run pytest tests/backend/ -v
