@@ -11,17 +11,7 @@ from lynch_criteria import LynchCriteria
 from earnings_analyzer import EarningsAnalyzer
 from database import Database
 
-
-@pytest.fixture
-def test_db():
-    db_path = "test_lynch_stocks.db"
-    if os.path.exists(db_path):
-        os.remove(db_path)
-    db = Database(db_path)
-    yield db
-    if os.path.exists(db_path):
-        os.remove(db_path)
-
+# test_db fixture is now provided by conftest.py
 
 @pytest.fixture
 def analyzer(test_db):

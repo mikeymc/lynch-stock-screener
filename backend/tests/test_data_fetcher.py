@@ -12,17 +12,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')
 from data_fetcher import DataFetcher
 from database import Database
 
-
-@pytest.fixture
-def test_db():
-    db_path = "test_fetcher_stocks.db"
-    if os.path.exists(db_path):
-        os.remove(db_path)
-    db = Database(db_path)
-    yield db
-    if os.path.exists(db_path):
-        os.remove(db_path)
-
+# test_db fixture is now provided by conftest.py
 
 @pytest.fixture
 def fetcher(test_db):

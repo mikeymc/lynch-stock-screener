@@ -81,3 +81,90 @@ def test_database():
 
     cursor.close()
     conn.close()
+
+
+@pytest.fixture
+def test_db(test_database):
+    """Shared test_db fixture for all tests in backend/tests.
+
+    Creates a Database instance using the PostgreSQL test database.
+    Cleans up test data before and after each test.
+    """
+    import sys
+    import os
+
+    # Add backend directory to path for imports
+    backend_path = os.path.join(os.path.dirname(__file__), '..')
+    sys.path.insert(0, os.path.abspath(backend_path))
+
+    from database import Database
+
+    db = Database(
+        host='localhost',
+        port=5432,
+        database=test_database,
+        user='lynch',
+        password='lynch_dev_password'
+    )
+
+    # Clean up test data before each test
+    conn = db.get_connection()
+    cursor = conn.cursor()
+
+    # Get template stocks to preserve
+    cursor.execute('SELECT DISTINCT symbol FROM screening_results')
+    template_symbols = [row[0] for row in cursor.fetchall()]
+
+    if template_symbols:
+        template_list = ','.join(["'%s'" % s for s in template_symbols])
+
+        # Clear test-specific data - delete in order respecting foreign keys
+        cursor.execute(f'DELETE FROM watchlist WHERE symbol NOT IN ({template_list})')
+        cursor.execute(f'DELETE FROM price_history WHERE symbol NOT IN ({template_list})')
+        cursor.execute(f'DELETE FROM stock_metrics WHERE symbol NOT IN ({template_list})')
+        cursor.execute(f'DELETE FROM earnings_history WHERE symbol NOT IN ({template_list})')
+        cursor.execute(f'DELETE FROM lynch_analyses WHERE symbol NOT IN ({template_list})')
+        cursor.execute(f'DELETE FROM chart_analyses WHERE symbol NOT IN ({template_list})')
+        cursor.execute(f'DELETE FROM conversations WHERE symbol NOT IN ({template_list})')
+        cursor.execute(f'DELETE FROM news_articles WHERE symbol NOT IN ({template_list})')
+        cursor.execute(f'DELETE FROM material_events WHERE symbol NOT IN ({template_list})')
+        cursor.execute(f'DELETE FROM sec_filings WHERE symbol NOT IN ({template_list})')
+        cursor.execute(f'DELETE FROM filing_sections WHERE symbol NOT IN ({template_list})')
+        cursor.execute(f'DELETE FROM stocks WHERE symbol NOT IN ({template_list})')
+
+    cursor.execute('DELETE FROM screening_sessions WHERE id > 1')  # Keep session 1 from template
+
+    conn.commit()
+    cursor.close()
+    db.return_connection(conn)
+
+    yield db
+
+    # Cleanup after test
+    conn = db.get_connection()
+    cursor = conn.cursor()
+
+    cursor.execute('SELECT DISTINCT symbol FROM screening_results')
+    template_symbols = [row[0] for row in cursor.fetchall()]
+
+    if template_symbols:
+        template_list = ','.join(["'%s'" % s for s in template_symbols])
+
+        cursor.execute(f'DELETE FROM watchlist WHERE symbol NOT IN ({template_list})')
+        cursor.execute(f'DELETE FROM price_history WHERE symbol NOT IN ({template_list})')
+        cursor.execute(f'DELETE FROM stock_metrics WHERE symbol NOT IN ({template_list})')
+        cursor.execute(f'DELETE FROM earnings_history WHERE symbol NOT IN ({template_list})')
+        cursor.execute(f'DELETE FROM lynch_analyses WHERE symbol NOT IN ({template_list})')
+        cursor.execute(f'DELETE FROM chart_analyses WHERE symbol NOT IN ({template_list})')
+        cursor.execute(f'DELETE FROM conversations WHERE symbol NOT IN ({template_list})')
+        cursor.execute(f'DELETE FROM news_articles WHERE symbol NOT IN ({template_list})')
+        cursor.execute(f'DELETE FROM material_events WHERE symbol NOT IN ({template_list})')
+        cursor.execute(f'DELETE FROM sec_filings WHERE symbol NOT IN ({template_list})')
+        cursor.execute(f'DELETE FROM filing_sections WHERE symbol NOT IN ({template_list})')
+        cursor.execute(f'DELETE FROM stocks WHERE symbol NOT IN ({template_list})')
+
+    cursor.execute('DELETE FROM screening_sessions WHERE id > 1')
+
+    conn.commit()
+    cursor.close()
+    db.return_connection(conn)
