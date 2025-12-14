@@ -40,11 +40,13 @@ class Database:
         # Can be overridden via DB_POOL_SIZE env var (useful for tests)
         self.pool_size = int(os.environ.get('DB_POOL_SIZE', 50))
         min_connections = min(5, self.pool_size)  # Don't exceed pool_size
+        logger.info(f"Creating database connection pool: {self.db_params['host']}:{self.db_params['port']}/{self.db_params['database']} (pool_size={self.pool_size}, min={min_connections})")
         self.connection_pool = psycopg2.pool.ThreadedConnectionPool(
             minconn=min_connections,
             maxconn=self.pool_size,
             **self.db_params
         )
+        logger.info("Database connection pool created successfully")
 
         # Connection pool monitoring
         self._pool_stats_lock = threading.Lock()
@@ -59,18 +61,24 @@ class Database:
         self.write_batch_size = 50
 
         # Initialize schema
+        logger.info("Initializing database schema...")
         init_conn = self.connection_pool.getconn()
         try:
             self._init_schema_with_connection(init_conn)
+            logger.info("Database schema initialized successfully")
+        except Exception as e:
+            logger.error(f"Failed to initialize database schema: {e}", exc_info=True)
+            raise
         finally:
             self.connection_pool.putconn(init_conn)
 
         self._initializing = False
 
         # Start background writer thread
+        logger.info("Starting background writer thread...")
         self.writer_thread = threading.Thread(target=self._writer_loop, daemon=True)
         self.writer_thread.start()
-        print("Database writer thread started")
+        logger.info("Database writer thread started successfully")
 
     def flush(self):
         """Wait for all pending writes to complete and commit"""
@@ -149,9 +157,11 @@ class Database:
         """
         conn = self.connection_pool.getconn()
         cursor = conn.cursor()
+        logger.info("Writer loop started with initial database connection")
 
         batch = []
         last_commit = time.time()
+        reconnect_count = 0
 
         while True:
             try:
@@ -180,7 +190,7 @@ class Database:
                                 last_commit = time.time()
                                 batch = []
                             except Exception as e:
-                                print(f"Database batch write error: {e}")
+                                logger.error(f"Database batch write error during FLUSH: {e}", exc_info=True)
                                 conn.rollback()
                                 batch = []
                         self.write_queue.task_done()
@@ -204,14 +214,48 @@ class Database:
                         last_commit = time.time()
                         batch = []
                     except Exception as e:
-                        print(f"Database batch write error: {e}")
-                        conn.rollback()
+                        logger.error(f"Database batch write error (batch_size={len(batch)}): {e}", exc_info=True)
+                        try:
+                            conn.rollback()
+                        except Exception as rollback_error:
+                            logger.error(f"Rollback also failed: {rollback_error}")
                         batch = []
 
             except Exception as e:
-                print(f"Fatal error in writer loop: {e}")
-                time.sleep(1)
+                error_type = type(e).__name__
+                logger.error(f"Fatal error in writer loop ({error_type}): {e}", exc_info=True)
 
+                # Check if this is a connection error
+                is_connection_error = any(msg in str(e).lower() for msg in [
+                    'closed', 'lost', 'terminated', 'broken', 'connection'
+                ])
+
+                if is_connection_error:
+                    logger.warning("Detected connection error - attempting to reconnect")
+                    # Connection or cursor is broken - need to reconnect
+                    try:
+                        self.connection_pool.putconn(conn, close=True)
+                        logger.info("Closed broken connection and returned to pool")
+                    except Exception as close_error:
+                        logger.error(f"Error while closing broken connection: {close_error}")
+
+                    # Get a new connection and cursor
+                    try:
+                        conn = self.connection_pool.getconn()
+                        cursor = conn.cursor()
+                        reconnect_count += 1
+                        # Clear batch since we lost the transaction
+                        batch = []
+                        logger.info(f"Writer loop reconnected successfully (reconnect #{reconnect_count})")
+                    except Exception as reconnect_error:
+                        logger.error(f"Failed to reconnect writer loop: {reconnect_error}", exc_info=True)
+                        time.sleep(5)
+                else:
+                    # Non-connection error, just log and continue
+                    logger.warning("Non-connection error in writer loop, continuing with same connection")
+                    time.sleep(1)
+
+        logger.info("Writer loop shutting down")
         self.connection_pool.putconn(conn)
 
     def connection(self):
