@@ -46,6 +46,14 @@ class Database:
             **self.db_params
         )
 
+        # Connection pool monitoring
+        self._pool_stats_lock = threading.Lock()
+        self._connections_checked_out = 0
+        self._connections_returned = 0
+        self._connection_errors = 0
+        self._peak_connections_in_use = 0
+        self._current_connections_in_use = 0
+
         # Queue for database write operations
         self.write_queue = queue.Queue()
         self.write_batch_size = 50
@@ -71,11 +79,51 @@ class Database:
 
     def get_connection(self):
         """Get a connection from the pool"""
-        return self.connection_pool.getconn()
+        try:
+            conn = self.connection_pool.getconn()
+            with self._pool_stats_lock:
+                self._connections_checked_out += 1
+                self._current_connections_in_use += 1
+                if self._current_connections_in_use > self._peak_connections_in_use:
+                    self._peak_connections_in_use = self._current_connections_in_use
+
+                # Warn if pool usage is high
+                usage_pct = (self._current_connections_in_use / self.pool_size) * 100
+                if usage_pct >= 80:
+                    logger.warning(f"Connection pool usage at {usage_pct:.1f}% ({self._current_connections_in_use}/{self.pool_size})")
+            return conn
+        except Exception as e:
+            with self._pool_stats_lock:
+                self._connection_errors += 1
+            logger.error(f"Error getting connection from pool: {e}")
+            raise
 
     def return_connection(self, conn):
         """Return a connection to the pool"""
-        self.connection_pool.putconn(conn)
+        try:
+            self.connection_pool.putconn(conn)
+            with self._pool_stats_lock:
+                self._connections_returned += 1
+                self._current_connections_in_use -= 1
+        except Exception as e:
+            with self._pool_stats_lock:
+                self._connection_errors += 1
+            logger.error(f"Error returning connection to pool: {e}")
+            raise
+
+    def get_pool_stats(self) -> Dict[str, Any]:
+        """Get connection pool statistics for monitoring"""
+        with self._pool_stats_lock:
+            return {
+                'pool_size': self.pool_size,
+                'current_in_use': self._current_connections_in_use,
+                'peak_in_use': self._peak_connections_in_use,
+                'total_checked_out': self._connections_checked_out,
+                'total_returned': self._connections_returned,
+                'connection_errors': self._connection_errors,
+                'usage_percent': (self._current_connections_in_use / self.pool_size) * 100 if self.pool_size > 0 else 0,
+                'potential_leaks': self._connections_checked_out - self._connections_returned
+            }
 
     def _sanitize_numpy_types(self, args):
         """Convert numpy types to Python native types for psycopg2"""
@@ -807,76 +855,80 @@ class Database:
 
     def get_stock_metrics(self, symbol: str) -> Optional[Dict[str, Any]]:
         conn = self.get_connection()
-        cursor = conn.cursor()
-        cursor.execute("""
-            SELECT sm.*, s.company_name, s.exchange, s.sector, s.country, s.ipo_year
-            FROM stock_metrics sm
-            JOIN stocks s ON sm.symbol = s.symbol
-            WHERE sm.symbol = %s
-        """, (symbol,))
-        row = cursor.fetchone()
-        self.return_connection(conn)
+        try:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT sm.*, s.company_name, s.exchange, s.sector, s.country, s.ipo_year
+                FROM stock_metrics sm
+                JOIN stocks s ON sm.symbol = s.symbol
+                WHERE sm.symbol = %s
+            """, (symbol,))
+            row = cursor.fetchone()
 
-        if not row:
-            return None
+            if not row:
+                return None
 
-        return {
-            'symbol': row[0],
-            'price': row[1],
-            'pe_ratio': row[2],
-            'market_cap': row[3],
-            'debt_to_equity': row[4],
-            'institutional_ownership': row[5],
-            'revenue': row[6],
-            'dividend_yield': row[7],
-            'last_updated': row[8],
-            'beta': row[9],
-            'total_debt': row[10],
-            'interest_expense': row[11],
-            'effective_tax_rate': row[12],
-            'company_name': row[13],
-            'exchange': row[14],
-            'sector': row[15],
-            'country': row[16],
-            'ipo_year': row[17]
-        }
+            return {
+                'symbol': row[0],
+                'price': row[1],
+                'pe_ratio': row[2],
+                'market_cap': row[3],
+                'debt_to_equity': row[4],
+                'institutional_ownership': row[5],
+                'revenue': row[6],
+                'dividend_yield': row[7],
+                'last_updated': row[8],
+                'beta': row[9],
+                'total_debt': row[10],
+                'interest_expense': row[11],
+                'effective_tax_rate': row[12],
+                'company_name': row[13],
+                'exchange': row[14],
+                'sector': row[15],
+                'country': row[16],
+                'ipo_year': row[17]
+            }
+        finally:
+            self.return_connection(conn)
 
     def get_earnings_history(self, symbol: str, period_type: str = 'annual') -> List[Dict[str, Any]]:
         conn = self.get_connection()
-        cursor = conn.cursor()
+        try:
+            cursor = conn.cursor()
 
-        if period_type == 'quarterly':
-            where_clause = "WHERE symbol = %s AND period IN ('Q1', 'Q2', 'Q3', 'Q4')"
-        else:
-            where_clause = "WHERE symbol = %s AND period = 'annual'"
+            if period_type == 'quarterly':
+                where_clause = "WHERE symbol = %s AND period IN ('Q1', 'Q2', 'Q3', 'Q4')"
+            else:
+                where_clause = "WHERE symbol = %s AND period = 'annual'"
 
-        cursor.execute(f"""
-            SELECT year, earnings_per_share, revenue, fiscal_end, debt_to_equity, period, net_income, dividend_amount, dividend_yield, operating_cash_flow, capital_expenditures, free_cash_flow, last_updated
-            FROM earnings_history
-            {where_clause}
-            ORDER BY year DESC, period
-        """, (symbol,))
-        rows = cursor.fetchall()
-        self.return_connection(conn)
+            cursor.execute(f"""
+                SELECT year, earnings_per_share, revenue, fiscal_end, debt_to_equity, period, net_income, dividend_amount, dividend_yield, operating_cash_flow, capital_expenditures, free_cash_flow, last_updated
+                FROM earnings_history
+                {where_clause}
+                ORDER BY year DESC, period
+            """, (symbol,))
+            rows = cursor.fetchall()
 
-        return [
-            {
-                'year': row[0],
-                'eps': row[1],
-                'revenue': row[2],
-                'fiscal_end': row[3],
-                'debt_to_equity': row[4],
-                'period': row[5],
-                'net_income': row[6],
-                'dividend_amount': row[7],
-                'dividend_yield': row[8],
-                'operating_cash_flow': row[9],
-                'capital_expenditures': row[10],
-                'free_cash_flow': row[11],
-                'last_updated': row[12]
-            }
-            for row in rows
-        ]
+            return [
+                {
+                    'year': row[0],
+                    'eps': row[1],
+                    'revenue': row[2],
+                    'fiscal_end': row[3],
+                    'debt_to_equity': row[4],
+                    'period': row[5],
+                    'net_income': row[6],
+                    'dividend_amount': row[7],
+                    'dividend_yield': row[8],
+                    'operating_cash_flow': row[9],
+                    'capital_expenditures': row[10],
+                    'free_cash_flow': row[11],
+                    'last_updated': row[12]
+                }
+                for row in rows
+            ]
+        finally:
+            self.return_connection(conn)
 
     def save_price_history(self, symbol: str, history_data: List[Dict[str, Any]]):
         """
@@ -909,148 +961,163 @@ class Database:
 
     def get_price_history(self, symbol: str, start_date: str = None, end_date: str = None) -> List[Dict[str, Any]]:
         conn = self.get_connection()
-        cursor = conn.cursor()
-        
-        query = "SELECT date, close, adjusted_close, volume FROM price_history WHERE symbol = %s"
-        params = [symbol]
-        
-        if start_date:
-            query += " AND date >= %s"
-            params.append(start_date)
-        if end_date:
-            query += " AND date <= %s"
-            params.append(end_date)
-            
-        query += " ORDER BY date ASC"
-        
-        cursor.execute(query, params)
-        rows = cursor.fetchall()
-        self.return_connection(conn)
-        
-        return [
-            {
-                'date': row[0].strftime('%Y-%m-%d') if row[0] else None,
-                'close': row[1],
-                'adjusted_close': row[2],
-                'volume': row[3]
-            }
-            for row in rows
-        ]
+        try:
+            cursor = conn.cursor()
+
+            query = "SELECT date, close, adjusted_close, volume FROM price_history WHERE symbol = %s"
+            params = [symbol]
+
+            if start_date:
+                query += " AND date >= %s"
+                params.append(start_date)
+            if end_date:
+                query += " AND date <= %s"
+                params.append(end_date)
+
+            query += " ORDER BY date ASC"
+
+            cursor.execute(query, params)
+            rows = cursor.fetchall()
+
+            return [
+                {
+                    'date': row[0].strftime('%Y-%m-%d') if row[0] else None,
+                    'close': row[1],
+                    'adjusted_close': row[2],
+                    'volume': row[3]
+                }
+                for row in rows
+            ]
+        finally:
+            self.return_connection(conn)
 
     def is_cache_valid(self, symbol: str, max_age_hours: int = 24) -> bool:
         conn = self.get_connection()
-        cursor = conn.cursor()
-        cursor.execute("""
-            SELECT last_updated FROM stock_metrics WHERE symbol = %s
-        """, (symbol,))
-        row = cursor.fetchone()
-        self.return_connection(conn)
+        try:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT last_updated FROM stock_metrics WHERE symbol = %s
+            """, (symbol,))
+            row = cursor.fetchone()
 
-        if not row:
-            return False
+            if not row:
+                return False
 
-        last_updated = row[0]
-        age_hours = (datetime.now() - last_updated).total_seconds() / 3600
-        return age_hours < max_age_hours
+            last_updated = row[0]
+            age_hours = (datetime.now() - last_updated).total_seconds() / 3600
+            return age_hours < max_age_hours
+        finally:
+            self.return_connection(conn)
 
     def get_all_cached_stocks(self) -> List[str]:
         conn = self.get_connection()
-        cursor = conn.cursor()
-        cursor.execute("SELECT symbol FROM stocks ORDER BY symbol")
-        rows = cursor.fetchall()
-        self.return_connection(conn)
-
-        return [row[0] for row in rows]
+        try:
+            cursor = conn.cursor()
+            cursor.execute("SELECT symbol FROM stocks ORDER BY symbol")
+            rows = cursor.fetchall()
+            return [row[0] for row in rows]
+        finally:
+            self.return_connection(conn)
 
     def save_lynch_analysis(self, user_id: int, symbol: str, analysis_text: str, model_version: str):
         conn = self.get_connection()
-        cursor = conn.cursor()
-        cursor.execute("""
-            INSERT INTO lynch_analyses
-            (user_id, symbol, analysis_text, generated_at, model_version)
-            VALUES (%s, %s, %s, %s, %s)
-            ON CONFLICT (user_id, symbol) DO UPDATE SET
-                analysis_text = EXCLUDED.analysis_text,
-                generated_at = EXCLUDED.generated_at,
-                model_version = EXCLUDED.model_version
-        """, (user_id, symbol, analysis_text, datetime.now(), model_version))
-        conn.commit()
-        self.return_connection(conn)
+        try:
+            cursor = conn.cursor()
+            cursor.execute("""
+                INSERT INTO lynch_analyses
+                (user_id, symbol, analysis_text, generated_at, model_version)
+                VALUES (%s, %s, %s, %s, %s)
+                ON CONFLICT (user_id, symbol) DO UPDATE SET
+                    analysis_text = EXCLUDED.analysis_text,
+                    generated_at = EXCLUDED.generated_at,
+                    model_version = EXCLUDED.model_version
+            """, (user_id, symbol, analysis_text, datetime.now(), model_version))
+            conn.commit()
+        finally:
+            self.return_connection(conn)
 
     def get_lynch_analysis(self, user_id: int, symbol: str) -> Optional[Dict[str, Any]]:
         conn = self.get_connection()
-        cursor = conn.cursor()
-        cursor.execute("""
-            SELECT symbol, analysis_text, generated_at, model_version
-            FROM lynch_analyses
-            WHERE user_id = %s AND symbol = %s
-        """, (user_id, symbol))
-        row = cursor.fetchone()
-        self.return_connection(conn)
+        try:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT symbol, analysis_text, generated_at, model_version
+                FROM lynch_analyses
+                WHERE user_id = %s AND symbol = %s
+            """, (user_id, symbol))
+            row = cursor.fetchone()
 
-        if not row:
-            return None
+            if not row:
+                return None
 
-        return {
-            'symbol': row[0],
-            'analysis_text': row[1],
-            'generated_at': row[2],
-            'model_version': row[3]
-        }
+            return {
+                'symbol': row[0],
+                'analysis_text': row[1],
+                'generated_at': row[2],
+                'model_version': row[3]
+            }
+        finally:
+            self.return_connection(conn)
 
     def set_chart_analysis(self, user_id: int, symbol: str, section: str, analysis_text: str, model_version: str):
         conn = self.get_connection()
-        cursor = conn.cursor()
-        cursor.execute("""
-            INSERT INTO chart_analyses
-            (user_id, symbol, section, analysis_text, generated_at, model_version)
-            VALUES (%s, %s, %s, %s, %s, %s)
-            ON CONFLICT (user_id, symbol, section) DO UPDATE SET
-                analysis_text = EXCLUDED.analysis_text,
-                generated_at = EXCLUDED.generated_at,
-                model_version = EXCLUDED.model_version
-        """, (user_id, symbol, section, analysis_text, datetime.now(), model_version))
-        conn.commit()
-        self.return_connection(conn)
+        try:
+            cursor = conn.cursor()
+            cursor.execute("""
+                INSERT INTO chart_analyses
+                (user_id, symbol, section, analysis_text, generated_at, model_version)
+                VALUES (%s, %s, %s, %s, %s, %s)
+                ON CONFLICT (user_id, symbol, section) DO UPDATE SET
+                    analysis_text = EXCLUDED.analysis_text,
+                    generated_at = EXCLUDED.generated_at,
+                    model_version = EXCLUDED.model_version
+            """, (user_id, symbol, section, analysis_text, datetime.now(), model_version))
+            conn.commit()
+        finally:
+            self.return_connection(conn)
 
     def get_chart_analysis(self, user_id: int, symbol: str, section: str) -> Optional[Dict[str, Any]]:
         conn = self.get_connection()
-        cursor = conn.cursor()
-        cursor.execute("""
-            SELECT symbol, section, analysis_text, generated_at, model_version
-            FROM chart_analyses
-            WHERE user_id = %s AND symbol = %s AND section = %s
-        """, (user_id, symbol, section))
-        row = cursor.fetchone()
-        self.return_connection(conn)
+        try:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT symbol, section, analysis_text, generated_at, model_version
+                FROM chart_analyses
+                WHERE user_id = %s AND symbol = %s AND section = %s
+            """, (user_id, symbol, section))
+            row = cursor.fetchone()
 
-        if not row:
-            return None
+            if not row:
+                return None
 
-        return {
-            'symbol': row[0],
-            'section': row[1],
-            'analysis_text': row[2],
-            'generated_at': row[3],
-            'model_version': row[4]
-        }
+            return {
+                'symbol': row[0],
+                'section': row[1],
+                'analysis_text': row[2],
+                'generated_at': row[3],
+                'model_version': row[4]
+            }
+        finally:
+            self.return_connection(conn)
 
     def create_session(self, algorithm: str, total_count: int, total_analyzed: int = 0, pass_count: int = 0, close_count: int = 0, fail_count: int = 0) -> int:
         """Create a new screening session with initial status"""
         conn = self.get_connection()
-        cursor = conn.cursor()
-        cursor.execute("""
-            INSERT INTO screening_sessions (
-                created_at, algorithm, total_count, processed_count,
-                total_analyzed, pass_count, close_count, fail_count, status
-            )
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
-            RETURNING id
-        """, (datetime.now(), algorithm, total_count, 0, total_analyzed, pass_count, close_count, fail_count, 'running'))
-        session_id = cursor.fetchone()[0]
-        conn.commit()
-        self.return_connection(conn)
-        return session_id
+        try:
+            cursor = conn.cursor()
+            cursor.execute("""
+                INSERT INTO screening_sessions (
+                    created_at, algorithm, total_count, processed_count,
+                    total_analyzed, pass_count, close_count, fail_count, status
+                )
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                RETURNING id
+            """, (datetime.now(), algorithm, total_count, 0, total_analyzed, pass_count, close_count, fail_count, 'running'))
+            session_id = cursor.fetchone()[0]
+            conn.commit()
+            return session_id
+        finally:
+            self.return_connection(conn)
 
     def update_session_progress(self, session_id: int, processed_count: int, current_symbol: str = None):
         """Update screening session progress"""
@@ -1086,14 +1153,16 @@ class Database:
     def cancel_session(self, session_id: int):
         """Mark session as cancelled"""
         conn = self.get_connection()
-        cursor = conn.cursor()
-        cursor.execute("""
-            UPDATE screening_sessions
-            SET status = 'cancelled'
-            WHERE id = %s
-        """, (session_id,))
-        conn.commit()
-        self.return_connection(conn)
+        try:
+            cursor = conn.cursor()
+            cursor.execute("""
+                UPDATE screening_sessions
+                SET status = 'cancelled'
+                WHERE id = %s
+            """, (session_id,))
+            conn.commit()
+        finally:
+            self.return_connection(conn)
 
     def get_session_progress(self, session_id: int) -> Optional[Dict[str, Any]]:
         """Get current progress of a screening session"""
@@ -1130,47 +1199,49 @@ class Database:
     def get_session_results(self, session_id: int) -> List[Dict[str, Any]]:
         """Get all results for a screening session"""
         conn = self.get_connection()
-        cursor = conn.cursor()
-        cursor.execute("""
-            SELECT symbol, company_name, country, market_cap, sector, ipo_year,
-                   price, pe_ratio, peg_ratio, debt_to_equity, institutional_ownership,
-                   dividend_yield, earnings_cagr, revenue_cagr, consistency_score,
-                   peg_status, debt_status, institutional_ownership_status, overall_status,
-                   overall_score, scored_at
-            FROM screening_results
-            WHERE session_id = %s
-            ORDER BY id ASC
-        """, (session_id,))
-        rows = cursor.fetchall()
-        self.return_connection(conn)
+        try:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT symbol, company_name, country, market_cap, sector, ipo_year,
+                       price, pe_ratio, peg_ratio, debt_to_equity, institutional_ownership,
+                       dividend_yield, earnings_cagr, revenue_cagr, consistency_score,
+                       peg_status, debt_status, institutional_ownership_status, overall_status,
+                       overall_score, scored_at
+                FROM screening_results
+                WHERE session_id = %s
+                ORDER BY id ASC
+            """, (session_id,))
+            rows = cursor.fetchall()
 
-        results = []
-        for row in rows:
-            results.append({
-                'symbol': row[0],
-                'company_name': row[1],
-                'country': row[2],
-                'market_cap': row[3],
-                'sector': row[4],
-                'ipo_year': row[5],
-                'price': row[6],
-                'pe_ratio': row[7],
-                'peg_ratio': row[8],
-                'debt_to_equity': row[9],
-                'institutional_ownership': row[10],
-                'dividend_yield': row[11],
-                'earnings_cagr': row[12],
-                'revenue_cagr': row[13],
-                'consistency_score': row[14],
-                'peg_status': row[15],
-                'debt_status': row[16],
-                'institutional_ownership_status': row[17],
-                'overall_status': row[18],
-                'overall_score': row[19],
-                'scored_at': row[20]
-            })
+            results = []
+            for row in rows:
+                results.append({
+                    'symbol': row[0],
+                    'company_name': row[1],
+                    'country': row[2],
+                    'market_cap': row[3],
+                    'sector': row[4],
+                    'ipo_year': row[5],
+                    'price': row[6],
+                    'pe_ratio': row[7],
+                    'peg_ratio': row[8],
+                    'debt_to_equity': row[9],
+                    'institutional_ownership': row[10],
+                    'dividend_yield': row[11],
+                    'earnings_cagr': row[12],
+                    'revenue_cagr': row[13],
+                    'consistency_score': row[14],
+                    'peg_status': row[15],
+                    'debt_status': row[16],
+                    'institutional_ownership_status': row[17],
+                    'overall_status': row[18],
+                    'overall_score': row[19],
+                    'scored_at': row[20]
+                })
 
-        return results
+            return results
+        finally:
+            self.return_connection(conn)
 
     def save_screening_result(self, session_id: int, result_data: Dict[str, Any]):
         sql_delete = """
@@ -1221,88 +1292,90 @@ class Database:
 
     def get_latest_session(self) -> Optional[Dict[str, Any]]:
         conn = self.get_connection()
-        cursor = conn.cursor()
+        try:
+            cursor = conn.cursor()
 
-        cursor.execute("""
-            SELECT id, created_at, total_analyzed, pass_count, close_count, fail_count
-            FROM screening_sessions
-            ORDER BY created_at DESC
-            LIMIT 1
-        """)
-        session_row = cursor.fetchone()
+            cursor.execute("""
+                SELECT id, created_at, total_analyzed, pass_count, close_count, fail_count
+                FROM screening_sessions
+                ORDER BY created_at DESC
+                LIMIT 1
+            """)
+            session_row = cursor.fetchone()
 
-        if not session_row:
+            if not session_row:
+                return None
+
+            session_id = session_row[0]
+
+            cursor.execute("""
+                SELECT symbol, company_name, country, market_cap, sector, ipo_year,
+                       price, pe_ratio, peg_ratio, debt_to_equity, institutional_ownership, dividend_yield,
+                       earnings_cagr, revenue_cagr, consistency_score,
+                       peg_status, peg_score, debt_status, debt_score,
+                       institutional_ownership_status, institutional_ownership_score, overall_status
+                FROM screening_results
+                WHERE session_id = %s
+            """, (session_id,))
+            result_rows = cursor.fetchall()
+
+            results = []
+            for row in result_rows:
+                results.append({
+                    'symbol': row[0],
+                    'company_name': row[1],
+                    'country': row[2],
+                    'market_cap': row[3],
+                    'sector': row[4],
+                    'ipo_year': row[5],
+                    'price': row[6],
+                    'pe_ratio': row[7],
+                    'peg_ratio': row[8],
+                    'debt_to_equity': row[9],
+                    'institutional_ownership': row[10],
+                    'dividend_yield': row[11],
+                    'earnings_cagr': row[12],
+                    'revenue_cagr': row[13],
+                    'consistency_score': row[14],
+                    'peg_status': row[15],
+                    'peg_score': row[16],
+                    'debt_status': row[17],
+                    'debt_score': row[18],
+                    'institutional_ownership_status': row[19],
+                    'institutional_ownership_score': row[20],
+                    'overall_status': row[21]
+                })
+
+            return {
+                'session_id': session_id,
+                'created_at': session_row[1],
+                'total_analyzed': session_row[2],
+                'pass_count': session_row[3],
+                'close_count': session_row[4],
+                'fail_count': session_row[5],
+                'results': results
+            }
+        finally:
             self.return_connection(conn)
-            return None
-
-        session_id = session_row[0]
-
-        cursor.execute("""
-            SELECT symbol, company_name, country, market_cap, sector, ipo_year,
-                   price, pe_ratio, peg_ratio, debt_to_equity, institutional_ownership, dividend_yield,
-                   earnings_cagr, revenue_cagr, consistency_score,
-                   peg_status, peg_score, debt_status, debt_score,
-                   institutional_ownership_status, institutional_ownership_score, overall_status
-            FROM screening_results
-            WHERE session_id = %s
-        """, (session_id,))
-        result_rows = cursor.fetchall()
-
-        self.return_connection(conn)
-
-        results = []
-        for row in result_rows:
-            results.append({
-                'symbol': row[0],
-                'company_name': row[1],
-                'country': row[2],
-                'market_cap': row[3],
-                'sector': row[4],
-                'ipo_year': row[5],
-                'price': row[6],
-                'pe_ratio': row[7],
-                'peg_ratio': row[8],
-                'debt_to_equity': row[9],
-                'institutional_ownership': row[10],
-                'dividend_yield': row[11],
-                'earnings_cagr': row[12],
-                'revenue_cagr': row[13],
-                'consistency_score': row[14],
-                'peg_status': row[15],
-                'peg_score': row[16],
-                'debt_status': row[17],
-                'debt_score': row[18],
-                'institutional_ownership_status': row[19],
-                'institutional_ownership_score': row[20],
-                'overall_status': row[21]
-            })
-
-        return {
-            'session_id': session_id,
-            'created_at': session_row[1],
-            'total_analyzed': session_row[2],
-            'pass_count': session_row[3],
-            'close_count': session_row[4],
-            'fail_count': session_row[5],
-            'results': results
-        }
 
     def cleanup_old_sessions(self, keep_count: int = 2):
         conn = self.get_connection()
-        cursor = conn.cursor()
+        try:
+            cursor = conn.cursor()
 
-        cursor.execute("""
-            SELECT id FROM screening_sessions
-            ORDER BY created_at DESC
-            OFFSET %s
-        """, (keep_count,))
-        old_session_ids = [row[0] for row in cursor.fetchall()]
+            cursor.execute("""
+                SELECT id FROM screening_sessions
+                ORDER BY created_at DESC
+                OFFSET %s
+            """, (keep_count,))
+            old_session_ids = [row[0] for row in cursor.fetchall()]
 
-        for session_id in old_session_ids:
-            cursor.execute("DELETE FROM screening_sessions WHERE id = %s", (session_id,))
+            for session_id in old_session_ids:
+                cursor.execute("DELETE FROM screening_sessions WHERE id = %s", (session_id,))
 
-        conn.commit()
-        self.return_connection(conn)
+            conn.commit()
+        finally:
+            self.return_connection(conn)
 
     def create_user(self, google_id: str, email: str, name: str = None, picture: str = None) -> int:
         """Create a new user and return their user_id"""
@@ -1377,11 +1450,13 @@ class Database:
 
     def is_in_watchlist(self, user_id: int, symbol: str) -> bool:
         conn = self.get_connection()
-        cursor = conn.cursor()
-        cursor.execute("SELECT 1 FROM watchlist WHERE user_id = %s AND symbol = %s", (user_id, symbol))
-        result = cursor.fetchone()
-        self.return_connection(conn)
-        return result is not None
+        try:
+            cursor = conn.cursor()
+            cursor.execute("SELECT 1 FROM watchlist WHERE user_id = %s AND symbol = %s", (user_id, symbol))
+            result = cursor.fetchone()
+            return result is not None
+        finally:
+            self.return_connection(conn)
 
     def get_screening_symbols(self, session_id: int) -> List[str]:
         """Get all symbols from a specific screening session."""
@@ -2104,52 +2179,56 @@ class Database:
     def create_background_job(self, job_type: str, params: Dict[str, Any]) -> int:
         """Create a new background job and return its ID"""
         conn = self.get_connection()
-        cursor = conn.cursor()
-        cursor.execute("""
-            INSERT INTO background_jobs (job_type, params, status, created_at)
-            VALUES (%s, %s, 'pending', NOW())
-            RETURNING id
-        """, (job_type, json.dumps(params)))
-        job_id = cursor.fetchone()[0]
-        conn.commit()
-        self.return_connection(conn)
-        return job_id
+        try:
+            cursor = conn.cursor()
+            cursor.execute("""
+                INSERT INTO background_jobs (job_type, params, status, created_at)
+                VALUES (%s, %s, 'pending', NOW())
+                RETURNING id
+            """, (job_type, json.dumps(params)))
+            job_id = cursor.fetchone()[0]
+            conn.commit()
+            return job_id
+        finally:
+            self.return_connection(conn)
 
     def get_background_job(self, job_id: int) -> Optional[Dict[str, Any]]:
         """Get a background job by ID"""
         conn = self.get_connection()
-        cursor = conn.cursor()
-        cursor.execute("""
-            SELECT id, job_type, status, claimed_by, claimed_at, claim_expires_at,
-                   params, progress_pct, progress_message, processed_count, total_count,
-                   result, error_message, created_at, started_at, completed_at
-            FROM background_jobs
-            WHERE id = %s
-        """, (job_id,))
-        row = cursor.fetchone()
-        self.return_connection(conn)
+        try:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT id, job_type, status, claimed_by, claimed_at, claim_expires_at,
+                       params, progress_pct, progress_message, processed_count, total_count,
+                       result, error_message, created_at, started_at, completed_at
+                FROM background_jobs
+                WHERE id = %s
+            """, (job_id,))
+            row = cursor.fetchone()
 
-        if not row:
-            return None
+            if not row:
+                return None
 
-        return {
-            'id': row[0],
-            'job_type': row[1],
-            'status': row[2],
-            'claimed_by': row[3],
-            'claimed_at': row[4],
-            'claim_expires_at': row[5],
-            'params': row[6] if isinstance(row[6], dict) else json.loads(row[6]) if row[6] else {},
-            'progress_pct': row[7],
-            'progress_message': row[8],
-            'processed_count': row[9],
-            'total_count': row[10],
-            'result': row[11] if isinstance(row[11], dict) else json.loads(row[11]) if row[11] else None,
-            'error_message': row[12],
-            'created_at': row[13],
-            'started_at': row[14],
-            'completed_at': row[15]
-        }
+            return {
+                'id': row[0],
+                'job_type': row[1],
+                'status': row[2],
+                'claimed_by': row[3],
+                'claimed_at': row[4],
+                'claim_expires_at': row[5],
+                'params': row[6] if isinstance(row[6], dict) else json.loads(row[6]) if row[6] else {},
+                'progress_pct': row[7],
+                'progress_message': row[8],
+                'processed_count': row[9],
+                'total_count': row[10],
+                'result': row[11] if isinstance(row[11], dict) else json.loads(row[11]) if row[11] else None,
+                'error_message': row[12],
+                'created_at': row[13],
+                'started_at': row[14],
+                'completed_at': row[15]
+            }
+        finally:
+            self.return_connection(conn)
 
     def claim_pending_job(self, worker_id: str, claim_minutes: int = 10) -> Optional[Dict[str, Any]]:
         """
@@ -2211,122 +2290,137 @@ class Database:
                            total_count: int = None):
         """Update job progress information"""
         conn = self.get_connection()
-        cursor = conn.cursor()
+        try:
+            cursor = conn.cursor()
 
-        updates = []
-        values = []
+            updates = []
+            values = []
 
-        if progress_pct is not None:
-            updates.append("progress_pct = %s")
-            values.append(progress_pct)
-        if progress_message is not None:
-            updates.append("progress_message = %s")
-            values.append(progress_message)
-        if processed_count is not None:
-            updates.append("processed_count = %s")
-            values.append(processed_count)
-        if total_count is not None:
-            updates.append("total_count = %s")
-            values.append(total_count)
+            if progress_pct is not None:
+                updates.append("progress_pct = %s")
+                values.append(progress_pct)
+            if progress_message is not None:
+                updates.append("progress_message = %s")
+                values.append(progress_message)
+            if processed_count is not None:
+                updates.append("processed_count = %s")
+                values.append(processed_count)
+            if total_count is not None:
+                updates.append("total_count = %s")
+                values.append(total_count)
 
-        if updates:
-            values.append(job_id)
-            cursor.execute(f"""
-                UPDATE background_jobs
-                SET {', '.join(updates)}
-                WHERE id = %s
-            """, tuple(values))
-            conn.commit()
-
-        self.return_connection(conn)
+            if updates:
+                values.append(job_id)
+                cursor.execute(f"""
+                    UPDATE background_jobs
+                    SET {', '.join(updates)}
+                    WHERE id = %s
+                """, tuple(values))
+                conn.commit()
+        finally:
+            self.return_connection(conn)
 
     def update_job_status(self, job_id: int, status: str):
         """Update job status"""
         conn = self.get_connection()
-        cursor = conn.cursor()
-        cursor.execute("""
-            UPDATE background_jobs
-            SET status = %s,
-                started_at = CASE WHEN %s = 'running' AND started_at IS NULL THEN NOW() ELSE started_at END
-            WHERE id = %s
-        """, (status, status, job_id))
-        conn.commit()
-        self.return_connection(conn)
+        try:
+            cursor = conn.cursor()
+            cursor.execute("""
+                UPDATE background_jobs
+                SET status = %s,
+                    started_at = CASE WHEN %s = 'running' AND started_at IS NULL THEN NOW() ELSE started_at END
+                WHERE id = %s
+            """, (status, status, job_id))
+            conn.commit()
+        finally:
+            self.return_connection(conn)
 
     def complete_job(self, job_id: int, result: Dict[str, Any]):
         """Mark job as completed with result"""
         conn = self.get_connection()
-        cursor = conn.cursor()
-        cursor.execute("""
-            UPDATE background_jobs
-            SET status = 'completed',
-                result = %s,
-                completed_at = NOW(),
-                progress_pct = 100
-            WHERE id = %s
-        """, (json.dumps(result), job_id))
-        conn.commit()
-        self.return_connection(conn)
+        try:
+            cursor = conn.cursor()
+            cursor.execute("""
+                UPDATE background_jobs
+                SET status = 'completed',
+                    result = %s,
+                    completed_at = NOW(),
+                    progress_pct = 100
+                WHERE id = %s
+            """, (json.dumps(result), job_id))
+            conn.commit()
+        finally:
+            self.return_connection(conn)
 
     def fail_job(self, job_id: int, error_message: str):
         """Mark job as failed with error message"""
         conn = self.get_connection()
-        cursor = conn.cursor()
-        cursor.execute("""
-            UPDATE background_jobs
-            SET status = 'failed',
-                error_message = %s,
-                completed_at = NOW()
-            WHERE id = %s
-        """, (error_message, job_id))
-        conn.commit()
-        self.return_connection(conn)
+        try:
+            cursor = conn.cursor()
+            cursor.execute("""
+                UPDATE background_jobs
+                SET status = 'failed',
+                    error_message = %s,
+                    completed_at = NOW()
+                WHERE id = %s
+            """, (error_message, job_id))
+            conn.commit()
+        finally:
+            self.return_connection(conn)
 
     def cancel_job(self, job_id: int):
         """Cancel a job"""
         conn = self.get_connection()
-        cursor = conn.cursor()
-        cursor.execute("""
-            UPDATE background_jobs
-            SET status = 'cancelled',
-                completed_at = NOW()
-            WHERE id = %s
-        """, (job_id,))
-        conn.commit()
-        self.return_connection(conn)
+        try:
+            cursor = conn.cursor()
+            cursor.execute("""
+                UPDATE background_jobs
+                SET status = 'cancelled',
+                    completed_at = NOW()
+                WHERE id = %s
+            """, (job_id,))
+            conn.commit()
+        finally:
+            self.return_connection(conn)
 
     def extend_job_claim(self, job_id: int, minutes: int = 10):
         """Extend job claim expiry (heartbeat)"""
         conn = self.get_connection()
-        cursor = conn.cursor()
-        cursor.execute("""
-            UPDATE background_jobs
-            SET claim_expires_at = NOW() + INTERVAL '%s minutes'
-            WHERE id = %s
-        """, (minutes, job_id))
-        conn.commit()
-        self.return_connection(conn)
+        try:
+            cursor = conn.cursor()
+            cursor.execute("""
+                UPDATE background_jobs
+                SET claim_expires_at = NOW() + INTERVAL '%s minutes'
+                WHERE id = %s
+            """, (minutes, job_id))
+            conn.commit()
+        finally:
+            self.return_connection(conn)
 
     def get_pending_jobs_count(self) -> int:
         """Get count of pending jobs"""
         conn = self.get_connection()
-        cursor = conn.cursor()
-        cursor.execute("SELECT COUNT(*) FROM background_jobs WHERE status = 'pending'")
-        count = cursor.fetchone()[0]
-        self.return_connection(conn)
-        return count
+        try:
+            cursor = conn.cursor()
+            cursor.execute("SELECT COUNT(*) FROM background_jobs WHERE status = 'pending'")
+            count = cursor.fetchone()[0]
+            return count
+        finally:
+            self.return_connection(conn)
 
     def release_job(self, job_id: int):
         """Release a claimed job back to pending status"""
         conn = self.get_connection()
-        cursor = conn.cursor()
-        cursor.execute("""
-            UPDATE background_jobs
-            SET status = 'pending',
-                claimed_by = NULL,
-                claimed_at = NULL,
-                claim_expires_at = NULL
-            WHERE id = %s
-        """, (job_id,))
-        conn.commit()
-        self.return_connection(conn)
+        try:
+            cursor = conn.cursor()
+            cursor.execute("""
+                UPDATE background_jobs
+                SET status = 'pending',
+                    claimed_by = NULL,
+                    claimed_at = NULL,
+                    claim_expires_at = NULL
+                WHERE id = %s
+            """, (job_id,))
+            conn.commit()
+        finally:
+            self.return_connection(conn)

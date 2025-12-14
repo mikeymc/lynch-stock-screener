@@ -569,7 +569,18 @@ def create_job():
         job_type = data['type']
         params = data.get('params', {})
 
+        # Check connection pool health before creating job
+        pool_stats = db.get_pool_stats()
+        if pool_stats['usage_percent'] >= 95:
+            logger.error(f"Connection pool near exhaustion: {pool_stats}")
+            return jsonify({
+                'error': 'Database connection pool exhausted',
+                'pool_stats': pool_stats
+            }), 503
+
+        logger.info(f"Creating background job: type={job_type}, params={params}")
         job_id = db.create_background_job(job_type, params)
+        logger.info(f"Created background job {job_id}")
 
         return jsonify({
             'job_id': job_id,
@@ -577,7 +588,7 @@ def create_job():
         })
 
     except Exception as e:
-        print(f"Error creating job: {e}")
+        logger.error(f"Error creating job: type={data.get('type') if data else 'unknown'}, error={e}", exc_info=True)
         return jsonify({'error': str(e)}), 500
 
 
