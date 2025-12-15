@@ -29,7 +29,12 @@ class Database:
             'port': port,
             'database': database,
             'user': user,
-            'password': password
+            'password': password,
+            # TCP keepalive settings to prevent idle connection timeouts
+            'keepalives': 1,
+            'keepalives_idle': 30,      # Start keepalives after 30 seconds of idle
+            'keepalives_interval': 10,  # Send keepalive every 10 seconds
+            'keepalives_count': 5       # Close connection after 5 failed keepalives
         }
 
         self._lock = threading.Lock()
@@ -89,6 +94,23 @@ class Database:
         """Get a connection from the pool"""
         try:
             conn = self.connection_pool.getconn()
+
+            # Validate connection is still alive - if not, close and get a new one
+            if conn.closed:
+                logger.warning("Connection from pool was already closed, getting new connection")
+                self.connection_pool.putconn(conn, close=True)
+                conn = self.connection_pool.getconn()
+            else:
+                # Test the connection with a simple query
+                try:
+                    cursor = conn.cursor()
+                    cursor.execute("SELECT 1")
+                    cursor.close()
+                except Exception as test_error:
+                    logger.warning(f"Connection validation failed ({test_error}), getting new connection")
+                    self.connection_pool.putconn(conn, close=True)
+                    conn = self.connection_pool.getconn()
+
             with self._pool_stats_lock:
                 self._connections_checked_out += 1
                 self._current_connections_in_use += 1
