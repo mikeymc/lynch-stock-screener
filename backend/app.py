@@ -41,6 +41,10 @@ import logging
 # Feature flag for background job processing
 USE_BACKGROUND_JOBS = os.environ.get('USE_BACKGROUND_JOBS', 'false').lower() == 'true'
 
+# Available AI models for analysis generation
+AVAILABLE_AI_MODELS = ["gemini-2.5-flash", "gemini-3-pro-preview"]
+DEFAULT_AI_MODEL = "gemini-2.5-flash"
+
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -630,6 +634,15 @@ def cancel_job(job_id):
 def get_algorithms():
     """Return metadata for all available scoring algorithms."""
     return jsonify(ALGORITHM_METADATA)
+
+
+@app.route('/api/ai-models', methods=['GET'])
+def get_available_models():
+    """Return list of available AI models for analysis generation."""
+    return jsonify({
+        'models': AVAILABLE_AI_MODELS,
+        'default': DEFAULT_AI_MODEL
+    })
 
 
 @app.route('/api/settings', methods=['GET'])
@@ -1431,6 +1444,11 @@ def get_lynch_analysis(symbol, user_id):
     cached_analysis = db.get_lynch_analysis(user_id, symbol)
     was_cached = cached_analysis is not None
 
+    # Get model from query parameter and validate
+    model = request.args.get('model', DEFAULT_AI_MODEL)
+    if model not in AVAILABLE_AI_MODELS:
+        return jsonify({'error': f'Invalid model: {model}. Must be one of {AVAILABLE_AI_MODELS}'}), 400
+
     # If only_cached is requested, return what we have (or None)
     only_cached = request.args.get('only_cached', 'false').lower() == 'true'
     if only_cached:
@@ -1461,7 +1479,8 @@ def get_lynch_analysis(symbol, user_id):
             sections=sections,
             news=news_articles,
             material_events=material_events,
-            use_cache=True
+            use_cache=True,
+            model_version=model
         )
 
         # Get timestamp (fetch again if it was just generated)
@@ -1512,6 +1531,12 @@ def refresh_lynch_analysis(symbol, user_id):
     if not country or country.upper() in ['USA', 'UNITED STATES']:
         sections = db.get_filing_sections(symbol)
 
+    # Get model from request body and validate
+    data = request.get_json() or {}
+    model = data.get('model', DEFAULT_AI_MODEL)
+    if model not in AVAILABLE_AI_MODELS:
+        return jsonify({'error': f'Invalid model: {model}. Must be one of {AVAILABLE_AI_MODELS}'}), 400
+
     # Force regeneration
     try:
         # Fetch material events and news articles for context
@@ -1526,7 +1551,8 @@ def refresh_lynch_analysis(symbol, user_id):
             sections=sections,
             news=news_articles,
             material_events=material_events,
-            use_cache=False
+            use_cache=False,
+            model_version=model
         )
 
         cached_analysis = db.get_lynch_analysis(user_id, symbol)
@@ -1570,6 +1596,11 @@ def get_unified_chart_analysis(symbol, user_id):
         'revenue_cagr': evaluation.get('revenue_cagr') if evaluation else None
     }
 
+    # Get model from request body and validate
+    model = data.get('model', DEFAULT_AI_MODEL)
+    if model not in AVAILABLE_AI_MODELS:
+        return jsonify({'error': f'Invalid model: {model}. Must be one of {AVAILABLE_AI_MODELS}'}), 400
+
     # Check cache first
     force_refresh = data.get('force_refresh', False)
     only_cached = data.get('only_cached', False)
@@ -1578,9 +1609,9 @@ def get_unified_chart_analysis(symbol, user_id):
     cached_growth = db.get_chart_analysis(user_id, symbol, 'growth')
     cached_cash = db.get_chart_analysis(user_id, symbol, 'cash')
     cached_valuation = db.get_chart_analysis(user_id, symbol, 'valuation')
-    
+
     all_cached = cached_growth and cached_cash and cached_valuation
-    
+
     if all_cached and not force_refresh:
         return jsonify({
             'sections': {
@@ -1591,7 +1622,7 @@ def get_unified_chart_analysis(symbol, user_id):
             'cached': True,
             'generated_at': cached_growth['generated_at']
         })
-    
+
     # If only_cached is True and not all sections are cached, return empty
     if only_cached:
         return jsonify({})
@@ -1613,12 +1644,13 @@ def get_unified_chart_analysis(symbol, user_id):
             history,
             sections=sections_data,
             news=news_articles,
-            material_events=material_events
+            material_events=material_events,
+            model_version=model
         )
 
         # Save each section to cache for this user
         for section_name, analysis_text in sections.items():
-            db.set_chart_analysis(user_id, symbol, section_name, analysis_text, lynch_analyst.model_version)
+            db.set_chart_analysis(user_id, symbol, section_name, analysis_text, model)
 
         return jsonify({
             'sections': sections,

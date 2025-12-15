@@ -6,6 +6,10 @@ from typing import Dict, Any, List, Optional
 from datetime import datetime
 import google.generativeai as genai
 
+# Available AI models for analysis generation
+AVAILABLE_MODELS = ["gemini-2.5-flash", "gemini-3-pro-preview"]
+DEFAULT_MODEL = "gemini-2.5-flash"
+
 
 class LynchAnalyst:
     def __init__(self, db, api_key: Optional[str] = None, prompt_template_path: Optional[str] = None, checklist_path: Optional[str] = None):
@@ -19,7 +23,6 @@ class LynchAnalyst:
             checklist_path: Path to the Lynch checklist file
         """
         self.db = db
-        self.model_version = "gemini-3-pro-preview" #"gemini-2.5-flash"
 
         # Use absolute paths relative to this file's location
         script_dir = os.path.dirname(os.path.abspath(__file__))
@@ -225,7 +228,7 @@ class LynchAnalyst:
 
         return formatted_prompt
 
-    def generate_analysis(self, stock_data: Dict[str, Any], history: List[Dict[str, Any]], sections: Optional[Dict[str, Any]] = None, news: Optional[List[Dict[str, Any]]] = None, material_events: Optional[List[Dict[str, Any]]] = None) -> str:
+    def generate_analysis(self, stock_data: Dict[str, Any], history: List[Dict[str, Any]], sections: Optional[Dict[str, Any]] = None, news: Optional[List[Dict[str, Any]]] = None, material_events: Optional[List[Dict[str, Any]]] = None, model_version: str = DEFAULT_MODEL) -> str:
         """
         Generate a new Peter Lynch-style analysis using Gemini AI
 
@@ -235,16 +238,21 @@ class LynchAnalyst:
             sections: Optional dict of filing sections
             news: Optional list of news articles
             material_events: Optional list of material events (8-K filings)
+            model_version: Gemini model to use for generation
 
         Returns:
             Generated analysis text
 
         Raises:
             Exception: If API call fails
+            ValueError: If model_version is not in AVAILABLE_MODELS
         """
+        if model_version not in AVAILABLE_MODELS:
+            raise ValueError(f"Invalid model: {model_version}. Must be one of {AVAILABLE_MODELS}")
+
         prompt = self.format_prompt(stock_data, history, sections, news, material_events)
 
-        model = genai.GenerativeModel(self.model_version)
+        model = genai.GenerativeModel(model_version)
         response = model.generate_content(prompt)
 
         # Check if response was blocked or has no content
@@ -274,7 +282,8 @@ class LynchAnalyst:
         history: List[Dict[str, Any]],
         sections: Optional[Dict[str, Any]] = None,
         news: Optional[List[Dict[str, Any]]] = None,
-        material_events: Optional[List[Dict[str, Any]]] = None
+        material_events: Optional[List[Dict[str, Any]]] = None,
+        model_version: str = DEFAULT_MODEL
     ) -> Dict[str, str]:
         """
         Generate a unified Peter Lynch-style analysis for all three chart sections.
@@ -286,10 +295,16 @@ class LynchAnalyst:
             sections: Optional dict of filing sections
             news: Optional list of news articles
             material_events: Optional list of material events (8-K filings)
+            model_version: Gemini model to use for generation
 
         Returns:
             Dict with keys 'growth', 'cash', 'valuation' containing analysis text for each section
+
+        Raises:
+            ValueError: If model_version is not in AVAILABLE_MODELS
         """
+        if model_version not in AVAILABLE_MODELS:
+            raise ValueError(f"Invalid model: {model_version}. Must be one of {AVAILABLE_MODELS}")
         # Load the unified prompt template
         script_dir = os.path.dirname(os.path.abspath(__file__))
         prompt_path = os.path.join(script_dir, "chart_analysis_prompt.md")
@@ -404,7 +419,7 @@ class LynchAnalyst:
             final_prompt += sections_text
 
         # Generate unified analysis
-        model = genai.GenerativeModel(self.model_version)
+        model = genai.GenerativeModel(model_version)
         response = model.generate_content(final_prompt)
 
         # Check if response was blocked or has no content
@@ -456,7 +471,8 @@ class LynchAnalyst:
         sections: Optional[Dict[str, Any]] = None,
         news: Optional[List[Dict[str, Any]]] = None,
         material_events: Optional[List[Dict[str, Any]]] = None,
-        use_cache: bool = True
+        use_cache: bool = True,
+        model_version: str = DEFAULT_MODEL
     ) -> str:
         """
         Get cached analysis or generate a new one
@@ -470,10 +486,17 @@ class LynchAnalyst:
             news: Optional list of news articles
             material_events: Optional list of material events (8-K filings)
             use_cache: Whether to use cached analysis if available
+            model_version: Gemini model to use for generation
 
         Returns:
             Analysis text (from cache or freshly generated)
+
+        Raises:
+            ValueError: If model_version is not in AVAILABLE_MODELS
         """
+        if model_version not in AVAILABLE_MODELS:
+            raise ValueError(f"Invalid model: {model_version}. Must be one of {AVAILABLE_MODELS}")
+
         # Check cache first
         if use_cache:
             cached = self.db.get_lynch_analysis(user_id, symbol)
@@ -481,9 +504,9 @@ class LynchAnalyst:
                 return cached['analysis_text']
 
         # Generate new analysis
-        analysis_text = self.generate_analysis(stock_data, history, sections, news, material_events)
+        analysis_text = self.generate_analysis(stock_data, history, sections, news, material_events, model_version)
 
         # Save to cache for this user
-        self.db.save_lynch_analysis(user_id, symbol, analysis_text, self.model_version)
+        self.db.save_lynch_analysis(user_id, symbol, analysis_text, model_version)
 
         return analysis_text

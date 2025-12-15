@@ -1,11 +1,13 @@
 // ABOUTME: Component to generate and display unified chart analysis for all three sections
 import { useState, useEffect } from 'react'
 import ReactMarkdown from 'react-markdown'
+import ModelSelector from './ModelSelector'
 
 export default function UnifiedChartAnalysis({ symbol, onAnalysisGenerated }) {
     const [sections, setSections] = useState({ growth: null, cash: null, valuation: null })
     const [loading, setLoading] = useState(false)
     const [error, setError] = useState(null)
+    const [selectedModel, setSelectedModel] = useState('gemini-2.5-flash')
 
     // Check for cached analyses on mount
     useEffect(() => {
@@ -17,7 +19,8 @@ export default function UnifiedChartAnalysis({ symbol, onAnalysisGenerated }) {
                 'Content-Type': 'application/json',
             },
             body: JSON.stringify({
-                only_cached: true
+                only_cached: true,
+                model: selectedModel
             }),
             signal: controller.signal
         })
@@ -37,7 +40,7 @@ export default function UnifiedChartAnalysis({ symbol, onAnalysisGenerated }) {
             })
 
         return () => controller.abort()
-    }, [symbol])
+    }, [symbol, selectedModel])
 
     const generateAnalysis = async (forceRefresh = false) => {
         setLoading(true)
@@ -49,7 +52,8 @@ export default function UnifiedChartAnalysis({ symbol, onAnalysisGenerated }) {
                     'Content-Type': 'application/json',
                 },
                 body: JSON.stringify({
-                    force_refresh: forceRefresh
+                    force_refresh: forceRefresh,
+                    model: selectedModel
                 })
             })
 
@@ -73,7 +77,12 @@ export default function UnifiedChartAnalysis({ symbol, onAnalysisGenerated }) {
 
     return (
         <div style={{ marginBottom: '2rem' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+            <div style={{ display: 'flex', justifyContent: 'flex-start', alignItems: 'center', gap: '1rem', marginBottom: '1rem' }}>
+                <ModelSelector
+                    selectedModel={selectedModel}
+                    onModelChange={setSelectedModel}
+                    storageKey="chartAnalysisModel"
+                />
                 {!loading && (
                     <button
                         onClick={() => generateAnalysis(hasAnyAnalysis)}

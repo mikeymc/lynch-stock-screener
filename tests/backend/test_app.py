@@ -300,7 +300,11 @@ def test_lynch_analysis_refresh_endpoint(mock_model_class, client, test_db, monk
         sess['user_id'] = user_id
 
     # Request refresh
-    response = client.post(f'/api/stock/{symbol}/lynch-analysis/refresh')
+    response = client.post(
+        f'/api/stock/{symbol}/lynch-analysis/refresh',
+        data=json.dumps({'model': 'gemini-2.5-flash'}),
+        content_type='application/json'
+    )
 
     assert response.status_code == 200
     data = json.loads(response.data)

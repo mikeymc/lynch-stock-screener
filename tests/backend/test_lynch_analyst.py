@@ -52,7 +52,6 @@ def test_lynch_analyst_initialization(analyst):
     """Test that LynchAnalyst initializes properly"""
     assert analyst is not None
     assert analyst.db is not None
-    assert analyst.model_version == "gemini-3-pro-preview" #"gemini-2.5-flash"
 
 
 def test_format_prompt_includes_key_metrics(analyst, sample_stock_data, sample_history):
@@ -109,7 +108,7 @@ def test_generate_analysis_calls_gemini_api(mock_model_class, analyst, sample_st
     mock_model_class.return_value = mock_model
 
     # Generate analysis
-    result = analyst.generate_analysis(sample_stock_data, sample_history)
+    result = analyst.generate_analysis(sample_stock_data, sample_history, model_version="gemini-2.5-flash")
 
     # Verify API was called
     assert mock_model.generate_content.called
@@ -126,7 +125,7 @@ def test_generate_analysis_handles_api_error(mock_model_class, analyst, sample_s
 
     # Should raise exception
     with pytest.raises(Exception):
-        analyst.generate_analysis(sample_stock_data, sample_history)
+        analyst.generate_analysis(sample_stock_data, sample_history, model_version="gemini-2.5-flash")
 
 
 def test_get_or_generate_uses_cache(analyst, test_db, sample_stock_data, sample_history):
@@ -138,10 +137,10 @@ def test_get_or_generate_uses_cache(analyst, test_db, sample_stock_data, sample_
     cached_text = "This is a cached analysis"
     test_db.save_stock_basic("AAPL", "Apple Inc.", "NASDAQ", "Technology")
     test_db.flush()  # Ensure stock is committed before saving analysis
-    test_db.save_lynch_analysis(user_id, "AAPL", cached_text, "gemini-3-pro-preview")
+    test_db.save_lynch_analysis(user_id, "AAPL", cached_text, "gemini-2.5-flash")
 
     # Should return cached analysis without calling API
-    result = analyst.get_or_generate_analysis(user_id, "AAPL", sample_stock_data, sample_history, use_cache=True)
+    result = analyst.get_or_generate_analysis(user_id, "AAPL", sample_stock_data, sample_history, use_cache=True, model_version="gemini-2.5-flash")
 
     assert result == cached_text
 
@@ -162,10 +161,10 @@ def test_get_or_generate_bypasses_cache_when_requested(mock_model_class, analyst
     # Save a cached analysis
     test_db.save_stock_basic("AAPL", "Apple Inc.", "NASDAQ", "Technology")
     test_db.flush()  # Ensure stock is committed before saving analysis
-    test_db.save_lynch_analysis(user_id, "AAPL", "Old cached analysis", "gemini-pro")
+    test_db.save_lynch_analysis(user_id, "AAPL", "Old cached analysis", "gemini-2.5-flash")
 
     # Request fresh analysis
-    result = analyst.get_or_generate_analysis(user_id, "AAPL", sample_stock_data, sample_history, use_cache=False)
+    result = analyst.get_or_generate_analysis(user_id, "AAPL", sample_stock_data, sample_history, use_cache=False, model_version="gemini-2.5-flash")
 
     # Should call API and return fresh analysis
     assert mock_model.generate_content.called
@@ -188,7 +187,7 @@ def test_get_or_generate_saves_to_cache(mock_model_class, analyst, test_db, samp
     # Generate analysis
     test_db.save_stock_basic("AAPL", "Apple Inc.", "NASDAQ", "Technology")
     test_db.flush()  # Ensure stock is committed before saving analysis
-    result = analyst.get_or_generate_analysis(user_id, "AAPL", sample_stock_data, sample_history, use_cache=False)
+    result = analyst.get_or_generate_analysis(user_id, "AAPL", sample_stock_data, sample_history, use_cache=False, model_version="gemini-2.5-flash")
 
     # Verify it was saved to database
     cached = test_db.get_lynch_analysis(user_id, "AAPL")

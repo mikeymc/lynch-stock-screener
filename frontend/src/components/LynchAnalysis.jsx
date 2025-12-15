@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import ReactMarkdown from 'react-markdown'
+import ModelSelector from './ModelSelector'
 
 const API_BASE = '/api'
 
@@ -10,6 +11,7 @@ function LynchAnalysis({ symbol, stockName, onAnalysisLoaded }) {
   const [generatedAt, setGeneratedAt] = useState(null)
   const [cached, setCached] = useState(false)
   const [refreshing, setRefreshing] = useState(false)
+  const [selectedModel, setSelectedModel] = useState('gemini-2.5-flash')
 
   const fetchAnalysis = async (forceRefresh = false, signal = null, onlyCached = false) => {
     try {
@@ -25,12 +27,20 @@ function LynchAnalysis({ symbol, stockName, onAnalysisLoaded }) {
         : `${API_BASE}/stock/${symbol}/lynch-analysis`
 
       if (onlyCached && !forceRefresh) {
-        url += '?only_cached=true'
+        url += `?only_cached=true&model=${selectedModel}`
+      } else if (!forceRefresh) {
+        url += `?model=${selectedModel}`
       }
 
       const method = forceRefresh ? 'POST' : 'GET'
 
-      const response = await fetch(url, { method, signal })
+      const options = { method, signal }
+      if (forceRefresh) {
+        options.headers = { 'Content-Type': 'application/json' }
+        options.body = JSON.stringify({ model: selectedModel })
+      }
+
+      const response = await fetch(url, options)
 
       if (!response.ok) {
         throw new Error(`Failed to fetch analysis: ${response.statusText}`)
@@ -71,7 +81,7 @@ function LynchAnalysis({ symbol, stockName, onAnalysisLoaded }) {
     const controller = new AbortController()
     fetchAnalysis(false, controller.signal, true)
     return () => controller.abort()
-  }, [symbol])
+  }, [symbol, selectedModel])
 
   const formatDate = (isoString) => {
     if (!isoString) return ''
@@ -123,9 +133,16 @@ function LynchAnalysis({ symbol, stockName, onAnalysisLoaded }) {
         </div>
         <div className="lynch-analysis-empty">
           <p>No analysis generated yet for {stockName}.</p>
-          <button onClick={handleGenerate} className="generate-button">
-            ✨ Generate Analysis
-          </button>
+          <div style={{ display: 'flex', flexDirection: 'row', gap: '1rem', alignItems: 'center', justifyContent: 'center' }}>
+            <ModelSelector
+              selectedModel={selectedModel}
+              onModelChange={setSelectedModel}
+              storageKey="lynchAnalysisModel"
+            />
+            <button onClick={handleGenerate} className="generate-button">
+              ✨ Generate Analysis
+            </button>
+          </div>
         </div>
       </div>
     )
@@ -140,13 +157,20 @@ function LynchAnalysis({ symbol, stockName, onAnalysisLoaded }) {
             {cached ? '📦 Cached' : '✨ Freshly Generated'} • Generated {formatDate(generatedAt)}
           </p>
         </div>
-        <button
-          onClick={handleRefresh}
-          disabled={refreshing}
-          className="refresh-button"
-        >
-          {refreshing ? 'Regenerating...' : '🔄 Regenerate'}
-        </button>
+        <div style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
+          <ModelSelector
+            selectedModel={selectedModel}
+            onModelChange={setSelectedModel}
+            storageKey="lynchAnalysisModel"
+          />
+          <button
+            onClick={handleRefresh}
+            disabled={refreshing}
+            className="refresh-button"
+          >
+            {refreshing ? 'Regenerating...' : '🔄 Regenerate'}
+          </button>
+        </div>
       </div>
       <div className="lynch-analysis-content markdown-content">
         <ReactMarkdown>{analysis}</ReactMarkdown>
