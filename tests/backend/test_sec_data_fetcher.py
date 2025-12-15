@@ -17,6 +17,9 @@ class TestSECDataFetcher:
         db.get_stock_metrics = Mock()
         db.save_sec_filing = Mock()
         db.save_filing_section = Mock()
+        # Mock cache validity methods - return False so fetching proceeds
+        db.is_filings_cache_valid = Mock(return_value=False)
+        db.is_sections_cache_valid = Mock(return_value=False)
         return db
     
     @pytest.fixture

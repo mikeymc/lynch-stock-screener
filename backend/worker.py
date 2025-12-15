@@ -146,15 +146,25 @@ class BackgroundWorker:
         from finnhub_news import FinnhubNewsClient
         from sec_8k_client import SEC8KClient
         
-        # Initialize fetchers
+        # Pre-fetch CIK cache once for all SEC operations (Optimization 1)
+        sec_user_agent = os.environ.get('SEC_USER_AGENT', 'Lynch Stock Screener mikey@example.com')
+        logger.info("Pre-fetching SEC CIK mappings...")
+        cik_cache = EdgarFetcher.prefetch_cik_cache(sec_user_agent)
+        
+        # Initialize fetchers with shared CIK cache
         fetcher = DataFetcher(self.db)
         analyzer = EarningsAnalyzer(self.db)
         edgar_fetcher = EdgarFetcher(
-            user_agent="Lynch Stock Screener mikey@example.com",
-            db=self.db
+            user_agent=sec_user_agent,
+            db=self.db,
+            cik_cache=cik_cache  # Pass pre-fetched CIK cache
         )
         finnhub_client = FinnhubNewsClient(api_key=os.environ.get('FINNHUB_API_KEY', 'd4nkaqpr01qk2nucd6q0d4nkaqpr01qk2nucd6qg'))
-        sec_8k_client = SEC8KClient(user_agent=os.environ.get('SEC_USER_AGENT', 'Lynch Stock Screener mikey@example.com'))
+        # Pass EdgarFetcher to SEC8KClient for Company object caching (Optimization 4)
+        sec_8k_client = SEC8KClient(
+            user_agent=sec_user_agent,
+            edgar_fetcher=edgar_fetcher
+        )
         
         # Initialize price client
         price_client = TradingViewPriceClient()

@@ -17,7 +17,7 @@ class EdgarFetcher:
     TICKER_CIK_URL = "https://www.sec.gov/files/company_tickers.json"
     COMPANY_FACTS_URL = f"{BASE_URL}/api/xbrl/companyfacts/CIK{{cik}}.json"
 
-    def __init__(self, user_agent: str, use_bulk_cache: bool = True, cache_dir: str = "./sec_cache", db=None):
+    def __init__(self, user_agent: str, use_bulk_cache: bool = True, cache_dir: str = "./sec_cache", db=None, cik_cache: Dict[str, str] = None):
         """
         Initialize EDGAR fetcher with required User-Agent header
 
@@ -26,19 +26,25 @@ class EdgarFetcher:
             use_bulk_cache: Whether to use PostgreSQL cache (default: True)
             cache_dir: Deprecated - kept for backwards compatibility
             db: Optional Database instance for querying company_facts
+            cik_cache: Optional pre-loaded ticker-to-CIK mapping to avoid HTTP calls
         """
         self.user_agent = user_agent
         self.headers = {
             'User-Agent': user_agent,
             'Accept-Encoding': 'gzip, deflate'
         }
-        self.ticker_to_cik_cache = None
+        # Use pre-loaded cache if provided, otherwise will be loaded on first use
+        self.ticker_to_cik_cache = cik_cache
         self.last_request_time = 0
         self.min_request_interval = 0.1  # 10 requests per second max
 
         # Use PostgreSQL for SEC data
         self.use_bulk_cache = use_bulk_cache
         self.db = db
+        
+        # Cache for edgartools Company objects to avoid redundant SEC calls
+        # Key: CIK, Value: Company object
+        self._company_cache: Dict[str, Company] = {}
 
         # Set identity for edgartools
         set_identity(user_agent)
@@ -73,6 +79,71 @@ class EdgarFetcher:
         if elapsed < self.min_request_interval:
             time.sleep(self.min_request_interval - elapsed)
         self.last_request_time = time.time()
+
+    @staticmethod
+    def prefetch_cik_cache(user_agent: str) -> Dict[str, str]:
+        """
+        Pre-fetch ticker-to-CIK mapping from SEC.
+        
+        Call this once at worker startup and pass the result to EdgarFetcher instances.
+        This avoids multiple EdgarFetcher instances each making their own HTTP call.
+        
+        Args:
+            user_agent: User-Agent string in format "Company Name email@example.com"
+            
+        Returns:
+            Dictionary mapping ticker symbols to CIK numbers
+        """
+        headers = {
+            'User-Agent': user_agent,
+            'Accept-Encoding': 'gzip, deflate'
+        }
+        url = "https://www.sec.gov/files/company_tickers.json"
+        
+        try:
+            response = requests.get(url, headers=headers, timeout=10)
+            response.raise_for_status()
+            data = response.json()
+            
+            # Build mapping dictionary
+            mapping = {}
+            for entry in data.values():
+                ticker = entry.get('ticker', '').upper()
+                cik = str(entry.get('cik_str', '')).zfill(10)
+                mapping[ticker] = cik
+            
+            logger.info(f"[EdgarFetcher] Pre-fetched CIK mappings for {len(mapping)} tickers")
+            return mapping
+            
+        except Exception as e:
+            logger.error(f"[EdgarFetcher] Error pre-fetching CIK mappings: {e}")
+            return {}
+
+    def get_company(self, cik: str) -> Optional[Company]:
+        """
+        Get or create a cached edgartools Company object.
+        
+        This caches Company objects to avoid redundant SEC API calls when
+        the same company is accessed multiple times (e.g., for 10-K and 10-Q extraction).
+        
+        Args:
+            cik: 10-digit CIK number
+            
+        Returns:
+            Cached Company object or None if creation fails
+        """
+        if cik in self._company_cache:
+            logger.debug(f"[CIK {cik}] Using cached Company object")
+            return self._company_cache[cik]
+        
+        try:
+            company = Company(cik)
+            self._company_cache[cik] = company
+            logger.debug(f"[CIK {cik}] Created and cached Company object")
+            return company
+        except Exception as e:
+            logger.error(f"[CIK {cik}] Error creating Company object: {e}")
+            return None
 
     def _load_ticker_to_cik_mapping(self) -> Dict[str, str]:
         """Load ticker-to-CIK mapping from SEC"""
@@ -1600,8 +1671,11 @@ class EdgarFetcher:
                 logger.warning(f"[SECDataFetcher][{ticker}] Could not find CIK for section extraction")
                 return {}
 
-            # Get company using CIK (more reliable)
-            company = Company(cik)
+            # Get company using cached Company object (avoids redundant SEC calls)
+            company = self.get_company(cik)
+            if not company:
+                logger.warning(f"[SECDataFetcher][{ticker}] Could not get Company object")
+                return {}
             filings = company.get_filings(form=filing_type)
 
             if not filings:

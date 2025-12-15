@@ -52,15 +52,17 @@ class SEC8KClient:
     MIN_REQUEST_INTERVAL = 0.1  # 10 req/sec SEC limit
     LOOKBACK_DAYS = 365  # Default: last year
 
-    def __init__(self, user_agent: str):
+    def __init__(self, user_agent: str, edgar_fetcher=None):
         """
         Initialize SEC 8-K client
 
         Args:
             user_agent: SEC requires format "Company email@example.com"
+            edgar_fetcher: Optional EdgarFetcher instance for sharing CIK and Company caches
         """
         self.user_agent = user_agent
         self.last_request_time = 0
+        self.edgar_fetcher = edgar_fetcher
         set_identity(user_agent)
         logger.info(f"[MaterialEventsFetcher] SEC8KClient initialized with user agent: {user_agent}")
 
@@ -94,7 +96,17 @@ class SEC8KClient:
 
         try:
             logger.info(f"[MaterialEventsFetcher] Fetching 8-K filings for {symbol} (last {days_back} days)")
-            company = Company(symbol.upper())
+            
+            # Use cached Company object if EdgarFetcher is available
+            company = None
+            if self.edgar_fetcher:
+                cik = self.edgar_fetcher.get_cik_for_ticker(symbol)
+                if cik:
+                    company = self.edgar_fetcher.get_company(cik)
+            
+            # Fall back to direct Company creation if no EdgarFetcher or CIK not found
+            if not company:
+                company = Company(symbol.upper())
 
             # Get 8-K filings
             filings = company.get_filings(form='8-K')

@@ -16,14 +16,16 @@ class SECDataFetcher:
         self.db = db
         self.edgar_fetcher = edgar_fetcher
     
-    def fetch_and_cache_all(self, symbol: str):
+    def fetch_and_cache_all(self, symbol: str, force_refresh: bool = False):
         """
         Fetch and cache all SEC data (filings + sections) in one call.
         
         Only fetches for US stocks to avoid unnecessary API calls.
+        Uses incremental caching - skips if data is already cached and valid.
         
         Args:
             symbol: Stock ticker symbol
+            force_refresh: If True, bypass cache and fetch fresh data
         """
         try:
             # Only fetch for US stocks
@@ -33,6 +35,15 @@ class SECDataFetcher:
                 if country not in ('US', 'USA', 'UNITED STATES', ''):
                     logger.debug(f"[SECDataFetcher][{symbol}] Skipping SEC data (non-US stock: {country})")
                     return
+            
+            # Optimization 3: Check if cache is valid before fetching
+            if not force_refresh:
+                # Check if filings cache is valid (less than 7 days old)
+                if self.db.is_filings_cache_valid(symbol, max_age_days=7):
+                    # Also check if we have sections cached
+                    if self.db.is_sections_cache_valid(symbol, max_age_days=30):
+                        logger.debug(f"[SECDataFetcher][{symbol}] Using cached SEC data (cache valid)")
+                        return
             
             # Fetch filings list
             logger.debug(f"[SECDataFetcher][{symbol}] Fetching SEC filings")
@@ -76,3 +87,4 @@ class SECDataFetcher:
         except Exception as e:
             logger.error(f"[SECDataFetcher][{symbol}] Error caching SEC data: {e}")
             # Don't raise - SEC data is optional
+

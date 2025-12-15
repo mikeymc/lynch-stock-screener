@@ -1733,6 +1733,35 @@ class Database:
         age_days = (datetime.now() - last_updated).total_seconds() / 86400
         return age_days < max_age_days
 
+    def get_latest_sec_filing_date(self, symbol: str) -> Optional[str]:
+        """
+        Get the most recent filing date for a symbol.
+        
+        Used for incremental fetching - only fetch filings newer than this date.
+        
+        Args:
+            symbol: Stock symbol
+            
+        Returns:
+            Filing date string (YYYY-MM-DD) or None if no filings cached
+        """
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT MAX(filing_date) FROM sec_filings
+            WHERE symbol = %s
+        """, (symbol,))
+        row = cursor.fetchone()
+        self.return_connection(conn)
+        
+        if not row or not row[0]:
+            return None
+        
+        # Return as string in YYYY-MM-DD format
+        if hasattr(row[0], 'strftime'):
+            return row[0].strftime('%Y-%m-%d')
+        return str(row[0])
+
     def save_filing_section(self, symbol: str, section_name: str, content: str, filing_type: str, filing_date: str):
         conn = self.get_connection()
         cursor = conn.cursor()
