@@ -77,14 +77,19 @@ class SEC8KClient:
     def fetch_recent_8ks(
         self,
         symbol: str,
-        days_back: int = None
+        days_back: int = None,
+        since_date: str = None
     ) -> List[Dict[str, Any]]:
         """
         Fetch 8-K filings from last N days
+        
+        Supports incremental fetching: if since_date is provided, only fetches
+        filings newer than that date (skips content download for older filings).
 
         Args:
             symbol: Stock ticker symbol
             days_back: Number of days to look back (default: LOOKBACK_DAYS)
+            since_date: Only fetch filings after this date (YYYY-MM-DD format)
 
         Returns:
             List of formatted event dicts
@@ -95,8 +100,6 @@ class SEC8KClient:
         self._rate_limit()
 
         try:
-            logger.info(f"[MaterialEventsFetcher] Fetching 8-K filings for {symbol} (last {days_back} days)")
-            
             # Use cached Company object if EdgarFetcher is available
             company = None
             if self.edgar_fetcher:
@@ -113,7 +116,17 @@ class SEC8KClient:
 
             # Filter by date
             cutoff = datetime.now() - timedelta(days=days_back)
-            cutoff_date = cutoff.date()  # Convert to date for comparison
+            cutoff_date = cutoff.date()
+            
+            # Parse since_date for incremental filtering
+            since_date_parsed = None
+            if since_date:
+                try:
+                    since_date_parsed = datetime.strptime(since_date, '%Y-%m-%d').date()
+                    logger.info(f"[MaterialEventsFetcher] Incremental fetch for {symbol}: only filings after {since_date}")
+                except ValueError:
+                    logger.warning(f"[MaterialEventsFetcher] Invalid since_date format: {since_date}, ignoring")
+            
             recent = []
 
             for filing in filings:
@@ -131,10 +144,14 @@ class SEC8KClient:
                     else:
                         filing_date_only = filing_date
 
+                    # Must be within lookback window
                     if filing_date_only >= cutoff_date:
+                        # For incremental fetch, skip filings we already have
+                        if since_date_parsed and filing_date_only <= since_date_parsed:
+                            continue
                         recent.append(filing)
 
-            logger.info(f"[MaterialEventsFetcher] Found {len(recent)} 8-K filings for {symbol}")
+            logger.info(f"[MaterialEventsFetcher] Found {len(recent)} {'new ' if since_date_parsed else ''}8-K filings for {symbol}")
 
             return [self.format_8k_event(filing, symbol) for filing in recent]
 

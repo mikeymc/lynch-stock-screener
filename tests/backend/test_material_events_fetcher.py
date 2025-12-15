@@ -15,6 +15,8 @@ class TestMaterialEventsFetcher:
         """Create a mock database"""
         db = Mock()
         db.save_material_event = Mock()
+        # Mock for incremental fetching - return None (no cached events)
+        db.get_latest_material_event_date = Mock(return_value=None)
         return db
     
     @pytest.fixture
@@ -52,8 +54,8 @@ class TestMaterialEventsFetcher:
         # Execute
         fetcher.fetch_and_cache_events(symbol)
         
-        # Verify
-        mock_sec_8k_client.fetch_recent_8ks.assert_called_once_with(symbol)
+        # Verify - now includes since_date for incremental fetching
+        mock_sec_8k_client.fetch_recent_8ks.assert_called_once_with(symbol, since_date=None)
         assert mock_db.save_material_event.call_count == 2
         mock_db.save_material_event.assert_any_call(symbol, events[0])
         mock_db.save_material_event.assert_any_call(symbol, events[1])

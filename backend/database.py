@@ -2077,6 +2077,35 @@ class Database:
             'last_updated': row[1]
         }
 
+    def get_latest_material_event_date(self, symbol: str) -> Optional[str]:
+        """
+        Get the most recent 8-K filing date for a symbol.
+        
+        Used for incremental fetching - only fetch filings newer than this date.
+        
+        Args:
+            symbol: Stock symbol
+            
+        Returns:
+            Filing date string (YYYY-MM-DD) or None if no events cached
+        """
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT MAX(filing_date) FROM material_events
+            WHERE symbol = %s
+        """, (symbol,))
+        row = cursor.fetchone()
+        self.return_connection(conn)
+        
+        if not row or not row[0]:
+            return None
+        
+        # Return as string in YYYY-MM-DD format
+        if hasattr(row[0], 'strftime'):
+            return row[0].strftime('%Y-%m-%d')
+        return str(row[0])
+
     def set_setting(self, key: str, value: Any, description: str = None):
         logger.info(f"Setting configuration: key='{key}', value={value}")
         conn = self.get_connection()
