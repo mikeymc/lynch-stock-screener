@@ -151,7 +151,7 @@ class TradingViewPriceClient:
                 'timestamp': datetime.now()
             }
             
-            logger.info(f"[PriceHistoryFetcher] Fetched price for {symbol} on {target_date}: ${price:.2f} (actual date: {closest_date.date()})")
+            logger.info(f"[PriceHistoryFetcher] Fetched cached price for {symbol} on {target_date}: ${price:.2f} (actual date: {closest_date.date()})")
             return price
             
         except Exception as e:
