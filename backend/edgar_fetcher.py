@@ -590,6 +590,34 @@ class EdgarFetcher:
         ocf_by_year = process_annual_data(ocf_data)
         capex_by_year = process_annual_data(capex_data)
 
+        # 3. Extract Net PPE and Depreciation for derived CapEx fallback
+        # This is used when direct CapEx tags are missing (e.g., NVDA 2013-2021)
+        ppe_net_data = []
+        deprec_data = []
+        try:
+            if 'us-gaap' in company_facts['facts']:
+                # Net PPE
+                if 'PropertyPlantAndEquipmentNet' in company_facts['facts']['us-gaap']:
+                    units = company_facts['facts']['us-gaap']['PropertyPlantAndEquipmentNet']['units']
+                    if 'USD' in units:
+                        ppe_net_data = units['USD']
+                
+                # Depreciation (preferred over DepreciationAndAmortization for accuracy)
+                if 'Depreciation' in company_facts['facts']['us-gaap']:
+                    units = company_facts['facts']['us-gaap']['Depreciation']['units']
+                    if 'USD' in units:
+                        deprec_data = units['USD']
+                elif 'DepreciationAndAmortization' in company_facts['facts']['us-gaap']:
+                    # Fallback to D&A if pure Depreciation not available
+                    units = company_facts['facts']['us-gaap']['DepreciationAndAmortization']['units']
+                    if 'USD' in units:
+                        deprec_data = units['USD']
+        except (KeyError, TypeError):
+            pass
+
+        ppe_net_by_year = process_annual_data(ppe_net_data)
+        deprec_by_year = process_annual_data(deprec_data)
+
         # Combine into result
         cash_flow_history = []
         all_years = set(ocf_by_year.keys()) | set(capex_by_year.keys())
@@ -599,13 +627,24 @@ class EdgarFetcher:
             capex = capex_by_year.get(year, {}).get('val')
             fiscal_end = ocf_by_year.get(year, {}).get('fiscal_end') or capex_by_year.get(year, {}).get('fiscal_end')
 
+            # If CapEx is missing, try to derive it: CapEx ≈ ΔNetPPE + Depreciation
+            if capex is None:
+                net_ppe_curr = ppe_net_by_year.get(year, {}).get('val')
+                net_ppe_prev = ppe_net_by_year.get(year - 1, {}).get('val')
+                deprec = deprec_by_year.get(year, {}).get('val')
+                
+                if net_ppe_curr is not None and net_ppe_prev is not None and deprec is not None:
+                    derived_capex = (net_ppe_curr - net_ppe_prev) + deprec
+                    # Sanity check: CapEx should generally be positive
+                    # Large negatives imply divestitures which aren't CapEx
+                    if derived_capex > -1_000_000:
+                        capex = derived_capex
+                        logger.debug(f"[Year {year}] Derived CapEx from PPE delta: ${capex:,.0f}")
+
+            # Calculate FCF
             fcf = None
             if ocf is not None and capex is not None:
                 fcf = ocf - capex
-            elif ocf is not None:
-                # If CapEx is missing, we can't calculate FCF accurately, but maybe we assume 0?
-                # Better to leave as None to indicate missing data
-                pass
 
             cash_flow_history.append({
                 'year': year,
