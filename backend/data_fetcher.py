@@ -338,6 +338,9 @@ class DataFetcher:
                 else:
                     logger.info(f"[{symbol}] Skipping yfinance fallback (using TradingView cache)")
 
+            # Flush queued writes to ensure data is committed
+            self.db.flush()
+
             # Return the metrics directly instead of querying DB (supports async writes)
             # Add company info to metrics for completeness
             metrics.update({
