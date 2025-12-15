@@ -18,9 +18,7 @@ def test_aapl_edgar_eps(test_db):
     print("\nFetching AAPL data from EDGAR...")
     result = fetcher.fetch_stock_data('AAPL', force_refresh=True)
 
-    if not result:
-        print("ERROR: Failed to fetch AAPL data")
-        return False
+    assert result, "ERROR: Failed to fetch AAPL data"
 
     print(f"\n✓ Successfully fetched AAPL data")
     print(f"  Price: ${result.get('price', 'N/A')}")
@@ -30,9 +28,7 @@ def test_aapl_edgar_eps(test_db):
     # Get earnings history
     earnings = test_db.get_earnings_history('AAPL')
 
-    if not earnings:
-        print("\nERROR: No earnings history found")
-        return False
+    assert earnings, "\nERROR: No earnings history found"
 
     print(f"\n✓ Retrieved {len(earnings)} years of earnings history")
     print("\nEarnings History (most recent first):")
@@ -79,7 +75,7 @@ def test_aapl_edgar_eps(test_db):
     print(f"  ✓ Total entries (annual + quarterly): {len(earnings)}")
     print(f"  ✓ Split-adjusted: {'YES' if has_sufficient_data else 'NEEDS VERIFICATION'}")
 
-    return has_sufficient_data
+    assert has_sufficient_data, "Insufficient annual data for verification"
 
 if __name__ == '__main__':
     success = test_aapl_edgar_eps()

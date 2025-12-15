@@ -20,15 +20,13 @@ def test_amd(test_db):
         print(f"  Debt-to-Equity: {result.get('debt_to_equity', 'N/A')}")
     else:
         print("✗ Failed to fetch AMD data")
-        return False
+        assert False, "Failed to fetch AMD data"
 
     # Check earnings history for debt-to-equity data
     print("\nChecking earnings history...")
     earnings_history = test_db.get_earnings_history("AMD")
 
-    if not earnings_history:
-        print("✗ No earnings history found")
-        return False
+    assert earnings_history, "✗ No earnings history found"
 
     print(f"Found {len(earnings_history)} periods")
 
@@ -57,12 +55,8 @@ def test_amd(test_db):
         for e in quarterly_with_de[:3]:
             print(f"  {e['period']}'{str(e['year'])[2:]}: D/E = {e['debt_to_equity']:.2f}")
 
-    if annual_with_de or quarterly_with_de:
-        print("\n✓ SUCCESS: Debt-to-equity data is present!")
-        return True
-    else:
-        print("\n✗ FAILURE: No debt-to-equity data found")
-        return False
+    assert annual_with_de or quarterly_with_de, "\n✗ FAILURE: No debt-to-equity data found"
+    print("\n✓ SUCCESS: Debt-to-equity data is present!")
 
 if __name__ == "__main__":
     success = test_amd()

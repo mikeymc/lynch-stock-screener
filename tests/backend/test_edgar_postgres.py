@@ -36,12 +36,11 @@ def test_edgar_with_postgres():
             print(f"  Latest EPS: ${latest['eps']:.2f} (FY{latest['year']})")
     else:
         print("✗ Failed to fetch AAPL data")
-        return False
+        assert False, "Failed to fetch AAPL data"
 
     print("\n" + "="*60)
     print("SUCCESS! EdgarFetcher is working with PostgreSQL")
     print("="*60)
-    return True
 
 if __name__ == '__main__':
     try:

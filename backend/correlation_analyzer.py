@@ -69,7 +69,12 @@ class CorrelationAnalyzer:
             return {'coefficient': 0.0, 'p_value': 1.0, 'significant': False}
         
         x_clean, y_clean = zip(*paired)
-        
+
+        # Check if either array is constant (std dev is 0)
+        if np.std(x_clean) == 0 or np.std(y_clean) == 0:
+            return {'coefficient': 0.0, 'p_value': 1.0, 'significant': False,
+                    'sample_size': len(x_clean), 'interpretation': 'negligible (constant input)'}
+
         coefficient, p_value = stats.pearsonr(x_clean, y_clean)
         
         return {

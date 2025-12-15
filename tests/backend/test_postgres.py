@@ -4,12 +4,11 @@
 from database import Database
 import psycopg2
 
-def test_postgres_connection():
+def test_postgres_connection(test_db):
     """Test basic database connection"""
     print("Testing PostgreSQL connection...")
-    db = Database()
     print("✓ Database connection successful")
-    return db
+    assert test_db is not None, "Database connection failed"
 
 def test_sec_data_access():
     """Test querying SEC company_facts data"""
