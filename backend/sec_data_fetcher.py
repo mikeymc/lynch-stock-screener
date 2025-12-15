@@ -31,11 +31,11 @@ class SECDataFetcher:
             if stock_metrics:
                 country = stock_metrics.get('country', '').upper()
                 if country not in ('US', 'USA', 'UNITED STATES', ''):
-                    logger.debug(f"[{symbol}] Skipping SEC data (non-US stock: {country})")
+                    logger.debug(f"[SECDataFetcher][{symbol}] Skipping SEC data (non-US stock: {country})")
                     return
             
             # Fetch filings list
-            logger.debug(f"[{symbol}] Fetching SEC filings")
+            logger.debug(f"[SECDataFetcher][{symbol}] Fetching SEC filings")
             filings = self.edgar_fetcher.fetch_recent_filings(symbol)
             
             if filings:
@@ -47,10 +47,10 @@ class SECDataFetcher:
                         filing['url'],
                         filing['accession_number']
                     )
-                logger.info(f"[{symbol}] Cached {len(filings)} SEC filings")
+                logger.info(f"[SECDataFetcher][{symbol}] Cached {len(filings)} SEC filings")
             
             # Fetch 10-K sections
-            logger.debug(f"[{symbol}] Fetching 10-K sections")
+            logger.debug(f"[SECDataFetcher][{symbol}] Fetching 10-K sections")
             sections_10k = self.edgar_fetcher.extract_filing_sections(symbol, '10-K')
             
             if sections_10k:
@@ -59,10 +59,10 @@ class SECDataFetcher:
                         symbol, name, data['content'],
                         data['filing_type'], data['filing_date']
                     )
-                logger.info(f"[{symbol}] Cached {len(sections_10k)} 10-K sections")
+                logger.info(f"[SECDataFetcher][{symbol}] Cached {len(sections_10k)} 10-K sections")
             
             # Fetch 10-Q sections
-            logger.debug(f"[{symbol}] Fetching 10-Q sections")
+            logger.debug(f"[SECDataFetcher][{symbol}] Fetching 10-Q sections")
             sections_10q = self.edgar_fetcher.extract_filing_sections(symbol, '10-Q')
             
             if sections_10q:
@@ -71,8 +71,8 @@ class SECDataFetcher:
                         symbol, name, data['content'],
                         data['filing_type'], data['filing_date']
                     )
-                logger.info(f"[{symbol}] Cached {len(sections_10q)} 10-Q sections")
+                logger.info(f"[SECDataFetcher][{symbol}] Cached {len(sections_10q)} 10-Q sections")
         
         except Exception as e:
-            logger.error(f"[{symbol}] Error caching SEC data: {e}")
+            logger.error(f"[SECDataFetcher][{symbol}] Error caching SEC data: {e}")
             # Don't raise - SEC data is optional

@@ -24,11 +24,11 @@ class NewsFetcher:
             symbol: Stock ticker symbol
         """
         try:
-            logger.debug(f"[{symbol}] Fetching news articles")
+            logger.debug(f"[NewsFetcher][{symbol}] Fetching news articles")
             articles = self.finnhub_client.fetch_all_news(symbol)
             
             if not articles:
-                logger.debug(f"[{symbol}] No news articles available")
+                logger.debug(f"[NewsFetcher][{symbol}] No news articles available")
                 return
             
             # Format and save articles
@@ -36,8 +36,8 @@ class NewsFetcher:
                 formatted = self.finnhub_client.format_article(article)
                 self.db.save_news_article(symbol, formatted)
             
-            logger.info(f"[{symbol}] Cached {len(articles)} news articles")
+            logger.info(f"[NewsFetcher][{symbol}] Cached {len(articles)} news articles")
         
         except Exception as e:
-            logger.error(f"[{symbol}] Error caching news: {e}")
+            logger.error(f"[NewsFetcher][{symbol}] Error caching news: {e}")
             # Don't raise - news is optional

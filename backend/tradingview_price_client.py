@@ -65,13 +65,13 @@ class TradingViewPriceClient:
                     self._tv = TvDatafeed()
                 
                 self._initialized = True
-                logger.info("TradingView price client initialized successfully")
+                logger.info("[PriceHistoryFetcher] TradingView price client initialized successfully")
             except ImportError:
-                logger.error("tvDatafeed library not installed. Run: pip install --upgrade --no-cache-dir git+https://github.com/rongardF/tvdatafeed.git")
+                logger.error("[PriceHistoryFetcher] tvDatafeed library not installed. Run: pip install --upgrade --no-cache-dir git+https://github.com/rongardF/tvdatafeed.git")
                 self._available = False
                 return None
             except Exception as e:
-                logger.error(f"Failed to initialize TradingView client: {type(e).__name__}: {e}")
+                logger.error(f"[PriceHistoryFetcher] Failed to initialize TradingView client: {type(e).__name__}: {e}")
                 self._available = False
                 return None
         
@@ -109,12 +109,12 @@ class TradingViewPriceClient:
         try:
             date_obj = datetime.strptime(target_date, '%Y-%m-%d')
         except ValueError:
-            logger.error(f"Invalid date format: {target_date}. Expected YYYY-MM-DD")
+            logger.error(f"[PriceHistoryFetcher] Invalid date format: {target_date}. Expected YYYY-MM-DD")
             return None
         
         # Don't fetch future dates
         if date_obj > datetime.now():
-            logger.warning(f"Cannot fetch price for future date: {target_date}")
+            logger.warning(f"[PriceHistoryFetcher] Cannot fetch price for future date: {target_date}")
             return None
         
         # Check individual price cache first
@@ -138,7 +138,7 @@ class TradingViewPriceClient:
             
             if len(valid_dates) == 0:
                 # Target date is before all available data
-                logger.warning(f"No data available for {symbol} on or before {target_date}")
+                logger.warning(f"[PriceHistoryFetcher] No data available for {symbol} on or before {target_date}")
                 return None
             
             # Get the closest date (most recent on or before target)
@@ -151,11 +151,11 @@ class TradingViewPriceClient:
                 'timestamp': datetime.now()
             }
             
-            logger.info(f"Fetched price for {symbol} on {target_date}: ${price:.2f} (actual date: {closest_date.date()})")
+            logger.info(f"[PriceHistoryFetcher] Fetched price for {symbol} on {target_date}: ${price:.2f} (actual date: {closest_date.date()})")
             return price
             
         except Exception as e:
-            logger.error(f"Error looking up price for {symbol} on {target_date}: {type(e).__name__}: {e}")
+            logger.error(f"[PriceHistoryFetcher] Error looking up price for {symbol} on {target_date}: {type(e).__name__}: {e}")
             return None
     
     def _get_symbol_history(self, symbol: str) -> Optional[pd.DataFrame]:
@@ -206,14 +206,14 @@ class TradingViewPriceClient:
                             n_bars=n_bars
                         )
                         if df is not None and not df.empty:
-                            logger.debug(f"Found {symbol} on {exchange} with {len(df)} bars")
+                            logger.debug(f"[PriceHistoryFetcher] Found {symbol} on {exchange} with {len(df)} bars")
                             break
                     except Exception as e:
                         if attempt < 2:
-                            logger.debug(f"Attempt {attempt + 1} failed for {symbol} on {exchange}, retrying...")
+                            logger.debug(f"[PriceHistoryFetcher] Attempt {attempt + 1} failed for {symbol} on {exchange}, retrying...")
                             time.sleep(1)  # Wait before retry
                         else:
-                            logger.debug(f"{symbol} not found on {exchange}: {e}")
+                            logger.debug(f"[PriceHistoryFetcher] {symbol} not found on {exchange}: {e}")
                 
                 if df is not None and not df.empty:
                     break
@@ -222,7 +222,7 @@ class TradingViewPriceClient:
                 time.sleep(0.5)
             
             if df is None or df.empty:
-                logger.warning(f"No price data found for {symbol}")
+                logger.warning(f"[PriceHistoryFetcher] No price data found for {symbol}")
                 return None
             
             # Ensure datetime index
@@ -234,11 +234,11 @@ class TradingViewPriceClient:
                 'timestamp': datetime.now()
             }
             
-            logger.info(f"Cached {len(df)} bars of price history for {symbol}")
+            logger.info(f"[PriceHistoryFetcher] Cached {len(df)} bars of price history for {symbol}")
             return df
             
         except Exception as e:
-            logger.error(f"Error fetching history for {symbol}: {type(e).__name__}: {e}")
+            logger.error(f"[PriceHistoryFetcher] Error fetching history for {symbol}: {type(e).__name__}: {e}")
             return None
     
     def is_available(self) -> bool:
@@ -290,7 +290,7 @@ class TradingViewPriceClient:
             dates = [d.strftime('%Y-%m-%d') for d in weekly.index]
             prices = [float(p) for p in weekly.values]
             
-            logger.info(f"Generated {len(dates)} weekly prices for {symbol}" + 
+            logger.info(f"[PriceHistoryFetcher] Generated {len(dates)} weekly prices for {symbol}" + 
                        (f" from {start_year}" if start_year else ""))
             
             return {
@@ -299,13 +299,13 @@ class TradingViewPriceClient:
             }
             
         except Exception as e:
-            logger.error(f"Error generating weekly prices for {symbol}: {type(e).__name__}: {e}")
+            logger.error(f"[PriceHistoryFetcher] Error generating weekly prices for {symbol}: {type(e).__name__}: {e}")
             return {'dates': [], 'prices': []}
     
     def clear_cache(self):
         """Clear the price cache"""
         self._price_cache.clear()
-        logger.info("Price cache cleared")
+        logger.info("[PriceHistoryFetcher] Price cache cleared")
 
 
 # Singleton instance for use across the app

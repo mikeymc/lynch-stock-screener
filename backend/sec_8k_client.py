@@ -62,7 +62,7 @@ class SEC8KClient:
         self.user_agent = user_agent
         self.last_request_time = 0
         set_identity(user_agent)
-        logger.info(f"SEC8KClient initialized with user agent: {user_agent}")
+        logger.info(f"[MaterialEventsFetcher] SEC8KClient initialized with user agent: {user_agent}")
 
     def _rate_limit(self):
         """Enforce SEC's 10 requests/second limit"""
@@ -93,7 +93,7 @@ class SEC8KClient:
         self._rate_limit()
 
         try:
-            logger.info(f"Fetching 8-K filings for {symbol} (last {days_back} days)")
+            logger.info(f"[MaterialEventsFetcher] Fetching 8-K filings for {symbol} (last {days_back} days)")
             company = Company(symbol.upper())
 
             # Get 8-K filings
@@ -122,12 +122,12 @@ class SEC8KClient:
                     if filing_date_only >= cutoff_date:
                         recent.append(filing)
 
-            logger.info(f"Found {len(recent)} 8-K filings for {symbol}")
+            logger.info(f"[MaterialEventsFetcher] Found {len(recent)} 8-K filings for {symbol}")
 
             return [self.format_8k_event(filing, symbol) for filing in recent]
 
         except Exception as e:
-            logger.error(f"Error fetching 8-Ks for {symbol}: {e}")
+            logger.error(f"[MaterialEventsFetcher] Error fetching 8-Ks for {symbol}: {e}")
             return []
 
     def extract_filing_text(self, filing, max_chars: int = 10000) -> Optional[str]:
@@ -175,7 +175,7 @@ class SEC8KClient:
             return content + "\n\n[Content truncated for length]"
 
         except Exception as e:
-            logger.error(f"Error extracting filing text: {e}")
+            logger.error(f"[MaterialEventsFetcher] Error extracting filing text: {e}")
             return None
 
     def format_8k_event(self, filing, symbol: str) -> Dict[str, Any]:

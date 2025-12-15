@@ -24,19 +24,19 @@ class MaterialEventsFetcher:
             symbol: Stock ticker symbol
         """
         try:
-            logger.debug(f"[{symbol}] Fetching material events")
+            logger.debug(f"[MaterialEventsFetcher][{symbol}] Fetching material events")
             events = self.sec_8k_client.fetch_recent_8ks(symbol)
             
             if not events:
-                logger.debug(f"[{symbol}] No material events available")
+                logger.debug(f"[MaterialEventsFetcher][{symbol}] No material events available")
                 return
             
             # Save events
             for event in events:
                 self.db.save_material_event(symbol, event)
             
-            logger.info(f"[{symbol}] Cached {len(events)} material events")
+            logger.info(f"[MaterialEventsFetcher][{symbol}] Cached {len(events)} material events")
         
         except Exception as e:
-            logger.error(f"[{symbol}] Error caching material events: {e}")
+            logger.error(f"[MaterialEventsFetcher][{symbol}] Error caching material events: {e}")
             # Don't raise - material events are optional

@@ -116,7 +116,7 @@ class EdgarFetcher:
         mapping = self._load_ticker_to_cik_mapping()
         cik = mapping.get(ticker.upper())
         if cik:
-            logger.info(f"[{ticker}] Found CIK: {cik}")
+            logger.info(f"[SECDataFetcher][{ticker}] Found CIK: {cik}")
         else:
             logger.debug(f"[{ticker}] CIK not found in EDGAR mapping")
         return cik
@@ -1568,7 +1568,7 @@ class EdgarFetcher:
                         'accession_number': acc_num
                     })
 
-            logger.info(f"[{ticker}] Found {len(filings)} 10-K/10-Q filings")
+            logger.info(f"[SECDataFetcher][{ticker}] Found {len(filings)} 10-K/10-Q filings")
             return filings
 
         except Exception as e:
@@ -1590,14 +1590,14 @@ class EdgarFetcher:
                 - mda: Item 7 (10-K) or Item 2 (10-Q)
                 - market_risk: Item 7A (10-K) or Item 3 (10-Q)
         """
-        logger.info(f"[{ticker}] Extracting sections from {filing_type} using edgartools")
+        logger.info(f"[SECDataFetcher][{ticker}] Extracting sections from {filing_type} using edgartools")
         sections = {}
 
         try:
             # Get CIK first to avoid edgartools ticker lookup issues
             cik = self.get_cik_for_ticker(ticker)
             if not cik:
-                logger.warning(f"[{ticker}] Could not find CIK for section extraction")
+                logger.warning(f"[SECDataFetcher][{ticker}] Could not find CIK for section extraction")
                 return {}
 
             # Get company using CIK (more reliable)
@@ -1605,12 +1605,12 @@ class EdgarFetcher:
             filings = company.get_filings(form=filing_type)
 
             if not filings:
-                logger.warning(f"[{ticker}] No {filing_type} filings found")
+                logger.warning(f"[SECDataFetcher][{ticker}] No {filing_type} filings found")
                 return {}
 
             latest_filing = filings.latest()
             filing_date = str(latest_filing.filing_date)
-            logger.info(f"[{ticker}] Found {filing_type} filing from {filing_date}")
+            logger.info(f"[SECDataFetcher][{ticker}] Found {filing_type} filing from {filing_date}")
 
             # Get the structured filing object
             filing_obj = latest_filing.obj()
@@ -1623,7 +1623,7 @@ class EdgarFetcher:
                         'filing_type': '10-K',
                         'filing_date': filing_date
                     }
-                    logger.info(f"[{ticker}] Extracted Item 1 (Business): {len(filing_obj.business)} chars")
+                    logger.info(f"[SECDataFetcher][{ticker}] Extracted Item 1 (Business): {len(filing_obj.business)} chars")
 
                 if hasattr(filing_obj, 'risk_factors') and filing_obj.risk_factors:
                     sections['risk_factors'] = {
@@ -1631,7 +1631,7 @@ class EdgarFetcher:
                         'filing_type': '10-K',
                         'filing_date': filing_date
                     }
-                    logger.info(f"[{ticker}] Extracted Item 1A (Risk Factors): {len(filing_obj.risk_factors)} chars")
+                    logger.info(f"[SECDataFetcher][{ticker}] Extracted Item 1A (Risk Factors): {len(filing_obj.risk_factors)} chars")
 
                 if hasattr(filing_obj, 'management_discussion') and filing_obj.management_discussion:
                     sections['mda'] = {
@@ -1639,7 +1639,7 @@ class EdgarFetcher:
                         'filing_type': '10-K',
                         'filing_date': filing_date
                     }
-                    logger.info(f"[{ticker}] Extracted Item 7 (MD&A): {len(filing_obj.management_discussion)} chars")
+                    logger.info(f"[SECDataFetcher][{ticker}] Extracted Item 7 (MD&A): {len(filing_obj.management_discussion)} chars")
 
                 # Try to get Item 7A (Market Risk) via bracket notation
                 try:
@@ -1650,9 +1650,9 @@ class EdgarFetcher:
                             'filing_type': '10-K',
                             'filing_date': filing_date
                         }
-                        logger.info(f"[{ticker}] Extracted Item 7A (Market Risk): {len(market_risk)} chars")
+                        logger.info(f"[SECDataFetcher][{ticker}] Extracted Item 7A (Market Risk): {len(market_risk)} chars")
                 except (KeyError, AttributeError):
-                    logger.info(f"[{ticker}] Item 7A (Market Risk) not available")
+                    logger.info(f"[SECDataFetcher][{ticker}] Item 7A (Market Risk) not available")
 
             elif filing_type == '10-Q':
                 # Extract 10-Q sections via bracket notation
@@ -1664,9 +1664,9 @@ class EdgarFetcher:
                             'filing_type': '10-Q',
                             'filing_date': filing_date
                         }
-                        logger.info(f"[{ticker}] Extracted Item 2 (MD&A): {len(str(mda))} chars")
+                        logger.info(f"[SECDataFetcher][{ticker}] Extracted Item 2 (MD&A): {len(str(mda))} chars")
                 except (KeyError, AttributeError):
-                    logger.info(f"[{ticker}] Item 2 (MD&A) not available in 10-Q")
+                    logger.info(f"[SECDataFetcher][{ticker}] Item 2 (MD&A) not available in 10-Q")
 
                 try:
                     market_risk = filing_obj["Item 3"]
@@ -1676,15 +1676,15 @@ class EdgarFetcher:
                             'filing_type': '10-Q',
                             'filing_date': filing_date
                         }
-                        logger.info(f"[{ticker}] Extracted Item 3 (Market Risk): {len(str(market_risk))} chars")
+                        logger.info(f"[SECDataFetcher][{ticker}] Extracted Item 3 (Market Risk): {len(str(market_risk))} chars")
                 except (KeyError, AttributeError):
-                    logger.info(f"[{ticker}] Item 3 (Market Risk) not available in 10-Q")
+                    logger.info(f"[SECDataFetcher][{ticker}] Item 3 (Market Risk) not available in 10-Q")
 
-            logger.info(f"[{ticker}] Successfully extracted {len(sections)} sections from {filing_type}")
+            logger.info(f"[SECDataFetcher][{ticker}] Successfully extracted {len(sections)} sections from {filing_type}")
             return sections
 
         except Exception as e:
-            logger.error(f"[{ticker}] Error extracting {filing_type} sections: {e}")
+            logger.error(f"[SECDataFetcher][{ticker}] Error extracting {filing_type} sections: {e}")
             import traceback
             traceback.print_exc()
             return {}
