@@ -11,6 +11,12 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 from typing import Optional, Dict, Any
 
+# Import fetcher modules for data caching
+from price_history_fetcher import PriceHistoryFetcher
+from sec_data_fetcher import SECDataFetcher
+from news_fetcher import NewsFetcher
+from material_events_fetcher import MaterialEventsFetcher
+
 # Setup logging
 logging.basicConfig(
     level=logging.INFO,
@@ -121,22 +127,42 @@ class BackgroundWorker:
 
     def _run_screening(self, job_id: int, params: Dict[str, Any]):
         """Execute full stock screening"""
-        from data_fetcher import DataFetcher
-        from lynch_criteria import LynchCriteria
-        from earnings_analyzer import EarningsAnalyzer
-        from tradingview_fetcher import TradingViewFetcher
-        from finviz_fetcher import FinvizFetcher
-
         session_id = params.get('session_id')
         algorithm = params.get('algorithm', 'weighted')
         force_refresh = params.get('force_refresh', False)
         limit = params.get('limit')
 
-        logger.info(f"Starting screening job {job_id} (session: {session_id}, algo: {algorithm})")
+        logger.info(f"Starting screening (session_id={session_id}, algorithm={algorithm}, force_refresh={force_refresh}, limit={limit})")
 
+        # Import dependencies
+        from data_fetcher import DataFetcher
+        from lynch_criteria import LynchCriteria
+        from earnings_analyzer import EarningsAnalyzer
+        from tradingview_fetcher import TradingViewFetcher
+        from tradingview_price_client import TradingViewPriceClient
+        from finviz_fetcher import FinvizFetcher
+        from edgar_fetcher import EdgarFetcher
+        from finnhub_news import FinnhubNewsClient
+        from sec_8k_client import SEC8KClient
+        
         # Initialize fetchers
         fetcher = DataFetcher(self.db)
         analyzer = EarningsAnalyzer(self.db)
+        edgar_fetcher = EdgarFetcher(
+            user_agent="Lynch Stock Screener mikey@example.com",
+            db=self.db
+        )
+        finnhub_client = FinnhubNewsClient(api_key=os.environ.get('FINNHUB_API_KEY', 'd4nkaqpr01qk2nucd6q0d4nkaqpr01qk2nucd6qg'))
+        sec_8k_client = SEC8KClient(user_agent=os.environ.get('SEC_USER_AGENT', 'Lynch Stock Screener mikey@example.com'))
+        
+        # Initialize price client
+        price_client = TradingViewPriceClient()
+        
+        # Initialize fetchers for data caching
+        price_history_fetcher = PriceHistoryFetcher(self.db, price_client)
+        sec_data_fetcher = SECDataFetcher(self.db, edgar_fetcher)
+        news_fetcher_instance = NewsFetcher(self.db, finnhub_client)
+        events_fetcher = MaterialEventsFetcher(self.db, sec_8k_client)
         criteria = LynchCriteria(self.db, analyzer)
 
         # Bulk prefetch market data
@@ -182,16 +208,38 @@ class BackgroundWorker:
         # Process stocks
         def process_stock(symbol):
             try:
+                # 1. Fetch stock data (existing)
                 stock_data = fetcher.fetch_stock_data(symbol, force_refresh,
                                                       market_data_cache=market_data_cache,
                                                       finviz_cache=finviz_cache)
                 if not stock_data:
                     return None
 
+                # 2. Evaluate stock (existing)
                 evaluation = criteria.evaluate_stock(symbol, algorithm=algorithm)
                 if not evaluation:
                     return None
 
+                # 3. NEW: Fetch and cache all external data IN PARALLEL
+                with ThreadPoolExecutor(max_workers=4) as data_executor:
+                    # Submit all fetches concurrently
+                    data_futures = {
+                        data_executor.submit(price_history_fetcher.fetch_and_cache_prices, symbol): 'prices',
+                        data_executor.submit(sec_data_fetcher.fetch_and_cache_all, symbol): 'sec',
+                        data_executor.submit(news_fetcher_instance.fetch_and_cache_news, symbol): 'news',
+                        data_executor.submit(events_fetcher.fetch_and_cache_events, symbol): 'events'
+                    }
+                    
+                    # Wait for all to complete (with timeout)
+                    for future in as_completed(data_futures, timeout=10):
+                        data_type = data_futures[future]
+                        try:
+                            future.result()
+                        except Exception as e:
+                            # Log but don't fail the stock - data caching is optional
+                            logger.debug(f"[{symbol}] Failed to cache {data_type}: {e}")
+
+                # 4. Save screening result (existing)
                 if session_id:
                     self.db.save_screening_result(session_id, evaluation)
                 return evaluation

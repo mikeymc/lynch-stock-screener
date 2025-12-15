@@ -1186,47 +1186,24 @@ def get_stock_history(symbol):
 
         price = None
 
-        # Fetch historical price for this year's fiscal year-end
+        # Fetch historical price for this year's fiscal year-end from DATABASE
         if fiscal_end:
-            # Try TradingView API first if available
-            if price_client.is_available():
-                try:
-                    price = price_client.get_historical_price(symbol.upper(), fiscal_end)
-                except Exception as e:
-                    print(f"TradingView API error for {symbol} on {fiscal_end}: {e}")
-                    price = None
-
-            # Fall back to yfinance if Schwab failed or unavailable
-            if price is None:
-                try:
-                    # Use fiscal year-end date for yfinance
-                    # Fetch a few days before and after to handle weekends/holidays
-                    from datetime import timedelta
-                    fiscal_date = datetime.strptime(fiscal_end, '%Y-%m-%d')
-                    start_date = (fiscal_date - timedelta(days=7)).strftime('%Y-%m-%d')
-                    end_date = (fiscal_date + timedelta(days=3)).strftime('%Y-%m-%d')
-
-                    hist = ticker.history(start=start_date, end=end_date)
-
-                    if not hist.empty:
-                        # Get closing price from the last available day
-                        price = hist.iloc[-1]['Close']
-                except Exception as e:
-                    print(f"yfinance error for {symbol} on {fiscal_end}: {e}")
-                    price = None
-        else:
-            # No fiscal_end date, fall back to December 31
             try:
-                start_date = f"{year}-12-01"
-                end_date = f"{year}-12-31"
-
-                hist = ticker.history(start=start_date, end=end_date)
-
-                if not hist.empty:
-                    price = hist.iloc[-1]['Close']
+                # Get price from cached price_history table
+                price_data = db.get_price_history(symbol.upper(), start_date=fiscal_end, end_date=fiscal_end)
+                if price_data and len(price_data) > 0:
+                    price = price_data[0].get('close')
             except Exception as e:
-                print(f"Error fetching historical price for {symbol} year {year}: {e}")
-                price = None
+                logger.debug(f"Error fetching cached price for {symbol} on {fiscal_end}: {e}")
+        else:
+            # No fiscal_end date, try to get price from December 31
+            try:
+                dec_31 = f"{year}-12-31"
+                price_data = db.get_price_history(symbol.upper(), start_date=dec_31, end_date=dec_31)
+                if price_data and len(price_data) > 0:
+                    price = price_data[0].get('close')
+            except Exception as e:
+                logger.debug(f"Error fetching cached price for {symbol} on Dec 31: {e}")
         # todo: switch pe ratio to market cap / net income
         # Always include price in chart if we have it
         prices.append(price)
@@ -1243,45 +1220,45 @@ def get_stock_history(symbol):
     stock_metrics = db.get_stock_metrics(symbol.upper())
     wacc_data = calculate_wacc(stock_metrics) if stock_metrics else None
 
-    # Get weekly price history for granular chart display
+    # Get weekly price history for granular chart display from DATABASE
     # Use the earliest year in earnings history as start year
     start_year = min(entry['year'] for entry in earnings_history) if earnings_history else None
     weekly_prices = {}
     weekly_pe_ratios = {}
-    if price_client.is_available():
-        try:
-            weekly_prices = price_client.get_weekly_price_history(symbol.upper(), start_year)
+    try:
+        # Get weekly prices from cached weekly_prices table
+        weekly_prices = db.get_weekly_prices(symbol.upper(), start_year)
+        
+        # Calculate weekly P/E ratios using EPS from earnings history
+        # For each week, use the EPS from the corresponding fiscal year
+        if weekly_prices.get('dates') and weekly_prices.get('prices'):
+            # Build a mapping of year -> EPS from earnings history
+            eps_by_year = {}
+            for entry in earnings_history:
+                if entry.get('eps') and entry.get('eps') > 0:
+                    eps_by_year[entry['year']] = entry['eps']
             
-            # Calculate weekly P/E ratios using EPS from earnings history
-            # For each week, use the EPS from the corresponding fiscal year
-            if weekly_prices.get('dates') and weekly_prices.get('prices'):
-                # Build a mapping of year -> EPS from earnings history
-                eps_by_year = {}
-                for entry in earnings_history:
-                    if entry.get('eps') and entry.get('eps') > 0:
-                        eps_by_year[entry['year']] = entry['eps']
+            # Calculate P/E for each week
+            weekly_pe_dates = []
+            weekly_pe_values = []
+            for i, date_str in enumerate(weekly_prices['dates']):
+                year = int(date_str[:4])
+                price = weekly_prices['prices'][i]
                 
-                # Calculate P/E for each week
-                weekly_pe_dates = []
-                weekly_pe_values = []
-                for i, date_str in enumerate(weekly_prices['dates']):
-                    year = int(date_str[:4])
-                    price = weekly_prices['prices'][i]
-                    
-                    # Use EPS from the current year, or fall back to previous year
-                    eps = eps_by_year.get(year) or eps_by_year.get(year - 1)
-                    
-                    if eps and eps > 0 and price:
-                        pe = price / eps
-                        weekly_pe_dates.append(date_str)
-                        weekly_pe_values.append(round(pe, 2))
+                # Use EPS from the current year, or fall back to previous year
+                eps = eps_by_year.get(year) or eps_by_year.get(year - 1)
                 
-                weekly_pe_ratios = {
-                    'dates': weekly_pe_dates,
-                    'values': weekly_pe_values
-                }
-        except Exception as e:
-            print(f"Error fetching weekly prices for {symbol}: {e}")
+                if eps and eps > 0 and price:
+                    pe = price / eps
+                    weekly_pe_dates.append(date_str)
+                    weekly_pe_values.append(round(pe, 2))
+            
+            weekly_pe_ratios = {
+                'dates': weekly_pe_dates,
+                'values': weekly_pe_values
+            }
+    except Exception as e:
+        logger.debug(f"Error fetching weekly prices for {symbol}: {e}")
 
     response_data = {
         'labels': labels,
@@ -1309,7 +1286,7 @@ def get_stock_history(symbol):
 
 @app.route('/api/stock/<symbol>/filings', methods=['GET'])
 def get_stock_filings(symbol):
-    """Get recent SEC filings (10-K and 10-Q) for a stock"""
+    """Get recent SEC filings (10-K and 10-Q) for a stock from DATABASE"""
     symbol = symbol.upper()
 
     # Check if stock exists
@@ -1317,358 +1294,103 @@ def get_stock_filings(symbol):
     if not stock_metrics:
         return jsonify({'error': f'Stock {symbol} not found'}), 404
 
-    # Only fetch for US stocks
+    # Only return for US stocks
     country = stock_metrics.get('country', '')
     if country:
         country_upper = country.upper()
         if country_upper not in ('US', 'USA', 'UNITED STATES'):
             return jsonify({})
 
-    # Check cache validity
-    if db.is_filings_cache_valid(symbol):
-        filings = db.get_sec_filings(symbol)
-        if filings:
-            return jsonify(filings)
-
-    # Fetch fresh filings from EDGAR
+    # Get filings from database (cached during screening)
     try:
-        edgar_fetcher = fetcher.edgar_fetcher
-        recent_filings = edgar_fetcher.fetch_recent_filings(symbol)
-
-        if not recent_filings:
-            return jsonify({})
-
-        # Save to database
-        for filing in recent_filings:
-            db.save_sec_filing(
-                symbol,
-                filing['type'],
-                filing['date'],
-                filing['url'],
-                filing['accession_number']
-            )
-
-        # Return the formatted result
         filings = db.get_sec_filings(symbol)
         return jsonify(filings if filings else {})
-
     except Exception as e:
-        print(f"Error fetching filings for {symbol}: {e}")
+        logger.error(f"Error fetching cached filings for {symbol}: {e}")
         return jsonify({'error': f'Failed to fetch filings: {str(e)}'}), 500
 
 
 @app.route('/api/stock/<symbol>/sections', methods=['GET'])
 def get_stock_sections(symbol):
     """
-    Extract key sections from SEC filings (10-K and 10-Q)
+    Get key sections from SEC filings (10-K and 10-Q) from DATABASE
     Returns: business, risk_factors, mda, market_risk
     """
-    import sys
     symbol = symbol.upper()
-    app.logger.info(f"[SECTIONS] Starting section extraction for {symbol}")
-    print(f"[SECTIONS] Starting section extraction for {symbol}", file=sys.stderr, flush=True)
+    logger.info(f"[SECTIONS] Fetching cached sections for {symbol}")
 
     # Check if stock exists
     stock_metrics = db.get_stock_metrics(symbol)
     if not stock_metrics:
         return jsonify({'error': f'Stock {symbol} not found'}), 404
 
-    # Only fetch for US stocks
+    # Only return for US stocks
     country = stock_metrics.get('country', '')
-    app.logger.info(f"[SECTIONS] {symbol} country: {country}")
-    print(f"[SECTIONS] {symbol} country: {country}", file=sys.stderr, flush=True)
     if country:
         country_upper = country.upper()
         if country_upper not in ('US', 'USA', 'UNITED STATES'):
-            app.logger.info(f"[SECTIONS] Skipping non-US stock {symbol}")
-            print(f"[SECTIONS] Skipping non-US stock {symbol}", file=sys.stderr, flush=True)
-            return jsonify({'sections': {}, 'cached': False})
+            logger.info(f"[SECTIONS] Skipping non-US stock {symbol}")
+            return jsonify({'sections': {}, 'cached': True})
 
-    # Check cache validity (30 days)
-    if db.is_sections_cache_valid(symbol, max_age_days=30):
-        app.logger.info(f"[SECTIONS] Cache is valid for {symbol}")
-        print(f"[SECTIONS] Cache is valid for {symbol}", file=sys.stderr, flush=True)
+    # Get sections from database (cached during screening)
+    try:
         sections = db.get_filing_sections(symbol)
-        if sections:
-            return jsonify({'sections': sections, 'cached': True})
-    else:
-        app.logger.info(f"[SECTIONS] Cache is NOT valid for {symbol}")
-        print(f"[SECTIONS] Cache is NOT valid for {symbol}", file=sys.stderr, flush=True)
-
-    # Extract sections using edgartools (no need for filing URLs)
-    edgar_fetcher = fetcher.edgar_fetcher
-    all_sections = {}
-
-    # Extract from most recent 10-K (Items 1, 1A, 7, 7A)
-    try:
-        app.logger.info(f"[SECTIONS] Extracting 10-K sections for {symbol}")
-        print(f"[SECTIONS] Extracting 10-K sections for {symbol}", file=sys.stderr, flush=True)
-        sections_10k = edgar_fetcher.extract_filing_sections(symbol, '10-K')
-
-        # Save each section to database
-        for section_name, section_data in sections_10k.items():
-            db.save_filing_section(
-                symbol,
-                section_name,
-                section_data['content'],
-                section_data['filing_type'],
-                section_data['filing_date']
-            )
-            all_sections[section_name] = section_data
-
-        app.logger.info(f"[SECTIONS] Extracted {len(sections_10k)} sections from 10-K")
-        print(f"[SECTIONS] Extracted {len(sections_10k)} sections from 10-K", file=sys.stderr, flush=True)
-
+        return jsonify({'sections': sections if sections else {}, 'cached': True})
     except Exception as e:
-        print(f"Error extracting 10-K sections for {symbol}: {e}")
-        import traceback
-        traceback.print_exc()
-
-    # Extract from most recent 10-Q (Items 2, 3)
-    try:
-        app.logger.info(f"[SECTIONS] Extracting 10-Q sections for {symbol}")
-        print(f"[SECTIONS] Extracting 10-Q sections for {symbol}", file=sys.stderr, flush=True)
-        sections_10q = edgar_fetcher.extract_filing_sections(symbol, '10-Q')
-
-        # Save and add 10-Q sections (may overwrite 10-K MD&A and Market Risk with more recent data)
-        for section_name, section_data in sections_10q.items():
-            db.save_filing_section(
-                symbol,
-                section_name,
-                section_data['content'],
-                section_data['filing_type'],
-                section_data['filing_date']
-            )
-            all_sections[section_name] = section_data
-
-        app.logger.info(f"[SECTIONS] Extracted {len(sections_10q)} sections from 10-Q")
-        print(f"[SECTIONS] Extracted {len(sections_10q)} sections from 10-Q", file=sys.stderr, flush=True)
-
-    except Exception as e:
-        print(f"Error extracting 10-Q sections for {symbol}: {e}")
-        import traceback
-        traceback.print_exc()
-
-    # Return all extracted sections
-    return jsonify({'sections': all_sections, 'cached': False})
+        logger.error(f"Error fetching cached sections for {symbol}: {e}")
+        return jsonify({'error': f'Failed to fetch sections: {str(e)}'}), 500
 
 
 @app.route('/api/stock/<symbol>/news', methods=['GET'])
 def get_stock_news(symbol):
     """
-    Get news articles for a stock (from cache or fetch fresh)
+    Get news articles for a stock from DATABASE
     """
     symbol = symbol.upper()
 
     try:
-        # Check cache status
+        # Get news from database (cached during screening)
+        articles = db.get_news_articles(symbol)
         cache_status = db.get_news_cache_status(symbol)
         
-        # If we have cache and it's recent (< 24 hours), return it
-        if cache_status and cache_status['last_updated']:
-            from datetime import timedelta
-            last_updated = cache_status['last_updated']
-            age_hours = (datetime.now() - last_updated).total_seconds() / 3600
-            
-            if age_hours < 24:
-                # Assuming 'logger' is defined elsewhere, e.g., from 'app.logger'
-                # If not, replace with 'print' or define 'logger'
-                # from flask import current_app as app
-                # logger = app.logger
-                print(f"Returning cached news for {symbol} ({cache_status['article_count']} articles)")
-                articles = db.get_news_articles(symbol)
-                return jsonify({
-                    'articles': articles,
-                    'cached': True,
-                    'last_updated': cache_status['last_updated'].isoformat(),
-                    'article_count': cache_status['article_count']
-                })
-        
-        # Cache is stale or doesn't exist, fetch fresh news
-        print(f"Fetching fresh news for {symbol} from Finnhub")
-        raw_articles = finnhub_client.fetch_all_news(symbol)
-        
-        if not raw_articles:
-            return jsonify({
-                'articles': [],
-                'cached': False,
-                'last_updated': datetime.now().isoformat(),
-                'article_count': 0
-            })
-        
-        # Format and save articles to database
-        for raw_article in raw_articles:
-            formatted_article = finnhub_client.format_article(raw_article)
-            db.save_news_article(symbol, formatted_article)
-        
-        # Wait for writes to complete
-        db.flush()
-        
-        # Return fresh articles
-        articles = db.get_news_articles(symbol)
-        print(f"Fetched and cached {len(articles)} news articles for {symbol}")
-        
         return jsonify({
-            'articles': articles,
-            'cached': False,
-            'last_updated': datetime.now().isoformat(),
-            'article_count': len(articles)
+            'articles': articles if articles else [],
+            'cached': True,
+            'last_updated': cache_status['last_updated'].isoformat() if cache_status and cache_status.get('last_updated') else None,
+            'article_count': len(articles) if articles else 0
         })
-        
     except Exception as e:
-        print(f"Error fetching news for {symbol}: {e}")
-        import traceback
-        traceback.print_exc()
+        logger.error(f"Error fetching cached news for {symbol}: {e}")
         return jsonify({'error': f'Failed to fetch news: {str(e)}'}), 500
 
 
-@app.route('/api/stock/<symbol>/news/refresh', methods=['POST'])
-def refresh_stock_news(symbol):
-    """
-    Force refresh news articles for a stock from Finnhub API
-    """
-    symbol = symbol.upper()
-    
-    try:
-        print(f"Force refreshing news for {symbol}")
-        raw_articles = finnhub_client.fetch_all_news(symbol)
-        
-        if not raw_articles:
-            return jsonify({
-                'articles': [],
-                'last_updated': datetime.now().isoformat(),
-                'article_count': 0
-            })
-        
-        # Format and save articles to database
-        for raw_article in raw_articles:
-            formatted_article = finnhub_client.format_article(raw_article)
-            db.save_news_article(symbol, formatted_article)
-        
-        # Wait for writes to complete
-        db.flush()
-        
-        # Return fresh articles
-        articles = db.get_news_articles(symbol)
-        print(f"Refreshed {len(articles)} news articles for {symbol}")
-        
-        return jsonify({
-            'articles': articles,
-            'last_updated': datetime.now().isoformat(),
-            'article_count': len(articles)
-        })
-        
-    except Exception as e:
-        print(f"Error refreshing news for {symbol}: {e}")
-        import traceback
-        traceback.print_exc()
-        return jsonify({'error': f'Failed to refresh news: {str(e)}'}), 500
+
 
 
 @app.route('/api/stock/<symbol>/material-events', methods=['GET'])
 def get_material_events(symbol):
     """
-    Get material events (8-K filings) for a stock (from cache or fetch fresh)
+    Get material events (8-K filings) for a stock from DATABASE
     """
     symbol = symbol.upper()
 
     try:
-        # Check cache status
+        # Get events from database (cached during screening)
+        events = db.get_material_events(symbol)
         cache_status = db.get_material_events_cache_status(symbol)
 
-        # If we have cache and it's recent (< 24 hours), return it
-        if cache_status and cache_status['last_updated']:
-            from datetime import timedelta
-            last_updated = cache_status['last_updated']
-            age_hours = (datetime.now() - last_updated).total_seconds() / 3600
-
-            if age_hours < 24:
-                print(f"Returning cached material events for {symbol} ({cache_status['event_count']} events)")
-                events = db.get_material_events(symbol)
-                return jsonify({
-                    'events': events,
-                    'cached': True,
-                    'last_updated': cache_status['last_updated'].isoformat(),
-                    'event_count': cache_status['event_count']
-                })
-
-        # Cache is stale or doesn't exist, fetch fresh events
-        print(f"Fetching fresh material events (8-Ks) for {symbol} from SEC")
-        raw_events = sec_8k_client.fetch_recent_8ks(symbol)
-
-        if not raw_events:
-            return jsonify({
-                'events': [],
-                'cached': False,
-                'last_updated': datetime.now().isoformat(),
-                'event_count': 0
-            })
-
-        # Save events to database
-        for event in raw_events:
-            db.save_material_event(symbol, event)
-
-        # Wait for writes to complete
-        db.flush()
-
-        # Return fresh events
-        events = db.get_material_events(symbol)
-        print(f"Fetched and cached {len(events)} material events for {symbol}")
-
         return jsonify({
-            'events': events,
-            'cached': False,
-            'last_updated': datetime.now().isoformat(),
-            'event_count': len(events)
+            'events': events if events else [],
+            'cached': True,
+            'last_updated': cache_status['last_updated'].isoformat() if cache_status and cache_status.get('last_updated') else None,
+            'event_count': len(events) if events else 0
         })
-
     except Exception as e:
-        print(f"Error fetching material events for {symbol}: {e}")
-        import traceback
-        traceback.print_exc()
+        logger.error(f"Error fetching cached material events for {symbol}: {e}")
         return jsonify({'error': f'Failed to fetch material events: {str(e)}'}), 500
 
 
-@app.route('/api/stock/<symbol>/material-events/refresh', methods=['POST'])
-def refresh_material_events(symbol):
-    """
-    Force refresh material events (8-K filings) for a stock from SEC
-    """
-    symbol = symbol.upper()
 
-    try:
-        print(f"Force refreshing material events for {symbol}")
-        raw_events = sec_8k_client.fetch_recent_8ks(symbol)
-
-        if not raw_events:
-            return jsonify({
-                'events': [],
-                'last_updated': datetime.now().isoformat(),
-                'event_count': 0
-            })
-
-        # Save events to database
-        for event in raw_events:
-            db.save_material_event(symbol, event)
-
-        # Wait for writes to complete
-        db.flush()
-
-        # Return fresh events
-        events = db.get_material_events(symbol)
-        print(f"Refreshed {len(events)} material events for {symbol}")
-
-        return jsonify({
-            'events': events,
-            'last_updated': datetime.now().isoformat(),
-            'event_count': len(events)
-        })
-
-    except Exception as e:
-        print(f"Error refreshing material events for {symbol}: {e}")
-        import traceback
-        traceback.print_exc()
-        return jsonify({'error': f'Failed to refresh material events: {str(e)}'}), 500
 
 
 @app.route('/api/stock/<symbol>/lynch-analysis', methods=['GET'])

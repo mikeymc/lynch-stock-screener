@@ -512,6 +512,17 @@ class Database:
         """)
 
         cursor.execute("""
+            CREATE TABLE IF NOT EXISTS weekly_prices (
+                symbol TEXT,
+                week_ending DATE,
+                price REAL,
+                last_updated TIMESTAMP,
+                PRIMARY KEY (symbol, week_ending),
+                FOREIGN KEY (symbol) REFERENCES stocks(symbol)
+            )
+        """)
+
+        cursor.execute("""
             CREATE TABLE IF NOT EXISTS backtest_results (
                 id SERIAL PRIMARY KEY,
                 symbol TEXT,
@@ -1034,6 +1045,81 @@ class Database:
             ]
         finally:
             self.return_connection(conn)
+
+    def save_weekly_prices(self, symbol: str, weekly_data: Dict[str, Any]):
+        """
+        Save weekly price data.
+        weekly_data dict with: 'dates' list and 'prices' list
+        """
+        if not weekly_data or not weekly_data.get('dates') or not weekly_data.get('prices'):
+            return
+        
+        sql = """
+            INSERT INTO weekly_prices
+            (symbol, week_ending, price, last_updated)
+            VALUES (%s, %s, %s, %s)
+            ON CONFLICT (symbol, week_ending) DO UPDATE SET
+                price = EXCLUDED.price,
+                last_updated = EXCLUDED.last_updated
+        """
+        
+        # Batch write
+        for date_str, price in zip(weekly_data['dates'], weekly_data['prices']):
+            args = (symbol, date_str, price, datetime.now())
+            self.write_queue.put((sql, args))
+    
+    def get_weekly_prices(self, symbol: str, start_year: int = None) -> Dict[str, Any]:
+        """
+        Get weekly price data for a symbol.
+        
+        Args:
+            symbol: Stock symbol
+            start_year: Optional start year filter
+            
+        Returns:
+            Dict with 'dates' and 'prices' lists
+        """
+        conn = self.get_connection()
+        try:
+            cursor = conn.cursor()
+            
+            query = "SELECT week_ending, price FROM weekly_prices WHERE symbol = %s"
+            params = [symbol]
+            
+            if start_year:
+                query += " AND EXTRACT(YEAR FROM week_ending) >= %s"
+                params.append(start_year)
+            
+            query += " ORDER BY week_ending ASC"
+            
+            cursor.execute(query, params)
+            rows = cursor.fetchall()
+            
+            return {
+                'dates': [row[0].strftime('%Y-%m-%d') for row in rows],
+                'prices': [float(row[1]) for row in rows]
+            }
+        finally:
+            self.return_connection(conn)
+    
+    def save_price_point(self, symbol: str, date: str, price: float):
+        """
+        Save a single price point (e.g., fiscal year-end price).
+        
+        Args:
+            symbol: Stock symbol
+            date: Date in YYYY-MM-DD format
+            price: Closing price
+        """
+        sql = """
+            INSERT INTO price_history
+            (symbol, date, close, adjusted_close, volume)
+            VALUES (%s, %s, %s, %s, %s)
+            ON CONFLICT (symbol, date) DO UPDATE SET
+                close = EXCLUDED.close
+        """
+        args = (symbol, date, price, price, None)
+        self.write_queue.put((sql, args))
 
     def is_cache_valid(self, symbol: str, max_age_hours: int = 24) -> bool:
         conn = self.get_connection()

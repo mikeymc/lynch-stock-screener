@@ -242,10 +242,10 @@ class TestHistoryEndpointIntegration:
         with app.test_client() as client:
             yield client
     
-    def test_endpoint_returns_prices_and_pe_ratios(self, client, monkeypatch):
+    def test_endpoint_returns_prices_and_pe_ratios(self, client, test_db, monkeypatch):
         """
         The /api/stock/<symbol>/history endpoint should:
-        1. Fetch historical prices using the price provider
+        1. Fetch historical prices from database cache
         2. Calculate P/E ratios from prices and EPS
         3. Return data in the correct format
         """
@@ -253,31 +253,18 @@ class TestHistoryEndpointIntegration:
         
         symbol = "TEST"
         
-        # Mock database methods
-        mock_db = MagicMock()
-        mock_db.get_earnings_history.return_value = [
-            {'year': 2022, 'eps': 5.00, 'revenue': 100000000000, 'fiscal_end': '2022-12-31',
-             'debt_to_equity': None, 'period': 'annual', 'net_income': None, 
-             'dividend_amount': None, 'dividend_yield': None, 'operating_cash_flow': None,
-             'capital_expenditures': None, 'free_cash_flow': None},
-            {'year': 2023, 'eps': 6.00, 'revenue': 120000000000, 'fiscal_end': '2023-12-31',
-             'debt_to_equity': None, 'period': 'annual', 'net_income': None,
-             'dividend_amount': None, 'dividend_yield': None, 'operating_cash_flow': None,
-             'capital_expenditures': None, 'free_cash_flow': None},
-        ]
-        mock_db.get_stock_metrics.return_value = {'symbol': symbol}
-        monkeypatch.setattr(app_module, 'db', mock_db)
+        # Set up test data in database
+        test_db.save_stock_basic(symbol, "Test Corp", "NASDAQ", "Technology")
+        test_db.save_earnings_history(symbol, 2022, 5.00, 100000000000, fiscal_end='2022-12-31')
+        test_db.save_earnings_history(symbol, 2023, 6.00, 120000000000, fiscal_end='2023-12-31')
         
-        # Mock price provider
-        mock_provider = MagicMock()
-        mock_provider.is_available.return_value = True
-        mock_provider.get_historical_price.side_effect = lambda sym, date: {
-            "2022-12-31": 100.00,
-            "2023-12-31": 150.00,
-        }.get(date)
-        # Mock weekly price history to return empty dict (not needed for this test)
-        mock_provider.get_weekly_price_history.return_value = {}
-        monkeypatch.setattr(app_module, 'price_client', mock_provider)
+        # Add cached price data
+        test_db.save_price_history(symbol, [
+            {'date': '2022-12-31', 'close': 100.00, 'adjusted_close': 100.00, 'volume': 1000000},
+            {'date': '2023-12-31', 'close': 150.00, 'adjusted_close': 150.00, 'volume': 1000000}
+        ])
+        
+        test_db.flush()
         
         response = client.get(f'/api/stock/{symbol}/history')
         
@@ -297,89 +284,77 @@ class TestHistoryEndpointIntegration:
         assert abs(data['pe_ratio'][0] - 20.0) < 0.1
         assert abs(data['pe_ratio'][1] - 25.0) < 0.1
     
-    def test_endpoint_falls_back_to_yfinance(self, client, monkeypatch):
+    def test_endpoint_falls_back_to_yfinance(self, client, test_db, monkeypatch):
         """
-        When primary provider is unavailable, endpoint should fall back to yfinance
+        Endpoint should return cached data from database
         """
         import app as app_module
         
         symbol = "FALLBACK"
         
-        # Mock database methods
-        mock_db = MagicMock()
-        mock_db.get_earnings_history.return_value = [
-            {'year': 2023, 'eps': 10.00, 'revenue': 500000000000, 'fiscal_end': '2023-06-30',
-             'debt_to_equity': None, 'period': 'annual', 'net_income': None,
-             'dividend_amount': None, 'dividend_yield': None, 'operating_cash_flow': None,
-             'capital_expenditures': None, 'free_cash_flow': None},
-        ]
-        mock_db.get_stock_metrics.return_value = {'symbol': symbol}
-        monkeypatch.setattr(app_module, 'db', mock_db)
+        # Set up test data in database
+        test_db.save_stock_basic(symbol, "Fallback Corp", "NASDAQ", "Technology")
+        test_db.save_earnings_history(symbol, 2023, 10.00, 500000000000, fiscal_end='2023-06-30')
+        test_db.flush()
         
-        # Mock primary provider as unavailable
-        mock_provider = MagicMock()
-        mock_provider.is_available.return_value = False
-        monkeypatch.setattr(app_module, 'price_client', mock_provider)
+        # Mock database methods to return cached price data
+        mock_price_history = [{'date': '2023-06-30', 'close': 200.00}]
+        mock_weekly_prices = {'dates': [], 'prices': []}
         
-        # Mock yfinance fallback
-        mock_ticker = MagicMock()
-        mock_df = MagicMock()
-        mock_df.empty = False
-        mock_df.iloc.__getitem__ = MagicMock(return_value={'Close': 200.00})
-        mock_ticker.history.return_value = mock_df
+        original_get_price_history = test_db.get_price_history
+        original_get_weekly_prices = test_db.get_weekly_prices
         
-        with patch('yfinance.Ticker', return_value=mock_ticker):
+        test_db.get_price_history = MagicMock(return_value=mock_price_history)
+        test_db.get_weekly_prices = MagicMock(return_value=mock_weekly_prices)
+        
+        try:
             response = client.get(f'/api/stock/{symbol}/history')
         
-        assert response.status_code == 200
-        data = json.loads(response.data)
-        
-        # Verify fallback was used and P/E was calculated
-        # 200.00 / 10.00 = 20.0
-        assert data['pe_ratio'][0] == pytest.approx(20.0, abs=0.1)
+            assert response.status_code == 200
+            data = json.loads(response.data)
+            
+            # Verify P/E was calculated from cached data
+            # 200.00 / 10.00 = 20.0
+            assert data['pe_ratio'][0] == pytest.approx(20.0, abs=0.1)
+        finally:
+            test_db.get_price_history = original_get_price_history
+            test_db.get_weekly_prices = original_get_weekly_prices
     
-    def test_endpoint_handles_none_prices_gracefully(self, client, monkeypatch):
+    def test_endpoint_handles_none_prices_gracefully(self, client, test_db, monkeypatch):
         """
-        When price provider returns None, P/E should be None (not crash)
+        When no cached price data exists, P/E should be None (not crash)
         """
         import app as app_module
         
         symbol = "NOPRICE"
         
-        # Mock database methods
-        mock_db = MagicMock()
-        mock_db.get_earnings_history.return_value = [
-            {'year': 2023, 'eps': 5.00, 'revenue': 100000000000, 'fiscal_end': '2023-12-31',
-             'debt_to_equity': None, 'period': 'annual', 'net_income': None,
-             'dividend_amount': None, 'dividend_yield': None, 'operating_cash_flow': None,
-             'capital_expenditures': None, 'free_cash_flow': None},
-        ]
-        mock_db.get_stock_metrics.return_value = {'symbol': symbol}
-        monkeypatch.setattr(app_module, 'db', mock_db)
+        # Set up test data in database
+        test_db.save_stock_basic(symbol, "No Price Corp", "NASDAQ", "Technology")
+        test_db.save_earnings_history(symbol, 2023, 5.00, 100000000000, fiscal_end='2023-12-31')
+        test_db.flush()
         
-        # Mock provider returning None
-        mock_provider = MagicMock()
-        mock_provider.is_available.return_value = True
-        mock_provider.get_historical_price.return_value = None
-        # Mock weekly price history to return empty dict (not needed for this test)
-        mock_provider.get_weekly_price_history.return_value = {}
-        monkeypatch.setattr(app_module, 'price_client', mock_provider)
+        # Mock database methods to return empty price data
+        mock_price_history = []
+        mock_weekly_prices = {'dates': [], 'prices': []}
         
-        # Mock yfinance also failing
-        mock_ticker = MagicMock()
-        mock_df = MagicMock()
-        mock_df.empty = True
-        mock_ticker.history.return_value = mock_df
+        original_get_price_history = test_db.get_price_history
+        original_get_weekly_prices = test_db.get_weekly_prices
         
-        with patch('yfinance.Ticker', return_value=mock_ticker):
+        test_db.get_price_history = MagicMock(return_value=mock_price_history)
+        test_db.get_weekly_prices = MagicMock(return_value=mock_weekly_prices)
+        
+        try:
             response = client.get(f'/api/stock/{symbol}/history')
         
-        assert response.status_code == 200
-        data = json.loads(response.data)
-        
-        # P/E should be None when price is unavailable
-        assert data['pe_ratio'][0] is None
-        assert data['price'][0] is None
+            assert response.status_code == 200
+            data = json.loads(response.data)
+            
+            # P/E should be None when price is unavailable
+            assert data['pe_ratio'][0] is None
+            assert data['price'][0] is None
+        finally:
+            test_db.get_price_history = original_get_price_history
+            test_db.get_weekly_prices = original_get_weekly_prices
 
 
 # ============================================================================
