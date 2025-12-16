@@ -1,11 +1,12 @@
 # ABOUTME: Fetches SEC 8-K material event filings using edgartools library
-# ABOUTME: Parses filings into structured events with rate limiting
+# ABOUTME: Parses filings into structured events with global rate limiting
 
 from edgar import Company, set_identity
 from typing import List, Dict, Any, Optional
 from datetime import datetime, timedelta
 import time
 import logging
+from sec_rate_limiter import SEC_RATE_LIMITER
 
 logger = logging.getLogger(__name__)
 
@@ -66,13 +67,10 @@ class SEC8KClient:
         set_identity(user_agent)
         logger.info(f"[MaterialEventsFetcher] SEC8KClient initialized with user agent: {user_agent}")
 
-    def _rate_limit(self):
-        """Enforce SEC's 10 requests/second limit"""
-        current_time = time.time()
-        elapsed = current_time - self.last_request_time
-        if elapsed < self.MIN_REQUEST_INTERVAL:
-            time.sleep(self.MIN_REQUEST_INTERVAL - elapsed)
-        self.last_request_time = time.time()
+    def _rate_limit(self, symbol: str = "unknown"):
+        """Enforce SEC's 10 requests/second limit using global rate limiter"""
+        # Use global rate limiter to coordinate across all threads
+        SEC_RATE_LIMITER.acquire(caller=f"8K-{symbol}")
 
     def fetch_recent_8ks(
         self,
@@ -97,7 +95,7 @@ class SEC8KClient:
         if days_back is None:
             days_back = self.LOOKBACK_DAYS
 
-        self._rate_limit()
+        self._rate_limit(symbol)
 
         try:
             # Use cached Company object if EdgarFetcher is available

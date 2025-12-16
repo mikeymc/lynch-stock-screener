@@ -20,6 +20,9 @@ from sec_data_fetcher import SECDataFetcher
 from news_fetcher import NewsFetcher
 from material_events_fetcher import MaterialEventsFetcher
 
+# Import global rate limiter for SEC API (shared across all threads)
+from sec_rate_limiter import SEC_RATE_LIMITER, configure_edgartools_rate_limit
+
 # Setup logging
 logging.basicConfig(
     level=logging.INFO,
@@ -135,6 +138,8 @@ class BackgroundWorker:
             self._run_screening(job_id, params)
         elif job_type == 'sec_refresh':
             self._run_sec_refresh(job_id, params)
+        elif job_type == 'sec_filings_cache':
+            self._run_sec_filings_cache(job_id, params)
         else:
             raise ValueError(f"Unknown job type: {job_type}")
 
@@ -254,15 +259,15 @@ class BackgroundWorker:
                 if not evaluation:
                     return None
 
-                # 3. Fetch and cache all external data IN PARALLEL (optional, don't fail stock if this times out)
+                # 3. Fetch and cache non-SEC data IN PARALLEL (optional, don't fail stock if this times out)
+                # NOTE: SEC data (10-K/Q sections, 8-K events) is cached separately via sec_filings_cache job
+                # to avoid slowing down screening with slow SEC API calls
                 try:
-                    with ThreadPoolExecutor(max_workers=4) as data_executor:
-                        # Submit all fetches concurrently
+                    with ThreadPoolExecutor(max_workers=2) as data_executor:
+                        # Submit non-SEC fetches concurrently (SEC caching is done separately)
                         data_futures = {
                             data_executor.submit(price_history_fetcher.fetch_and_cache_prices, symbol): 'prices',
-                            data_executor.submit(sec_data_fetcher.fetch_and_cache_all, symbol): 'sec',
                             data_executor.submit(news_fetcher_instance.fetch_and_cache_news, symbol): 'news',
-                            data_executor.submit(events_fetcher.fetch_and_cache_events, symbol): 'events'
                         }
                         
                         # Wait for all to complete (with timeout)
@@ -432,12 +437,139 @@ class BackgroundWorker:
         finally:
             migrator.close()
 
+    def _run_sec_filings_cache(self, job_id: int, params: Dict[str, Any]):
+        """
+        Cache SEC filings data (10-K/Q sections, 8-K events) for all stocks.
+        
+        This job runs separately from screening to avoid slowing down the screening process
+        with slow SEC API calls. First run will be slow, subsequent runs will be fast
+        due to cache checks.
+        
+        Params:
+            limit: Optional max number of stocks to process
+            force_refresh: If True, bypass cache and fetch fresh data
+        """
+        limit = params.get('limit')
+        force_refresh = params.get('force_refresh', False)
+        
+        logger.info(f"Starting SEC filings cache job {job_id}")
+        
+        # Local imports (same pattern as _run_screening)
+        from edgar_fetcher import EdgarFetcher
+        from sec_8k_client import SEC8KClient
+        
+        # Initialize SEC fetchers
+        sec_user_agent = os.environ.get('SEC_USER_AGENT', 'Lynch Stock Screener mikey@example.com')
+        logger.info("Pre-fetching SEC CIK mappings...")
+        cik_cache = EdgarFetcher.prefetch_cik_cache(sec_user_agent)
+        
+        edgar_fetcher = EdgarFetcher(
+            user_agent=sec_user_agent,
+            db=self.db,
+            cik_cache=cik_cache
+        )
+        sec_8k_client = SEC8KClient(
+            user_agent=sec_user_agent,
+            edgar_fetcher=edgar_fetcher
+        )
+        sec_data_fetcher = SECDataFetcher(self.db, edgar_fetcher)
+        events_fetcher = MaterialEventsFetcher(self.db, sec_8k_client)
+        
+        # Get all stocks from database
+        self.db.update_job_progress(job_id, progress_pct=5, progress_message='Loading stock list...')
+        
+        conn = self.db.get_connection()
+        try:
+            cursor = conn.cursor()
+            cursor.execute("SELECT symbol FROM stocks ORDER BY symbol")
+            all_symbols = [row[0] for row in cursor.fetchall()]
+        finally:
+            self.db.return_connection(conn)
+        
+        # Apply limit if specified
+        if limit and limit < len(all_symbols):
+            all_symbols = all_symbols[:limit]
+        
+        total = len(all_symbols)
+        logger.info(f"Caching SEC data for {total} stocks")
+        
+        self.db.update_job_progress(job_id, progress_pct=10, 
+                                    progress_message=f'Caching SEC data for {total} stocks...',
+                                    total_count=total)
+        
+        # Process stocks sequentially to respect SEC rate limits
+        # We use a single thread here since SEC API is rate-limited anyway
+        processed = 0
+        cached_sections = 0
+        cached_events = 0
+        skipped = 0
+        errors = 0
+        
+        for symbol in all_symbols:
+            if self.shutdown_flag:
+                logger.info("Shutdown requested, stopping SEC cache job")
+                break
+            
+            try:
+                # Cache SEC filing sections (10-K, 10-Q)
+                try:
+                    sec_data_fetcher.fetch_and_cache_all(symbol, force_refresh=force_refresh)
+                    cached_sections += 1
+                except Exception as e:
+                    logger.debug(f"[{symbol}] SEC sections cache error: {e}")
+                
+                # Cache 8-K material events
+                try:
+                    events_fetcher.fetch_and_cache_events(symbol, force_refresh=force_refresh)
+                    cached_events += 1
+                except Exception as e:
+                    logger.debug(f"[{symbol}] 8-K events cache error: {e}")
+                
+            except Exception as e:
+                logger.warning(f"[{symbol}] SEC cache error: {e}")
+                errors += 1
+            
+            processed += 1
+            
+            # Update progress every 10 stocks
+            if processed % 10 == 0:
+                pct = 10 + int((processed / total) * 85)  # 10-95%
+                self.db.update_job_progress(
+                    job_id, 
+                    progress_pct=pct,
+                    progress_message=f'Cached {processed}/{total} stocks (sections: {cached_sections}, events: {cached_events})',
+                    processed_count=processed,
+                    total_count=total
+                )
+                self._send_heartbeat(job_id)
+            
+            # Log progress every 100 stocks
+            if processed % 100 == 0:
+                logger.info(f"SEC cache progress: {processed}/{total} (sections: {cached_sections}, events: {cached_events}, errors: {errors})")
+        
+        # Complete job
+        result = {
+            'total_stocks': total,
+            'processed': processed,
+            'cached_sections': cached_sections,
+            'cached_events': cached_events,
+            'skipped': skipped,
+            'errors': errors
+        }
+        
+        self.db.complete_job(job_id, result)
+        logger.info(f"SEC filings cache complete: {result}")
+
 
 def main():
     """Entry point for worker process"""
     logger.info("=" * 60)
     logger.info("Lynch Stock Screener - Background Worker")
     logger.info("=" * 60)
+    
+    # Configure global SEC rate limiter
+    configure_edgartools_rate_limit()
+    logger.info(f"SEC Rate Limiter: {SEC_RATE_LIMITER.get_stats()}")
 
     worker = BackgroundWorker()
     worker.run()

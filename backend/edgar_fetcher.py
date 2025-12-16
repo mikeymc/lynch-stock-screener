@@ -6,6 +6,7 @@ import time
 import logging
 from typing import Dict, List, Optional, Any
 from edgar import Company, set_identity
+from sec_rate_limiter import SEC_RATE_LIMITER
 
 logger = logging.getLogger(__name__)
 
@@ -72,13 +73,10 @@ class EdgarFetcher:
         logger.info("Initializing SEC bulk data cache...")
         return self.bulk_manager.download_and_extract()
 
-    def _rate_limit(self):
-        """Enforce rate limiting of 10 requests per second"""
-        current_time = time.time()
-        elapsed = current_time - self.last_request_time
-        if elapsed < self.min_request_interval:
-            time.sleep(self.min_request_interval - elapsed)
-        self.last_request_time = time.time()
+    def _rate_limit(self, caller: str = "edgar"):
+        """Enforce rate limiting of 10 requests per second using global limiter"""
+        # Use global rate limiter to coordinate across all threads
+        SEC_RATE_LIMITER.acquire(caller=caller)
 
     @staticmethod
     def prefetch_cik_cache(user_agent: str) -> Dict[str, str]:
@@ -137,6 +135,8 @@ class EdgarFetcher:
             return self._company_cache[cik]
         
         try:
+            # Rate limit before edgartools makes HTTP requests
+            self._rate_limit(caller=f"Company-{cik}")
             company = Company(cik)
             self._company_cache[cik] = company
             logger.debug(f"[CIK {cik}] Created and cached Company object")
@@ -151,7 +151,7 @@ class EdgarFetcher:
             return self.ticker_to_cik_cache
 
         try:
-            self._rate_limit()
+            self._rate_limit(caller="cik-mapping")
             response = requests.get(self.TICKER_CIK_URL, headers=self.headers, timeout=10)
             response.raise_for_status()
             data = response.json()
@@ -240,7 +240,7 @@ class EdgarFetcher:
         Returns:
             Dictionary containing company facts data or None on error
         """
-        self._rate_limit()
+        self._rate_limit(caller=f"facts-{cik}")
 
         url = self.COMPANY_FACTS_URL.format(cik=cik)
         
