@@ -298,6 +298,8 @@ class BackgroundWorker:
                 self.db.update_job_progress(job_id, progress_pct=progress_pct,
                                             progress_message=f'Processed {processed_count}/{total}',
                                             processed_count=processed_count)
+                
+                logger.info(f"Screening progress: {processed_count}/{total} ({progress_pct}%)")
 
                 if session_id:
                     self.db.update_session_progress(session_id, processed_count, symbol)
