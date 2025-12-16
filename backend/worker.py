@@ -13,7 +13,6 @@ import platform
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 from typing import Optional, Dict, Any
-from threading import Semaphore
 
 # Import fetcher modules for data caching
 from price_history_fetcher import PriceHistoryFetcher
@@ -186,15 +185,11 @@ class BackgroundWorker:
             edgar_fetcher=edgar_fetcher
         )
         
-        # Initialize price client
+        # Initialize price client (yfinance - no rate limits!)
         price_client = TradingViewPriceClient()
         
-        # Semaphore to limit concurrent TradingView requests (prevent rate limiting)
-        # Allow 12 concurrent price fetches while keeping overall screening at 40 workers
-        tv_semaphore = Semaphore(12)
-        
         # Initialize fetchers for data caching
-        price_history_fetcher = PriceHistoryFetcher(self.db, price_client, tv_semaphore)
+        price_history_fetcher = PriceHistoryFetcher(self.db, price_client)
         sec_data_fetcher = SECDataFetcher(self.db, edgar_fetcher)
         news_fetcher_instance = NewsFetcher(self.db, finnhub_client)
         events_fetcher = MaterialEventsFetcher(self.db, sec_8k_client)

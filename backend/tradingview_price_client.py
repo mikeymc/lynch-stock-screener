@@ -1,98 +1,87 @@
-# ABOUTME: TradingView price client using tvDatafeed for historical stock prices
-# ABOUTME: Provides the same interface as SchwabClient for seamless migration
+# ABOUTME: Price client using yfinance for historical stock prices
+# ABOUTME: Provides unlimited historical data with no rate limits
 
 """
-TradingView Price Client
+YFinance Price Client
 
-Uses the tvDatafeed library to fetch historical stock prices from TradingView.
-This is a drop-in replacement for SchwabClient with the same interface.
+Uses yfinance to fetch historical stock prices from Yahoo Finance.
+Replaces tvDatafeed with a faster, unlimited alternative.
 
 Key features:
-- No authentication required for basic use
-- Up to 5000 bars of historical data per request
-- Supports daily, weekly, and intraday intervals
+- No rate limits
+- Unlimited historical data (decades back)
+- Fast and reliable
+- Same interface as before for seamless migration
 """
 
 import logging
-from typing import Optional
+from typing import Optional, Dict, Any
 from datetime import datetime, timedelta
 import pandas as pd
+import yfinance as yf
 
 logger = logging.getLogger(__name__)
 
 
 class TradingViewPriceClient:
-    """Client for fetching historical stock prices from TradingView via tvDatafeed"""
-    
-    # Map common exchange names to TradingView exchange codes
-    EXCHANGE_MAP = {
-        'NASDAQ': 'NASDAQ',
-        'NYSE': 'NYSE',
-        'AMEX': 'AMEX',
-        'ARCA': 'AMEX',  # NYSE Arca ETFs
-        'BATS': 'BATS',
-        'OTC': 'OTC',
-    }
+    """Client for fetching historical stock prices using yfinance"""
     
     def __init__(self, username: str = None, password: str = None):
         """
-        Initialize TradingView price client.
+        Initialize price client.
         
         Args:
-            username: Optional TradingView username for extended access
-            password: Optional TradingView password
+            username: Unused (kept for API compatibility)
+            password: Unused (kept for API compatibility)
         """
-        self.username = username
-        self.password = password
-        self._tv = None
-        self._initialized = False
-        self._available = True
-        
-        # Cache for recently fetched data to avoid redundant API calls
         self._price_cache = {}
         self._cache_ttl_hours = 24
+        self._available = True
     
-    def _get_client(self):
-        """Lazy initialization of tvDatafeed client"""
-        if self._tv is None:
-            try:
-                from tvDatafeed import TvDatafeed
-                
-                if self.username and self.password:
-                    self._tv = TvDatafeed(self.username, self.password)
-                else:
-                    # Use without login - some symbols may be limited
-                    self._tv = TvDatafeed()
-                
-                self._initialized = True
-                logger.info("[PriceHistoryFetcher] TradingView price client initialized successfully")
-            except ImportError:
-                logger.error("[PriceHistoryFetcher] tvDatafeed library not installed. Run: pip install --upgrade --no-cache-dir git+https://github.com/rongardF/tvdatafeed.git")
-                self._available = False
-                return None
-            except Exception as e:
-                logger.error(f"[PriceHistoryFetcher] Failed to initialize TradingView client: {type(e).__name__}: {e}")
-                self._available = False
-                return None
-        
-        return self._tv
-    
-    def _find_exchange(self, symbol: str) -> str:
+    def _get_symbol_history(self, symbol: str) -> Optional[pd.DataFrame]:
         """
-        Determine the exchange for a given symbol.
-        
-        Most US stocks are on NASDAQ or NYSE. We try NASDAQ first,
-        then fall back to NYSE.
+        Fetch full price history for a symbol using yfinance.
         
         Args:
             symbol: Stock ticker symbol
             
         Returns:
-            Exchange code string
+            DataFrame with OHLCV data, or None if unavailable
         """
-        # For now, try NASDAQ first as it covers most tech stocks
-        # If we get errors, we could implement smarter detection
-        return 'NASDAQ'
+        # Check symbol-level cache
+        cache_key = f"_history_{symbol}"
+        if cache_key in self._price_cache:
+            cached = self._price_cache[cache_key]
+            if datetime.now() - cached['timestamp'] < timedelta(hours=self._cache_ttl_hours):
+                return cached['data']
+        
+        try:
+            # Fetch all available historical data
+            ticker = yf.Ticker(symbol)
+            df = ticker.history(period="max", auto_adjust=False)
+            
+            if df is None or df.empty:
+                logger.warning(f"[PriceHistoryFetcher] No price data found for {symbol}")
+                return None
+            
+            # Ensure datetime index
+            df.index = pd.to_datetime(df.index)
+            
+            # Rename columns to match expected format (lowercase)
+            df.columns = df.columns.str.lower()
+            
+            # Cache the full history
+            self._price_cache[cache_key] = {
+                'data': df,
+                'timestamp': datetime.now()
+            }
+            
+            logger.info(f"[PriceHistoryFetcher] Cached {len(df)} bars of price history for {symbol}")
+            return df
+            
+        except Exception as e:
+            logger.error(f"[PriceHistoryFetcher] Error fetching history for {symbol}: {type(e).__name__}: {e}")
+            return None
     
     def get_historical_price(self, symbol: str, target_date: str) -> Optional[float]:
         """
@@ -158,140 +147,40 @@ class TradingViewPriceClient:
             logger.error(f"[PriceHistoryFetcher] Error looking up price for {symbol} on {target_date}: {type(e).__name__}: {e}")
             return None
     
-    def _get_symbol_history(self, symbol: str) -> Optional[pd.DataFrame]:
-        """
-        Get full price history for a symbol, using cache to avoid repeated API calls.
-        
-        This fetches 5000 bars (~20 years) of daily data once and caches it,
-        so multiple date lookups only need one API call.
-        
-        Args:
-            symbol: Stock ticker symbol
-            
-        Returns:
-            DataFrame with price history, or None if unavailable
-        """
-        import time
-        
-        # Check symbol-level cache
-        cache_key = f"_history_{symbol}"
-        if cache_key in self._price_cache:
-            cached = self._price_cache[cache_key]
-            if datetime.now() - cached['timestamp'] < timedelta(hours=self._cache_ttl_hours):
-                return cached['data']
-        
-        # Get tvDatafeed client
-        tv = self._get_client()
-        if tv is None:
-            return None
-        
-        try:
-            from tvDatafeed import Interval
-            
-            # Fetch maximum daily data (5000 bars ≈ 20 years)
-            n_bars = 5000
-            
-            # Try different exchanges since stocks can be on different ones
-            exchanges = ['NASDAQ', 'NYSE', 'AMEX', 'BATS']
-            
-            df = None
-            for exchange in exchanges:
-                # Retry logic with delay to handle connection issues
-                for attempt in range(3):
-                    try:
-                        df = tv.get_hist(
-                            symbol=symbol.upper(),
-                            exchange=exchange,
-                            interval=Interval.in_daily,
-                            n_bars=n_bars
-                        )
-                        if df is not None and not df.empty:
-                            logger.debug(f"[PriceHistoryFetcher] Found {symbol} on {exchange} with {len(df)} bars")
-                            break
-                    except Exception as e:
-                        if attempt < 2:
-                            logger.debug(f"[PriceHistoryFetcher] Attempt {attempt + 1} failed for {symbol} on {exchange}, retrying...")
-                            time.sleep(1)  # Wait before retry
-                        else:
-                            logger.debug(f"[PriceHistoryFetcher] {symbol} not found on {exchange}: {e}")
-                
-                if df is not None and not df.empty:
-                    break
-                    
-                # Small delay between exchanges to avoid rate limiting
-                time.sleep(0.5)
-            
-            if df is None or df.empty:
-                logger.warning(f"[PriceHistoryFetcher] No price data found for {symbol}")
-                return None
-            
-            # Ensure datetime index
-            df.index = pd.to_datetime(df.index)
-            
-            # Cache the full history
-            self._price_cache[cache_key] = {
-                'data': df,
-                'timestamp': datetime.now()
-            }
-            
-            logger.info(f"[PriceHistoryFetcher] Cached {len(df)} bars of price history for {symbol}")
-            return df
-            
-        except Exception as e:
-            logger.error(f"[PriceHistoryFetcher] Error fetching history for {symbol}: {type(e).__name__}: {e}")
-            return None
-    
-    def is_available(self) -> bool:
-        """
-        Check if the TradingView price client is available.
-        
-        Returns:
-            True if client can make requests, False otherwise
-        """
-        if not self._available:
-            return False
-        
-        # Try to initialize if not done yet
-        if not self._initialized:
-            return self._get_client() is not None
-        
-        return True
-    
-    def get_weekly_price_history(self, symbol: str, start_year: int = None) -> dict:
+    def get_weekly_price_history(self, symbol: str, start_year: int = None) -> Optional[Dict[str, Any]]:
         """
         Get weekly price history for a symbol.
         
-        Uses cached daily data and resamples to weekly (Friday close).
-        
         Args:
             symbol: Stock ticker symbol
-            start_year: Optional start year filter (e.g., 2013)
+            start_year: Optional start year (default: all available data)
             
         Returns:
-            Dict with 'dates' and 'prices' arrays, or empty dict if unavailable
+            Dict with 'dates' and 'prices' lists, or None if unavailable
         """
+        # Get full daily history
         df = self._get_symbol_history(symbol)
         if df is None or df.empty:
-            return {'dates': [], 'prices': []}
+            logger.warning(f"[PriceHistoryFetcher][{symbol}] No weekly price data available")
+            return None
         
         try:
+            # Resample to weekly (Friday close)
+            weekly_df = df['close'].resample('W-FRI').last().dropna()
+            
             # Filter by start year if specified
             if start_year:
-                start_date = f"{start_year}-01-01"
-                df = df[df.index >= start_date]
+                weekly_df = weekly_df[weekly_df.index.year >= start_year]
             
-            # Resample to weekly (Friday close)
-            weekly = df['close'].resample('W-FRI').last()
-            
-            # Drop any NaN values
-            weekly = weekly.dropna()
+            if weekly_df.empty:
+                logger.warning(f"[PriceHistoryFetcher][{symbol}] No weekly data after filtering")
+                return None
             
             # Convert to lists
-            dates = [d.strftime('%Y-%m-%d') for d in weekly.index]
-            prices = [float(p) for p in weekly.values]
+            dates = [d.strftime('%Y-%m-%d') for d in weekly_df.index]
+            prices = weekly_df.tolist()
             
-            logger.info(f"[PriceHistoryFetcher] Generated {len(dates)} weekly prices for {symbol}" + 
-                       (f" from {start_year}" if start_year else ""))
+            logger.info(f"[PriceHistoryFetcher] Generated {len(dates)} weekly prices for {symbol}")
             
             return {
                 'dates': dates,
@@ -299,21 +188,25 @@ class TradingViewPriceClient:
             }
             
         except Exception as e:
-            logger.error(f"[PriceHistoryFetcher] Error generating weekly prices for {symbol}: {type(e).__name__}: {e}")
-            return {'dates': [], 'prices': []}
+            logger.error(f"[PriceHistoryFetcher] Error generating weekly prices for {symbol}: {e}")
+            return None
     
-    def clear_cache(self):
-        """Clear the price cache"""
-        self._price_cache.clear()
-        logger.info("[PriceHistoryFetcher] Price cache cleared")
+    def is_available(self) -> bool:
+        """
+        Check if the price client is available.
+        
+        Returns:
+            True (yfinance is always available)
+        """
+        return self._available
 
 
-# Singleton instance for use across the app
+# Global singleton instance
 _default_client = None
 
 
 def get_tradingview_price_client() -> TradingViewPriceClient:
-    """Get the default TradingView price client instance"""
+    """Get or create the default TradingView price client instance"""
     global _default_client
     if _default_client is None:
         _default_client = TradingViewPriceClient()
