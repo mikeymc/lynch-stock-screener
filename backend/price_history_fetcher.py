@@ -3,6 +3,7 @@
 
 import logging
 from typing import Optional, Dict, Any
+from threading import Semaphore
 from database import Database
 from tradingview_price_client import TradingViewPriceClient
 
@@ -12,9 +13,10 @@ logger = logging.getLogger(__name__)
 class PriceHistoryFetcher:
     """Fetches and caches historical price data for stocks"""
     
-    def __init__(self, db: Database, price_client: TradingViewPriceClient):
+    def __init__(self, db: Database, price_client: TradingViewPriceClient, tv_semaphore: Semaphore = None):
         self.db = db
         self.price_client = price_client
+        self.tv_semaphore = tv_semaphore
     
     def fetch_and_cache_prices(self, symbol: str):
         """
@@ -27,6 +29,10 @@ class PriceHistoryFetcher:
         Args:
             symbol: Stock ticker symbol
         """
+        # Acquire semaphore to limit concurrent TradingView requests
+        if self.tv_semaphore:
+            self.tv_semaphore.acquire()
+        
         try:
             # 1. Get weekly prices from tvdatafeed
             logger.debug(f"[PriceHistoryFetcher][{symbol}] Fetching weekly price history")
@@ -68,3 +74,7 @@ class PriceHistoryFetcher:
         except Exception as e:
             logger.error(f"[PriceHistoryFetcher][{symbol}] Error caching price history: {e}")
             raise
+        finally:
+            # Always release semaphore, even if error occurred
+            if self.tv_semaphore:
+                self.tv_semaphore.release()
