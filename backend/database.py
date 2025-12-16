@@ -2579,14 +2579,17 @@ class Database:
             self.return_connection(conn)
 
     def cancel_job(self, job_id: int):
-        """Cancel a job"""
+        """Cancel a job and release its claim"""
         conn = self.get_connection()
         try:
             cursor = conn.cursor()
+            # Set status to cancelled and clear the claim
             cursor.execute("""
                 UPDATE background_jobs
                 SET status = 'cancelled',
-                    completed_at = NOW()
+                    completed_at = NOW(),
+                    claimed_by = NULL,
+                    claimed_at = NULL
                 WHERE id = %s
             """, (job_id,))
             conn.commit()
