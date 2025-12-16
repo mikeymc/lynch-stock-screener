@@ -1,0 +1,63 @@
+"""
+Testing and shipping commands for bag CLI
+"""
+import subprocess
+import typer
+from rich.console import Console
+
+console = Console()
+
+
+def test(
+    file: str = typer.Option(None, "--file", "-f", help="Test specific file"),
+    match: str = typer.Option(None, "--match", "-k", help="Run tests matching pattern"),
+):
+    """Run pytest tests"""
+    cmd = ["pytest"]
+    
+    if file:
+        cmd.append(file)
+    else:
+        cmd.append("tests/")
+    
+    cmd.extend(["-v", "--tb=short"])
+    
+    if match:
+        cmd.extend(["-k", match])
+    
+    console.print(f"[bold blue]🧪 Running tests...[/bold blue]")
+    console.print(f"[dim]Command: {' '.join(cmd)}[/dim]\n")
+    
+    result = subprocess.run(cmd)
+    
+    if result.returncode == 0:
+        console.print("\n[bold green]✓ All tests passed![/bold green]")
+    else:
+        console.print("\n[bold red]✗ Tests failed[/bold red]")
+        raise typer.Exit(1)
+
+
+def ship():
+    """Run tests, then git push if tests pass"""
+    console.print("[bold blue]🚢 Shipping...[/bold blue]\n")
+    
+    # Run tests first
+    console.print("[bold]Step 1: Running tests[/bold]")
+    cmd = ["pytest", "tests/", "-v", "--tb=short"]
+    result = subprocess.run(cmd)
+    
+    if result.returncode != 0:
+        console.print("\n[bold red]✗ Tests failed - aborting ship[/bold red]")
+        raise typer.Exit(1)
+    
+    console.print("\n[bold green]✓ Tests passed![/bold green]")
+    
+    # Git push
+    console.print("\n[bold]Step 2: Pushing to git[/bold]")
+    result = subprocess.run(["git", "push"])
+    
+    if result.returncode == 0:
+        console.print("\n[bold green]✓ Shipped successfully![/bold green]")
+    else:
+        console.print("\n[bold red]✗ Git push failed[/bold red]")
+        raise typer.Exit(1)
