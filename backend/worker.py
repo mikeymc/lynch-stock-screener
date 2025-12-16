@@ -231,26 +231,33 @@ class BackgroundWorker:
                 if not evaluation:
                     return None
 
-                # 3. NEW: Fetch and cache all external data IN PARALLEL
-                with ThreadPoolExecutor(max_workers=4) as data_executor:
-                    # Submit all fetches concurrently
-                    data_futures = {
-                        data_executor.submit(price_history_fetcher.fetch_and_cache_prices, symbol): 'prices',
-                        data_executor.submit(sec_data_fetcher.fetch_and_cache_all, symbol): 'sec',
-                        data_executor.submit(news_fetcher_instance.fetch_and_cache_news, symbol): 'news',
-                        data_executor.submit(events_fetcher.fetch_and_cache_events, symbol): 'events'
-                    }
-                    
-                    # Wait for all to complete (with timeout)
-                    for future in as_completed(data_futures, timeout=10):
-                        data_type = data_futures[future]
-                        try:
-                            future.result()
-                        except Exception as e:
-                            # Log but don't fail the stock - data caching is optional
-                            logger.debug(f"[{symbol}] Failed to cache {data_type}: {e}")
+                # 3. Fetch and cache all external data IN PARALLEL (optional, don't fail stock if this times out)
+                try:
+                    with ThreadPoolExecutor(max_workers=4) as data_executor:
+                        # Submit all fetches concurrently
+                        data_futures = {
+                            data_executor.submit(price_history_fetcher.fetch_and_cache_prices, symbol): 'prices',
+                            data_executor.submit(sec_data_fetcher.fetch_and_cache_all, symbol): 'sec',
+                            data_executor.submit(news_fetcher_instance.fetch_and_cache_news, symbol): 'news',
+                            data_executor.submit(events_fetcher.fetch_and_cache_events, symbol): 'events'
+                        }
+                        
+                        # Wait for all to complete (with timeout)
+                        for future in as_completed(data_futures, timeout=15):
+                            data_type = data_futures[future]
+                            try:
+                                future.result()
+                            except Exception as e:
+                                # Log but don't fail the stock - data caching is optional
+                                logger.debug(f"[{symbol}] Failed to cache {data_type}: {e}")
+                except TimeoutError:
+                    # Some data fetches didn't complete in time - that's okay, continue with the stock
+                    logger.debug(f"[{symbol}] Data caching timed out, continuing anyway")
+                except Exception as e:
+                    # Any other error in data caching - log and continue
+                    logger.debug(f"[{symbol}] Data caching error: {e}")
 
-                # 4. Save screening result (existing)
+                # 4. Save screening result (always save, even if data caching failed)
                 if session_id:
                     self.db.save_screening_result(session_id, evaluation)
                 return evaluation
