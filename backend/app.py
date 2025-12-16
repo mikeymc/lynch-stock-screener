@@ -21,7 +21,7 @@ load_dotenv()
 from data_fetcher import DataFetcher
 from earnings_analyzer import EarningsAnalyzer
 from lynch_criteria import LynchCriteria, ALGORITHM_METADATA
-from tradingview_price_client import TradingViewPriceClient
+from yfinance_price_client import YFinancePriceClient
 from lynch_analyst import LynchAnalyst
 from conversation_manager import ConversationManager
 from wacc_calculator import calculate_wacc
@@ -113,7 +113,7 @@ fetcher = DataFetcher(db)
 analyzer = EarningsAnalyzer(db)
 criteria = LynchCriteria(db, analyzer)
 # Historical price provider - using TradingView (replaces Schwab)
-price_client = TradingViewPriceClient()
+price_client = YFinancePriceClient()
 lynch_analyst = LynchAnalyst(db)
 conversation_manager = ConversationManager(db)
 backtester = Backtester(db)

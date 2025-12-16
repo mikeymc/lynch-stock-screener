@@ -13,6 +13,7 @@ import platform
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 from typing import Optional, Dict, Any
+from threading import Semaphore
 
 # Import fetcher modules for data caching
 from price_history_fetcher import PriceHistoryFetcher
@@ -157,18 +158,19 @@ class BackgroundWorker:
         force_refresh = params.get('force_refresh', False)
         limit = params.get('limit')
 
-        logger.info(f"Starting screening (session_id={session_id}, algorithm={algorithm}, force_refresh={force_refresh}, limit={limit})")
-
-        # Import dependencies
-        from data_fetcher import DataFetcher
-        from lynch_criteria import LynchCriteria
-        from earnings_analyzer import EarningsAnalyzer
+        from yfinance_price_client import YFinancePriceClient
         from tradingview_fetcher import TradingViewFetcher
-        from tradingview_price_client import TradingViewPriceClient
         from finviz_fetcher import FinvizFetcher
+        from data_fetcher import DataFetcher
         from edgar_fetcher import EdgarFetcher
-        from finnhub_news import FinnhubNewsClient
         from sec_8k_client import SEC8KClient
+        from finnhub_news_client import FinnhubNewsClient
+        from earnings_analyzer import EarningsAnalyzer
+        from lynch_criteria import LynchCriteria
+        from materialize_price_history import materialize_weekly_prices
+        from sec_data_fetcher import SECDataFetcher
+        from news_fetcher import NewsFetcher
+        from material_events_fetcher import MaterialEventsFetcher
         
         # Pre-fetch CIK cache once for all SEC operations (Optimization 1)
         sec_user_agent = os.environ.get('SEC_USER_AGENT', 'Lynch Stock Screener mikey@example.com')
@@ -190,11 +192,14 @@ class BackgroundWorker:
             edgar_fetcher=edgar_fetcher
         )
         
-        # Initialize price client (yfinance - no rate limits!)
-        price_client = TradingViewPriceClient()
+        # Initialize price client (yfinance - has implicit rate limits from Yahoo Finance)
+        price_client = YFinancePriceClient()
+        
+        # Create semaphore to limit concurrent yfinance requests (prevent Yahoo Finance rate limiting)
+        yf_semaphore = Semaphore(12)  # Limit to 12 concurrent yfinance requests
         
         # Initialize fetchers for data caching
-        price_history_fetcher = PriceHistoryFetcher(self.db, price_client)
+        price_history_fetcher = PriceHistoryFetcher(self.db, price_client, yf_semaphore)
         sec_data_fetcher = SECDataFetcher(self.db, edgar_fetcher)
         news_fetcher_instance = NewsFetcher(self.db, finnhub_client)
         events_fetcher = MaterialEventsFetcher(self.db, sec_8k_client)
