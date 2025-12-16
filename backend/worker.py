@@ -313,6 +313,12 @@ class BackgroundWorker:
                     logger.info("Shutdown requested, stopping screening")
                     self.db.release_job(job_id)
                     return
+                
+                # Check if job was cancelled
+                job_status = self.db.get_background_job(job_id)
+                if job_status and job_status.get('status') == 'cancelled':
+                    logger.info(f"Job {job_id} was cancelled, stopping screening")
+                    return
 
                 batch_end = min(batch_start + BATCH_SIZE, total)
                 batch = filtered_symbols[batch_start:batch_end]
@@ -511,9 +517,15 @@ class BackgroundWorker:
         errors = 0
         
         for symbol in all_symbols:
-            if self.shutdown_flag:
+            if self.shutdown_requested:
                 logger.info("Shutdown requested, stopping SEC cache job")
                 break
+            
+            # Check if job was cancelled
+            job_status = self.db.get_background_job(job_id)
+            if job_status and job_status.get('status') == 'cancelled':
+                logger.info(f"Job {job_id} was cancelled, stopping SEC cache job")
+                return
             
             try:
                 # Cache SEC filing sections (10-K, 10-Q)

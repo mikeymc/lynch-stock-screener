@@ -619,7 +619,12 @@ def get_job(job_id):
 
 @app.route('/api/jobs/<int:job_id>/cancel', methods=['POST'])
 def cancel_job(job_id):
-    """Cancel a background job"""
+    """Cancel a background job (requires API token if configured)"""
+    # Check auth for external requests
+    auth_error = check_api_auth()
+    if auth_error:
+        return auth_error
+    
     try:
         job = db.get_background_job(job_id)
 
