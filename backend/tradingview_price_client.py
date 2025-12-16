@@ -122,6 +122,11 @@ class TradingViewPriceClient:
             # Find the closest date to target_date
             target_ts = pd.Timestamp(date_obj)
             
+            # Ensure target_ts has matching timezone if df.index is timezone-aware
+            if df.index.tz is not None:
+                # Localize to match df.index timezone
+                target_ts = target_ts.tz_localize(df.index.tz)
+            
             # Get dates on or before target
             valid_dates = df.index[df.index <= target_ts]
             
