@@ -169,12 +169,13 @@ class FlyMachineManager:
                     'env': self.get_env_vars(),
                     'guest': {
                         'cpu_kind': 'shared',
-                        'cpus': 2,
-                        'memory_mb': 4096
+                        'cpus': 4,
+                        'memory_mb': 8192  # Increased from 4GB to handle parallel data fetching
                     },
                     'auto_destroy': True,  # Destroy when process exits
                     'restart': {
-                        'policy': 'no'  # Don't auto-restart
+                        'policy': 'on-failure',  # Restart on crash (e.g., OOM)
+                        'max_retries': 3  # Limit retries to prevent infinite loops
                     },
                     'metadata': {
                         'role': 'worker'

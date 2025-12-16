@@ -7,6 +7,9 @@ import time
 import signal
 import logging
 import socket
+import gc
+import resource
+import platform
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 from typing import Optional, Dict, Any
@@ -24,12 +27,28 @@ logging.basicConfig(
     datefmt='%Y-%m-%d %H:%M:%S'
 )
 
+# Suppress verbose HTTP and SEC library logs
+logging.getLogger('httpx').setLevel(logging.WARNING)
+logging.getLogger('httpcore').setLevel(logging.WARNING)
+logging.getLogger('edgar').setLevel(logging.WARNING)
+logging.getLogger('edgar.httprequests').setLevel(logging.WARNING)
+logging.getLogger('hpack').setLevel(logging.WARNING)
+
 logger = logging.getLogger(__name__)
 
 # Configuration
 IDLE_SHUTDOWN_SECONDS = int(os.environ.get('WORKER_IDLE_TIMEOUT', 300))  # 5 minutes
 HEARTBEAT_INTERVAL = 60  # Extend claim every 60 seconds
 POLL_INTERVAL = 5  # Check for new jobs every 5 seconds
+
+
+def get_memory_mb() -> float:
+    """Get current RSS memory usage in MB"""
+    usage = resource.getrusage(resource.RUSAGE_SELF)
+    # macOS returns bytes, Linux returns KB
+    if platform.system() == 'Darwin':
+        return usage.ru_maxrss / (1024 * 1024)
+    return usage.ru_maxrss / 1024
 
 
 class BackgroundWorker:
@@ -306,7 +325,11 @@ class BackgroundWorker:
                                             progress_message=f'Processed {processed_count}/{total}',
                                             processed_count=processed_count)
                 
-                logger.info(f"Screening progress: {processed_count}/{total} ({progress_pct}%)")
+                logger.info(f"========== SCREENING PROGRESS: {processed_count}/{total} ({progress_pct}%) | MEMORY: {get_memory_mb():.0f}MB ==========")
+                
+                # Periodic garbage collection to prevent memory buildup
+                if batch_start % 100 == 0:
+                    gc.collect()
 
                 if session_id:
                     self.db.update_session_progress(session_id, processed_count, symbol)
