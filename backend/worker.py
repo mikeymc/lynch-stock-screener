@@ -234,11 +234,15 @@ class BackgroundWorker:
         self.db.update_job_progress(job_id, progress_pct=15, progress_message=f'Screening {total} stocks...',
                                     total_count=total)
 
-        # Update session total count if we have a session
-        if session_id:
+        # Create session if one wasn't provided (e.g., from GitHub Actions via /api/jobs)
+        if not session_id:
+            session_id = self.db.create_session(algorithm=algorithm, total_count=total)
+            logger.info(f"Created screening session {session_id}")
+        else:
+            # Update session total count if we have an existing session
             self.db.update_session_total_count(session_id, total)
 
-        logger.info(f"Ready to screen {total} stocks")
+        logger.info(f"Ready to screen {total} stocks (session_id={session_id})")
 
         # Process stocks
         def process_stock(symbol):
