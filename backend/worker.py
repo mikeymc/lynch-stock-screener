@@ -164,7 +164,7 @@ class BackgroundWorker:
         from data_fetcher import DataFetcher
         from edgar_fetcher import EdgarFetcher
         from sec_8k_client import SEC8KClient
-        from finnhub_news_client import FinnhubNewsClient
+        from finnhub_news import FinnhubNewsClient
         from earnings_analyzer import EarningsAnalyzer
         from lynch_criteria import LynchCriteria
         from materialize_price_history import materialize_weekly_prices
