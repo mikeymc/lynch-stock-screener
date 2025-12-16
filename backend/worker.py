@@ -167,7 +167,6 @@ class BackgroundWorker:
         from finnhub_news import FinnhubNewsClient
         from earnings_analyzer import EarningsAnalyzer
         from lynch_criteria import LynchCriteria
-        from materialize_price_history import materialize_weekly_prices
         from sec_data_fetcher import SECDataFetcher
         from news_fetcher import NewsFetcher
         from material_events_fetcher import MaterialEventsFetcher
