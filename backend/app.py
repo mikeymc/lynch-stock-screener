@@ -586,6 +586,11 @@ def create_job():
         job_id = db.create_background_job(job_type, params)
         logger.info(f"Created background job {job_id}")
 
+        # Start worker machine if configured
+        fly_manager = get_fly_manager()
+        worker_started = fly_manager.ensure_worker_running()
+        logger.info(f"Worker startup triggered: {worker_started}")
+
         return jsonify({
             'job_id': job_id,
             'status': 'pending'

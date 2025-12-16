@@ -137,7 +137,7 @@ class FlyMachineManager:
 
     def get_env_vars(self) -> Dict[str, str]:
         """Get environment variables for worker machines"""
-        # Pass through database connection vars
+        # Pass through database connection vars and API credentials
         return {
             'DB_HOST': os.environ.get('DB_HOST', ''),
             'DB_PORT': os.environ.get('DB_PORT', '5432'),
@@ -145,6 +145,9 @@ class FlyMachineManager:
             'DB_USER': os.environ.get('DB_USER', ''),
             'DB_PASSWORD': os.environ.get('DB_PASSWORD', ''),
             'WORKER_IDLE_TIMEOUT': os.environ.get('WORKER_IDLE_TIMEOUT', '300'),
+            'SEC_USER_AGENT': os.environ.get('SEC_USER_AGENT', ''),
+            'EDGAR_IDENTITY': os.environ.get('SEC_USER_AGENT', ''),  # edgartools requires this specific name
+            'FINNHUB_API_KEY': os.environ.get('FINNHUB_API_KEY', ''),
         }
 
     def create_worker_machine(self) -> Optional[str]:
@@ -160,7 +163,6 @@ class FlyMachineManager:
 
         try:
             config = {
-                'name': f'worker-{int(__import__("time").time())}',
                 'region': self.region,
                 'config': {
                     'image': image,
@@ -177,10 +179,9 @@ class FlyMachineManager:
                     'metadata': {
                         'role': 'worker'
                     },
-                    'processes': [{
-                        'name': 'worker',
-                        'cmd': ['python', 'worker.py']
-                    }]
+                    'init': {
+                        'cmd': ['python', '-u', 'worker.py']
+                    }
                 }
             }
 
