@@ -51,6 +51,10 @@ class TradingViewFetcher:
         'SGX',      # Singapore Exchange
     }
     
+    # Typespecs to include (common stocks and REITs)
+    # Excludes: etf, preferred, unit, closedend, trust, dr (depositary receipts)
+    ALLOWED_TYPESPECS = {'common', 'reit'}
+    
     def __init__(self):
         """Initialize TradingView fetcher"""
         pass
@@ -83,7 +87,8 @@ class TradingViewFetcher:
         # Filter out non-common stock securities by ticker pattern
         ticker_upper = ticker.upper()
         
-        # Preferred stock patterns: -P, -PR, .PR, /PR, _PR
+        # Preferred stock patterns with separators: -P, -PR, .PR, /PR, _PR
+        # (Fallback for any preferred stocks not caught by typespecs filter)
         if any(ticker_upper.endswith(suffix) for suffix in ['-P', '-PR', '.PR', '/PR', '_PR']):
             logger.debug(f"Filtering preferred stock: {ticker}")
             return True
@@ -171,6 +176,7 @@ class TradingViewFetcher:
                              'exchange',                      # Exchange
                              'country',                       # Country
                              'currency',                      # Currency
+                             'typespecs',                     # Security type (common, preferred, etf, etc.)
                          )
                          .where(
                              # Filter to stocks with market cap > $1M
@@ -190,11 +196,21 @@ class TradingViewFetcher:
                     for _, row in df.iterrows():
                         ticker = row.get('name')
                         exchange = row.get('exchange')
+                        typespecs = row.get('typespecs', [])
                         
                         if not ticker:
                             continue
                         
-                        # Apply hybrid filtering logic
+                        # Filter by security type (typespecs) - only include common stocks and REITs
+                        # This excludes: etf, preferred, unit, closedend, trust, dr
+                        if typespecs:
+                            # typespecs is a list like ['common'] or ['preferred']
+                            if not any(spec in self.ALLOWED_TYPESPECS for spec in typespecs):
+                                filtered_count += 1
+                                logger.debug(f"Filtering {ticker}: typespecs={typespecs}")
+                                continue
+                        
+                        # Apply hybrid filtering logic (exchange-based and pattern-based)
                         if self._should_skip_ticker(ticker, exchange):
                             filtered_count += 1
                             continue
