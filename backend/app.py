@@ -336,6 +336,19 @@ def run_screening_background(session_id: int, symbols: list, algorithm: str, for
                         # Update progress in database
                         db.update_session_progress(session_id, processed_count, symbol)
                         
+                        # Log progress every 10 stocks
+                        if processed_count % 10 == 0:
+                            pct = int((processed_count / total) * 100)
+                            print(f"[Session {session_id}] SCREENING PROGRESS: {processed_count}/{total} ({pct}%) - {len(results)} evaluated")
+                        
+                        # Detailed log every 100 stocks
+                        if processed_count % 100 == 0:
+                            by_status = {}
+                            for r in results:
+                                status = r.get('overall_status', 'UNKNOWN')
+                                by_status[status] = by_status.get(status, 0) + 1
+                            print(f"[Session {session_id}] Status breakdown: {by_status}")
+                        
                     except Exception as e:
                         print(f"Error getting result for {symbol}: {e}")
                         failed_symbols.append(symbol)
