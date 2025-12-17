@@ -77,11 +77,12 @@ def start(
             raise typer.Exit(1)
     else:
         # Local: Call /api/screen/start
-        console.print(f"[bold blue]🚀 Starting local screening...[/bold blue]")
+        console.print(f"[bold blue]🚀 Starting local screening ({region})...[/bold blue]")
         
         payload = {
             "algorithm": algorithm,
-            "force_refresh": False
+            "force_refresh": False,
+            "region": region
         }
         if limit:
             payload["limit"] = limit

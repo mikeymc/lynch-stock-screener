@@ -208,7 +208,7 @@ def resume_incomplete_sessions():
         traceback.print_exc()
 
 
-def run_screening_background(session_id: int, symbols: list, algorithm: str, force_refresh: bool):
+def run_screening_background(session_id: int, symbols: list, algorithm: str, force_refresh: bool, region: str = 'us'):
     """
     Run stock screening in background thread.
     Updates progress in database as stocks are processed.
@@ -218,13 +218,25 @@ def run_screening_background(session_id: int, symbols: list, algorithm: str, for
         print(f"[Session {session_id}] Symbols to process: {len(symbols)}")
         print(f"[Session {session_id}] Algorithm: {algorithm}")
         print(f"[Session {session_id}] Force refresh: {force_refresh}")
+        print(f"[Session {session_id}] Region: {region}")
         
-        # Bulk prefetch market data from TradingView
-        print(f"[Session {session_id}] Prefetching market data from TradingView...")
+        # Bulk prefetch market data from TradingView (with region filtering)
+        print(f"[Session {session_id}] Prefetching market data from TradingView ({region})...")
         from tradingview_fetcher import TradingViewFetcher
         tv_fetcher = TradingViewFetcher()
-        # Fetch MAX stocks to ensure we get everything (limit=20000)
-        market_data_cache = tv_fetcher.fetch_all_stocks(limit=20000)
+        
+        # Map region to TradingView regions
+        region_mapping = {
+            'us': ['us'],
+            'north-america': ['north_america'],
+            'south-america': ['south_america'],
+            'europe': ['europe'],
+            'asia': ['asia'],
+            'all': None
+        }
+        tv_regions = region_mapping.get(region, ['us'])
+        
+        market_data_cache = tv_fetcher.fetch_all_stocks(limit=20000, regions=tv_regions)
 
         # Bulk prefetch institutional ownership from Finviz
         print(f"[Session {session_id}] Prefetching institutional ownership from Finviz...")
@@ -714,9 +726,10 @@ def start_screening():
     limit = data.get('limit')
     force_refresh = data.get('force_refresh', False)
     algorithm = data.get('algorithm', 'weighted')
+    region = data.get('region', 'us')  # Default to US only
 
     try:
-        print(f"[START] Starting screening with limit={limit}, algorithm={algorithm}")
+        print(f"[START] Starting screening with limit={limit}, algorithm={algorithm}, region={region}")
         print(f"[START] USE_BACKGROUND_JOBS={USE_BACKGROUND_JOBS}")
 
         # Create session first (needed for both approaches)
@@ -729,7 +742,8 @@ def start_screening():
                 'session_id': session_id,
                 'algorithm': algorithm,
                 'force_refresh': force_refresh,
-                'limit': limit
+                'limit': limit,
+                'region': region  # Pass region to worker
             })
             print(f"[START] Created background job {job_id} for session {session_id}")
 
@@ -746,12 +760,38 @@ def start_screening():
             })
         else:
             # Fall back to in-process threading (original behavior)
-            symbols = fetcher.get_nyse_nasdaq_symbols()
+            # Use TradingView to fetch stocks with region filtering
+            from tradingview_fetcher import TradingViewFetcher
+            
+            # Map region to TradingView regions
+            region_mapping = {
+                'us': ['us'],
+                'north-america': ['north_america'],
+                'south-america': ['south_america'],
+                'europe': ['europe'],
+                'asia': ['asia'],
+                'all': None
+            }
+            tv_regions = region_mapping.get(region, ['us'])
+            
+            print(f"[START] Fetching symbols from TradingView (region={region})...")
+            tv_fetcher = TradingViewFetcher()
+            market_data_cache = tv_fetcher.fetch_all_stocks(limit=20000, regions=tv_regions)
+            
+            # Filter symbols
+            symbols = []
+            for sym in market_data_cache.keys():
+                if any(char in sym for char in ['$', '-', '.']) and sym not in ['BRK.B', 'BF.B']:
+                    continue
+                if len(sym) >= 5 and sym[-1] in ['W', 'R', 'U']:
+                    continue
+                symbols.append(sym)
+            
             if not symbols:
-                print("[START] ERROR: No symbols returned from fetcher")
+                print("[START] ERROR: No symbols returned from TradingView")
                 return jsonify({'error': 'Unable to fetch stock symbols'}), 500
 
-            print(f"[START] Fetched {len(symbols)} symbols")
+            print(f"[START] Fetched {len(symbols)} symbols from TradingView ({region})")
 
             if limit:
                 symbols = symbols[:limit]
@@ -762,10 +802,10 @@ def start_screening():
             # Update session with total count
             db.update_session_total_count(session_id, total)
 
-            # Start background thread
+            # Start background thread (pass region for TradingView fetch inside thread)
             thread = threading.Thread(
                 target=run_screening_background,
-                args=(session_id, symbols, algorithm, force_refresh),
+                args=(session_id, symbols, algorithm, force_refresh, region),
                 daemon=True
             )
 
