@@ -236,12 +236,33 @@ class Database:
                         last_commit = time.time()
                         batch = []
                     except Exception as e:
+                        error_msg = str(e).lower()
+                        is_connection_error = any(msg in error_msg for msg in [
+                            'closed', 'lost', 'terminated', 'broken', 'connection'
+                        ])
+                        
                         logger.error(f"Database batch write error (batch_size={len(batch)}): {e}", exc_info=True)
                         try:
                             conn.rollback()
                         except Exception as rollback_error:
                             logger.error(f"Rollback also failed: {rollback_error}")
                         batch = []
+                        
+                        # If it's a connection error, we need to reconnect
+                        if is_connection_error:
+                            logger.warning("Connection error during batch write - reconnecting")
+                            try:
+                                self.connection_pool.putconn(conn, close=True)
+                            except Exception:
+                                pass  # Ignore errors closing dead connection
+                            try:
+                                conn = self.connection_pool.getconn()
+                                cursor = conn.cursor()
+                                reconnect_count += 1
+                                logger.info(f"Writer loop reconnected after batch error (reconnect #{reconnect_count})")
+                            except Exception as reconnect_error:
+                                logger.error(f"Failed to reconnect after batch error: {reconnect_error}")
+                                time.sleep(5)
 
             except Exception as e:
                 error_type = type(e).__name__

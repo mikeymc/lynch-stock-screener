@@ -108,7 +108,6 @@ class BackgroundWorker:
 
             if job:
                 self.current_job_id = job['id']
-                self.last_job_time = time.time()
                 logger.info(f"Claimed job {job['id']} (type: {job['job_type']})")
 
                 try:
@@ -120,6 +119,8 @@ class BackgroundWorker:
                     self.db.fail_job(job['id'], str(e))
                 finally:
                     self.current_job_id = None
+                    # Reset idle timer AFTER job completes, not when claimed
+                    self.last_job_time = time.time()
             else:
                 # No jobs available, wait before polling again
                 time.sleep(POLL_INTERVAL)
