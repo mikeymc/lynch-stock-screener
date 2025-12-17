@@ -10,7 +10,7 @@ console = Console()
 app = typer.Typer(help="Stock screening commands")
 
 API_URL = os.getenv("API_URL", "https://lynch-stock-screener.fly.dev")
-LOCAL_URL = "http://localhost:5000"
+LOCAL_URL = "http://localhost:5001"
 
 
 def get_api_token() -> str:
