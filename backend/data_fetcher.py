@@ -10,12 +10,12 @@ from edgar_fetcher import EdgarFetcher
 import pandas as pd
 import logging
 import socket
+from yfinance_rate_limiter import with_timeout_and_retry
 
 logger = logging.getLogger(__name__)
 
-# Set global socket timeout to prevent hanging network calls
-# This replaces the thread-based timeout which was causing zombie thread accumulation
-socket.setdefaulttimeout(30)
+# Note: Socket timeout is now handled by yfinance_rate_limiter decorator
+# which provides better timeout control with retry logic
 
 
 def retry_on_rate_limit(max_retries=3, initial_delay=1.0):
@@ -52,68 +52,47 @@ class DataFetcher:
             db=db
         )
 
+    @with_timeout_and_retry(timeout=30, max_retries=3, operation_name="yfinance info")
     def _get_yf_info(self, symbol: str) -> Optional[Dict[str, Any]]:
-        """Fetch yfinance info with socket timeout protection"""
-        try:
-            stock = yf.Ticker(symbol)
-            return stock.info
-        except Exception as e:
-            logger.warning(f"[{symbol}] Failed to fetch info: {e}")
-            return None
+        """Fetch yfinance info with timeout and retry protection"""
+        stock = yf.Ticker(symbol)
+        return stock.info
 
+    @with_timeout_and_retry(timeout=30, max_retries=3, operation_name="yfinance financials")
     def _get_yf_financials(self, symbol: str):
-        """Fetch yfinance financials with socket timeout protection"""
-        try:
-            stock = yf.Ticker(symbol)
-            return stock.financials
-        except Exception as e:
-            logger.warning(f"[{symbol}] Failed to fetch financials: {e}")
-            return None
+        """Fetch yfinance financials with timeout and retry protection"""
+        stock = yf.Ticker(symbol)
+        return stock.financials
 
+    @with_timeout_and_retry(timeout=30, max_retries=3, operation_name="yfinance balance_sheet")
     def _get_yf_balance_sheet(self, symbol: str):
-        """Fetch yfinance balance sheet with socket timeout protection"""
-        try:
-            stock = yf.Ticker(symbol)
-            return stock.balance_sheet
-        except Exception as e:
-            logger.warning(f"[{symbol}] Failed to fetch balance sheet: {e}")
-            return None
+        """Fetch yfinance balance sheet with timeout and retry protection"""
+        stock = yf.Ticker(symbol)
+        return stock.balance_sheet
 
+    @with_timeout_and_retry(timeout=30, max_retries=3, operation_name="yfinance quarterly_financials")
     def _get_yf_quarterly_financials(self, symbol: str):
-        """Fetch yfinance quarterly financials with socket timeout protection"""
-        try:
-            stock = yf.Ticker(symbol)
-            return stock.quarterly_financials
-        except Exception as e:
-            logger.warning(f"[{symbol}] Failed to fetch quarterly financials: {e}")
-            return None
+        """Fetch yfinance quarterly financials with timeout and retry protection"""
+        stock = yf.Ticker(symbol)
+        return stock.quarterly_financials
 
+    @with_timeout_and_retry(timeout=30, max_retries=3, operation_name="yfinance quarterly_balance_sheet")
     def _get_yf_quarterly_balance_sheet(self, symbol: str):
-        """Fetch yfinance quarterly balance sheet with socket timeout protection"""
-        try:
-            stock = yf.Ticker(symbol)
-            return stock.quarterly_balance_sheet
-        except Exception as e:
-            logger.warning(f"[{symbol}] Failed to fetch quarterly balance sheet: {e}")
-            return None
+        """Fetch yfinance quarterly balance sheet with timeout and retry protection"""
+        stock = yf.Ticker(symbol)
+        return stock.quarterly_balance_sheet
 
+    @with_timeout_and_retry(timeout=30, max_retries=3, operation_name="yfinance history")
     def _get_yf_history(self, symbol: str):
-        """Fetch yfinance price history with socket timeout protection"""
-        try:
-            stock = yf.Ticker(symbol)
-            return stock.history(period="max")
-        except Exception as e:
-            logger.warning(f"[{symbol}] Failed to fetch history: {e}")
-            return None
+        """Fetch yfinance price history with timeout and retry protection"""
+        stock = yf.Ticker(symbol)
+        return stock.history(period="max")
 
+    @with_timeout_and_retry(timeout=30, max_retries=3, operation_name="yfinance cashflow")
     def _get_yf_cashflow(self, symbol: str):
-        """Fetch yfinance cash flow with socket timeout protection"""
-        try:
-            stock = yf.Ticker(symbol)
-            return stock.cashflow
-        except Exception as e:
-            logger.warning(f"[{symbol}] Failed to fetch cashflow: {e}")
-            return None
+        """Fetch yfinance cash flow with timeout and retry protection"""
+        stock = yf.Ticker(symbol)
+        return stock.cashflow
 
     @retry_on_rate_limit(max_retries=3, initial_delay=1.0)
     def fetch_stock_data(self, symbol: str, force_refresh: bool = False, market_data_cache: Optional[Dict[str, Dict]] = None, finviz_cache: Optional[Dict[str, float]] = None) -> Optional[Dict[str, Any]]:
@@ -759,19 +738,15 @@ class DataFetcher:
             
             if cf_filled_count > 0:
                 logger.info(f"[{symbol}] Successfully backfilled Cash Flow for {cf_filled_count}/{len(years)} years from yfinance")
-
         except Exception as e:
             logger.error(f"[{symbol}] Error backfilling Cash Flow data: {e}")
 
 
+    @with_timeout_and_retry(timeout=30, max_retries=3, operation_name="yfinance dividends")
     def _get_yf_dividends(self, symbol: str):
-        """Fetch yfinance dividends with socket timeout protection"""
-        try:
-            stock = yf.Ticker(symbol)
-            return stock.dividends
-        except Exception as e:
-            logger.warning(f"[{symbol}] Failed to fetch dividends: {e}")
-            return None
+        """Fetch yfinance dividends with timeout and retry protection"""
+        stock = yf.Ticker(symbol)
+        return stock.dividends
 
     def _fetch_and_store_earnings(self, symbol: str):
         try:
