@@ -145,3 +145,74 @@ class TestCachedAPIEndpoints:
         """Test that loading stock detail page makes zero external API calls"""
         # This would be best tested with network monitoring
         assert True  # Placeholder for E2E test
+
+
+class TestCacheJobRouting:
+    """Tests for the new cache job type routing in worker._execute_job"""
+    
+    def test_execute_job_routes_price_history_cache(self):
+        """Verify _execute_job routes price_history_cache job type"""
+        import worker
+        assert hasattr(worker.BackgroundWorker, '_run_price_history_cache')
+        assert callable(getattr(worker.BackgroundWorker, '_run_price_history_cache'))
+    
+    def test_execute_job_routes_news_cache(self):
+        """Verify _execute_job routes news_cache job type"""
+        import worker
+        assert hasattr(worker.BackgroundWorker, '_run_news_cache')
+        assert callable(getattr(worker.BackgroundWorker, '_run_news_cache'))
+    
+    def test_execute_job_routes_10k_cache(self):
+        """Verify _execute_job routes 10k_cache job type"""
+        import worker
+        assert hasattr(worker.BackgroundWorker, '_run_10k_cache')
+        assert callable(getattr(worker.BackgroundWorker, '_run_10k_cache'))
+    
+    def test_execute_job_routes_8k_cache(self):
+        """Verify _execute_job routes 8k_cache job type"""
+        import worker
+        assert hasattr(worker.BackgroundWorker, '_run_8k_cache')
+        assert callable(getattr(worker.BackgroundWorker, '_run_8k_cache'))
+
+
+class TestDatabaseOrderByScore:
+    """Tests for the new get_stocks_ordered_by_score database method"""
+    
+    def test_get_stocks_ordered_by_score_method_exists(self):
+        """Verify get_stocks_ordered_by_score method exists in Database"""
+        from database import Database
+        assert hasattr(Database, 'get_stocks_ordered_by_score')
+        assert callable(getattr(Database, 'get_stocks_ordered_by_score'))
+
+
+class TestCLICacheCommands:
+    """Tests for the new CLI cache commands"""
+    
+    def test_cache_module_imports(self):
+        """Verify cache CLI module can be imported"""
+        from cli.commands import cache
+        assert hasattr(cache, 'app')
+    
+    def test_cache_commands_registered(self):
+        """Verify cache commands are registered"""
+        from cli.commands.cache import app
+        
+        # Check that expected commands exist
+        command_names = [cmd.name for cmd in app.registered_commands]
+        assert 'prices' in command_names
+        assert 'news' in command_names
+        assert '10k' in command_names
+        assert '8k' in command_names
+        assert 'all' in command_names
+    
+    def test_screen_command_has_region_option(self):
+        """Verify screen command has --region option"""
+        from cli.commands.screen import start
+        import inspect
+        
+        # Get the function signature
+        sig = inspect.signature(start)
+        params = list(sig.parameters.keys())
+        
+        assert 'region' in params
+

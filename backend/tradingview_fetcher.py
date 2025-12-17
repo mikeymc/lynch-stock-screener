@@ -140,7 +140,8 @@ class TradingViewFetcher:
         # Note: 'america' includes NYSE, NASDAQ, AMEX
         # Excludes: India, China, Mexico, South America to reduce costs
         market_groups = {
-            'us': ['america', 'canada'],  # US + Canada
+            'us': ['america'],  # US only
+            'north_america': ['america', 'canada'],  # US + Canada
             'europe': ['uk', 'germany', 'france', 'italy', 'spain', 'switzerland', 'netherlands', 'belgium', 'sweden'],
             'asia': ['hongkong', 'japan', 'korea', 'singapore', 'taiwan']  # Excludes India & China
         }

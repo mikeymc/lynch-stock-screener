@@ -64,8 +64,12 @@ class TestPriceHistoryFetcher:
         # Verify - should not save if no data
         mock_db.save_weekly_prices.assert_not_called()
     
-    def test_fetch_fiscal_year_end_prices(self, fetcher, mock_db, mock_price_client):
-        """Test fetching fiscal year-end prices"""
+    def test_fetch_fiscal_year_end_prices_no_longer_fetched(self, fetcher, mock_db, mock_price_client):
+        """Test that fiscal year-end prices are no longer fetched individually (optimization)
+        
+        Note: Fiscal year-end prices can now be queried from the weekly cache as needed,
+        so we no longer make individual API calls for each fiscal year-end date.
+        """
         # Setup
         symbol = "AAPL"
         earnings = [
@@ -74,21 +78,20 @@ class TestPriceHistoryFetcher:
             {'fiscal_end': '2021-09-30', 'eps': 5.0}
         ]
         mock_db.get_earnings_history.return_value = earnings
-        mock_price_client.get_weekly_price_history.return_value = {'dates': [], 'prices': []}
-        mock_price_client.get_historical_price.side_effect = [175.0, 155.0, 145.0]
+        mock_price_client.get_weekly_price_history.return_value = {'dates': ['2023-01-01'], 'prices': [150.0]}
         
         # Execute
         fetcher.fetch_and_cache_prices(symbol)
         
-        # Verify
-        assert mock_price_client.get_historical_price.call_count == 3
-        assert mock_db.save_price_point.call_count == 3
-        mock_db.save_price_point.assert_any_call(symbol, '2023-09-30', 175.0)
-        mock_db.save_price_point.assert_any_call(symbol, '2022-09-30', 155.0)
-        mock_db.save_price_point.assert_any_call(symbol, '2021-09-30', 145.0)
+        # Verify - no individual fiscal year-end prices are fetched
+        mock_price_client.get_historical_price.assert_not_called()
+        mock_db.save_price_point.assert_not_called()
+        
+        # Weekly prices should still be saved
+        mock_db.save_weekly_prices.assert_called_once()
     
     def test_fetch_handles_missing_fiscal_end(self, fetcher, mock_db, mock_price_client):
-        """Test handling of earnings without fiscal_end"""
+        """Test handling of earnings without fiscal_end - implementation no longer uses this"""
         # Setup
         symbol = "AAPL"
         earnings = [
@@ -96,15 +99,17 @@ class TestPriceHistoryFetcher:
             {'fiscal_end': '2022-09-30', 'eps': 5.5}
         ]
         mock_db.get_earnings_history.return_value = earnings
-        mock_price_client.get_weekly_price_history.return_value = {'dates': [], 'prices': []}
-        mock_price_client.get_historical_price.return_value = 155.0
+        mock_price_client.get_weekly_price_history.return_value = {'dates': ['2023-01-01'], 'prices': [155.0]}
         
         # Execute
         fetcher.fetch_and_cache_prices(symbol)
         
-        # Verify - should only fetch for entries with fiscal_end
-        assert mock_price_client.get_historical_price.call_count == 1
-        mock_db.save_price_point.assert_called_once_with(symbol, '2022-09-30', 155.0)
+        # Verify - fiscal year-end prices are no longer fetched individually
+        mock_price_client.get_historical_price.assert_not_called()
+        mock_db.save_price_point.assert_not_called()
+        
+        # Weekly prices should still be saved
+        mock_db.save_weekly_prices.assert_called_once()
     
     def test_fetch_handles_price_fetch_error(self, fetcher, mock_db, mock_price_client):
         """Test handling of price fetch errors"""

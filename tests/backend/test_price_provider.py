@@ -358,19 +358,20 @@ class TestHistoryEndpointIntegration:
 
 
 # ============================================================================
-# FUTURE: TVDATAFEED TESTS - Placeholder for tvDatafeed implementation tests
+# YFINANCE TESTS - Tests for YFinancePriceClient implementation
 # ============================================================================
 
-class TestTvDatafeedImplementation:
+class TestYFinancePriceClientImplementation:
     """
-    Tests specific to the TradingViewPriceClient implementation.
+    Tests specific to the YFinancePriceClient implementation.
+    Verifies the price client satisfies the PriceProvider protocol.
     """
     
-    def test_tvdatafeed_satisfies_protocol_interface(self):
-        """Verify TradingViewPriceClient has the required interface methods"""
-        from tradingview_price_client import TradingViewPriceClient
+    def test_yfinance_satisfies_protocol_interface(self):
+        """Verify YFinancePriceClient has the required interface methods"""
+        from yfinance_price_client import YFinancePriceClient
         
-        client = TradingViewPriceClient()
+        client = YFinancePriceClient()
         
         # Check interface methods exist
         assert hasattr(client, 'get_historical_price')
@@ -378,38 +379,48 @@ class TestTvDatafeedImplementation:
         assert callable(client.get_historical_price)
         assert callable(client.is_available)
     
-    def test_tvdatafeed_get_historical_price_signature(self):
+    def test_yfinance_get_historical_price_signature(self):
         """Verify get_historical_price accepts correct arguments"""
-        from tradingview_price_client import TradingViewPriceClient
+        from yfinance_price_client import YFinancePriceClient
         
-        client = TradingViewPriceClient()
+        client = YFinancePriceClient()
         client._available = False  # Prevent actual API calls
         
         # Should accept (symbol, date) and return Optional[float]
-        result = client.get_historical_price("AAPL", "2023-09-30")
+        # Using a future date ensures no actual API call
+        future_date = (datetime.now() + timedelta(days=365)).strftime('%Y-%m-%d')
+        result = client.get_historical_price("AAPL", future_date)
         
         assert result is None or isinstance(result, float)
     
-    def test_tvdatafeed_handles_invalid_date_format(self):
-        """TradingViewPriceClient should return None for invalid date formats"""
-        from tradingview_price_client import TradingViewPriceClient
+    def test_yfinance_handles_invalid_date_format(self):
+        """YFinancePriceClient should return None for invalid date formats"""
+        from yfinance_price_client import YFinancePriceClient
         
-        client = TradingViewPriceClient()
+        client = YFinancePriceClient()
         
         price = client.get_historical_price("AAPL", "not-a-date")
         
         assert price is None
     
-    def test_tvdatafeed_handles_future_date(self):
-        """TradingViewPriceClient should return None for future dates"""
-        from tradingview_price_client import TradingViewPriceClient
+    def test_yfinance_handles_future_date(self):
+        """YFinancePriceClient should return None for future dates"""
+        from yfinance_price_client import YFinancePriceClient
         
-        client = TradingViewPriceClient()
+        client = YFinancePriceClient()
         
         future_date = (datetime.now() + timedelta(days=365)).strftime('%Y-%m-%d')
         price = client.get_historical_price("AAPL", future_date)
         
         assert price is None
+    
+    def test_yfinance_is_available_returns_true(self):
+        """YFinancePriceClient.is_available() should return True by default"""
+        from yfinance_price_client import YFinancePriceClient
+        
+        client = YFinancePriceClient()
+        
+        assert client.is_available() is True
 
 
 if __name__ == "__main__":

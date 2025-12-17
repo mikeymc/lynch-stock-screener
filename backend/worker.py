@@ -139,8 +139,14 @@ class BackgroundWorker:
             self._run_screening(job_id, params)
         elif job_type == 'sec_refresh':
             self._run_sec_refresh(job_id, params)
-        elif job_type == 'sec_filings_cache':
-            self._run_sec_filings_cache(job_id, params)
+        elif job_type == 'price_history_cache':
+            self._run_price_history_cache(job_id, params)
+        elif job_type == 'news_cache':
+            self._run_news_cache(job_id, params)
+        elif job_type == '10k_cache':
+            self._run_10k_cache(job_id, params)
+        elif job_type == '8k_cache':
+            self._run_8k_cache(job_id, params)
         else:
             raise ValueError(f"Unknown job type: {job_type}")
 
@@ -157,58 +163,37 @@ class BackgroundWorker:
         algorithm = params.get('algorithm', 'weighted')
         force_refresh = params.get('force_refresh', False)
         limit = params.get('limit')
+        region = params.get('region', 'us')  # Default to US only
 
-        from yfinance_price_client import YFinancePriceClient
         from tradingview_fetcher import TradingViewFetcher
         from finviz_fetcher import FinvizFetcher
         from data_fetcher import DataFetcher
-        from edgar_fetcher import EdgarFetcher
-        from sec_8k_client import SEC8KClient
-        from finnhub_news import FinnhubNewsClient
         from earnings_analyzer import EarningsAnalyzer
         from lynch_criteria import LynchCriteria
-        from sec_data_fetcher import SECDataFetcher
-        from news_fetcher import NewsFetcher
-        from material_events_fetcher import MaterialEventsFetcher
         
-        # Pre-fetch CIK cache once for all SEC operations (Optimization 1)
-        sec_user_agent = os.environ.get('SEC_USER_AGENT', 'Lynch Stock Screener mikey@example.com')
-        logger.info("Pre-fetching SEC CIK mappings...")
-        cik_cache = EdgarFetcher.prefetch_cik_cache(sec_user_agent)
-        
-        # Initialize fetchers with shared CIK cache
+        # Initialize fetchers
         fetcher = DataFetcher(self.db)
         analyzer = EarningsAnalyzer(self.db)
-        edgar_fetcher = EdgarFetcher(
-            user_agent=sec_user_agent,
-            db=self.db,
-            cik_cache=cik_cache  # Pass pre-fetched CIK cache
-        )
-        finnhub_client = FinnhubNewsClient(api_key=os.environ.get('FINNHUB_API_KEY', 'd4nkaqpr01qk2nucd6q0d4nkaqpr01qk2nucd6qg'))
-        # Pass EdgarFetcher to SEC8KClient for Company object caching (Optimization 4)
-        sec_8k_client = SEC8KClient(
-            user_agent=sec_user_agent,
-            edgar_fetcher=edgar_fetcher
-        )
-        
-        # Initialize price client (yfinance - has implicit rate limits from Yahoo Finance)
-        price_client = YFinancePriceClient()
-        
-        # Create semaphore to limit concurrent yfinance requests (prevent Yahoo Finance rate limiting)
-        yf_semaphore = Semaphore(12)  # Limit to 12 concurrent yfinance requests
-        
-        # Initialize fetchers for data caching
-        price_history_fetcher = PriceHistoryFetcher(self.db, price_client, yf_semaphore)
-        sec_data_fetcher = SECDataFetcher(self.db, edgar_fetcher)
-        news_fetcher_instance = NewsFetcher(self.db, finnhub_client)
-        events_fetcher = MaterialEventsFetcher(self.db, sec_8k_client)
         criteria = LynchCriteria(self.db, analyzer)
 
+        # Map CLI region to TradingView regions
+        region_mapping = {
+            'us': ['us'],                       # US only
+            'north-america': ['north_america'], # US + Canada + Mexico
+            'south-america': ['south_america'], # South America
+            'europe': ['europe'],
+            'asia': ['asia'],                   # Asia including China & India
+            'all': None                         # None = all regions
+        }
+        tv_regions = region_mapping.get(region, ['us'])
+        
         # Bulk prefetch market data
-        self.db.update_job_progress(job_id, progress_pct=5, progress_message='Fetching market data from TradingView...')
+        self.db.update_job_progress(job_id, progress_pct=5, progress_message=f'Fetching market data from TradingView ({region})...')
         tv_fetcher = TradingViewFetcher()
-        market_data_cache = tv_fetcher.fetch_all_stocks(limit=20000)
-        logger.info(f"Loaded {len(market_data_cache)} stocks from TradingView")
+        
+        # Note: TradingViewFetcher.fetch_all_stocks handles the region keys defined above
+        market_data_cache = tv_fetcher.fetch_all_stocks(limit=20000, regions=tv_regions)
+        logger.info(f"Loaded {len(market_data_cache)} stocks from TradingView ({region})")
 
         self._send_heartbeat(job_id)
 
@@ -251,45 +236,26 @@ class BackgroundWorker:
         # Process stocks
         def process_stock(symbol):
             try:
-                # 1. Fetch stock data (existing)
+                # 1. Fetch stock data (uses TradingView cache for metrics)
                 stock_data = fetcher.fetch_stock_data(symbol, force_refresh,
                                                       market_data_cache=market_data_cache,
                                                       finviz_cache=finviz_cache)
                 if not stock_data:
                     return None
 
-                # 2. Evaluate stock (existing)
+                # 2. Evaluate stock against Lynch criteria
                 evaluation = criteria.evaluate_stock(symbol, algorithm=algorithm)
                 if not evaluation:
                     return None
 
-                # 3. Fetch and cache non-SEC data IN PARALLEL (optional, don't fail stock if this times out)
-                # NOTE: SEC data (10-K/Q sections, 8-K events) is cached separately via sec_filings_cache job
-                # to avoid slowing down screening with slow SEC API calls
-                try:
-                    with ThreadPoolExecutor(max_workers=2) as data_executor:
-                        # Submit non-SEC fetches concurrently (SEC caching is done separately)
-                        data_futures = {
-                            data_executor.submit(price_history_fetcher.fetch_and_cache_prices, symbol): 'prices',
-                            data_executor.submit(news_fetcher_instance.fetch_and_cache_news, symbol): 'news',
-                        }
-                        
-                        # Wait for all to complete (with timeout)
-                        for future in as_completed(data_futures, timeout=15):
-                            data_type = data_futures[future]
-                            try:
-                                future.result()
-                            except Exception as e:
-                                # Log but don't fail the stock - data caching is optional
-                                logger.debug(f"[{symbol}] Failed to cache {data_type}: {e}")
-                except TimeoutError:
-                    # Some data fetches didn't complete in time - that's okay, continue with the stock
-                    logger.debug(f"[{symbol}] Data caching timed out, continuing anyway")
-                except Exception as e:
-                    # Any other error in data caching - log and continue
-                    logger.debug(f"[{symbol}] Data caching error: {e}")
+                # NOTE: Price history and news caching are now handled by separate jobs:
+                # - price_history_cache: Caches weekly price history
+                # - news_cache: Caches Finnhub news articles
+                # - 10k_cache: Caches 10-K/10-Q sections
+                # - 8k_cache: Caches 8-K material events
+                # This keeps screening fast - focused only on evaluation.
 
-                # 4. Save screening result (always save, even if data caching failed)
+                # 3. Save screening result
                 if session_id:
                     self.db.save_screening_result(session_id, evaluation)
                 return evaluation
@@ -447,13 +413,181 @@ class BackgroundWorker:
         finally:
             migrator.close()
 
-    def _run_sec_filings_cache(self, job_id: int, params: Dict[str, Any]):
+    def _run_price_history_cache(self, job_id: int, params: Dict[str, Any]):
         """
-        Cache SEC filings data (10-K/Q sections, 8-K events) for all stocks.
+        Cache weekly price history for all stocks via yfinance.
         
-        This job runs separately from screening to avoid slowing down the screening process
-        with slow SEC API calls. First run will be slow, subsequent runs will be fast
-        due to cache checks.
+        Orders stocks by overall_score (STRONG_BUY first) to prioritize the best stocks.
+        
+        Params:
+            limit: Optional max number of stocks to process
+            force_refresh: If True, bypass cache and fetch fresh data
+        """
+        limit = params.get('limit')
+        
+        logger.info(f"Starting price history cache job {job_id}")
+        
+        from yfinance_price_client import YFinancePriceClient
+        
+        # Get stocks ordered by score (STRONG_BUY first)
+        self.db.update_job_progress(job_id, progress_pct=5, progress_message='Loading stock list by priority...')
+        all_symbols = self.db.get_stocks_ordered_by_score(limit=limit)
+        
+        total = len(all_symbols)
+        logger.info(f"Caching price history for {total} stocks (ordered by score)")
+        
+        self.db.update_job_progress(job_id, progress_pct=10, 
+                                    progress_message=f'Caching price history for {total} stocks...',
+                                    total_count=total)
+        
+        # Initialize fetchers
+        price_client = YFinancePriceClient()
+        yf_semaphore = Semaphore(12)  # Limit concurrent yfinance requests
+        price_history_fetcher = PriceHistoryFetcher(self.db, price_client, yf_semaphore)
+        
+        processed = 0
+        cached = 0
+        errors = 0
+        
+        # Process in batches with threading for performance
+        BATCH_SIZE = 50
+        MAX_WORKERS = 12
+        
+        for batch_start in range(0, total, BATCH_SIZE):
+            if self.shutdown_requested:
+                logger.info("Shutdown requested, stopping price history cache job")
+                break
+            
+            # Check if job was cancelled
+            job_status = self.db.get_background_job(job_id)
+            if job_status and job_status.get('status') == 'cancelled':
+                logger.info(f"Job {job_id} was cancelled, stopping")
+                return
+            
+            batch_end = min(batch_start + BATCH_SIZE, total)
+            batch = all_symbols[batch_start:batch_end]
+            
+            with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
+                futures = {executor.submit(price_history_fetcher.fetch_and_cache_prices, symbol): symbol for symbol in batch}
+                
+                for future in as_completed(futures):
+                    symbol = futures[future]
+                    try:
+                        future.result()
+                        cached += 1
+                    except Exception as e:
+                        logger.debug(f"[{symbol}] Price history cache error: {e}")
+                        errors += 1
+                    processed += 1
+            
+            # Update progress
+            if processed % 100 == 0 or batch_end == total:
+                pct = 10 + int((processed / total) * 85)
+                self.db.update_job_progress(
+                    job_id, 
+                    progress_pct=pct,
+                    progress_message=f'Cached {cached}/{processed} stocks ({errors} errors)',
+                    processed_count=processed,
+                    total_count=total
+                )
+                self._send_heartbeat(job_id)
+                logger.info(f"Price history cache progress: {processed}/{total} (cached: {cached}, errors: {errors})")
+        
+        # Complete job
+        result = {
+            'total_stocks': total,
+            'processed': processed,
+            'cached': cached,
+            'errors': errors
+        }
+        self.db.complete_job(job_id, result)
+        logger.info(f"Price history cache complete: {result}")
+
+    def _run_news_cache(self, job_id: int, params: Dict[str, Any]):
+        """
+        Cache news articles for all stocks via Finnhub.
+        
+        Orders stocks by overall_score (STRONG_BUY first) to prioritize the best stocks.
+        
+        Params:
+            limit: Optional max number of stocks to process
+        """
+        limit = params.get('limit')
+        
+        logger.info(f"Starting news cache job {job_id}")
+        
+        from finnhub_news import FinnhubNewsClient
+        
+        # Get stocks ordered by score
+        self.db.update_job_progress(job_id, progress_pct=5, progress_message='Loading stock list by priority...')
+        all_symbols = self.db.get_stocks_ordered_by_score(limit=limit)
+        
+        total = len(all_symbols)
+        logger.info(f"Caching news for {total} stocks (ordered by score)")
+        
+        self.db.update_job_progress(job_id, progress_pct=10,
+                                    progress_message=f'Caching news for {total} stocks...',
+                                    total_count=total)
+        
+        # Initialize fetcher
+        finnhub_client = FinnhubNewsClient(api_key=os.environ.get('FINNHUB_API_KEY', 'd4nkaqpr01qk2nucd6q0d4nkaqpr01qk2nucd6qg'))
+        news_fetcher_instance = NewsFetcher(self.db, finnhub_client)
+        
+        processed = 0
+        cached = 0
+        errors = 0
+        
+        for symbol in all_symbols:
+            if self.shutdown_requested:
+                logger.info("Shutdown requested, stopping news cache job")
+                break
+            
+            # Check if job was cancelled
+            job_status = self.db.get_background_job(job_id)
+            if job_status and job_status.get('status') == 'cancelled':
+                logger.info(f"Job {job_id} was cancelled, stopping")
+                return
+            
+            try:
+                news_fetcher_instance.fetch_and_cache_news(symbol)
+                cached += 1
+            except Exception as e:
+                logger.debug(f"[{symbol}] News cache error: {e}")
+                errors += 1
+            
+            processed += 1
+            
+            # Update progress every 50 stocks
+            if processed % 50 == 0:
+                pct = 10 + int((processed / total) * 85)
+                self.db.update_job_progress(
+                    job_id,
+                    progress_pct=pct,
+                    progress_message=f'Cached {cached}/{processed} stocks ({errors} errors)',
+                    processed_count=processed,
+                    total_count=total
+                )
+                self._send_heartbeat(job_id)
+            
+            if processed % 200 == 0:
+                logger.info(f"News cache progress: {processed}/{total} (cached: {cached}, errors: {errors})")
+        
+        # Complete job
+        result = {
+            'total_stocks': total,
+            'processed': processed,
+            'cached': cached,
+            'errors': errors
+        }
+        self.db.complete_job(job_id, result)
+        logger.info(f"News cache complete: {result}")
+
+    def _run_10k_cache(self, job_id: int, params: Dict[str, Any]):
+        """
+        Cache 10-K and 10-Q filings/sections for all stocks.
+        
+        Orders stocks by overall_score (STRONG_BUY first) to prioritize the best stocks.
+        Sequential processing due to SEC rate limits.
         
         Params:
             limit: Optional max number of stocks to process
@@ -462,13 +596,109 @@ class BackgroundWorker:
         limit = params.get('limit')
         force_refresh = params.get('force_refresh', False)
         
-        logger.info(f"Starting SEC filings cache job {job_id}")
+        logger.info(f"Starting 10-K/10-Q cache job {job_id}")
         
-        # Local imports (same pattern as _run_screening)
+        from edgar_fetcher import EdgarFetcher
+        
+        # Get stocks ordered by score
+        self.db.update_job_progress(job_id, progress_pct=5, progress_message='Loading stock list by priority...')
+        all_symbols = self.db.get_stocks_ordered_by_score(limit=limit)
+        
+        total = len(all_symbols)
+        logger.info(f"Caching 10-K/10-Q for {total} stocks (ordered by score)")
+        
+        # Initialize SEC fetcher with CIK cache
+        sec_user_agent = os.environ.get('SEC_USER_AGENT', 'Lynch Stock Screener mikey@example.com')
+        logger.info("Pre-fetching SEC CIK mappings...")
+        cik_cache = EdgarFetcher.prefetch_cik_cache(sec_user_agent)
+        
+        edgar_fetcher = EdgarFetcher(
+            user_agent=sec_user_agent,
+            db=self.db,
+            cik_cache=cik_cache
+        )
+        sec_data_fetcher = SECDataFetcher(self.db, edgar_fetcher)
+        
+        self.db.update_job_progress(job_id, progress_pct=10,
+                                    progress_message=f'Caching 10-K/10-Q for {total} stocks...',
+                                    total_count=total)
+        
+        processed = 0
+        cached = 0
+        errors = 0
+        
+        for symbol in all_symbols:
+            if self.shutdown_requested:
+                logger.info("Shutdown requested, stopping 10-K cache job")
+                break
+            
+            # Check if job was cancelled
+            job_status = self.db.get_background_job(job_id)
+            if job_status and job_status.get('status') == 'cancelled':
+                logger.info(f"Job {job_id} was cancelled, stopping")
+                return
+            
+            try:
+                sec_data_fetcher.fetch_and_cache_all(symbol, force_refresh=force_refresh)
+                cached += 1
+            except Exception as e:
+                logger.debug(f"[{symbol}] 10-K/10-Q cache error: {e}")
+                errors += 1
+            
+            processed += 1
+            
+            # Update progress every 25 stocks (slower due to rate limits)
+            if processed % 25 == 0:
+                pct = 10 + int((processed / total) * 85)
+                self.db.update_job_progress(
+                    job_id,
+                    progress_pct=pct,
+                    progress_message=f'Cached {cached}/{processed} stocks ({errors} errors)',
+                    processed_count=processed,
+                    total_count=total
+                )
+                self._send_heartbeat(job_id)
+            
+            if processed % 100 == 0:
+                logger.info(f"10-K/10-Q cache progress: {processed}/{total} (cached: {cached}, errors: {errors})")
+        
+        # Complete job
+        result = {
+            'total_stocks': total,
+            'processed': processed,
+            'cached': cached,
+            'errors': errors
+        }
+        self.db.complete_job(job_id, result)
+        logger.info(f"10-K/10-Q cache complete: {result}")
+
+    def _run_8k_cache(self, job_id: int, params: Dict[str, Any]):
+        """
+        Cache 8-K material events for all stocks.
+        
+        Orders stocks by overall_score (STRONG_BUY first) to prioritize the best stocks.
+        Sequential processing due to SEC rate limits.
+        
+        Params:
+            limit: Optional max number of stocks to process
+            force_refresh: If True, bypass cache and fetch fresh data
+        """
+        limit = params.get('limit')
+        force_refresh = params.get('force_refresh', False)
+        
+        logger.info(f"Starting 8-K cache job {job_id}")
+        
         from edgar_fetcher import EdgarFetcher
         from sec_8k_client import SEC8KClient
         
-        # Initialize SEC fetchers
+        # Get stocks ordered by score
+        self.db.update_job_progress(job_id, progress_pct=5, progress_message='Loading stock list by priority...')
+        all_symbols = self.db.get_stocks_ordered_by_score(limit=limit)
+        
+        total = len(all_symbols)
+        logger.info(f"Caching 8-K events for {total} stocks (ordered by score)")
+        
+        # Initialize SEC fetchers with CIK cache
         sec_user_agent = os.environ.get('SEC_USER_AGENT', 'Lynch Stock Screener mikey@example.com')
         logger.info("Pre-fetching SEC CIK mappings...")
         cik_cache = EdgarFetcher.prefetch_cik_cache(sec_user_agent)
@@ -482,99 +712,60 @@ class BackgroundWorker:
             user_agent=sec_user_agent,
             edgar_fetcher=edgar_fetcher
         )
-        sec_data_fetcher = SECDataFetcher(self.db, edgar_fetcher)
         events_fetcher = MaterialEventsFetcher(self.db, sec_8k_client)
         
-        # Get all stocks from database
-        self.db.update_job_progress(job_id, progress_pct=5, progress_message='Loading stock list...')
-        
-        conn = self.db.get_connection()
-        try:
-            cursor = conn.cursor()
-            cursor.execute("SELECT symbol FROM stocks ORDER BY symbol")
-            all_symbols = [row[0] for row in cursor.fetchall()]
-        finally:
-            self.db.return_connection(conn)
-        
-        # Apply limit if specified
-        if limit and limit < len(all_symbols):
-            all_symbols = all_symbols[:limit]
-        
-        total = len(all_symbols)
-        logger.info(f"Caching SEC data for {total} stocks")
-        
-        self.db.update_job_progress(job_id, progress_pct=10, 
-                                    progress_message=f'Caching SEC data for {total} stocks...',
+        self.db.update_job_progress(job_id, progress_pct=10,
+                                    progress_message=f'Caching 8-K events for {total} stocks...',
                                     total_count=total)
         
-        # Process stocks sequentially to respect SEC rate limits
-        # We use a single thread here since SEC API is rate-limited anyway
         processed = 0
-        cached_sections = 0
-        cached_events = 0
-        skipped = 0
+        cached = 0
         errors = 0
         
         for symbol in all_symbols:
             if self.shutdown_requested:
-                logger.info("Shutdown requested, stopping SEC cache job")
+                logger.info("Shutdown requested, stopping 8-K cache job")
                 break
             
             # Check if job was cancelled
             job_status = self.db.get_background_job(job_id)
             if job_status and job_status.get('status') == 'cancelled':
-                logger.info(f"Job {job_id} was cancelled, stopping SEC cache job")
+                logger.info(f"Job {job_id} was cancelled, stopping")
                 return
             
             try:
-                # Cache SEC filing sections (10-K, 10-Q)
-                try:
-                    sec_data_fetcher.fetch_and_cache_all(symbol, force_refresh=force_refresh)
-                    cached_sections += 1
-                except Exception as e:
-                    logger.debug(f"[{symbol}] SEC sections cache error: {e}")
-                
-                # Cache 8-K material events
-                try:
-                    events_fetcher.fetch_and_cache_events(symbol, force_refresh=force_refresh)
-                    cached_events += 1
-                except Exception as e:
-                    logger.debug(f"[{symbol}] 8-K events cache error: {e}")
-                
+                events_fetcher.fetch_and_cache_events(symbol, force_refresh=force_refresh)
+                cached += 1
             except Exception as e:
-                logger.warning(f"[{symbol}] SEC cache error: {e}")
+                logger.debug(f"[{symbol}] 8-K cache error: {e}")
                 errors += 1
             
             processed += 1
             
-            # Update progress every 10 stocks
-            if processed % 10 == 0:
-                pct = 10 + int((processed / total) * 85)  # 10-95%
+            # Update progress every 25 stocks (slower due to rate limits)
+            if processed % 25 == 0:
+                pct = 10 + int((processed / total) * 85)
                 self.db.update_job_progress(
-                    job_id, 
+                    job_id,
                     progress_pct=pct,
-                    progress_message=f'Cached {processed}/{total} stocks (sections: {cached_sections}, events: {cached_events})',
+                    progress_message=f'Cached {cached}/{processed} stocks ({errors} errors)',
                     processed_count=processed,
                     total_count=total
                 )
                 self._send_heartbeat(job_id)
             
-            # Log progress every 100 stocks
             if processed % 100 == 0:
-                logger.info(f"SEC cache progress: {processed}/{total} (sections: {cached_sections}, events: {cached_events}, errors: {errors})")
+                logger.info(f"8-K cache progress: {processed}/{total} (cached: {cached}, errors: {errors})")
         
         # Complete job
         result = {
             'total_stocks': total,
             'processed': processed,
-            'cached_sections': cached_sections,
-            'cached_events': cached_events,
-            'skipped': skipped,
+            'cached': cached,
             'errors': errors
         }
-        
         self.db.complete_job(job_id, result)
-        logger.info(f"SEC filings cache complete: {result}")
+        logger.info(f"8-K cache complete: {result}")
 
 
 def main():

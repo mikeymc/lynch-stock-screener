@@ -7,7 +7,7 @@ from pathlib import Path
 import typer
 from rich.console import Console
 from dotenv import load_dotenv
-from cli.commands import prod, test, screen, sec_cache
+from cli.commands import prod, test, screen, cache
 
 # Load .env file from project root
 project_root = Path(__file__).parent.parent
@@ -24,7 +24,7 @@ app = typer.Typer(
 # Add command groups
 app.add_typer(prod.app, name="prod", help="Production environment operations")
 app.add_typer(screen.app, name="screen", help="Stock screening commands")
-app.add_typer(sec_cache.app, name="sec-cache", help="SEC filings cache commands")
+app.add_typer(cache.app, name="cache", help="Data cache commands (prices, news, 10k, 8k)")
 
 # Add standalone commands
 app.command()(test.ship)

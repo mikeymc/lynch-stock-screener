@@ -29,17 +29,26 @@ def start(
     prod: bool = typer.Option(False, "--prod", help="Trigger production API instead of local"),
     algorithm: str = typer.Option("weighted", "--algorithm", "-a", help="Screening algorithm to use"),
     limit: int = typer.Option(None, "--limit", "-l", help="Limit number of stocks to screen"),
+    region: str = typer.Option("us", "--region", "-r", 
+                               help="Region to screen: us, north-america, south-america, europe, asia, all"),
 ):
     """Start stock screening"""
+    
+    # Validate region
+    valid_regions = ['us', 'north-america', 'south-america', 'europe', 'asia', 'all']
+    if region not in valid_regions:
+        console.print(f"[bold red]✗ Invalid region: {region}[/bold red]")
+        console.print(f"[yellow]Valid regions: {', '.join(valid_regions)}[/yellow]")
+        raise typer.Exit(1)
     
     if prod:
         # Production: Call /api/jobs
         token = get_api_token()
-        console.print(f"[bold blue]🚀 Triggering production screening...[/bold blue]")
+        console.print(f"[bold blue]🚀 Triggering production screening ({region})...[/bold blue]")
         
         payload = {
             "type": "full_screening",
-            "params": {"algorithm": algorithm}
+            "params": {"algorithm": algorithm, "region": region}
         }
         if limit:
             payload["params"]["limit"] = limit

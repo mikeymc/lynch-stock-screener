@@ -1672,6 +1672,63 @@ class Database:
         session = self.get_latest_session()
         return session['id'] if session else None
 
+    def get_stocks_ordered_by_score(self, limit: Optional[int] = None) -> List[str]:
+        """
+        Get stock symbols from latest completed screening session, ordered by overall_status.
+        
+        Priority order: STRONG_BUY -> BUY -> HOLD -> CAUTION -> AVOID
+        This ensures cache jobs prioritize the best-rated stocks first.
+        
+        Args:
+            limit: Optional max number of symbols to return
+            
+        Returns:
+            List of stock symbols ordered by priority
+        """
+        conn = self.get_connection()
+        try:
+            cursor = conn.cursor()
+            
+            # Get latest completed session
+            cursor.execute("""
+                SELECT id FROM screening_sessions 
+                WHERE status = 'complete' 
+                ORDER BY created_at DESC 
+                LIMIT 1
+            """)
+            session_row = cursor.fetchone()
+            
+            if not session_row:
+                # No completed session - fall back to all stocks
+                cursor.execute("SELECT symbol FROM stocks ORDER BY symbol")
+                symbols = [row[0] for row in cursor.fetchall()]
+                return symbols[:limit] if limit else symbols
+            
+            session_id = session_row[0]
+            
+            # Get symbols ordered by score priority
+            query = """
+                SELECT symbol FROM screening_results
+                WHERE session_id = %s
+                ORDER BY 
+                    CASE overall_status 
+                        WHEN 'STRONG_BUY' THEN 1 
+                        WHEN 'BUY' THEN 2 
+                        WHEN 'HOLD' THEN 3 
+                        WHEN 'CAUTION' THEN 4 
+                        WHEN 'AVOID' THEN 5 
+                        ELSE 6 
+                    END ASC
+            """
+            
+            if limit:
+                query += f" LIMIT {limit}"
+            
+            cursor.execute(query, (session_id,))
+            return [row[0] for row in cursor.fetchall()]
+        finally:
+            self.return_connection(conn)
+
     def save_sec_filing(self, symbol: str, filing_type: str, filing_date: str, document_url: str, accession_number: str):
         conn = self.get_connection()
         cursor = conn.cursor()
