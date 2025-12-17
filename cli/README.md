@@ -30,23 +30,34 @@ bag prod secrets list        # List secrets
 bag prod secrets set K V     # Set secret
 ```
 
+### Stock Screening
+```bash
+# Local development (default)
+bag screen start                    # Start local screening
+bag screen start --algorithm weighted
+bag screen start --limit 100
+bag screen stop <session_id>        # Stop local session
+
+# Production
+bag screen start --prod             # Trigger prod screening
+bag screen start --prod --algorithm weighted
+bag screen stop --prod <job_id>     # Cancel prod job
+```
+
+### SEC Cache
+```bash
+# Production only (local not implemented yet)
+bag sec-cache start --prod                      # Trigger SEC cache refresh
+bag sec-cache start --prod --limit 100 --force  # With options
+bag sec-cache stop --prod <job_id>              # Cancel job
+```
+
 ### Testing & Shipping
 ```bash
 bag test                     # Run all tests
 bag test --file PATH         # Test specific file
 bag test --match PATTERN     # Test matching pattern
 bag ship                     # Run tests → git push
-```
-
-### Background Jobs
-```bash
-# Setup (one-time) - token is already in .env file
-# If needed, update .env with: fly ssh console -a lynch-stock-screener -C "printenv API_AUTH_TOKEN"
-
-# Trigger jobs (API_AUTH_TOKEN loaded automatically from .env)
-bag jobs screen              # Trigger stock screening
-bag jobs sec-cache           # Trigger SEC cache refresh
-bag jobs sec-cache --limit 100 --force  # With options
 ```
 
 ## Examples
@@ -61,9 +72,13 @@ bag prod logs --hours 2
 bag test --file tests/backend/test_app.py
 bag ship
 
-# Trigger background jobs
-bag jobs screen
-bag jobs sec-cache --limit 100
+# Local screening
+bag screen start --limit 100
+bag screen stop 123
+
+# Production screening and cache
+bag screen start --prod --algorithm weighted
+bag sec-cache start --prod --limit 100
 ```
 
 See [walkthrough.md](file:///Users/mikey/.gemini/antigravity/brain/f244e78b-be2b-4650-8efa-14599c3cc4bd/walkthrough.md) for complete documentation.
