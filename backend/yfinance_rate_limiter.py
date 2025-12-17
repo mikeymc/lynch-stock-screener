@@ -61,13 +61,13 @@ def with_timeout_and_retry(
                         socket.setdefaulttimeout(timeout)
                         
                         try:
-                            logger.debug(f"[{symbol}] Starting {operation_name} (attempt {attempt + 1}/{max_retries}, timeout={timeout}s)")
+                            logger.info(f"[{symbol}] ▶️  Starting {operation_name} (attempt {attempt + 1}/{max_retries}, timeout={timeout}s)")
                             start_time = time.time()
                             
                             result = func(*args, **kwargs)
                             
                             elapsed = time.time() - start_time
-                            logger.debug(f"[{symbol}] Completed {operation_name} in {elapsed:.2f}s")
+                            logger.info(f"[{symbol}] ✅ Completed {operation_name} in {elapsed:.2f}s")
                             
                             return result
                         finally:
