@@ -12,7 +12,7 @@ import subprocess
 import time
 import requests
 import os
-import psycopg2
+import psycopg
 from playwright.sync_api import Page
 
 
@@ -155,8 +155,8 @@ def clear_test_session_data(test_database, page, servers):
     # It clears data that might persist across tests within the session
 
     # Connect to test database
-    conn = psycopg2.connect(
-        database=test_database,
+    conn = psycopg.connect(
+        dbname=test_database,
         user='lynch',
         password='lynch_dev_password',
         host='localhost',

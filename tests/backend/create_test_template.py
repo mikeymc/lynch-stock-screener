@@ -3,8 +3,7 @@
 
 import sys
 import os
-import psycopg2
-from psycopg2.extensions import ISOLATION_LEVEL_AUTOCOMMIT
+import psycopg
 
 # Add parent directory to path to import Database class
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -154,7 +153,7 @@ def initialize_schema():
         import time
 
         # Wait for schema to be fully created - check for stocks table
-        template_conn = psycopg2.connect(database=TEMPLATE_DB, **DB_PARAMS)
+        template_conn = psycopg.connect(dbname=TEMPLATE_DB, **DB_PARAMS)
         template_cursor = template_conn.cursor()
 
         max_retries = 30
@@ -163,7 +162,7 @@ def initialize_schema():
                 template_cursor.execute("SELECT 1 FROM stocks LIMIT 1")
                 # Table exists!
                 break
-            except psycopg2.errors.UndefinedTable:
+            except psycopg.errors.UndefinedTable:
                 if i == max_retries - 1:
                     raise Exception("Schema initialization timed out - stocks table not created")
                 time.sleep(1)
@@ -179,12 +178,12 @@ def copy_test_data():
     print("[4/5] Copying test data from production...")
 
     # Connect to both databases
-    prod_conn = psycopg2.connect(
-        database=PROD_DB,
+    prod_conn = psycopg.connect(
+        dbname=PROD_DB,
         **DB_PARAMS
     )
-    template_conn = psycopg2.connect(
-        database=TEMPLATE_DB,
+    template_conn = psycopg.connect(
+        dbname=TEMPLATE_DB,
         **DB_PARAMS
     )
 
@@ -263,8 +262,7 @@ def create_template_database():
     print()
 
     # Connect to postgres database for admin operations
-    conn = psycopg2.connect(database='postgres', **DB_PARAMS)
-    conn.set_isolation_level(ISOLATION_LEVEL_AUTOCOMMIT)
+    conn = psycopg.connect(dbname='postgres', autocommit=True, **DB_PARAMS)
 
     try:
         # Step 1: Drop existing template

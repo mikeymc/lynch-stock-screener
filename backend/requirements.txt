@@ -14,7 +14,8 @@ gunicorn
 tradingview-screener
 beautifulsoup4
 lxml
-psycopg2-binary
+psycopg[binary]
+psycopg_pool
 scipy
 pytest-playwright
 scikit-optimize

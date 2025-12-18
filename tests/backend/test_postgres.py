@@ -2,7 +2,7 @@
 """Quick test to verify PostgreSQL setup and SEC data access"""
 
 from database import Database
-import psycopg2
+import psycopg
 
 def test_postgres_connection(test_db):
     """Test basic database connection"""
@@ -14,10 +14,10 @@ def test_sec_data_access():
     """Test querying SEC company_facts data"""
     print("\nTesting SEC company_facts access...")
 
-    conn = psycopg2.connect(
+    conn = psycopg.connect(
         host="localhost",
         port=5432,
-        database="lynch_stocks",
+        dbname="lynch_stocks",
         user="lynch",
         password="lynch_dev_password"
     )

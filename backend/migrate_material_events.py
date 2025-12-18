@@ -4,7 +4,7 @@
 
 import os
 import sys
-import psycopg2
+import psycopg
 import logging
 from datetime import datetime
 
@@ -34,7 +34,7 @@ class MaterialEventsMigration:
     def connect(self):
         """Connect to PostgreSQL"""
         logger.info(f"Connecting to PostgreSQL at {self.db_params['host']}:{self.db_params['port']}")
-        self.conn = psycopg2.connect(**self.db_params)
+        self.conn = psycopg.connect(**self.db_params)
         logger.info("✓ Connected to PostgreSQL")
 
     def check_table_exists(self):

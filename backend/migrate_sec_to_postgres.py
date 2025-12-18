@@ -5,8 +5,7 @@
 import os
 import sys
 import json
-import psycopg2
-from psycopg2.extras import execute_batch
+import psycopg
 from pathlib import Path
 from datetime import datetime
 import logging
@@ -51,7 +50,7 @@ class SECPostgresMigrator:
     def connect(self):
         """Connect to PostgreSQL"""
         logger.info(f"Connecting to PostgreSQL at {self.db_params['host']}:{self.db_params['port']}")
-        self.conn = psycopg2.connect(**self.db_params)
+        self.conn = psycopg.connect(**self.db_params)
         logger.info("Connected to PostgreSQL")
 
     def create_schema(self):
@@ -293,15 +292,17 @@ class SECPostgresMigrator:
     def _insert_batch(self, batch: list):
         """Insert a batch of company records"""
         with self.conn.cursor() as cur:
-            execute_batch(cur, """
+            # Convert batch to list of tuples for executemany
+            values = [(r['cik'], r['entity_name'], r['ticker'], r['facts'], r['last_updated']) for r in batch]
+            cur.executemany("""
                 INSERT INTO company_facts (cik, entity_name, ticker, facts, last_updated)
-                VALUES (%(cik)s, %(entity_name)s, %(ticker)s, %(facts)s, %(last_updated)s)
+                VALUES (%s, %s, %s, %s, %s)
                 ON CONFLICT (cik) DO UPDATE SET
                     entity_name = EXCLUDED.entity_name,
                     ticker = EXCLUDED.ticker,
                     facts = EXCLUDED.facts,
                     last_updated = EXCLUDED.last_updated
-            """, batch)
+            """, values)
             self.conn.commit()
 
     def populate_tickers_from_mapping(self):

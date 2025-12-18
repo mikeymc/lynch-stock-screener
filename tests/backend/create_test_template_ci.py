@@ -6,8 +6,7 @@
 Creates template database for CI environment by restoring from SQL dump.
 Unlike create_test_template.py, this doesn't copy from production.
 """
-import psycopg2
-from psycopg2.extensions import ISOLATION_LEVEL_AUTOCOMMIT
+import psycopg
 import os
 import subprocess
 
@@ -23,14 +22,14 @@ def create_template_from_dump():
     print("[1/3] Creating empty template database...")
 
     # Connect to postgres database for admin operations
-    conn = psycopg2.connect(
+    conn = psycopg.connect(
         host=db_host,
         port=db_port,
         user=db_user,
         password=db_password,
-        database='postgres'
+        dbname='postgres',
+        autocommit=True
     )
-    conn.set_isolation_level(ISOLATION_LEVEL_AUTOCOMMIT)
     cursor = conn.cursor()
 
     # Terminate connections to template database
@@ -96,14 +95,14 @@ def create_template_from_dump():
     print("[3/3] Marking as template database...")
 
     # Mark as template
-    conn = psycopg2.connect(
+    conn = psycopg.connect(
         host=db_host,
         port=db_port,
         user=db_user,
         password=db_password,
-        database='postgres'
+        dbname='postgres',
+        autocommit=True
     )
-    conn.set_isolation_level(ISOLATION_LEVEL_AUTOCOMMIT)
     cursor = conn.cursor()
 
     cursor.execute("ALTER DATABASE lynch_stocks_template IS_TEMPLATE = TRUE")
@@ -123,14 +122,14 @@ def create_default_database():
 
     print("\n[Extra] Creating default lynch_stocks database from template...")
 
-    conn = psycopg2.connect(
+    conn = psycopg.connect(
         host=db_host,
         port=db_port,
         user=db_user,
         password=db_password,
-        database='postgres'
+        dbname='postgres',
+        autocommit=True
     )
-    conn.set_isolation_level(ISOLATION_LEVEL_AUTOCOMMIT)
     cursor = conn.cursor()
 
     # Terminate connections to lynch_stocks database
@@ -160,3 +159,4 @@ if __name__ == '__main__':
         import traceback
         traceback.print_exc()
         exit(1)
+

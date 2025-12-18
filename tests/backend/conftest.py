@@ -2,7 +2,7 @@
 # ABOUTME: Provides test_database fixture for PostgreSQL test database setup
 
 import pytest
-import psycopg2
+import psycopg
 import sys
 import os
 
@@ -28,14 +28,14 @@ def test_database():
     print("\n[BACKEND TEST DB] Setting up empty test database for unit tests...")
 
     # Connect to postgres database for admin operations
-    conn = psycopg2.connect(
-        database='postgres',
+    conn = psycopg.connect(
+        dbname='postgres',
         user='lynch',
         password='lynch_dev_password',
         host='localhost',
-        port=5432
+        port=5432,
+        autocommit=True
     )
-    conn.autocommit = True
     cursor = conn.cursor()
 
     # Terminate any existing connections to test database
@@ -63,14 +63,14 @@ def test_database():
     # Cleanup: Drop test database
     print(f"\n[BACKEND TEST DB] Cleaning up test database...")
 
-    conn = psycopg2.connect(
-        database='postgres',
+    conn = psycopg.connect(
+        dbname='postgres',
         user='lynch',
         password='lynch_dev_password',
         host='localhost',
-        port=5432
+        port=5432,
+        autocommit=True
     )
-    conn.autocommit = True
     cursor = conn.cursor()
 
     # Terminate all connections to test database

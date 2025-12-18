@@ -2,7 +2,7 @@
 Shared pytest fixtures for all test suites.
 """
 import pytest
-import psycopg2
+import psycopg
 import os
 
 
@@ -24,14 +24,14 @@ def test_database():
     print("\n[TEST DB] Setting up test database...")
 
     # Connect to postgres database for admin operations
-    conn = psycopg2.connect(
-        database='postgres',
+    conn = psycopg.connect(
+        dbname='postgres',
         user='lynch',
         password='lynch_dev_password',
         host='localhost',
-        port=5432
+        port=5432,
+        autocommit=True
     )
-    conn.autocommit = True
     cursor = conn.cursor()
 
     # Verify template exists
@@ -82,3 +82,4 @@ def test_database():
 
     cursor.close()
     conn.close()
+

@@ -1,9 +1,8 @@
 # ABOUTME: Manages PostgreSQL database for caching stock data and financial metrics
 # ABOUTME: Provides schema and operations for storing and retrieving stock information
 
-import psycopg2
-import psycopg2.pool
-import psycopg2.extras
+import psycopg
+from psycopg_pool import ConnectionPool
 import threading
 import os
 import queue
@@ -24,18 +23,14 @@ class Database:
                  user: str = "lynch",
                  password: str = "lynch_dev_password"):
 
-        self.db_params = {
-            'host': host,
-            'port': port,
-            'database': database,
-            'user': user,
-            'password': password,
-            # TCP keepalive settings to prevent idle connection timeouts
-            'keepalives': 1,
-            'keepalives_idle': 30,      # Start keepalives after 30 seconds of idle
-            'keepalives_interval': 10,  # Send keepalive every 10 seconds
-            'keepalives_count': 5       # Close connection after 5 failed keepalives
-        }
+        # Build connection string with keepalives
+        self.conninfo = (
+            f"host={host} port={port} dbname={database} user={user} password={password} "
+            f"keepalives=1 keepalives_idle=30 keepalives_interval=10 keepalives_count=5"
+        )
+        self.host = host
+        self.port = port
+        self.database = database
 
         self._lock = threading.Lock()
         self._initializing = True
@@ -45,11 +40,18 @@ class Database:
         # Can be overridden via DB_POOL_SIZE env var (useful for tests)
         self.pool_size = int(os.environ.get('DB_POOL_SIZE', 50))
         min_connections = min(5, self.pool_size)  # Don't exceed pool_size
-        logger.info(f"Creating database connection pool: {self.db_params['host']}:{self.db_params['port']}/{self.db_params['database']} (pool_size={self.pool_size}, min={min_connections})")
-        self.connection_pool = psycopg2.pool.ThreadedConnectionPool(
-            minconn=min_connections,
-            maxconn=self.pool_size,
-            **self.db_params
+        logger.info(f"Creating database connection pool: {host}:{port}/{database} (pool_size={self.pool_size}, min={min_connections})")
+        
+        # psycopg3 ConnectionPool with built-in health checking
+        # The 'check' callback validates connections before handing to clients
+        self.connection_pool = ConnectionPool(
+            conninfo=self.conninfo,
+            min_size=min_connections,
+            max_size=self.pool_size,
+            check=ConnectionPool.check_connection,  # Built-in health check
+            max_lifetime=3600,  # Recycle connections after 1 hour
+            max_idle=300,  # Close idle connections after 5 minutes
+            open=True,  # Open pool immediately on creation
         )
         logger.info("Database connection pool created successfully")
 
@@ -91,25 +93,14 @@ class Database:
         self.write_queue.join()
 
     def get_connection(self):
-        """Get a connection from the pool"""
+        """Get a connection from the pool.
+        
+        psycopg3's ConnectionPool with check=ConnectionPool.check_connection
+        automatically validates connections before returning them, so we no
+        longer need manual validation here.
+        """
         try:
             conn = self.connection_pool.getconn()
-
-            # Validate connection is still alive - if not, close and get a new one
-            if conn.closed:
-                logger.warning("Connection from pool was already closed, getting new connection")
-                self.connection_pool.putconn(conn, close=True)
-                conn = self.connection_pool.getconn()
-            else:
-                # Test the connection with a simple query
-                try:
-                    cursor = conn.cursor()
-                    cursor.execute("SELECT 1")
-                    cursor.close()
-                except Exception as test_error:
-                    logger.warning(f"Connection validation failed ({test_error}), getting new connection")
-                    self.connection_pool.putconn(conn, close=True)
-                    conn = self.connection_pool.getconn()
 
             with self._pool_stats_lock:
                 self._connections_checked_out += 1
@@ -156,7 +147,7 @@ class Database:
             }
 
     def _sanitize_numpy_types(self, args):
-        """Convert numpy types to Python native types for psycopg2"""
+        """Convert numpy types to Python native types for psycopg"""
         import numpy as np
 
         if isinstance(args, (list, tuple)):
@@ -1575,7 +1566,7 @@ class Database:
         """Get user by Google ID"""
         conn = self.get_connection()
         try:
-            cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+            cursor = conn.cursor(row_factory=psycopg.rows.dict_row)
             cursor.execute("SELECT * FROM users WHERE google_id = %s", (google_id,))
             return cursor.fetchone()
         finally:
@@ -1585,7 +1576,7 @@ class Database:
         """Get user by user_id"""
         conn = self.get_connection()
         try:
-            cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+            cursor = conn.cursor(row_factory=psycopg.rows.dict_row)
             cursor.execute("SELECT * FROM users WHERE id = %s", (user_id,))
             return cursor.fetchone()
         finally:
