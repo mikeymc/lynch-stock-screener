@@ -122,6 +122,10 @@ class Database:
     def return_connection(self, conn):
         """Return a connection to the pool"""
         try:
+            # Ensure connection is in idle state (no uncommitted transaction)
+            # psycopg3 pool warns if connections are returned with active transactions
+            if conn and not conn.closed:
+                conn.rollback()
             self.connection_pool.putconn(conn)
             with self._pool_stats_lock:
                 self._connections_returned += 1
