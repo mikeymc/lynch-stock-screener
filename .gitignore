@@ -62,6 +62,11 @@ backend/finviz_institutional_cache.json
 # Test cache
 .pytest_cache/
 
+# Coverage reports
+htmlcov/
+.coverage
+.coverage.*
+
 # SEC cache
 sec_cache/
 

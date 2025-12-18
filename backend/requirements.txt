@@ -5,6 +5,7 @@ yfinance
 pandas
 requests
 pytest
+pytest-cov
 python-dotenv
 google-genai
 google-auth
