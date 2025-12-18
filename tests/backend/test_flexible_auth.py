@@ -19,6 +19,9 @@ def client(test_db, monkeypatch):
 
     # Replace app's db with test_db
     monkeypatch.setattr(app_module, 'db', test_db)
+    
+    # Disable API token authentication by default (tests can override)
+    monkeypatch.setattr(app_module, 'API_AUTH_TOKEN', None)
 
     app.config['TESTING'] = True
     with app.test_client() as client:

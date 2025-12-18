@@ -13,7 +13,7 @@ def test(
     match: str = typer.Option(None, "--match", "-k", help="Run tests matching pattern"),
 ):
     """Run pytest tests"""
-    cmd = ["pytest"]
+    cmd = ["uv", "run", "pytest"]
     
     if file:
         cmd.append(file)
@@ -43,7 +43,7 @@ def ship():
     
     # Run tests first
     console.print("[bold]Step 1: Running tests[/bold]")
-    cmd = ["pytest", "tests/", "-v", "--tb=short"]
+    cmd = ["uv", "run", "pytest", "tests/", "-v", "--tb=short"]
     result = subprocess.run(cmd)
     
     if result.returncode != 0:
