@@ -42,7 +42,7 @@ import logging
 USE_BACKGROUND_JOBS = os.environ.get('USE_BACKGROUND_JOBS', 'false').lower() == 'true'
 
 # Available AI models for analysis generation
-AVAILABLE_AI_MODELS = ["gemini-2.5-flash", "gemini-3-pro-preview"]
+AVAILABLE_AI_MODELS = ["gemini-2.5-flash", "gemini-3-flash-preview", "gemini-3-pro-preview"]
 DEFAULT_AI_MODEL = "gemini-2.5-flash"
 
 # Configure logging
