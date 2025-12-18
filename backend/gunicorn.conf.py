@@ -7,7 +7,9 @@ import multiprocessing
 bind = "0.0.0.0:8080"
 
 # Number of worker processes
-workers = multiprocessing.cpu_count() * 2 + 1
+# Using 1 worker since we handle concurrency via background threads
+# Multiple workers would cause duplicate initialization and session resume race conditions
+workers = 1
 
 # Worker timeout in seconds - set high to allow full stock screening to complete
 # Stock screening can take several hours to process thousands of stocks
