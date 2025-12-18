@@ -151,267 +151,6 @@ def clean_nan_values(obj):
     return obj
 
 
-def resume_incomplete_sessions():
-    """Resume any screening sessions that were interrupted by backend restart"""
-    try:
-        conn = db.get_connection()
-        cursor = conn.cursor()
-        cursor.execute("""
-            SELECT id, algorithm, total_count, processed_count
-            FROM screening_sessions
-            WHERE status = 'running'
-        """)
-        incomplete_sessions = cursor.fetchall()
-        db.return_connection(conn)
-        
-        for session_id, algorithm, total_count, processed_count in incomplete_sessions:
-            print(f"[Startup] Found incomplete session {session_id}: {processed_count}/{total_count} stocks processed")
-            
-            # Get all symbols
-            symbols = fetcher.get_nyse_nasdaq_symbols()
-            if not symbols:
-                print(f"[Startup] Could not fetch symbols for session {session_id}")
-                continue
-            
-            # Resume from where we left off
-            remaining_symbols = symbols[processed_count:]
-            
-            if remaining_symbols:
-                print(f"[Startup] Resuming session {session_id} with {len(remaining_symbols)} remaining stocks")
-                
-                # Start background thread
-                thread = threading.Thread(
-                    target=run_screening_background,
-                    args=(session_id, remaining_symbols, algorithm, False),
-                    daemon=True
-                )
-                thread.start()
-                
-                # Track active screening
-                with screening_lock:
-                    active_screenings[session_id] = {
-                        'thread': thread,
-                        'started_at': datetime.now().isoformat(),
-                        'resumed': True
-                    }
-            else:
-                # No remaining symbols, mark as complete
-                print(f"[Startup] Session {session_id} has no remaining symbols, marking complete")
-                db.complete_session(session_id, processed_count, 0, 0, 0)
-                
-    except Exception as e:
-        print(f"[Startup] Error resuming incomplete sessions: {e}")
-        import traceback
-        traceback.print_exc()
-
-
-def run_screening_background(session_id: int, symbols: list, algorithm: str, force_refresh: bool, region: str = 'us'):
-    """
-    Run stock screening in background thread.
-    Updates progress in database as stocks are processed.
-    """
-    try:
-        print(f"[Session {session_id}] ===== BACKGROUND THREAD STARTED =====")
-        print(f"[Session {session_id}] Symbols to process: {len(symbols)}")
-        print(f"[Session {session_id}] Algorithm: {algorithm}")
-        print(f"[Session {session_id}] Force refresh: {force_refresh}")
-        print(f"[Session {session_id}] Region: {region}")
-        
-        # Bulk prefetch market data from TradingView (with region filtering)
-        print(f"[Session {session_id}] Prefetching market data from TradingView ({region})...")
-        from tradingview_fetcher import TradingViewFetcher
-        tv_fetcher = TradingViewFetcher()
-        
-        # Map region to TradingView regions
-        region_mapping = {
-            'us': ['us'],
-            'north-america': ['north_america'],
-            'south-america': ['south_america'],
-            'europe': ['europe'],
-            'asia': ['asia'],
-            'all': None
-        }
-        tv_regions = region_mapping.get(region, ['us'])
-        
-        market_data_cache = tv_fetcher.fetch_all_stocks(limit=20000, regions=tv_regions)
-
-        # Bulk prefetch institutional ownership from Finviz
-        print(f"[Session {session_id}] Prefetching institutional ownership from Finviz...")
-        from finviz_fetcher import FinvizFetcher
-        finviz_fetcher = FinvizFetcher()
-        finviz_cache = finviz_fetcher.fetch_all_institutional_ownership(limit=20000)
-        print(f"[Session {session_id}] ✅ Loaded {len(finviz_cache)} institutional ownership values from Finviz")
-        
-        # Use TradingView symbols as our source of truth
-        tv_symbols = list(market_data_cache.keys())
-        
-        # Apply filters (Warrants, Preferreds, etc) to the TV list immediately
-        filtered_tv_symbols = []
-        for sym in tv_symbols:
-            # Filter preferred/warrants/etc
-            if any(char in sym for char in ['$', '-', '.']) and sym not in ['BRK.B', 'BF.B']:
-                continue
-            if len(sym) >= 5 and sym[-1] in ['W', 'R', 'U']:
-                continue
-            filtered_tv_symbols.append(sym)
-            
-        # Determine if we should use the full list or a subset (if user requested a limit)
-        FULL_UNIVERSE_THRESHOLD = 5000
-        
-        if len(symbols) < FULL_UNIVERSE_THRESHOLD and len(symbols) < len(filtered_tv_symbols):
-            # User likely requested a limit (e.g. "Screen top 100")
-            print(f"[Session {session_id}] User requested limit detected ({len(symbols)} symbols). Using top {len(symbols)} from TradingView.")
-            symbols = filtered_tv_symbols[:len(symbols)]
-        else:
-            # Full screen - use the entire TradingView universe
-            print(f"[Session {session_id}] Using full TradingView universe ({len(filtered_tv_symbols)} symbols) as source.")
-            symbols = filtered_tv_symbols
-            
-        # Update session total in DB since the count likely changed
-        db.update_session_total_count(session_id, len(symbols))
-        
-        print(f"[Session {session_id}] ✅ Ready to screen {len(symbols)} stocks (100% market data cached)")
-        print()
-        
-        # Worker function to process a single stock
-        def process_stock(symbol):
-            try:
-                # Pass market data cache and finviz cache to avoid individual yfinance calls
-                stock_data = fetcher.fetch_stock_data(symbol, force_refresh, market_data_cache=market_data_cache, finviz_cache=finviz_cache)
-                if not stock_data:
-                    return None
-
-                evaluation = criteria.evaluate_stock(symbol, algorithm=algorithm)
-                if not evaluation:
-                    return None
-
-                # Save result to session
-                db.save_screening_result(session_id, evaluation)
-                return evaluation
-                
-            except Exception as e:
-                print(f"Error processing {symbol}: {e}")
-                return None
-        
-        results = []
-        processed_count = 0
-        failed_symbols = []
-        total = len(symbols)
-        
-        # Process stocks in batches using parallel workers
-        # Increased parallelization since we're using local caches (TradingView + Finviz)
-        BATCH_SIZE = 10  # Increased from 3
-        MAX_WORKERS = 40  # Optimal for I/O-bound operations with cached data
-        BATCH_DELAY = 0.5  # Reduced from 1.5s since most data is cached
-        
-        with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
-            for batch_start in range(0, total, BATCH_SIZE):
-                # Check if session was cancelled
-                with screening_lock:
-                    if session_id not in active_screenings:
-                        print(f"[Session {session_id}] Cancelled by user, exiting...")
-                        return
-                
-                batch_end = min(batch_start + BATCH_SIZE, total)
-                batch = symbols[batch_start:batch_end]
-                
-                # Submit batch to thread pool
-                future_to_symbol = {executor.submit(process_stock, symbol): symbol for symbol in batch}
-                
-                # Collect results as they complete
-                for future in as_completed(future_to_symbol):
-                    symbol = future_to_symbol[future]
-                    processed_count += 1
-                    
-                    try:
-                        evaluation = future.result()
-                        if evaluation:
-                            results.append(evaluation)
-                        else:
-                            failed_symbols.append(symbol)
-                        
-                        # Update progress in database
-                        db.update_session_progress(session_id, processed_count, symbol)
-                        
-                        # Log progress every 10 stocks
-                        if processed_count % 10 == 0:
-                            pct = int((processed_count / total) * 100)
-                            print(f"[Session {session_id}] SCREENING PROGRESS: {processed_count}/{total} ({pct}%) - {len(results)} evaluated")
-                        
-                        # Detailed log every 100 stocks
-                        if processed_count % 100 == 0:
-                            by_status = {}
-                            for r in results:
-                                status = r.get('overall_status', 'UNKNOWN')
-                                by_status[status] = by_status.get(status, 0) + 1
-                            print(f"[Session {session_id}] Status breakdown: {by_status}")
-                        
-                    except Exception as e:
-                        print(f"Error getting result for {symbol}: {e}")
-                        failed_symbols.append(symbol)
-                        db.update_session_progress(session_id, processed_count, symbol)
-                
-                # Rate limiting delay between batches
-                if batch_end < total:
-                    time.sleep(BATCH_DELAY)
-        
-        # Automatic retry pass for failed stocks
-        if failed_symbols:
-            print(f"[Session {session_id}] Retrying {len(failed_symbols)} failed stocks")
-            time.sleep(5)
-            
-            for symbol in failed_symbols:
-                try:
-                    evaluation = process_stock(symbol)
-                    if evaluation:
-                        results.append(evaluation)
-                        # Do not increment processed_count on retry, as it was already counted in the main loop
-                        db.update_session_progress(session_id, processed_count, symbol)
-                    time.sleep(2)
-                except Exception as e:
-                    print(f"Retry error for {symbol}: {e}")
-        
-        # Calculate final counts
-        results_by_status = {}
-        if algorithm == 'classic':
-            results_by_status = {
-                'pass': [r for r in results if r['overall_status'] == 'PASS'],
-                'close': [r for r in results if r['overall_status'] == 'CLOSE'],
-                'fail': [r for r in results if r['overall_status'] == 'FAIL']
-            }
-        else:
-            results_by_status = {
-                'strong_buy': [r for r in results if r['overall_status'] == 'STRONG_BUY'],
-                'buy': [r for r in results if r['overall_status'] == 'BUY'],
-                'hold': [r for r in results if r['overall_status'] == 'HOLD'],
-                'caution': [r for r in results if r['overall_status'] == 'CAUTION'],
-                'avoid': [r for r in results if r['overall_status'] == 'AVOID']
-            }
-        
-        total_analyzed = len(results)
-        pass_count = len(results_by_status.get('pass', [])) + len(results_by_status.get('strong_buy', []))
-        close_count = len(results_by_status.get('close', [])) + len(results_by_status.get('buy', []))
-        fail_count = len(results_by_status.get('fail', [])) + len(results_by_status.get('avoid', []))
-        
-        # Mark session as complete
-        db.complete_session(session_id, total_analyzed, pass_count, close_count, fail_count)
-        
-        print(f"[Session {session_id}] Screening complete: {total_analyzed} stocks analyzed")
-        
-    except Exception as e:
-        print(f"[Session {session_id}] Fatal error in background screening: {e}")
-        import traceback
-        traceback.print_exc()
-    finally:
-        # Remove from active screenings
-        with screening_lock:
-            if session_id in active_screenings:
-                del active_screenings[session_id]
-
-
-# Resume incomplete sessions on startup
-resume_incomplete_sessions()
-
 
 @app.route('/api/health', methods=['GET'])
 def health():
@@ -560,31 +299,42 @@ def test_login():
 API_AUTH_TOKEN = os.environ.get('API_AUTH_TOKEN')
 
 
-def check_api_auth():
-    """Check bearer token authentication. Returns error response or None if authorized."""
-    if not API_AUTH_TOKEN:
-        # No token configured - allow all requests (local dev)
-        return None
-
-    auth_header = request.headers.get('Authorization', '')
-    if not auth_header.startswith('Bearer '):
-        return jsonify({'error': 'Authorization header required'}), 401
-
-    token = auth_header[7:]  # Remove 'Bearer ' prefix
-    if token != API_AUTH_TOKEN:
-        return jsonify({'error': 'Invalid token'}), 401
-
+def check_flexible_auth():
+    """
+    Check authentication - accepts EITHER OAuth session OR API token.
+    Returns error response or None if authorized.
+    
+    This allows:
+    - Frontend users to use OAuth (session-based)
+    - GitHub Actions to use API token (Bearer header)
+    - Local dev without auth (if API_AUTH_TOKEN not configured)
+    """
+    # Check if user is authenticated via OAuth session
+    if 'user_id' in session:
+        return None  # Authorized via OAuth
+    
+    # Check if request has valid API token
+    if API_AUTH_TOKEN:
+        auth_header = request.headers.get('Authorization', '')
+        if auth_header.startswith('Bearer '):
+            token = auth_header[7:]
+            if token == API_AUTH_TOKEN:
+                return None  # Authorized via API token
+        
+        # Neither OAuth nor valid API token provided
+        return jsonify({'error': 'Unauthorized', 'message': 'Please log in or provide API token'}), 401
+    
+    # No API_AUTH_TOKEN configured (local dev) - allow all requests
     return None
 
 
 @app.route('/api/jobs', methods=['POST'])
 def create_job():
-    """Create a new background job (requires API token if configured)"""
-    # Check auth for external requests (skip for internal calls from /api/screen/start)
-    if request.headers.get('X-Internal-Request') != 'true':
-        auth_error = check_api_auth()
-        if auth_error:
-            return auth_error
+    """Create a new background job (accepts OAuth session OR API token)"""
+    # Check authentication (OAuth OR API token)
+    auth_error = check_flexible_auth()
+    if auth_error:
+        return auth_error
 
     try:
         data = request.get_json()
@@ -594,6 +344,14 @@ def create_job():
 
         job_type = data['type']
         params = data.get('params', {})
+
+        # For screening jobs, create session if not provided
+        session_id = params.get('session_id')  # Check if already provided
+        if job_type == 'full_screening' and not session_id:
+            algorithm = params.get('algorithm', 'weighted')
+            session_id = db.create_session(algorithm=algorithm, total_count=0)
+            params['session_id'] = session_id
+            logger.info(f"Created screening session {session_id} for job")
 
         # Check connection pool health before creating job
         pool_stats = db.get_pool_stats()
@@ -613,10 +371,16 @@ def create_job():
         worker_started = fly_manager.ensure_worker_running()
         logger.info(f"Worker startup triggered: {worker_started}")
 
-        return jsonify({
+        response_data = {
             'job_id': job_id,
             'status': 'pending'
-        })
+        }
+        
+        # Include session_id in response for screening jobs
+        if job_type == 'full_screening' and session_id:
+            response_data['session_id'] = session_id
+
+        return jsonify(response_data)
 
     except Exception as e:
         logger.error(f"Error creating job: type={data.get('type') if data else 'unknown'}, error={e}", exc_info=True)
@@ -641,9 +405,9 @@ def get_job(job_id):
 
 @app.route('/api/jobs/<int:job_id>/cancel', methods=['POST'])
 def cancel_job(job_id):
-    """Cancel a background job (requires API token if configured)"""
-    # Check auth for external requests
-    auth_error = check_api_auth()
+    """Cancel a background job (accepts OAuth session OR API token)"""
+    # Check authentication (OAuth OR API token)
+    auth_error = check_flexible_auth()
     if auth_error:
         return auth_error
     
@@ -728,121 +492,6 @@ def get_stock(symbol):
         'evaluation': clean_nan_values(evaluation)
     })
 
-
-@app.route('/api/screen/start', methods=['POST'])
-def start_screening():
-    """Start a new screening session via background job queue or thread"""
-    data = request.get_json() or {}
-    limit = data.get('limit')
-    force_refresh = data.get('force_refresh', False)
-    algorithm = data.get('algorithm', 'weighted')
-    region = data.get('region', 'us')  # Default to US only
-
-    try:
-        print(f"[START] Starting screening with limit={limit}, algorithm={algorithm}, region={region}")
-        print(f"[START] USE_BACKGROUND_JOBS={USE_BACKGROUND_JOBS}")
-
-        # Create session first (needed for both approaches)
-        session_id = db.create_session(algorithm=algorithm, total_count=0)
-        print(f"[START] Created session {session_id}")
-
-        if USE_BACKGROUND_JOBS:
-            # Create background job and wake up worker
-            job_id = db.create_background_job('full_screening', {
-                'session_id': session_id,
-                'algorithm': algorithm,
-                'force_refresh': force_refresh,
-                'limit': limit,
-                'region': region  # Pass region to worker
-            })
-            print(f"[START] Created background job {job_id} for session {session_id}")
-
-            # Start worker machine if configured
-            fly_manager = get_fly_manager()
-            worker_started = fly_manager.ensure_worker_running()
-            print(f"[START] Worker start result: {worker_started}")
-
-            return jsonify({
-                'session_id': session_id,
-                'job_id': job_id,
-                'status': 'pending',
-                'use_background_jobs': True
-            })
-        else:
-            # Fall back to in-process threading (original behavior)
-            # Use TradingView to fetch stocks with region filtering
-            from tradingview_fetcher import TradingViewFetcher
-            
-            # Map region to TradingView regions
-            region_mapping = {
-                'us': ['us'],
-                'north-america': ['north_america'],
-                'south-america': ['south_america'],
-                'europe': ['europe'],
-                'asia': ['asia'],
-                'all': None
-            }
-            tv_regions = region_mapping.get(region, ['us'])
-            
-            print(f"[START] Fetching symbols from TradingView (region={region})...")
-            tv_fetcher = TradingViewFetcher()
-            market_data_cache = tv_fetcher.fetch_all_stocks(limit=20000, regions=tv_regions)
-            
-            # Filter symbols
-            symbols = []
-            for sym in market_data_cache.keys():
-                if any(char in sym for char in ['$', '-', '.']) and sym not in ['BRK.B', 'BF.B']:
-                    continue
-                if len(sym) >= 5 and sym[-1] in ['W', 'R', 'U']:
-                    continue
-                symbols.append(sym)
-            
-            if not symbols:
-                print("[START] ERROR: No symbols returned from TradingView")
-                return jsonify({'error': 'Unable to fetch stock symbols'}), 500
-
-            print(f"[START] Fetched {len(symbols)} symbols from TradingView ({region})")
-
-            if limit:
-                symbols = symbols[:limit]
-
-            total = len(symbols)
-            print(f"[START] Will screen {total} symbols")
-
-            # Update session with total count
-            db.update_session_total_count(session_id, total)
-
-            # Start background thread (pass region for TradingView fetch inside thread)
-            thread = threading.Thread(
-                target=run_screening_background,
-                args=(session_id, symbols, algorithm, force_refresh, region),
-                daemon=True
-            )
-
-            # Track active screening BEFORE starting thread to avoid race condition
-            with screening_lock:
-                active_screenings[session_id] = {
-                    'thread': thread,
-                    'started_at': datetime.now().isoformat()
-                }
-            print(f"[START] Session {session_id} registered in active_screenings")
-
-            # Now start the thread
-            thread.start()
-            print(f"[START] Started background thread for session {session_id}")
-
-            return jsonify({
-                'session_id': session_id,
-                'total_count': total,
-                'status': 'started',
-                'use_background_jobs': False
-            })
-
-    except Exception as e:
-        print(f"Error starting screening: {e}")
-        import traceback
-        traceback.print_exc()
-        return jsonify({'error': str(e)}), 500
 
 
 @app.route('/api/screen/progress/<int:session_id>', methods=['GET'])

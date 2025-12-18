@@ -14,13 +14,10 @@ app = typer.Typer(help="Local development server commands")
 
 
 @app.command()
-def start(
-    port: int = typer.Option(5001, "--port", "-p", help="Port to run the server on"),
-    debug: bool = typer.Option(True, "--debug/--no-debug", help="Run in debug mode"),
-):
-    """Start the local Flask development server with full logging"""
+def start():
+    """Start Flask app and worker in separate iTerm windows"""
     
-    # Find the backend directory
+    # Find the project root directory
     project_root = Path(__file__).parent.parent.parent
     backend_dir = project_root / "backend"
     
@@ -28,24 +25,59 @@ def start(
         console.print("[bold red]✗ Could not find backend/app.py[/bold red]")
         raise typer.Exit(1)
     
-    console.print(f"[bold blue]🚀 Starting local server on port {port}...[/bold blue]")
-    console.print(f"[dim]Backend directory: {backend_dir}[/dim]")
-    console.print()
+    if not (backend_dir / "worker.py").exists():
+        console.print("[bold red]✗ Could not find backend/worker.py[/bold red]")
+        raise typer.Exit(1)
     
-    # Set environment variables for unbuffered output and full logging
-    env = os.environ.copy()
-    env["PYTHONUNBUFFERED"] = "1"
-    env["FLASK_DEBUG"] = "1" if debug else "0"
+    console.print("[bold blue]🚀 Starting Flask app and worker in split panes...[/bold blue]")
+    
+    # AppleScript to split current iTerm pane
+    applescript = f'''
+tell application "iTerm"
+    tell current session of current window
+        -- Start Flask app in current pane
+        write text "cd {backend_dir}"
+        write text "uv run app.py"
+        
+        -- Split pane horizontally and start worker
+        set newSession to (split horizontally with default profile)
+        tell newSession
+            write text "cd {backend_dir}"
+            write text "uv run python worker.py"
+        end tell
+    end tell
+end tell
+'''
     
     try:
-        # Run the Flask app with uv
-        subprocess.run(
-            ["uv", "run", "app.py"],
-            cwd=backend_dir,
-            env=env,
-        )
-    except KeyboardInterrupt:
-        console.print("\n[yellow]Server stopped.[/yellow]")
-    except FileNotFoundError:
-        console.print("[bold red]✗ 'uv' not found. Please install uv first.[/bold red]")
+        # Execute AppleScript
+        subprocess.run(['osascript', '-e', applescript], check=True)
+        console.print("[bold green]✓ Started Flask app and worker in split panes[/bold green]")
+        console.print("[dim]Flask app: http://localhost:5000 (top pane)[/dim]")
+        console.print("[dim]Worker: Processing background jobs (bottom pane)[/dim]")
+        console.print()
+        console.print("[yellow]Tip: Use Cmd+D to close panes or 'bag server stop' to stop processes[/yellow]")
+        
+    except subprocess.CalledProcessError as e:
+        console.print(f"[bold red]✗ Failed to start servers:[/bold red] {e}")
+        console.print("[yellow]Make sure you're running this from within iTerm[/yellow]")
         raise typer.Exit(1)
+
+
+@app.command()
+def stop():
+    """Stop Flask app and worker processes"""
+    
+    try:
+        # Kill Flask processes
+        result1 = subprocess.run(['pkill', '-f', 'npm run dev'], capture_output=True)
+        
+        # Kill worker processes
+        result2 = subprocess.run(['pkill', '-f', 'python worker.py'], capture_output=True)
+        
+        console.print("[bold green]✓ Stopped all server processes[/bold green]")
+        
+    except Exception as e:
+        console.print(f"[bold red]✗ Error stopping servers:[/bold red] {e}")
+        raise typer.Exit(1)
+

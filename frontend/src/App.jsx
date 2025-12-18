@@ -339,16 +339,21 @@ function StockListView({
     setCurrentPage(1)
 
     try {
-      // Start screening in background
-      const response = await fetch(`${API_BASE}/screen/start`, {
+      // Start screening via background job
+      const response = await fetch(`${API_BASE}/jobs`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
+        credentials: 'include', // Include session cookie for OAuth
         body: JSON.stringify({
-          limit,
-          algorithm,
-          force_refresh: false
+          type: 'full_screening',
+          params: {
+            algorithm,
+            limit,
+            force_refresh: false,
+            region: 'us' // TODO: Make this configurable via UI
+          }
         })
       })
 
@@ -357,7 +362,7 @@ function StockListView({
       }
 
       const data = await response.json()
-      const { session_id, job_id, total_count, use_background_jobs } = data
+      const { session_id, job_id } = data
 
       // Store session_id in localStorage and state
       localStorage.setItem('activeScreeningSession', session_id)
@@ -366,11 +371,7 @@ function StockListView({
       }
       setActiveSessionId(session_id)
 
-      if (use_background_jobs) {
-        setProgress('Screening queued... waiting for worker to start')
-      } else {
-        setProgress(`Screening ${total_count} stocks...`)
-      }
+      setProgress('Screening queued... waiting for worker to start')
 
       // Start polling for progress (works for both modes - worker updates session table)
       pollScreeningProgress(session_id, job_id)

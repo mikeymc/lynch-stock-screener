@@ -76,29 +76,30 @@ def start(
             console.print(f"[bold red]✗ Failed to trigger screening:[/bold red] {e}")
             raise typer.Exit(1)
     else:
-        # Local: Call /api/screen/start
+        # Local: Call /api/jobs (same as production, just different URL)
         console.print(f"[bold blue]🚀 Starting local screening ({region})...[/bold blue]")
         
         payload = {
-            "algorithm": algorithm,
-            "force_refresh": False,
-            "region": region
+            "type": "full_screening",
+            "params": {"algorithm": algorithm, "region": region}
         }
         if limit:
-            payload["limit"] = limit
+            payload["params"]["limit"] = limit
         
         try:
             response = httpx.post(
-                f"{LOCAL_URL}/api/screen/start",
+                f"{LOCAL_URL}/api/jobs",
                 json=payload,
                 timeout=30.0
             )
             response.raise_for_status()
             
             data = response.json()
+            job_id = data.get("job_id")
             session_id = data.get("session_id")
             
             console.print(f"[bold green]✓ Screening started![/bold green]")
+            console.print(f"[dim]Job ID: {job_id}[/dim]")
             console.print(f"[dim]Session ID: {session_id}[/dim]")
             console.print(f"[dim]Monitor at: {LOCAL_URL}/api/screen/progress/{session_id}[/dim]")
             
