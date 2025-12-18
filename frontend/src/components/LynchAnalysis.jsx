@@ -11,7 +11,7 @@ function LynchAnalysis({ symbol, stockName, onAnalysisLoaded }) {
   const [generatedAt, setGeneratedAt] = useState(null)
   const [cached, setCached] = useState(false)
   const [refreshing, setRefreshing] = useState(false)
-  const [selectedModel, setSelectedModel] = useState('gemini-2.5-flash')
+  const [selectedModel, setSelectedModel] = useState('gemini-3-flash-preview')
 
   const fetchAnalysis = async (forceRefresh = false, signal = null, onlyCached = false) => {
     try {
