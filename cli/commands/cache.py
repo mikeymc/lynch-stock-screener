@@ -86,11 +86,84 @@ def _stop_cache_job(job_id: int):
 def prices(
     action: str = typer.Argument(..., help="Action: start or stop"),
     job_id: int = typer.Argument(None, help="Job ID (required for stop)"),
+    prod: bool = typer.Option(False, "--prod", help="Trigger production API instead of local"),
     limit: int = typer.Option(None, "--limit", "-l", help="Limit number of stocks"),
+    region: str = typer.Option("us", "--region", "-r", 
+                               help="Region to cache: us, north-america, south-america, europe, asia, all"),
 ):
     """Cache weekly price history (yfinance)"""
+    
+    # Map region to country code (database uses 2-letter codes like 'US', 'CA')
+    region_to_country = {
+        'us': 'US',
+        'north-america': None,  # Would need to query multiple countries: US, CA, MX
+        'south-america': None,  # Would need continent-based logic
+        'europe': None,  # Would need continent-based logic
+        'asia': None,  # Would need continent-based logic
+        'all': None  # No filter
+    }
+    
     if action == "start":
-        _start_cache_job("price_history_cache", "Price History", limit=limit)
+        # Validate region
+        valid_regions = ['us', 'north-america', 'south-america', 'europe', 'asia', 'all']
+        if region not in valid_regions:
+            console.print(f"[bold red]✗ Invalid region: {region}[/bold red]")
+            console.print(f"[yellow]Valid regions: {', '.join(valid_regions)}[/yellow]")
+            raise typer.Exit(1)
+        
+        # Build params
+        params = {}
+        if limit:
+            params["limit"] = limit
+        
+        # Add country filter for US region
+        country = region_to_country.get(region)
+        if country:
+            params["country"] = country
+        
+        # Determine API URL
+        api_url = API_URL if prod else "http://localhost:5001"
+        
+        # Get token if prod
+        if prod:
+            token = get_api_token()
+            headers = {
+                "Content-Type": "application/json",
+                "Authorization": f"Bearer {token}"
+            }
+        else:
+            headers = {"Content-Type": "application/json"}
+        
+        console.print(f"[bold blue]🚀 Starting price cache ({region})...[/bold blue]")
+        
+        payload = {
+            "type": "price_history_cache",
+            "params": params
+        }
+        
+        try:
+            response = httpx.post(
+                f"{api_url}/api/jobs",
+                json=payload,
+                headers=headers,
+                timeout=30.0
+            )
+            response.raise_for_status()
+            
+            data = response.json()
+            job_id = data.get("job_id")
+            
+            console.print(f"[bold green]✓ Price cache job started![/bold green]")
+            console.print(f"[dim]Job ID: {job_id}[/dim]")
+            console.print(f"[dim]Monitor: {api_url}/api/jobs/{job_id}[/dim]")
+            return job_id
+            
+        except httpx.HTTPError as e:
+            console.print(f"[bold red]✗ Failed to start price cache:[/bold red] {e}")
+            if not prod:
+                console.print("[yellow]Make sure local server is running[/yellow]")
+            raise typer.Exit(1)
+            
     elif action == "stop":
         if not job_id:
             console.print("[bold red]✗ Job ID required for stop[/bold red]")
