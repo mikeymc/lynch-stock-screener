@@ -38,12 +38,9 @@ from auth import init_oauth_client, require_user_auth
 from algorithm_optimizer import AlgorithmOptimizer
 import logging
 
-# Feature flag for background job processing
-USE_BACKGROUND_JOBS = os.environ.get('USE_BACKGROUND_JOBS', 'false').lower() == 'true'
-
 # Available AI models for analysis generation
 AVAILABLE_AI_MODELS = ["gemini-2.5-flash", "gemini-3-flash-preview", "gemini-3-pro-preview"]
-DEFAULT_AI_MODEL = "gemini-2.5-flash"
+DEFAULT_AI_MODEL = "gemini-3-pro-preview"
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
