@@ -42,7 +42,6 @@ COPY --from=frontend-builder /frontend/dist ./static
 # Expose port
 EXPOSE 8080
 
-# Default command runs the web server
+# Default command runs the web server using Gunicorn (production WSGI server)
 # Worker machines are created via Fly Machines API with: python worker.py
-# For debugging, set ENABLE_DEBUGPY=true environment variable
-CMD ["python", "-u", "app.py"]
+CMD ["gunicorn", "--config", "gunicorn.conf.py", "app:app"]
