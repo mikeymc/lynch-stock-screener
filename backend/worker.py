@@ -422,17 +422,19 @@ class BackgroundWorker:
         
         Params:
             limit: Optional max number of stocks to process
+            country: Optional country filter (e.g., 'United States')
             force_refresh: If True, bypass cache and fetch fresh data
         """
         limit = params.get('limit')
+        country = params.get('country')
         
-        logger.info(f"Starting price history cache job {job_id}")
+        logger.info(f"Starting price history cache job {job_id} (country={country})")
         
         from yfinance_price_client import YFinancePriceClient
         
         # Get stocks ordered by score (STRONG_BUY first)
         self.db.update_job_progress(job_id, progress_pct=5, progress_message='Loading stock list by priority...')
-        all_symbols = self.db.get_stocks_ordered_by_score(limit=limit)
+        all_symbols = self.db.get_stocks_ordered_by_score(limit=limit, country=country)
         
         total = len(all_symbols)
         logger.info(f"Caching price history for {total} stocks (ordered by score)")

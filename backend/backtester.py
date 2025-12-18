@@ -17,7 +17,7 @@ class Backtester:
 
     def fetch_historical_prices(self, symbol: str, start_date: str, end_date: str):
         """
-        Fetch historical prices from yfinance and save to database.
+        Fetch weekly historical prices from yfinance and save to database.
         """
         try:
             # Add buffer to start date to ensure we have coverage
@@ -31,19 +31,26 @@ class Backtester:
                 logger.warning(f"No price history found for {symbol}")
                 return
 
-            price_data = []
-            for date, row in history.iterrows():
-                price_data.append({
-                    'date': date.strftime('%Y-%m-%d'),
-                    'close': float(row['Close']),
-                    'adjusted_close': float(row['Close']), # yfinance 'Close' is adjusted by default usually, but let's be safe
-                    'volume': int(row['Volume'])
-                })
+            # Resample to weekly (Friday close)
+            weekly_history = history['Close'].resample('W-FRI').last().dropna()
             
-            self.db.save_price_history(symbol, price_data)
+            if weekly_history.empty:
+                logger.warning(f"No weekly price data for {symbol}")
+                return
+            
+            # Prepare data for weekly_prices table
+            dates = [d.strftime('%Y-%m-%d') for d in weekly_history.index]
+            prices = [float(p) for p in weekly_history.values]
+            
+            weekly_data = {
+                'dates': dates,
+                'prices': prices
+            }
+            
+            self.db.save_weekly_prices(symbol, weekly_data)
             self.db.flush()
             
-            logger.info(f"Saved {len(price_data)} price points for {symbol}")
+            logger.info(f"Saved {len(dates)} weekly price points for {symbol}")
             
         except Exception as e:
             logger.error(f"Error fetching history for {symbol}: {e}")
@@ -52,22 +59,28 @@ class Backtester:
         """
         Reconstruct the Lynch Score for a stock as it would have appeared on a specific date.
         """
-        # 1. Get Price on that date
-        price_history = self.db.get_price_history(symbol, start_date=date, end_date=date)
-        if not price_history:
-            # Try to find the closest previous trading day
-            start_dt = datetime.fromisoformat(date)
-            lookback_start = (start_dt - timedelta(days=5)).strftime('%Y-%m-%d')
-            price_history = self.db.get_price_history(symbol, start_date=lookback_start, end_date=date)
-            
-            if not price_history:
-                logger.warning(f"No price data for {symbol} on or before {date}")
-                return None
-            
-            # Use the last available price
-            current_price = price_history[-1]['close']
-        else:
-            current_price = price_history[0]['close']
+        # 1. Get Price on that date from weekly_prices
+        weekly_data = self.db.get_weekly_prices(symbol)
+        
+        if not weekly_data or not weekly_data.get('dates') or not weekly_data.get('prices'):
+            logger.warning(f"No weekly price data for {symbol}")
+            return None
+        
+        # Find the closest week on or before the target date
+        target_ts = pd.Timestamp(date)
+        dates = [pd.Timestamp(d) for d in weekly_data['dates']]
+        
+        # Find dates on or before target
+        valid_dates = [(i, d) for i, d in enumerate(dates) if d <= target_ts]
+        
+        if not valid_dates:
+            logger.warning(f"No price data for {symbol} on or before {date}")
+            return None
+        
+        # Get the closest date (most recent on or before target)
+        closest_idx, closest_date = max(valid_dates, key=lambda x: x[1])
+        current_price = weekly_data['prices'][closest_idx]
+        logger.debug(f"{symbol}: Using price ${current_price:.2f} from {closest_date.date()} for backtest date {date}")
 
         # 2. Get Earnings History known BEFORE that date
         # We need to filter earnings reports that were released before the target date.
@@ -229,12 +242,23 @@ class Backtester:
         # 3. Calculate Return
         start_price = historical_analysis['price']
         
-        # Get current price (or end of backtest period price)
-        current_price_data = self.db.get_price_history(symbol, start_date=end_date.strftime('%Y-%m-%d'))
-        if current_price_data:
-            end_price = current_price_data[-1]['close']
+        # Get current price (or end of backtest period price) from weekly_prices
+        weekly_data = self.db.get_weekly_prices(symbol)
+        if weekly_data and weekly_data.get('dates') and weekly_data.get('prices'):
+            # Find the closest week to end_date
+            target_ts = pd.Timestamp(end_date)
+            dates = [pd.Timestamp(d) for d in weekly_data['dates']]
+            valid_dates = [(i, d) for i, d in enumerate(dates) if d <= target_ts]
+            
+            if valid_dates:
+                closest_idx, _ = max(valid_dates, key=lambda x: x[1])
+                end_price = weekly_data['prices'][closest_idx]
+            else:
+                # Fallback to current metrics
+                metrics = self.db.get_stock_metrics(symbol)
+                end_price = metrics['price'] if metrics else None
         else:
-            # Fallback to current metrics if today's price history isn't saved yet
+            # Fallback to current metrics if no weekly data
             metrics = self.db.get_stock_metrics(symbol)
             end_price = metrics['price'] if metrics else None
             

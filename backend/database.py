@@ -537,17 +537,19 @@ class Database:
             )
         """)
 
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS price_history (
-                symbol TEXT,
-                date DATE,
-                close REAL,
-                adjusted_close REAL,
-                volume BIGINT,
-                PRIMARY KEY (symbol, date),
-                FOREIGN KEY (symbol) REFERENCES stocks(symbol)
-            )
-        """)
+        # DEPRECATED: price_history table replaced by weekly_prices
+        # Keeping commented for reference - will be dropped in migration
+        # cursor.execute("""
+        #     CREATE TABLE IF NOT EXISTS price_history (
+        #         symbol TEXT,
+        #         date DATE,
+        #         close REAL,
+        #         adjusted_close REAL,
+        #         volume BIGINT,
+        #         PRIMARY KEY (symbol, date),
+        #         FOREIGN KEY (symbol) REFERENCES stocks(symbol)
+        #     )
+        # """)
 
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS weekly_prices (
@@ -1023,66 +1025,68 @@ class Database:
         finally:
             self.return_connection(conn)
 
-    def save_price_history(self, symbol: str, history_data: List[Dict[str, Any]]):
-        """
-        Save bulk price history data.
-        history_data list of dicts with: date, close, adjusted_close, volume
-        """
-        sql = """
-            INSERT INTO price_history
-            (symbol, date, close, adjusted_close, volume)
-            VALUES (%s, %s, %s, %s, %s)
-            ON CONFLICT (symbol, date) DO UPDATE SET
-                close = EXCLUDED.close,
-                adjusted_close = EXCLUDED.adjusted_close,
-                volume = EXCLUDED.volume
-        """
-        # Prepare batch
-        batch = []
-        for item in history_data:
-            batch.append((
-                symbol,
-                item['date'],
-                item['close'],
-                item.get('adjusted_close'),
-                item.get('volume')
-            ))
-        
-        # Use batch write
-        for args in batch:
-            self.write_queue.put((sql, args))
+    # DEPRECATED: Replaced by save_weekly_prices()
+    # def save_price_history(self, symbol: str, history_data: List[Dict[str, Any]]):
+    #     """
+    #     Save bulk price history data.
+    #     history_data list of dicts with: date, close, adjusted_close, volume
+    #     """
+    #     sql = """
+    #         INSERT INTO price_history
+    #         (symbol, date, close, adjusted_close, volume)
+    #         VALUES (%s, %s, %s, %s, %s)
+    #         ON CONFLICT (symbol, date) DO UPDATE SET
+    #             close = EXCLUDED.close,
+    #             adjusted_close = EXCLUDED.adjusted_close,
+    #             volume = EXCLUDED.volume
+    #     """
+    #     # Prepare batch
+    #     batch = []
+    #     for item in history_data:
+    #         batch.append((
+    #             symbol,
+    #             item['date'],
+    #             item['close'],
+    #             item.get('adjusted_close'),
+    #             item.get('volume')
+    #         ))
+    #     
+    #     # Use batch write
+    #     for args in batch:
+    #         self.write_queue.put((sql, args))
 
-    def get_price_history(self, symbol: str, start_date: str = None, end_date: str = None) -> List[Dict[str, Any]]:
-        conn = self.get_connection()
-        try:
-            cursor = conn.cursor()
-
-            query = "SELECT date, close, adjusted_close, volume FROM price_history WHERE symbol = %s"
-            params = [symbol]
-
-            if start_date:
-                query += " AND date >= %s"
-                params.append(start_date)
-            if end_date:
-                query += " AND date <= %s"
-                params.append(end_date)
-
-            query += " ORDER BY date ASC"
-
-            cursor.execute(query, params)
-            rows = cursor.fetchall()
-
-            return [
-                {
-                    'date': row[0].strftime('%Y-%m-%d') if row[0] else None,
-                    'close': row[1],
-                    'adjusted_close': row[2],
-                    'volume': row[3]
-                }
-                for row in rows
-            ]
-        finally:
-            self.return_connection(conn)
+    # DEPRECATED: Replaced by get_weekly_prices()
+    # def get_price_history(self, symbol: str, start_date: str = None, end_date: str = None) -> List[Dict[str, Any]]:
+    #     conn = self.get_connection()
+    #     try:
+    #         cursor = conn.cursor()
+    # 
+    #         query = "SELECT date, close, adjusted_close, volume FROM price_history WHERE symbol = %s"
+    #         params = [symbol]
+    # 
+    #         if start_date:
+    #             query += " AND date >= %s"
+    #             params.append(start_date)
+    #         if end_date:
+    #             query += " AND date <= %s"
+    #             params.append(end_date)
+    # 
+    #         query += " ORDER BY date ASC"
+    # 
+    #         cursor.execute(query, params)
+    #         rows = cursor.fetchall()
+    # 
+    #         return [
+    #             {
+    #                 'date': row[0].strftime('%Y-%m-%d') if row[0] else None,
+    #                 'close': row[1],
+    #                 'adjusted_close': row[2],
+    #                 'volume': row[3]
+    #             }
+    #             for row in rows
+    #         ]
+    #     finally:
+    #         self.return_connection(conn)
 
     def save_weekly_prices(self, symbol: str, weekly_data: Dict[str, Any]):
         """
@@ -1140,24 +1144,25 @@ class Database:
         finally:
             self.return_connection(conn)
     
-    def save_price_point(self, symbol: str, date: str, price: float):
-        """
-        Save a single price point (e.g., fiscal year-end price).
-        
-        Args:
-            symbol: Stock symbol
-            date: Date in YYYY-MM-DD format
-            price: Closing price
-        """
-        sql = """
-            INSERT INTO price_history
-            (symbol, date, close, adjusted_close, volume)
-            VALUES (%s, %s, %s, %s, %s)
-            ON CONFLICT (symbol, date) DO UPDATE SET
-                close = EXCLUDED.close
-        """
-        args = (symbol, date, price, price, None)
-        self.write_queue.put((sql, args))
+    # DEPRECATED: Use save_weekly_prices() instead
+    # def save_price_point(self, symbol: str, date: str, price: float):
+    #     """
+    #     Save a single price point (e.g., fiscal year-end price).
+    #     
+    #     Args:
+    #         symbol: Stock symbol
+    #         date: Date in YYYY-MM-DD format
+    #         price: Closing price
+    #     """
+    #     sql = """
+    #         INSERT INTO price_history
+    #         (symbol, date, close, adjusted_close, volume)
+    #         VALUES (%s, %s, %s, %s, %s)
+    #         ON CONFLICT (symbol, date) DO UPDATE SET
+    #             close = EXCLUDED.close
+    #     """
+    #     args = (symbol, date, price, price, None)
+    #     self.write_queue.put((sql, args))
 
     def is_cache_valid(self, symbol: str, max_age_hours: int = 24) -> bool:
         conn = self.get_connection()
@@ -1688,7 +1693,7 @@ class Database:
         session = self.get_latest_session()
         return session['id'] if session else None
 
-    def get_stocks_ordered_by_score(self, limit: Optional[int] = None) -> List[str]:
+    def get_stocks_ordered_by_score(self, limit: Optional[int] = None, country: Optional[str] = None) -> List[str]:
         """
         Get stock symbols from latest completed screening session, ordered by overall_status.
         
@@ -1697,6 +1702,7 @@ class Database:
         
         Args:
             limit: Optional max number of symbols to return
+            country: Optional country filter (e.g., 'United States')
             
         Returns:
             List of stock symbols ordered by priority
@@ -1716,7 +1722,10 @@ class Database:
             
             if not session_row:
                 # No completed session - fall back to all stocks
-                cursor.execute("SELECT symbol FROM stocks ORDER BY symbol")
+                if country:
+                    cursor.execute("SELECT symbol FROM stocks WHERE country = %s ORDER BY symbol", (country,))
+                else:
+                    cursor.execute("SELECT symbol FROM stocks ORDER BY symbol")
                 symbols = [row[0] for row in cursor.fetchall()]
                 return symbols[:limit] if limit else symbols
             
@@ -1724,10 +1733,19 @@ class Database:
             
             # Get symbols ordered by score priority
             query = """
-                SELECT symbol FROM screening_results
-                WHERE session_id = %s
+                SELECT sr.symbol FROM screening_results sr
+                JOIN stocks s ON sr.symbol = s.symbol
+                WHERE sr.session_id = %s
+            """
+            params = [session_id]
+            
+            if country:
+                query += " AND s.country = %s"
+                params.append(country)
+            
+            query += """
                 ORDER BY 
-                    CASE overall_status 
+                    CASE sr.overall_status 
                         WHEN 'STRONG_BUY' THEN 1 
                         WHEN 'BUY' THEN 2 
                         WHEN 'HOLD' THEN 3 
@@ -1740,7 +1758,7 @@ class Database:
             if limit:
                 query += f" LIMIT {limit}"
             
-            cursor.execute(query, (session_id,))
+            cursor.execute(query, params)
             return [row[0] for row in cursor.fetchall()]
         finally:
             self.return_connection(conn)

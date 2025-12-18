@@ -908,24 +908,78 @@ def get_stock_history(symbol):
 
         price = None
 
-        # Fetch historical price for this year's fiscal year-end from DATABASE
-        if fiscal_end:
-            try:
-                # Get price from cached price_history table
-                price_data = db.get_price_history(symbol.upper(), start_date=fiscal_end, end_date=fiscal_end)
-                if price_data and len(price_data) > 0:
-                    price = price_data[0].get('close')
-            except Exception as e:
-                logger.debug(f"Error fetching cached price for {symbol} on {fiscal_end}: {e}")
-        else:
-            # No fiscal_end date, try to get price from December 31
-            try:
-                dec_31 = f"{year}-12-31"
-                price_data = db.get_price_history(symbol.upper(), start_date=dec_31, end_date=dec_31)
-                if price_data and len(price_data) > 0:
-                    price = price_data[0].get('close')
-            except Exception as e:
-                logger.debug(f"Error fetching cached price for {symbol} on Dec 31: {e}")
+        # Fetch historical price for this year's fiscal year-end
+        # Try weekly_prices cache first, fallback to yfinance if not found
+        target_date = fiscal_end if fiscal_end else f"{year}-12-31"
+        
+        try:
+            # Get weekly prices from cache
+            weekly_data = db.get_weekly_prices(symbol.upper())
+            
+            if weekly_data and weekly_data.get('dates') and weekly_data.get('prices'):
+                # Find the closest week to target_date
+                import pandas as pd
+                target_ts = pd.Timestamp(target_date)
+                dates = [pd.Timestamp(d) for d in weekly_data['dates']]
+                
+                # Find dates on or before target
+                valid_dates = [(i, d) for i, d in enumerate(dates) if d <= target_ts]
+                
+                if valid_dates:
+                    # Get the closest date (most recent on or before target)
+                    closest_idx, closest_date = max(valid_dates, key=lambda x: x[1])
+                    price = weekly_data['prices'][closest_idx]
+                    logger.debug(f"[{symbol}] Found cached price for {target_date}: ${price:.2f} (from {closest_date.date()})")
+            
+            # Fallback to yfinance if not in cache
+            if price is None:
+                print(f"DEBUG: Fetching price for {symbol} on {target_date}")  # DEBUG
+                logger.info(f"[{symbol}] Price not in cache for {target_date}, fetching from yfinance")
+                import pandas as pd
+                from datetime import datetime, timedelta
+                
+                ticker = yf.Ticker(symbol.upper())
+                
+                # Fetch a range around the target date to ensure we get data
+                # yfinance doesn't work well with start=end for a single day
+                target_dt = datetime.fromisoformat(target_date)
+                start_date = (target_dt - timedelta(days=7)).strftime('%Y-%m-%d')
+                end_date = (target_dt + timedelta(days=1)).strftime('%Y-%m-%d')
+                
+                hist = ticker.history(start=start_date, end=end_date)
+                
+                if not hist.empty:
+                    # Find the closest date on or before target_date
+                    hist_dates = pd.to_datetime(hist.index)
+                    target_ts = pd.Timestamp(target_date)
+                    
+                    # yfinance returns timezone-aware data, so we need to make target_ts timezone-aware too
+                    if hist_dates.tz is not None and target_ts.tz is None:
+                        target_ts = target_ts.tz_localize(hist_dates.tz)
+                    
+                    # Filter to dates on or before target
+                    valid_hist = hist[hist_dates <= target_ts]
+                    
+                    if not valid_hist.empty:
+                        # Get the most recent price on or before target
+                        price = float(valid_hist['Close'].iloc[-1])
+                        actual_date = valid_hist.index[-1].strftime('%Y-%m-%d')
+                        
+                        # Cache the fetched price to weekly_prices for future use
+                        db.save_weekly_prices(symbol.upper(), {
+                            'dates': [actual_date],
+                            'prices': [price]
+                        })
+                        logger.info(f"[{symbol}] Fetched and cached price for {target_date}: ${price:.2f} (from {actual_date})")
+                    else:
+                        logger.warning(f"[{symbol}] No price data on or before {target_date}")
+                else:
+                    logger.warning(f"[{symbol}] No price data available from yfinance around {target_date}")
+                    
+        except Exception as e:
+            logger.error(f"Error fetching price for {symbol} on {target_date}: {e}")
+            import traceback
+            traceback.print_exc()
         # todo: switch pe ratio to market cap / net income
         # Always include price in chart if we have it
         prices.append(price)
