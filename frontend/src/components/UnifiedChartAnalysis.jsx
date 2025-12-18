@@ -115,7 +115,7 @@ export default function UnifiedChartAnalysis({ symbol, onAnalysisGenerated }) {
                     fontStyle: 'italic',
                     textAlign: 'center'
                 }}>
-                    Generating comprehensive analysis across all sections...
+                    Generating analysis. Please wait. This could take up to a minute...
                 </div>
             )}
 
