@@ -6,7 +6,7 @@ pandas
 requests
 pytest
 python-dotenv
-google-generativeai
+google-genai
 google-auth
 google-auth-oauthlib
 edgartools

@@ -211,20 +211,26 @@ def test_lynch_analysis_endpoint_returns_cached_analysis(client, test_db, monkey
     assert 'generated_at' in data
 
 
-@patch('lynch_analyst.genai.GenerativeModel')
-def test_lynch_analysis_endpoint_generates_fresh_analysis(mock_model_class, client, test_db, monkeypatch):
+@patch('lynch_analyst.genai.Client')
+def test_lynch_analysis_endpoint_generates_fresh_analysis(mock_client_class, client, test_db, monkeypatch):
     """Test that /api/stock/<symbol>/lynch-analysis generates fresh analysis when cache is empty"""
     import app as app_module
     from lynch_analyst import LynchAnalyst
 
-    monkeypatch.setattr(app_module, 'lynch_analyst', LynchAnalyst(test_db))
-
-    # Setup mock Gemini response
-    mock_model = MagicMock()
+    # Setup mock Gemini response FIRST
     mock_response = MagicMock()
     mock_response.text = "Fresh Peter Lynch analysis: Apple shows strong growth with a PEG ratio of 1.2, suggesting reasonable valuation."
-    mock_model.generate_content.return_value = mock_response
-    mock_model_class.return_value = mock_model
+    mock_response.parts = [MagicMock()]  # Ensure parts exist
+    
+    mock_models = MagicMock()
+    mock_models.generate_content.return_value = mock_response
+    
+    mock_client = MagicMock()
+    mock_client.models = mock_models
+    mock_client_class.return_value = mock_client
+
+    # NOW create LynchAnalyst with the mocked client
+    monkeypatch.setattr(app_module, 'lynch_analyst', LynchAnalyst(test_db))
 
     # Set up test stock and earnings data
     symbol = "AAPL"
@@ -258,20 +264,26 @@ def test_lynch_analysis_endpoint_generates_fresh_analysis(mock_model_class, clie
     assert 'generated_at' in data
 
 
-@patch('lynch_analyst.genai.GenerativeModel')
-def test_lynch_analysis_refresh_endpoint(mock_model_class, client, test_db, monkeypatch):
+@patch('lynch_analyst.genai.Client')
+def test_lynch_analysis_refresh_endpoint(mock_client_class, client, test_db, monkeypatch):
     """Test that POST /api/stock/<symbol>/lynch-analysis/refresh forces regeneration"""
     import app as app_module
     from lynch_analyst import LynchAnalyst
 
-    monkeypatch.setattr(app_module, 'lynch_analyst', LynchAnalyst(test_db))
-
-    # Setup mock Gemini response
-    mock_model = MagicMock()
+    # Setup mock Gemini response FIRST
     mock_response = MagicMock()
     mock_response.text = "Updated Peter Lynch analysis with latest data."
-    mock_model.generate_content.return_value = mock_response
-    mock_model_class.return_value = mock_model
+    mock_response.parts = [MagicMock()]  # Ensure parts exist
+    
+    mock_models = MagicMock()
+    mock_models.generate_content.return_value = mock_response
+    
+    mock_client = MagicMock()
+    mock_client.models = mock_models
+    mock_client_class.return_value = mock_client
+
+    # NOW create LynchAnalyst with the mocked client
+    monkeypatch.setattr(app_module, 'lynch_analyst', LynchAnalyst(test_db))
 
     # Set up test stock and earnings data
     symbol = "AAPL"

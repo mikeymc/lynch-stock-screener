@@ -4,7 +4,7 @@
 import os
 from typing import Dict, Any, List, Optional
 from datetime import datetime
-import google.generativeai as genai
+from google import genai
 
 # Available AI models for analysis generation
 AVAILABLE_MODELS = ["gemini-2.5-flash", "gemini-3-pro-preview"]
@@ -46,7 +46,9 @@ class LynchAnalyst:
         # Configure Gemini API
         api_key = api_key or os.getenv('GEMINI_API_KEY')
         if api_key:
-            genai.configure(api_key=api_key)
+            self.client = genai.Client(api_key=api_key)
+        else:
+            self.client = genai.Client()
 
     def _prepare_template_vars(self, stock_data: Dict[str, Any], history: List[Dict[str, Any]]) -> Dict[str, Any]:
         """Helper to prepare template variables from stock data and history"""
@@ -252,8 +254,10 @@ class LynchAnalyst:
 
         prompt = self.format_prompt(stock_data, history, sections, news, material_events)
 
-        model = genai.GenerativeModel(model_version)
-        response = model.generate_content(prompt)
+        response = self.client.models.generate_content(
+            model=model_version,
+            contents=prompt
+        )
 
         # Check if response was blocked or has no content
         if not response.parts:
@@ -419,8 +423,10 @@ class LynchAnalyst:
             final_prompt += sections_text
 
         # Generate unified analysis
-        model = genai.GenerativeModel(model_version)
-        response = model.generate_content(final_prompt)
+        response = self.client.models.generate_content(
+            model=model_version,
+            contents=final_prompt
+        )
 
         # Check if response was blocked or has no content
         if not response.parts:

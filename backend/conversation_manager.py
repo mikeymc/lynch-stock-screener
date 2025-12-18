@@ -4,7 +4,7 @@
 from typing import Dict, Any, List, Optional
 from datetime import datetime
 from database import Database
-import google.generativeai as genai
+from google import genai
 from rag_context import RAGContext
 
 
@@ -26,9 +26,11 @@ class ConversationManager:
         import os
         api_key = gemini_api_key or os.getenv('GEMINI_API_KEY')
         if api_key:
-            genai.configure(api_key=api_key)
-
-        self.model = genai.GenerativeModel("gemini-3-pro-preview")
+            self.client = genai.Client(api_key=api_key)
+        else:
+            self.client = genai.Client()
+        
+        self.model_name = "gemini-3-pro-preview"
 
     def create_conversation(self, user_id: int, symbol: str, title: Optional[str] = None) -> int:
         """
@@ -217,7 +219,10 @@ class ConversationManager:
         prompt = self.rag_context.format_for_llm(context, user_message, conversation_history)
 
         # Generate response using Gemini
-        response = self.model.generate_content(prompt)
+        response = self.client.models.generate_content(
+            model=self.model_name,
+            contents=prompt
+        )
 
         # Check if response was blocked or has no content
         if not response.parts:
@@ -292,7 +297,10 @@ class ConversationManager:
             prompt = self.rag_context.format_for_llm(context, user_message, conversation_history, lynch_analysis)
 
             # Stream response from Gemini
-            response = self.model.generate_content(prompt, stream=True)
+            response = self.client.models.generate_content_stream(
+                model=self.model_name,
+                contents=prompt
+            )
 
             full_message = []
             for chunk in response:
