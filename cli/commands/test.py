@@ -3,9 +3,14 @@ Testing and shipping commands for bag CLI
 """
 import subprocess
 import typer
+from pathlib import Path
 from rich.console import Console
 
 console = Console()
+
+# Get the project root directory (parent of cli/)
+PROJECT_ROOT = Path(__file__).parent.parent.parent.absolute()
+TESTS_DIR = PROJECT_ROOT / "tests"
 
 
 def test(
@@ -18,7 +23,7 @@ def test(
     if file:
         cmd.append(file)
     else:
-        cmd.append("tests/")
+        cmd.append(str(TESTS_DIR))
     
     cmd.extend(["-v", "--tb=short"])
     
@@ -43,7 +48,7 @@ def ship():
     
     # Run tests first
     console.print("[bold]Step 1: Running tests[/bold]")
-    cmd = ["uv", "run", "pytest", "tests/", "-v", "--tb=short"]
+    cmd = ["uv", "run", "pytest", str(TESTS_DIR), "-v", "--tb=short"]
     result = subprocess.run(cmd)
     
     if result.returncode != 0:
