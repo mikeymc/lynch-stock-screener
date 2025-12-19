@@ -19,7 +19,7 @@ def conv_manager(test_db):
 def test_create_conversation_for_user(test_db, conv_manager):
     """Test creating a conversation for a specific user"""
     # Create test user
-    user_id = test_db.create_user("google_123", "test@example.com", "Test User", None)
+    user_id = test_db.create_user("google_123", "test_create_conversation@example.com", "Test User", None)
 
     # Create stock (required for foreign key)
     test_db.save_stock_basic("AAPL", "Apple Inc.", "NASDAQ", "Technology")
@@ -66,7 +66,7 @@ def test_different_users_have_separate_conversations(test_db, conv_manager):
 
 def test_add_message_to_conversation(test_db, conv_manager):
     """Test adding messages to a user's conversation"""
-    user_id = test_db.create_user("google_123", "test@example.com", "Test User", None)
+    user_id = test_db.create_user("google_123", "test_empty_conversation@example.com", "Test User", None)
 
     # Create stock (required for foreign key)
     test_db.save_stock_basic("AAPL", "Apple Inc.", "NASDAQ", "Technology")
@@ -89,7 +89,7 @@ def test_add_message_to_conversation(test_db, conv_manager):
 
 def test_get_empty_conversation_list(test_db, conv_manager):
     """Test getting conversations when user has none"""
-    user_id = test_db.create_user("google_123", "test@example.com", "Test User", None)
+    user_id = test_db.create_user("google_123", "test_user_isolation@example.com", "Test User", None)
 
     conversations = conv_manager.list_conversations(user_id, "AAPL")
     assert conversations == []

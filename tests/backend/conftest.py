@@ -136,10 +136,10 @@ def test_db(shared_db):
     # Order matters: delete from child tables before parent tables (due to foreign keys)
     tables_to_clear = [
         'message_sources', 'messages', 'conversations', 'watchlist',
-        'price_history', 'stock_metrics', 'earnings_history',
+        'weekly_prices', 'stock_metrics', 'earnings_history',
         'lynch_analyses', 'chart_analyses', 'news_articles',
         'filing_sections', 'sec_filings', 'screening_results',
-        'screening_sessions', 'stocks', 'users'
+        'screening_sessions', 'background_jobs', 'stocks', 'users'
     ]
 
     for table in tables_to_clear:

@@ -12,7 +12,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../.
 def test_save_lynch_analysis_for_user(test_db):
     """Test saving a Lynch analysis for a specific user"""
     # Create test user
-    user_id = test_db.create_user("google_123", "test@example.com", "Test User", None)
+    user_id = test_db.create_user("google_123", "test_save_lynch@example.com", "Test User", None)
 
     # Create stock (required for foreign key)
     test_db.save_stock_basic("AAPL", "Apple Inc.", "NASDAQ", "Technology")
@@ -53,7 +53,7 @@ def test_different_users_have_separate_lynch_analyses(test_db):
 
 def test_update_existing_lynch_analysis(test_db):
     """Test updating an existing Lynch analysis for a user"""
-    user_id = test_db.create_user("google_123", "test@example.com", "Test User", None)
+    user_id = test_db.create_user("google_123", "test_update_lynch@example.com", "Test User", None)
 
     # Create stock (required for foreign key)
     test_db.save_stock_basic("AAPL", "Apple Inc.", "NASDAQ", "Technology")
@@ -72,7 +72,7 @@ def test_update_existing_lynch_analysis(test_db):
 
 def test_get_nonexistent_lynch_analysis(test_db):
     """Test getting Lynch analysis that doesn't exist returns None"""
-    user_id = test_db.create_user("google_123", "test@example.com", "Test User", None)
+    user_id = test_db.create_user("google_123", "test_nonexistent_lynch@example.com", "Test User", None)
 
     analysis = test_db.get_lynch_analysis(user_id, "AAPL")
     assert analysis is None
@@ -80,7 +80,7 @@ def test_get_nonexistent_lynch_analysis(test_db):
 
 def test_lynch_analysis_has_timestamp(test_db):
     """Test that generated_at timestamp is saved correctly"""
-    user_id = test_db.create_user("google_123", "test@example.com", "Test User", None)
+    user_id = test_db.create_user("google_123", "test_lynch_timestamp@example.com", "Test User", None)
 
     # Create stock (required for foreign key)
     test_db.save_stock_basic("AAPL", "Apple Inc.", "NASDAQ", "Technology")

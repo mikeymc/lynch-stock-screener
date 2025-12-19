@@ -26,15 +26,18 @@ class TestBacktester(unittest.TestCase):
         pass
 
     def test_get_historical_score_no_price(self):
-        # Setup mock to return no price history
-        self.mock_db.get_price_history.return_value = []
+        # Setup mock to return no weekly price data
+        self.mock_db.get_weekly_prices.return_value = {'dates': [], 'prices': []}
         
         result = self.backtester.get_historical_score('AAPL', '2023-01-01')
         self.assertIsNone(result)
 
     def test_get_historical_score_success(self):
         # Setup mock data
-        self.mock_db.get_price_history.return_value = [{'close': 150.0}]
+        self.mock_db.get_weekly_prices.return_value = {
+            'dates': ['2023-01-01'],
+            'prices': [150.0]
+        }
         self.mock_db.get_earnings_history.return_value = [
             {'year': 2022, 'eps': 5.0, 'net_income': 100000000, 'revenue': 500000000, 'debt_to_equity': 0.5},
             {'year': 2021, 'eps': 4.0, 'net_income': 80000000, 'revenue': 400000000},
@@ -67,7 +70,7 @@ class TestBacktester(unittest.TestCase):
 
         self.assertIsNotNone(result)
         self.assertEqual(result['overall_score'], 85)
-        self.mock_db.get_price_history.assert_called()
+        self.mock_db.get_weekly_prices.assert_called()
         self.backtester.criteria.evaluate_stock.assert_called_once()
 
 if __name__ == '__main__':

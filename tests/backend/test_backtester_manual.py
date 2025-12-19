@@ -21,12 +21,14 @@ def test_googl_backtest():
     
     print(f"Running backtest for {symbol} ({years_back} year ago)...")
     
-    # Debug: Check if price history exists
+    # Debug: Check if weekly price data exists
     start_date_str = "2024-11-29"
-    history = db.get_price_history(symbol, start_date="2024-11-01", end_date="2024-12-01")
-    print(f"Debug: Found {len(history)} price points in Nov 2024")
-    if history:
-        print(f"Sample: {history[0]}")
+    weekly_data = db.get_weekly_prices(symbol)
+    if weekly_data and weekly_data.get('dates'):
+        print(f"Debug: Found {len(weekly_data['dates'])} weekly price points")
+        print(f"Sample: {weekly_data['dates'][0]} - ${weekly_data['prices'][0]:.2f}")
+    else:
+        print("Debug: No weekly price data found")
         
     result = backtester.run_backtest(symbol, years_back)
     
