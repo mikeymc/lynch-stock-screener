@@ -81,6 +81,7 @@ def get_memory_mb() -> float:
     return usage.ru_maxrss / 1024
 
 
+
 class BackgroundWorker:
     """Background worker that polls for and executes jobs from PostgreSQL"""
 
@@ -236,18 +237,8 @@ class BackgroundWorker:
 
         self._send_heartbeat(job_id)
 
-        # Filter and prepare symbols
-        tv_symbols = list(market_data_cache.keys())
-        filtered_symbols = []
-        for sym in tv_symbols:
-            if any(char in sym for char in ['$', '-', '.']) and sym not in ['BRK.B', 'BF.B']:
-                continue
-            if len(sym) >= 5 and sym[-1] in ['W', 'R', 'U']:
-                continue
-            # Filter OTC/foreign stocks (typically end with F)
-            if len(sym) >= 5 and sym[-1] == 'F':
-                continue
-            filtered_symbols.append(sym)
+        # TradingView already filters via _should_skip_ticker (OTC, warrants, etc.)
+        filtered_symbols = list(market_data_cache.keys())
 
         # Apply limit if specified
         if limit and limit < len(filtered_symbols):
@@ -483,24 +474,12 @@ class BackgroundWorker:
         tv_fetcher = TradingViewFetcher()
         market_data_cache = tv_fetcher.fetch_all_stocks(limit=20000, regions=tv_regions)
         
-        # Filter symbols (same logic as screening)
-        tv_symbols = list(market_data_cache.keys())
-        filtered_symbols = []
-        for sym in tv_symbols:
-            if any(char in sym for char in ['$', '-', '.']) and sym not in ['BRK.B', 'BF.B']:
-                continue
-            if len(sym) >= 5 and sym[-1] in ['W', 'R', 'U']:
-                continue
-            # Filter OTC/foreign stocks (typically end with F)
-            if len(sym) >= 5 and sym[-1] == 'F':
-                continue
-            filtered_symbols.append(sym)
+        # TradingView already filters via _should_skip_ticker (OTC, warrants, etc.)
+        all_symbols = list(market_data_cache.keys())
         
         # Apply limit if specified
-        if limit and limit < len(filtered_symbols):
-            filtered_symbols = filtered_symbols[:limit]
-        
-        all_symbols = filtered_symbols
+        if limit and limit < len(all_symbols):
+            all_symbols = all_symbols[:limit]
         
         total = len(all_symbols)
         logger.info(f"Caching price history for {total} stocks (ordered by score)")

@@ -122,6 +122,18 @@ class TradingViewFetcher:
             logger.debug(f"Filtering when-issued: {ticker}")
             return True
         
+        # Simple suffix patterns for warrants/rights/units without separators (5+ char symbols)
+        # e.g., AAAAW (warrant), AAAAR (right), AAAAU (unit)
+        if len(ticker) >= 5 and ticker_upper[-1] in ['W', 'R', 'U']:
+            logger.debug(f"Filtering warrant/right/unit suffix: {ticker}")
+            return True
+        
+        # OTC/foreign stock suffix pattern (5+ char symbols ending in F)
+        # e.g., MOBNF, MVVYF, KGSSF - typically Canadian/foreign stocks on OTC markets
+        if len(ticker) >= 5 and ticker_upper[-1] == 'F':
+            logger.debug(f"Filtering OTC suffix: {ticker}")
+            return True
+        
         # Test/suspended tickers: starts with Z on some exchanges (but not Asian exchanges)
         if ticker_upper.startswith('Z') and exchange not in self.ASIAN_HOME_EXCHANGES:
             # Only filter if it looks like a test ticker (very short or has numbers)

@@ -234,24 +234,40 @@ class TestOTCFiltering:
         assert 'AACBR' not in filtered_symbols
         assert 'ABCDW' not in filtered_symbols
     
-    def test_worker_screening_has_otc_filter(self):
-        """Verify _run_screening method filters OTC stocks"""
-        import worker
+    def test_tradingview_fetcher_has_otc_filter(self):
+        """Verify TradingViewFetcher._should_skip_ticker filters OTC patterns"""
+        from tradingview_fetcher import TradingViewFetcher
         import inspect
         
-        source = inspect.getsource(worker.BackgroundWorker._run_screening)
+        source = inspect.getsource(TradingViewFetcher._should_skip_ticker)
         
-        # Check that OTC filter line exists
-        assert "sym[-1] == 'F'" in source, \
-            "_run_screening should filter symbols ending in 'F'"
+        # Check that OTC suffix filter exists
+        assert "OTC suffix" in source or "sym[-1] == 'F'" in source or "ticker_upper[-1] == 'F'" in source, \
+            "TradingView should filter OTC suffix patterns"
     
-    def test_worker_price_cache_has_otc_filter(self):
-        """Verify _run_price_history_cache method filters OTC stocks"""
+    def test_tradingview_fetcher_has_warrant_filter(self):
+        """Verify TradingViewFetcher._should_skip_ticker filters warrants"""
+        from tradingview_fetcher import TradingViewFetcher
+        import inspect
+        
+        source = inspect.getsource(TradingViewFetcher._should_skip_ticker)
+        
+        # Check that warrant filter exists
+        assert "warrant" in source.lower() or "'W'" in source, \
+            "TradingView should filter warrant patterns"
+    
+    def test_tradingview_filters_at_source(self):
+        """Verify worker relies on TradingView filtering, not post-filtering"""
         import worker
         import inspect
         
-        source = inspect.getsource(worker.BackgroundWorker._run_price_history_cache)
+        # Screening should NOT have filter_symbols call
+        screening_source = inspect.getsource(worker.BackgroundWorker._run_screening)
+        assert "filter_symbols" not in screening_source, \
+            "Screening should rely on TradingView filtering, not filter_symbols"
         
-        # Check that OTC filter line exists
-        assert "sym[-1] == 'F'" in source, \
-            "_run_price_history_cache should filter symbols ending in 'F'"
+        # Price cache should NOT have filter_symbols call
+        cache_source = inspect.getsource(worker.BackgroundWorker._run_price_history_cache)
+        assert "filter_symbols" not in cache_source, \
+            "Price caching should rely on TradingView filtering, not filter_symbols"
+
