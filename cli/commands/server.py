@@ -45,7 +45,7 @@ tell application "iTerm"
         tell newSession
             set name to "local dev worker"
             write text "cd {backend_dir}"
-            write text "uv run python worker.py"
+            write text "export WORKER_IDLE_TIMEOUT=0 && uv run python worker.py"
         end tell
     end tell
 end tell

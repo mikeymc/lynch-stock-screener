@@ -94,14 +94,18 @@ class BackgroundWorker:
     def run(self):
         """Main worker loop"""
         logger.info(f"Worker {self.worker_id} starting main loop")
-        logger.info(f"Idle shutdown: {IDLE_SHUTDOWN_SECONDS}s, Poll interval: {POLL_INTERVAL}s")
+        if IDLE_SHUTDOWN_SECONDS > 0:
+            logger.info(f"Idle shutdown: {IDLE_SHUTDOWN_SECONDS}s, Poll interval: {POLL_INTERVAL}s")
+        else:
+            logger.info(f"Idle shutdown: DISABLED, Poll interval: {POLL_INTERVAL}s")
 
         while not self.shutdown_requested:
-            # Check for idle shutdown
-            idle_time = time.time() - self.last_job_time
-            if idle_time > IDLE_SHUTDOWN_SECONDS:
-                logger.info(f"Idle for {idle_time:.0f}s (limit: {IDLE_SHUTDOWN_SECONDS}s), shutting down")
-                break
+            # Check for idle shutdown (skip if IDLE_SHUTDOWN_SECONDS is 0)
+            if IDLE_SHUTDOWN_SECONDS > 0:
+                idle_time = time.time() - self.last_job_time
+                if idle_time > IDLE_SHUTDOWN_SECONDS:
+                    logger.info(f"Idle for {idle_time:.0f}s (limit: {IDLE_SHUTDOWN_SECONDS}s), shutting down")
+                    break
 
             # Try to claim a job
             job = self.db.claim_pending_job(self.worker_id)
