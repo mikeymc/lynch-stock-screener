@@ -116,10 +116,8 @@ def prices(
         if limit:
             params["limit"] = limit
         
-        # Add country filter for US region
-        country = region_to_country.get(region)
-        if country:
-            params["country"] = country
+        # Pass region directly (worker will use TradingView regions)
+        params["region"] = region
         
         # Determine API URL
         api_url = API_URL if prod else "http://localhost:5001"

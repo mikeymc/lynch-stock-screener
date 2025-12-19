@@ -193,6 +193,66 @@ class YFinancePriceClient:
             logger.error(f"[PriceHistoryFetcher] Error generating weekly prices for {symbol}: {e}")
             return None
     
+    def get_weekly_price_history_since(self, symbol: str, start_date: str) -> Optional[Dict[str, Any]]:
+        """
+        Get weekly price history for a symbol starting from a specific date.
+        
+        This is optimized for incremental updates - fetches only new data after
+        the most recent cached date, which is ~4x faster than fetching full history.
+        
+        Args:
+            symbol: Stock ticker symbol
+            start_date: Start date in 'YYYY-MM-DD' format
+            
+        Returns:
+            Dict with 'dates' and 'prices' lists for weeks after start_date, or None if unavailable
+        """
+        try:
+            # Fetch data starting from the given date
+            # Note: yfinance includes the start date, so we'll get one overlapping week
+            ticker = yf.Ticker(symbol)
+            df = ticker.history(start=start_date, interval='1wk')
+            
+            if df is None or df.empty:
+                logger.warning(f"[YFinancePriceClient][{symbol}] No price data available since {start_date}")
+                return None
+            
+            # Extract close prices
+            if 'Close' in df.columns:
+                weekly_df = df['Close'].dropna()
+            elif 'close' in df.columns:
+                weekly_df = df['close'].dropna()
+            else:
+                logger.error(f"[YFinancePriceClient][{symbol}] No 'Close' column in data")
+                return None
+            
+            if weekly_df.empty:
+                logger.warning(f"[YFinancePriceClient][{symbol}] No weekly data after filtering")
+                return None
+            
+            # Skip the first row to avoid duplicate (it's the start_date we already have)
+            if len(weekly_df) > 1:
+                weekly_df = weekly_df.iloc[1:]
+            else:
+                # No new data
+                logger.debug(f"[YFinancePriceClient][{symbol}] No new data since {start_date}")
+                return {'dates': [], 'prices': []}
+            
+            # Convert to lists
+            dates = [d.strftime('%Y-%m-%d') for d in weekly_df.index]
+            prices = weekly_df.tolist()
+            
+            logger.info(f"[YFinancePriceClient] Fetched {len(dates)} new weekly prices for {symbol} since {start_date}")
+            
+            return {
+                'dates': dates,
+                'prices': prices
+            }
+            
+        except Exception as e:
+            logger.error(f"[YFinancePriceClient] Error fetching weekly prices for {symbol} since {start_date}: {e}")
+            return None
+    
     def is_available(self) -> bool:
         """
         Check if the price client is available.

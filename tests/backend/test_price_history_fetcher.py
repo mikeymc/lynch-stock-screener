@@ -18,6 +18,7 @@ class TestPriceHistoryFetcher:
         db.save_weekly_prices = Mock()
         db.save_price_point = Mock()
         db.get_earnings_history = Mock()
+        db.get_weekly_prices = Mock(return_value=None)  # For incremental caching check
         return db
     
     @pytest.fixture

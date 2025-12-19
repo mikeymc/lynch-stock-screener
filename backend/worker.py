@@ -418,23 +418,53 @@ class BackgroundWorker:
         """
         Cache weekly price history for all stocks via yfinance.
         
-        Orders stocks by overall_score (STRONG_BUY first) to prioritize the best stocks.
+        Uses TradingView to get stock list (same as screening) to ensure we cache
+        prices for all stocks that will be screened, not just those already in DB.
         
         Params:
             limit: Optional max number of stocks to process
-            country: Optional country filter (e.g., 'United States')
+            region: Region filter (us, north-america, europe, asia, all)
             force_refresh: If True, bypass cache and fetch fresh data
         """
         limit = params.get('limit')
-        country = params.get('country')
+        region = params.get('region', 'us')
         
-        logger.info(f"Starting price history cache job {job_id} (country={country})")
+        logger.info(f"Starting price history cache job {job_id} (region={region})")
         
         from yfinance_price_client import YFinancePriceClient
+        from tradingview_fetcher import TradingViewFetcher
         
-        # Get stocks ordered by score (STRONG_BUY first)
-        self.db.update_job_progress(job_id, progress_pct=5, progress_message='Loading stock list by priority...')
-        all_symbols = self.db.get_stocks_ordered_by_score(limit=limit, country=country)
+        # Map CLI region to TradingView regions (same as screening)
+        region_mapping = {
+            'us': ['us'],
+            'north-america': ['north_america'],
+            'south-america': ['south_america'],
+            'europe': ['europe'],
+            'asia': ['asia'],
+            'all': None  # All regions
+        }
+        tv_regions = region_mapping.get(region, ['us'])
+        
+        # Get stock list from TradingView (same as screening does)
+        self.db.update_job_progress(job_id, progress_pct=5, progress_message=f'Fetching stock list from TradingView ({region})...')
+        tv_fetcher = TradingViewFetcher()
+        market_data_cache = tv_fetcher.fetch_all_stocks(limit=20000, regions=tv_regions)
+        
+        # Filter symbols (same logic as screening)
+        tv_symbols = list(market_data_cache.keys())
+        filtered_symbols = []
+        for sym in tv_symbols:
+            if any(char in sym for char in ['$', '-', '.']) and sym not in ['BRK.B', 'BF.B']:
+                continue
+            if len(sym) >= 5 and sym[-1] in ['W', 'R', 'U']:
+                continue
+            filtered_symbols.append(sym)
+        
+        # Apply limit if specified
+        if limit and limit < len(filtered_symbols):
+            filtered_symbols = filtered_symbols[:limit]
+        
+        all_symbols = filtered_symbols
         
         total = len(all_symbols)
         logger.info(f"Caching price history for {total} stocks (ordered by score)")
@@ -489,7 +519,7 @@ class BackgroundWorker:
                 self.db.update_job_progress(
                     job_id, 
                     progress_pct=pct,
-                    progress_message=f'Cached {cached}/{processed} stocks ({errors} errors)',
+                    progress_message=f'Cached {processed}/{total} stocks ({cached} successful, {errors} errors)',
                     processed_count=processed,
                     total_count=total
                 )
@@ -566,7 +596,7 @@ class BackgroundWorker:
                 self.db.update_job_progress(
                     job_id,
                     progress_pct=pct,
-                    progress_message=f'Cached {cached}/{processed} stocks ({errors} errors)',
+                    progress_message=f'Cached {processed}/{total} stocks ({cached} successful, {errors} errors)',
                     processed_count=processed,
                     total_count=total
                 )
@@ -656,7 +686,7 @@ class BackgroundWorker:
                 self.db.update_job_progress(
                     job_id,
                     progress_pct=pct,
-                    progress_message=f'Cached {cached}/{processed} stocks ({errors} errors)',
+                    progress_message=f'Cached {processed}/{total} stocks ({cached} successful, {errors} errors)',
                     processed_count=processed,
                     total_count=total
                 )
@@ -751,7 +781,7 @@ class BackgroundWorker:
                 self.db.update_job_progress(
                     job_id,
                     progress_pct=pct,
-                    progress_message=f'Cached {cached}/{processed} stocks ({errors} errors)',
+                    progress_message=f'Cached {processed}/{total} stocks ({cached} successful, {errors} errors)',
                     processed_count=processed,
                     total_count=total
                 )

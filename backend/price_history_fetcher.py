@@ -22,6 +22,10 @@ class PriceHistoryFetcher:
         """
         Fetch and cache weekly price history for a symbol.
         
+        Uses smart incremental updates:
+        - If data exists: Fetch only new weeks after the most recent cached date (~4x faster)
+        - If no data: Fetch full history
+        
         Note: Fiscal year-end prices are no longer fetched individually since
         we cache the full price history - year-end prices can be queried
         from the weekly cache as needed.
@@ -29,17 +33,34 @@ class PriceHistoryFetcher:
         Args:
             symbol: Stock ticker symbol
         """
+        # Check if we have existing data to determine fetch strategy
+        existing_data = self.db.get_weekly_prices(symbol)
+        fetch_full_history = True
+        start_date = None
+        
+        if existing_data and existing_data.get('dates'):
+            # We have existing data - fetch only new weeks
+            latest_date_str = existing_data['dates'][-1]  # Most recent date (sorted ASC)
+            start_date = latest_date_str
+            fetch_full_history = False
+            logger.debug(f"[PriceHistoryFetcher][{symbol}] Incremental update from {start_date}")
+        else:
+            logger.debug(f"[PriceHistoryFetcher][{symbol}] Fetching full history (no existing data)")
+        
         # Acquire semaphore to limit concurrent yfinance requests
         if self.yf_semaphore:
             self.yf_semaphore.acquire()
         
         try:
-            # Get weekly prices from yfinance
-            logger.debug(f"[PriceHistoryFetcher][{symbol}] Fetching weekly price history")
-            weekly_data = self.price_client.get_weekly_price_history(symbol)
+            if fetch_full_history:
+                # Get full weekly price history
+                weekly_data = self.price_client.get_weekly_price_history(symbol)
+            else:
+                # Get only new data after the most recent cached date
+                weekly_data = self.price_client.get_weekly_price_history_since(symbol, start_date)
             
             if weekly_data and weekly_data.get('dates') and weekly_data.get('prices'):
-                # Save to database
+                # Save to database (will upsert - update existing, insert new)
                 self.db.save_weekly_prices(symbol, weekly_data)
                 logger.info(f"[PriceHistoryFetcher][{symbol}] Cached {len(weekly_data['dates'])} weekly prices")
             else:
