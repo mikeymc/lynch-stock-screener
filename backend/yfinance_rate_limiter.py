@@ -11,8 +11,8 @@ from typing import Callable, Any, Optional
 logger = logging.getLogger(__name__)
 
 # Global semaphore to limit concurrent yfinance API calls
-# Start conservative to avoid overwhelming Yahoo Finance
-YFINANCE_SEMAPHORE = Semaphore(3)
+# Reduced to 2 to avoid SQLite lock contention in yfinance's internal cache
+YFINANCE_SEMAPHORE = Semaphore(2)
 
 # Default timeout for yfinance API calls (in seconds)
 DEFAULT_TIMEOUT = 30

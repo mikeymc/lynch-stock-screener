@@ -47,10 +47,7 @@ class PriceHistoryFetcher:
         else:
             logger.debug(f"[PriceHistoryFetcher][{symbol}] Fetching full history (no existing data)")
         
-        # Acquire semaphore to limit concurrent yfinance requests
-        if self.yf_semaphore:
-            self.yf_semaphore.acquire()
-        
+        # Note: Rate limiting is handled by global YFINANCE_SEMAPHORE in the decorator
         try:
             if fetch_full_history:
                 # Get full weekly price history
@@ -69,7 +66,3 @@ class PriceHistoryFetcher:
         except Exception as e:
             logger.error(f"[PriceHistoryFetcher][{symbol}] Error caching price history: {e}")
             raise
-        finally:
-            # Always release semaphore, even if error occurred
-            if self.yf_semaphore:
-                self.yf_semaphore.release()

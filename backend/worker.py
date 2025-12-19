@@ -475,8 +475,8 @@ class BackgroundWorker:
         
         # Initialize fetchers
         price_client = YFinancePriceClient()
-        yf_semaphore = Semaphore(12)  # Limit concurrent yfinance requests
-        price_history_fetcher = PriceHistoryFetcher(self.db, price_client, yf_semaphore)
+        # Note: Rate limiting is handled by global YFINANCE_SEMAPHORE in yfinance_rate_limiter.py
+        price_history_fetcher = PriceHistoryFetcher(self.db, price_client, yf_semaphore=None)
         
         processed = 0
         cached = 0
