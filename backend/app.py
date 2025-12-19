@@ -866,7 +866,6 @@ def get_stock_history(symbol):
     debt_to_equity_values = []
     net_income_values = []
     dividend_values = []
-    dividend_yield_values = []
     operating_cash_flow_values = []
     capital_expenditures_values = []
     free_cash_flow_values = []
@@ -882,7 +881,6 @@ def get_stock_history(symbol):
         debt_to_equity = entry.get('debt_to_equity')
         net_income = entry.get('net_income')
         dividend = entry.get('dividend_amount')
-        dividend_yield = entry.get('dividend_yield')
         operating_cash_flow = entry.get('operating_cash_flow')
         capital_expenditures = entry.get('capital_expenditures')
         free_cash_flow = entry.get('free_cash_flow')
@@ -901,7 +899,6 @@ def get_stock_history(symbol):
         debt_to_equity_values.append(debt_to_equity)
         net_income_values.append(net_income)
         dividend_values.append(dividend)
-        dividend_yield_values.append(dividend_yield)
         operating_cash_flow_values.append(operating_cash_flow)
         capital_expenditures_values.append(capital_expenditures)
         free_cash_flow_values.append(free_cash_flow)
@@ -1001,6 +998,7 @@ def get_stock_history(symbol):
     start_year = min(entry['year'] for entry in earnings_history) if earnings_history else None
     weekly_prices = {}
     weekly_pe_ratios = {}
+    weekly_dividend_yields = {}
     try:
         # Get weekly prices from cached weekly_prices table
         weekly_prices = db.get_weekly_prices(symbol.upper(), start_year)
@@ -1033,6 +1031,33 @@ def get_stock_history(symbol):
                 'dates': weekly_pe_dates,
                 'values': weekly_pe_values
             }
+            
+            # Calculate weekly dividend yields using dividend amounts from earnings history
+            # For each week, use the dividend from the corresponding fiscal year
+            dividend_by_year = {}
+            for entry in earnings_history:
+                if entry.get('dividend_amount') and entry.get('dividend_amount') > 0:
+                    dividend_by_year[entry['year']] = entry['dividend_amount']
+            
+            # Calculate dividend yield for each week
+            weekly_div_dates = []
+            weekly_div_values = []
+            for i, date_str in enumerate(weekly_prices['dates']):
+                year = int(date_str[:4])
+                price = weekly_prices['prices'][i]
+                
+                # Use dividend from the current year, or fall back to previous year
+                dividend = dividend_by_year.get(year) or dividend_by_year.get(year - 1)
+                
+                if dividend and dividend > 0 and price and price > 0:
+                    div_yield = (dividend / price) * 100
+                    weekly_div_dates.append(date_str)
+                    weekly_div_values.append(round(div_yield, 2))
+            
+            weekly_dividend_yields = {
+                'dates': weekly_div_dates,
+                'values': weekly_div_values
+            }
     except Exception as e:
         logger.debug(f"Error fetching weekly prices for {symbol}: {e}")
 
@@ -1045,14 +1070,14 @@ def get_stock_history(symbol):
         'debt_to_equity': debt_to_equity_values,
         'net_income': net_income_values,
         'dividend_amount': dividend_values,
-        'dividend_yield': dividend_yield_values,
         'operating_cash_flow': operating_cash_flow_values,
         'capital_expenditures': capital_expenditures_values,
         'free_cash_flow': free_cash_flow_values,
         'history': earnings_history,
         'wacc': wacc_data,
         'weekly_prices': weekly_prices,
-        'weekly_pe_ratios': weekly_pe_ratios
+        'weekly_pe_ratios': weekly_pe_ratios,
+        'weekly_dividend_yields': weekly_dividend_yields
     }
 
     # Clean NaN values before returning

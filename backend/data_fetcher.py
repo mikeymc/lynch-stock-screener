@@ -458,28 +458,6 @@ class DataFetcher:
             if not fiscal_end and ni_data:
                 fiscal_end = ni_data.get('fiscal_end')
 
-            # Calculate dividend yield if we have price history and fiscal_end
-            dividend_yield = None
-            if dividend and fiscal_end and price_history is not None and not price_history.empty:
-                try:
-                    # Convert fiscal_end string to datetime
-                    fiscal_date = pd.to_datetime(fiscal_end)
-                    
-                    # Ensure timezone consistency
-                    if price_history.index.tz is not None:
-                        if fiscal_date.tz is None:
-                            fiscal_date = fiscal_date.tz_localize(price_history.index.tz)
-                    
-                    # Find the closest price on or before the fiscal end date
-                    # Use 'asof' if index is sorted, or get nearest
-                    idx = price_history.index.get_indexer([fiscal_date], method='nearest')[0]
-                    if idx != -1:
-                        price_at_date = price_history.iloc[idx]['Close']
-                        if price_at_date > 0:
-                            dividend_yield = (dividend / price_at_date) * 100
-                except Exception as e:
-                    logger.debug(f"[{symbol}] Error calculating yield for {year}: {e}")
-
             # Get cash flow data
             cf_data = cash_flow_by_year.get(year, {})
             operating_cash_flow = cf_data.get('operating_cash_flow')
@@ -491,8 +469,8 @@ class DataFetcher:
             if missing_cf:
                  years_needing_cf.append(year)
 
-            self.db.save_earnings_history(symbol, year, float(eps) if eps else None, float(revenue), fiscal_end=fiscal_end, debt_to_equity=debt_to_equity, net_income=float(net_income) if net_income else None, dividend_amount=float(dividend) if dividend is not None else None, dividend_yield=dividend_yield, operating_cash_flow=float(operating_cash_flow) if operating_cash_flow is not None else None, capital_expenditures=float(capital_expenditures) if capital_expenditures is not None else None, free_cash_flow=float(free_cash_flow) if free_cash_flow is not None else None)
-            logger.debug(f"[{symbol}] Stored EDGAR for {year}: Revenue: ${revenue:,.0f}" + (f", NI: ${net_income:,.0f}" if net_income else " (no NI)") + (f", Div: ${dividend:.2f}" if dividend else "") + (f", Yield: {dividend_yield:.2f}%" if dividend_yield else "") + (f", FCF: ${free_cash_flow:,.0f}" if free_cash_flow else ""))
+            self.db.save_earnings_history(symbol, year, float(eps) if eps else None, float(revenue), fiscal_end=fiscal_end, debt_to_equity=debt_to_equity, net_income=float(net_income) if net_income else None, dividend_amount=float(dividend) if dividend is not None else None, operating_cash_flow=float(operating_cash_flow) if operating_cash_flow is not None else None, capital_expenditures=float(capital_expenditures) if capital_expenditures is not None else None, free_cash_flow=float(free_cash_flow) if free_cash_flow is not None else None)
+            logger.debug(f"[{symbol}] Stored EDGAR for {year}: Revenue: ${revenue:,.0f}" + (f", NI: ${net_income:,.0f}" if net_income else " (no NI)") + (f", Div: ${dividend:.2f}" if dividend else "") + (f", FCF: ${free_cash_flow:,.0f}" if free_cash_flow else ""))
 
             # Track years missing D/E data
             if debt_to_equity is None:
@@ -536,25 +514,6 @@ class DataFetcher:
             
             dividend = dividends_by_quarter.get((year, quarter))
 
-            # Calculate dividend yield if we have price history and fiscal_end
-            dividend_yield = None
-            if dividend and fiscal_end and price_history is not None and not price_history.empty:
-                try:
-                    fiscal_date = pd.to_datetime(fiscal_end)
-                    
-                    # Ensure timezone consistency
-                    if price_history.index.tz is not None:
-                        if fiscal_date.tz is None:
-                            fiscal_date = fiscal_date.tz_localize(price_history.index.tz)
-
-                    idx = price_history.index.get_indexer([fiscal_date], method='nearest')[0]
-                    if idx != -1:
-                        price_at_date = price_history.iloc[idx]['Close']
-                        if price_at_date > 0:
-                            dividend_yield = (dividend / price_at_date) * 100
-                except Exception as e:
-                    logger.debug(f"[{symbol}] Error calculating quarterly yield for {year} {quarter}: {e}")
-
             if year and quarter and net_income:
                 # Store with period like 'Q1', 'Q2', 'Q3', 'Q4'
                 self.db.save_earnings_history(
@@ -566,8 +525,7 @@ class DataFetcher:
                     debt_to_equity=None,  # No D/E for quarterly data
                     period=quarter,
                     net_income=float(net_income),
-                    dividend_amount=float(dividend) if dividend is not None else None,
-                    dividend_yield=dividend_yield
+                    dividend_amount=float(dividend) if dividend is not None else None
                 )
                 quarters_stored += 1
 
@@ -799,20 +757,6 @@ class DataFetcher:
                     
                     dividend = dividends_by_year.get(year)
 
-                    # Calculate dividend yield
-                    dividend_yield = None
-                    # For yfinance annual data, we don't have exact fiscal_end easily available in the loop
-                    # But 'col' is the date (Timestamp).
-                    if dividend and price_history is not None and not price_history.empty:
-                        try:
-                            idx = price_history.index.get_indexer([col], method='nearest')[0]
-                            if idx != -1:
-                                price_at_date = price_history.iloc[idx]['Close']
-                                if price_at_date > 0:
-                                    dividend_yield = (dividend / price_at_date) * 100
-                        except Exception as e:
-                            logger.debug(f"[{symbol}] Error calculating yield for {year}: {e}")
-
                     if year and pd.notna(revenue) and pd.notna(eps):
                         # Extract cash flow metrics
                         operating_cash_flow = None
@@ -851,7 +795,6 @@ class DataFetcher:
                                                      debt_to_equity=debt_to_equity, period='annual',
                                                      net_income=float(net_income) if pd.notna(net_income) else None,
                                                      dividend_amount=float(dividend) if dividend is not None else None,
-                                                     dividend_yield=dividend_yield,
                                                      operating_cash_flow=float(operating_cash_flow) if operating_cash_flow is not None else None,
                                                      capital_expenditures=float(capital_expenditures) if capital_expenditures is not None else None,
                                                      free_cash_flow=float(free_cash_flow) if free_cash_flow is not None else None)
@@ -905,25 +848,12 @@ class DataFetcher:
                     
                     dividend = dividends_by_quarter.get((year, quarter))
 
-                    # Calculate dividend yield
-                    dividend_yield = None
-                    if dividend and price_history is not None and not price_history.empty:
-                        try:
-                            idx = price_history.index.get_indexer([col], method='nearest')[0]
-                            if idx != -1:
-                                price_at_date = price_history.iloc[idx]['Close']
-                                if price_at_date > 0:
-                                    dividend_yield = (dividend / price_at_date) * 100
-                        except Exception as e:
-                            logger.debug(f"[{symbol}] Error calculating quarterly yield for {year} Q{quarter}: {e}")
-
                     if year and quarter and pd.notna(revenue) and pd.notna(eps):
                         period = f'Q{quarter}'
                         self.db.save_earnings_history(symbol, year, float(eps), float(revenue),
                                                      debt_to_equity=debt_to_equity, period=period,
                                                      net_income=float(net_income) if pd.notna(net_income) else None,
-                                                     dividend_amount=float(dividend) if dividend is not None else None,
-                                                     dividend_yield=dividend_yield)
+                                                     dividend_amount=float(dividend) if dividend is not None else None)
 
         except Exception as e:
             logger.error(f"[{symbol}] Error fetching earnings from yfinance: {type(e).__name__}: {e}")
@@ -985,25 +915,12 @@ class DataFetcher:
                     
                     dividend = dividends_by_quarter.get((year, quarter))
 
-                    # Calculate dividend yield
-                    dividend_yield = None
-                    if dividend and price_history is not None and not price_history.empty:
-                        try:
-                            idx = price_history.index.get_indexer([col], method='nearest')[0]
-                            if idx != -1:
-                                price_at_date = price_history.iloc[idx]['Close']
-                                if price_at_date > 0:
-                                    dividend_yield = (dividend / price_at_date) * 100
-                        except Exception as e:
-                            logger.debug(f"[{symbol}] Error calculating quarterly yield for {year} Q{quarter}: {e}")
-
                     if year and quarter and pd.notna(revenue) and pd.notna(eps):
                         period = f'Q{quarter}'
                         self.db.save_earnings_history(symbol, year, float(eps), float(revenue),
                                                      debt_to_equity=debt_to_equity, period=period,
                                                      net_income=float(net_income) if pd.notna(net_income) else None,
-                                                     dividend_amount=float(dividend) if dividend is not None else None,
-                                                     dividend_yield=dividend_yield)
+                                                     dividend_amount=float(dividend) if dividend is not None else None)
             else:
                 logger.warning(f"[{symbol}] No quarterly financial data available from yfinance")
 

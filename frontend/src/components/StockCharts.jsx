@@ -274,23 +274,46 @@ export default function StockCharts({ historyData, loading, symbol }) {
                 />
               </div>
 
-              {/* Dividend Yield */}
+              {/* Dividend Yield - Uses weekly data for granular display */}
               <div className="chart-container">
                 <Line plugins={[zeroLinePlugin, crosshairPlugin]}
                   data={{
-                    labels: labels,
+                    labels: historyData.weekly_dividend_yields?.dates || [],
                     datasets: [
                       {
                         label: 'Dividend Yield (%)',
-                        data: historyData.dividend_yield || [],
+                        data: historyData.weekly_dividend_yields?.values || [],
                         borderColor: 'rgb(255, 205, 86)',
                         backgroundColor: 'rgba(255, 205, 86, 0.2)',
-                        pointRadius: activeIndex !== null ? 3 : 0,
-                        pointHoverRadius: 5
+                        pointRadius: 0, // Hide points for dense weekly data
+                        pointHoverRadius: 3,
+                        borderWidth: 1.5,
+                        tension: 0.1
                       }
                     ]
                   }}
-                  options={createChartOptions('Dividend Yield', 'Yield (%)')}
+                  options={{
+                    ...createChartOptions('Dividend Yield', 'Yield (%)'),
+                    scales: {
+                      ...createChartOptions('Dividend Yield', 'Yield (%)').scales,
+                      x: {
+                        type: 'category',
+                        ticks: {
+                          callback: function (value, index, values) {
+                            const label = this.getLabelForValue(value);
+                            // Show only year labels for January entries
+                            if (label && label.includes('-01-')) {
+                              return label.substring(0, 4);
+                            }
+                            return null;
+                          },
+                          maxRotation: 0,
+                          autoSkip: true,
+                          maxTicksLimit: 12
+                        }
+                      }
+                    }
+                  }}
                 />
               </div>
             </div>

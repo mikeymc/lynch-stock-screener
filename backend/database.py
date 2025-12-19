@@ -376,7 +376,6 @@ class Database:
                 period TEXT DEFAULT 'annual',
                 net_income REAL,
                 dividend_amount REAL,
-                dividend_yield REAL,
                 operating_cash_flow REAL,
                 capital_expenditures REAL,
                 free_cash_flow REAL,
@@ -384,6 +383,17 @@ class Database:
                 FOREIGN KEY (symbol) REFERENCES stocks(symbol),
                 UNIQUE(symbol, year, period)
             )
+        """)
+
+        # Migration: Drop dividend_yield column if it exists (now computed on-the-fly)
+        cursor.execute("""
+            DO $$
+            BEGIN
+                IF EXISTS (SELECT 1 FROM information_schema.columns
+                           WHERE table_name = 'earnings_history' AND column_name = 'dividend_yield') THEN
+                    ALTER TABLE earnings_history DROP COLUMN dividend_yield;
+                END IF;
+            END $$;
         """)
 
         cursor.execute("""
@@ -927,11 +937,11 @@ class Database:
         )
         self.write_queue.put((sql, args))
 
-    def save_earnings_history(self, symbol: str, year: int, eps: float, revenue: float, fiscal_end: Optional[str] = None, debt_to_equity: Optional[float] = None, period: str = 'annual', net_income: Optional[float] = None, dividend_amount: Optional[float] = None, dividend_yield: Optional[float] = None, operating_cash_flow: Optional[float] = None, capital_expenditures: Optional[float] = None, free_cash_flow: Optional[float] = None):
+    def save_earnings_history(self, symbol: str, year: int, eps: float, revenue: float, fiscal_end: Optional[str] = None, debt_to_equity: Optional[float] = None, period: str = 'annual', net_income: Optional[float] = None, dividend_amount: Optional[float] = None, operating_cash_flow: Optional[float] = None, capital_expenditures: Optional[float] = None, free_cash_flow: Optional[float] = None):
         sql = """
             INSERT INTO earnings_history
-            (symbol, year, earnings_per_share, revenue, fiscal_end, debt_to_equity, period, net_income, dividend_amount, dividend_yield, operating_cash_flow, capital_expenditures, free_cash_flow, last_updated)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            (symbol, year, earnings_per_share, revenue, fiscal_end, debt_to_equity, period, net_income, dividend_amount, operating_cash_flow, capital_expenditures, free_cash_flow, last_updated)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             ON CONFLICT (symbol, year, period) DO UPDATE SET
                 earnings_per_share = EXCLUDED.earnings_per_share,
                 revenue = EXCLUDED.revenue,
@@ -939,13 +949,12 @@ class Database:
                 debt_to_equity = EXCLUDED.debt_to_equity,
                 net_income = EXCLUDED.net_income,
                 dividend_amount = EXCLUDED.dividend_amount,
-                dividend_yield = EXCLUDED.dividend_yield,
                 operating_cash_flow = EXCLUDED.operating_cash_flow,
                 capital_expenditures = EXCLUDED.capital_expenditures,
                 free_cash_flow = EXCLUDED.free_cash_flow,
                 last_updated = EXCLUDED.last_updated
         """
-        args = (symbol, year, eps, revenue, fiscal_end, debt_to_equity, period, net_income, dividend_amount, dividend_yield, operating_cash_flow, capital_expenditures, free_cash_flow, datetime.now())
+        args = (symbol, year, eps, revenue, fiscal_end, debt_to_equity, period, net_income, dividend_amount, operating_cash_flow, capital_expenditures, free_cash_flow, datetime.now())
         self.write_queue.put((sql, args))
 
     def get_stock_metrics(self, symbol: str) -> Optional[Dict[str, Any]]:
@@ -997,7 +1006,7 @@ class Database:
                 where_clause = "WHERE symbol = %s AND period = 'annual'"
 
             cursor.execute(f"""
-                SELECT year, earnings_per_share, revenue, fiscal_end, debt_to_equity, period, net_income, dividend_amount, dividend_yield, operating_cash_flow, capital_expenditures, free_cash_flow, last_updated
+                SELECT year, earnings_per_share, revenue, fiscal_end, debt_to_equity, period, net_income, dividend_amount, operating_cash_flow, capital_expenditures, free_cash_flow, last_updated
                 FROM earnings_history
                 {where_clause}
                 ORDER BY year DESC, period
@@ -1014,11 +1023,10 @@ class Database:
                     'period': row[5],
                     'net_income': row[6],
                     'dividend_amount': row[7],
-                    'dividend_yield': row[8],
-                    'operating_cash_flow': row[9],
-                    'capital_expenditures': row[10],
-                    'free_cash_flow': row[11],
-                    'last_updated': row[12]
+                    'operating_cash_flow': row[8],
+                    'capital_expenditures': row[9],
+                    'free_cash_flow': row[10],
+                    'last_updated': row[11]
                 }
                 for row in rows
             ]
