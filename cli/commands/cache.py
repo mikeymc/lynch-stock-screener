@@ -166,7 +166,33 @@ def prices(
         if not job_id:
             console.print("[bold red]✗ Job ID required for stop[/bold red]")
             raise typer.Exit(1)
-        _stop_cache_job(job_id)
+        
+        # Determine API URL (same as start)
+        api_url = API_URL if prod else "http://localhost:5001"
+        
+        # Get token if prod
+        if prod:
+            token = get_api_token()
+            headers = {"Authorization": f"Bearer {token}"}
+        else:
+            headers = {}
+        
+        console.print(f"[bold blue]🛑 Cancelling cache job {job_id}...[/bold blue]")
+        
+        try:
+            response = httpx.post(
+                f"{api_url}/api/jobs/{job_id}/cancel",
+                headers=headers,
+                timeout=30.0
+            )
+            response.raise_for_status()
+            console.print(f"[bold green]✓ Job {job_id} cancelled![/bold green]")
+            
+        except httpx.HTTPError as e:
+            console.print(f"[bold red]✗ Failed to cancel job:[/bold red] {e}")
+            if not prod:
+                console.print("[yellow]Make sure local server is running[/yellow]")
+            raise typer.Exit(1)
     else:
         console.print(f"[bold red]✗ Unknown action: {action}[/bold red]")
         raise typer.Exit(1)
