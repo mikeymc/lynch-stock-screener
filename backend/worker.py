@@ -1,6 +1,32 @@
 # ABOUTME: Background worker process for executing long-running jobs
 # ABOUTME: Polls PostgreSQL for jobs, executes screening and SEC refresh tasks
 
+# CRITICAL: Disable yfinance's SQLite caches BEFORE any other imports
+# to prevent "database is locked" errors under concurrent thread access.
+# This must be at the very top of the file.
+import yfinance.cache as _yf_cache
+
+def _init_dummy_tz_cache(self, cache_dir=None):
+    self._cache = _yf_cache._TzCacheDummy()
+
+def _init_dummy_cookie_cache(self, cache_dir=None):
+    self._cache = _yf_cache._CookieCacheDummy()
+
+# Monkey-patch the initialise methods to use dummy caches
+_yf_cache._TzCacheManager.initialise = _init_dummy_tz_cache
+_yf_cache._CookieCacheManager.initialise = _init_dummy_cookie_cache
+
+# Also patch the get_*_cache functions to return global dummy instances immediately
+_yf_cache._tz_cache = _yf_cache._TzCacheDummy()
+_yf_cache._cookie_cache = _yf_cache._CookieCacheDummy()
+
+# Override the get functions to return our dummy caches
+_yf_cache.get_tz_cache = lambda: _yf_cache._tz_cache
+_yf_cache.get_cookie_cache = lambda: _yf_cache._cookie_cache
+
+print("[Worker] yfinance SQLite cache disabled (using dummy caches)")
+# End yfinance cache patch
+
 import os
 import sys
 import time

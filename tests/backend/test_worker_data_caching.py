@@ -185,3 +185,73 @@ class TestDatabaseOrderByScore:
         assert callable(getattr(Database, 'get_stocks_ordered_by_score'))
 
 
+class TestOTCFiltering:
+    """Tests for OTC stock filtering in worker.py"""
+    
+    def test_otc_symbols_are_filtered(self):
+        """Test that 5+ character symbols ending in F are filtered"""
+        # Simulate the filter logic from worker.py
+        test_symbols = [
+            'AAPL',     # Should pass - normal stock
+            'MOBNF',    # Should be filtered - OTC (ends in F, 5 chars)
+            'MVVYF',    # Should be filtered - OTC (ends in F, 5 chars)
+            'KGSSF',    # Should be filtered - OTC (ends in F, 5 chars)
+            'BRK.B',    # Should pass - exception
+            'GOOG',     # Should pass - normal stock
+            'AAAAU',    # Should be filtered - unit (ends in U, 5 chars)
+            'AACBR',    # Should be filtered - right (ends in R, 5 chars)
+            'ABCDW',    # Should be filtered - warrant (ends in W, 5 chars)
+            'AF',       # Should pass - only 2 chars, F doesn't trigger filter
+            'BUFF',     # Should pass - ends in F but is a real stock name (4 chars)
+            'AAAU',     # Should pass - only 4 chars, U doesn't trigger filter
+        ]
+        
+        filtered_symbols = []
+        for sym in test_symbols:
+            if any(char in sym for char in ['$', '-', '.']) and sym not in ['BRK.B', 'BF.B']:
+                continue
+            if len(sym) >= 5 and sym[-1] in ['W', 'R', 'U']:
+                continue
+            # OTC filter
+            if len(sym) >= 5 and sym[-1] == 'F':
+                continue
+            filtered_symbols.append(sym)
+        
+        # Verify expected symbols pass
+        assert 'AAPL' in filtered_symbols
+        assert 'GOOG' in filtered_symbols
+        assert 'AF' in filtered_symbols
+        assert 'BUFF' in filtered_symbols
+        assert 'AAAU' in filtered_symbols  # Only 4 chars - passes filter
+        
+        # Verify OTC symbols are filtered
+        assert 'MOBNF' not in filtered_symbols
+        assert 'MVVYF' not in filtered_symbols
+        assert 'KGSSF' not in filtered_symbols
+        
+        # Verify warrants/rights/units with 5+ chars are filtered
+        assert 'AAAAU' not in filtered_symbols  # 5 chars ending in U
+        assert 'AACBR' not in filtered_symbols
+        assert 'ABCDW' not in filtered_symbols
+    
+    def test_worker_screening_has_otc_filter(self):
+        """Verify _run_screening method filters OTC stocks"""
+        import worker
+        import inspect
+        
+        source = inspect.getsource(worker.BackgroundWorker._run_screening)
+        
+        # Check that OTC filter line exists
+        assert "sym[-1] == 'F'" in source, \
+            "_run_screening should filter symbols ending in 'F'"
+    
+    def test_worker_price_cache_has_otc_filter(self):
+        """Verify _run_price_history_cache method filters OTC stocks"""
+        import worker
+        import inspect
+        
+        source = inspect.getsource(worker.BackgroundWorker._run_price_history_cache)
+        
+        # Check that OTC filter line exists
+        assert "sym[-1] == 'F'" in source, \
+            "_run_price_history_cache should filter symbols ending in 'F'"

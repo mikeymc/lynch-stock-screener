@@ -19,6 +19,7 @@ from typing import Optional, Dict, Any
 from datetime import datetime, timedelta
 import pandas as pd
 import yfinance as yf
+import yfinance.cache as yf_cache
 from yfinance_rate_limiter import with_timeout_and_retry
 
 logger = logging.getLogger(__name__)
@@ -26,6 +27,18 @@ logger = logging.getLogger(__name__)
 # Suppress yfinance's noisy logging (e.g., "possibly delisted" for recent date queries)
 # Must use CRITICAL because ERROR is higher priority than WARNING
 logging.getLogger('yfinance').setLevel(logging.CRITICAL)
+
+# Disable yfinance's internal SQLite caches to prevent "database is locked" errors
+# under concurrent thread access. We monkey-patch the cache managers to use
+# Dummy (no-op) implementations instead of SQLite-backed ones.
+def _init_dummy_tz_cache(self, cache_dir=None):
+    self._cache = yf_cache._TzCacheDummy()
+
+def _init_dummy_cookie_cache(self, cache_dir=None):
+    self._cache = yf_cache._CookieCacheDummy()
+
+yf_cache._TzCacheManager.initialise = _init_dummy_tz_cache
+yf_cache._CookieCacheManager.initialise = _init_dummy_cookie_cache
 
 
 class YFinancePriceClient:

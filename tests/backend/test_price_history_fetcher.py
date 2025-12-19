@@ -19,6 +19,7 @@ class TestPriceHistoryFetcher:
         db.save_price_point = Mock()
         db.get_earnings_history = Mock()
         db.get_weekly_prices = Mock(return_value=None)  # For incremental caching check
+        db.stock_exists = Mock(return_value=True)  # Default: stock exists
         return db
     
     @pytest.fixture
@@ -140,3 +141,41 @@ class TestPriceHistoryFetcher:
         # Verify - should not attempt to fetch fiscal year-end prices
         mock_price_client.get_historical_price.assert_not_called()
         mock_db.save_price_point.assert_not_called()
+    
+    def test_skips_nonexistent_stock(self, mock_db, mock_price_client):
+        """Test that fetcher skips stocks not in DB to prevent FK violations"""
+        # Setup - stock doesn't exist
+        mock_db.stock_exists.return_value = False
+        
+        fetcher = PriceHistoryFetcher(mock_db, mock_price_client)
+        
+        # Execute
+        fetcher.fetch_and_cache_prices('NONEXISTENT')
+        
+        # Verify - stock_exists was checked but no further calls made
+        mock_db.stock_exists.assert_called_once_with('NONEXISTENT')
+        mock_db.get_weekly_prices.assert_not_called()
+        mock_price_client.get_weekly_price_history.assert_not_called()
+    
+    def test_incremental_update_no_new_data(self, mock_db, mock_price_client):
+        """Test that fetcher handles already up-to-date stocks gracefully"""
+        # Setup - stock has existing data
+        mock_db.get_weekly_prices.return_value = {
+            'dates': ['2025-12-13'],  # Already has recent data
+            'prices': [100.0]
+        }
+        # Incremental fetch returns empty (no new data)
+        mock_price_client.get_weekly_price_history_since = Mock(return_value={
+            'dates': [],
+            'prices': []
+        })
+        
+        fetcher = PriceHistoryFetcher(mock_db, mock_price_client)
+        
+        # Execute
+        fetcher.fetch_and_cache_prices('UPTODATE')
+        
+        # Verify - incremental update was attempted but nothing saved
+        mock_db.get_weekly_prices.assert_called_once_with('UPTODATE')
+        mock_price_client.get_weekly_price_history_since.assert_called_once()
+        mock_db.save_weekly_prices.assert_not_called()
