@@ -242,27 +242,28 @@ class TestPerformanceComparison:
     
     @pytest.mark.slow
     @pytest.mark.integration
-    def test_incremental_faster_than_full(self):
-        """Verify that incremental fetch is faster than full history (integration test)"""
-        import time
+    def test_incremental_fetches_less_data(self):
+        """Verify that incremental fetch returns less data than full history (integration test)"""
         from yfinance_price_client import YFinancePriceClient
         
         client = YFinancePriceClient()
         
-        # Measure full history fetch
-        start = time.time()
+        # Fetch full history
         full_data = client.get_weekly_price_history('AAPL')
-        full_time = time.time() - start
         
-        # Measure incremental fetch (last 3 months)
-        start = time.time()
+        # Fetch incremental (last 3 months)
         incremental_data = client.get_weekly_price_history_since('AAPL', '2024-09-01')
-        incremental_time = time.time() - start
-        
-        # Verify: Incremental is faster
-        assert incremental_time < full_time, f"Incremental ({incremental_time:.2f}s) should be faster than full ({full_time:.2f}s)"
         
         # Verify: Both return valid data
-        assert full_data is not None
-        assert incremental_data is not None
-        assert len(full_data['dates']) > len(incremental_data['dates'])
+        assert full_data is not None, "Full history should return data"
+        assert incremental_data is not None, "Incremental should return data"
+        
+        # Verify: Incremental returns significantly less data
+        # (This is the key benefit - less data transfer, not necessarily faster timing
+        # since network timing is unpredictable and the global semaphore serializes calls)
+        assert len(incremental_data['dates']) < len(full_data['dates']), \
+            f"Incremental ({len(incremental_data['dates'])} weeks) should fetch less data than full ({len(full_data['dates'])} weeks)"
+        
+        # Verify: Incremental should be a small fraction of full history
+        ratio = len(incremental_data['dates']) / len(full_data['dates'])
+        assert ratio < 0.5, f"Incremental should be <50% of full history, got {ratio:.1%}"
