@@ -154,27 +154,23 @@ def clear_test_session_data(test_database, page, servers):
     # This fixture runs before each test function
     # It clears data that might persist across tests within the session
 
-    # Connect to test database
-    conn = psycopg.connect(
+    # Connect to test database using context manager to ensure proper cleanup
+    with psycopg.connect(
         dbname=test_database,
         user='lynch',
         password='lynch_dev_password',
         host='localhost',
         port=5432
-    )
-    cursor = conn.cursor()
-
-    # Clear only session-specific data that tests might modify
-    # DO NOT clear screening_results/screening_sessions - those are stable test data
-    cursor.execute('DELETE FROM app_settings')
-    cursor.execute('DELETE FROM watchlist')
-    cursor.execute('DELETE FROM conversations')
-    cursor.execute('DELETE FROM messages')
-    cursor.execute('DELETE FROM message_sources')
-
-    conn.commit()
-    cursor.close()
-    conn.close()
+    ) as conn:
+        with conn.cursor() as cursor:
+            # Clear only session-specific data that tests might modify
+            # DO NOT clear screening_results/screening_sessions - those are stable test data
+            cursor.execute('DELETE FROM app_settings')
+            cursor.execute('DELETE FROM watchlist')
+            cursor.execute('DELETE FROM conversations')
+            cursor.execute('DELETE FROM messages')
+            cursor.execute('DELETE FROM message_sources')
+            conn.commit()
 
     # Clear browser storage (localStorage and sessionStorage)
     # This ensures filters don't persist in the browser between tests
