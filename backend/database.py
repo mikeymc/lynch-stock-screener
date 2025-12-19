@@ -957,6 +957,16 @@ class Database:
         args = (symbol, year, eps, revenue, fiscal_end, debt_to_equity, period, net_income, dividend_amount, operating_cash_flow, capital_expenditures, free_cash_flow, datetime.now())
         self.write_queue.put((sql, args))
 
+    def stock_exists(self, symbol: str) -> bool:
+        """Check if a stock exists in the stocks table."""
+        conn = self.get_connection()
+        try:
+            cursor = conn.cursor()
+            cursor.execute("SELECT 1 FROM stocks WHERE symbol = %s", (symbol,))
+            return cursor.fetchone() is not None
+        finally:
+            self.return_connection(conn)
+
     def get_stock_metrics(self, symbol: str) -> Optional[Dict[str, Any]]:
         conn = self.get_connection()
         try:

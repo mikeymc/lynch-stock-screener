@@ -26,6 +26,8 @@ class PriceHistoryFetcher:
         - If data exists: Fetch only new weeks after the most recent cached date (~4x faster)
         - If no data: Fetch full history
         
+        Skips symbols that don't exist in the stocks table to avoid FK violations.
+        
         Note: Fiscal year-end prices are no longer fetched individually since
         we cache the full price history - year-end prices can be queried
         from the weekly cache as needed.
@@ -33,6 +35,11 @@ class PriceHistoryFetcher:
         Args:
             symbol: Stock ticker symbol
         """
+        # Skip if stock doesn't exist in DB (prevents FK violations)
+        if not self.db.stock_exists(symbol):
+            logger.debug(f"[PriceHistoryFetcher][{symbol}] Skipping - stock not in DB")
+            return
+        
         # Check if we have existing data to determine fetch strategy
         existing_data = self.db.get_weekly_prices(symbol)
         fetch_full_history = True
@@ -56,13 +63,22 @@ class PriceHistoryFetcher:
                 # Get only new data after the most recent cached date
                 weekly_data = self.price_client.get_weekly_price_history_since(symbol, start_date)
             
-            if weekly_data and weekly_data.get('dates') and weekly_data.get('prices'):
-                # Save to database (will upsert - update existing, insert new)
+            # Handle the result:
+            # - None = actual failure to fetch data
+            # - {'dates': [], 'prices': []} = already up to date (no new weeks since last cache)
+            # - {'dates': [...], 'prices': [...]} = new data to save
+            if weekly_data is None:
+                # Actual failure - no data could be fetched
+                logger.warning(f"[PriceHistoryFetcher][{symbol}] No weekly price data available")
+            elif weekly_data.get('dates') and weekly_data.get('prices'):
+                # New data to save
                 self.db.save_weekly_prices(symbol, weekly_data)
                 logger.info(f"[PriceHistoryFetcher][{symbol}] Cached {len(weekly_data['dates'])} weekly prices")
             else:
-                logger.warning(f"[PriceHistoryFetcher][{symbol}] No weekly price data available")
+                # Empty dict = already up to date
+                logger.debug(f"[PriceHistoryFetcher][{symbol}] Already up to date (no new weekly data)")
         
         except Exception as e:
             logger.error(f"[PriceHistoryFetcher][{symbol}] Error caching price history: {e}")
             raise
+

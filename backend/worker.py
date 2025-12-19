@@ -218,6 +218,9 @@ class BackgroundWorker:
                 continue
             if len(sym) >= 5 and sym[-1] in ['W', 'R', 'U']:
                 continue
+            # Filter OTC/foreign stocks (typically end with F)
+            if len(sym) >= 5 and sym[-1] == 'F':
+                continue
             filtered_symbols.append(sym)
 
         # Apply limit if specified
@@ -461,6 +464,9 @@ class BackgroundWorker:
             if any(char in sym for char in ['$', '-', '.']) and sym not in ['BRK.B', 'BF.B']:
                 continue
             if len(sym) >= 5 and sym[-1] in ['W', 'R', 'U']:
+                continue
+            # Filter OTC/foreign stocks (typically end with F)
+            if len(sym) >= 5 and sym[-1] == 'F':
                 continue
             filtered_symbols.append(sym)
         

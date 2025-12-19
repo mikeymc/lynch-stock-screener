@@ -41,6 +41,15 @@ class TradingViewFetcher:
         'TRADEGATE', # Tradegate (Germany) - lists US ADRs
     }
     
+    # OTC/Pink Sheet exchanges - these stocks often have no reliable price data
+    OTC_EXCHANGES = {
+        'OTC',      # OTC Markets
+        'OTCQB',    # OTCQB Venture Market
+        'OTCQX',    # OTCQX Best Market
+        'PINK',     # Pink Sheets
+        'GREY',     # Grey Market
+    }
+    
     # Asian home exchanges where numeric tickers are legitimate
     # These should NOT be filtered as they represent primary listings
     ASIAN_HOME_EXCHANGES = {
@@ -82,6 +91,11 @@ class TradingViewFetcher:
         # Skip tickers from European ADR exchanges
         if exchange in self.EUROPEAN_ADR_EXCHANGES:
             logger.debug(f"Filtering {ticker} from European ADR exchange {exchange}")
+            return True
+        
+        # Skip tickers from OTC/Pink Sheet exchanges (unreliable price data)
+        if exchange in self.OTC_EXCHANGES:
+            logger.debug(f"Filtering {ticker} from OTC exchange {exchange}")
             return True
         
         # Filter out non-common stock securities by ticker pattern

@@ -23,6 +23,10 @@ from yfinance_rate_limiter import with_timeout_and_retry
 
 logger = logging.getLogger(__name__)
 
+# Suppress yfinance's noisy logging (e.g., "possibly delisted" for recent date queries)
+# Must use CRITICAL because ERROR is higher priority than WARNING
+logging.getLogger('yfinance').setLevel(logging.CRITICAL)
+
 
 class YFinancePriceClient:
     """Client for fetching historical stock prices using yfinance"""
@@ -38,6 +42,16 @@ class YFinancePriceClient:
         self._price_cache = {}
         self._cache_ttl_hours = 24
         self._available = True
+    
+    def _normalize_symbol(self, symbol: str) -> str:
+        """
+        Normalize symbol for Yahoo Finance compatibility.
+        
+        Yahoo Finance uses hyphens for share classes (BRK-B), 
+        but TradingView uses dots (BRK.B).
+        """
+        # Convert dots to hyphens for share class notation
+        return symbol.replace('.', '-')
     
     @with_timeout_and_retry(timeout=30, max_retries=3, operation_name="yfinance price history")
     def _get_symbol_history(self, symbol: str) -> Optional[pd.DataFrame]:
@@ -57,8 +71,11 @@ class YFinancePriceClient:
             if datetime.now() - cached['timestamp'] < timedelta(hours=self._cache_ttl_hours):
                 return cached['data']
         
+        # Normalize symbol for Yahoo Finance (e.g., BRK.B -> BRK-B)
+        yf_symbol = self._normalize_symbol(symbol)
+        
         # Fetch all available historical data
-        ticker = yf.Ticker(symbol)
+        ticker = yf.Ticker(yf_symbol)
         df = ticker.history(period="max", auto_adjust=False)
         
         if df is None or df.empty:
@@ -163,7 +180,7 @@ class YFinancePriceClient:
         # Get full daily history
         df = self._get_symbol_history(symbol)
         if df is None or df.empty:
-            logger.warning(f"[PriceHistoryFetcher][{symbol}] No weekly price data available")
+            logger.debug(f"[PriceHistoryFetcher][{symbol}] No weekly price data available")
             return None
         
         try:
@@ -208,14 +225,30 @@ class YFinancePriceClient:
             Dict with 'dates' and 'prices' lists for weeks after start_date, or None if unavailable
         """
         try:
+            # Normalize symbol for Yahoo Finance (e.g., BRK.B -> BRK-B)
+            yf_symbol = self._normalize_symbol(symbol)
+            
             # Fetch data starting from the given date
             # Note: yfinance includes the start date, so we'll get one overlapping week
-            ticker = yf.Ticker(symbol)
+            ticker = yf.Ticker(yf_symbol)
             df = ticker.history(start=start_date, interval='1wk')
             
+            # Check if start_date is recent (within last 7 days)
+            # If so, empty data means "already up to date", not failure
+            try:
+                start_dt = datetime.strptime(start_date, '%Y-%m-%d')
+                is_recent = (datetime.now() - start_dt).days <= 7
+            except ValueError:
+                is_recent = False
+            
             if df is None or df.empty:
-                logger.warning(f"[YFinancePriceClient][{symbol}] No price data available since {start_date}")
-                return None
+                if is_recent:
+                    # Recent start date with no data = already current, not a failure
+                    logger.debug(f"[YFinancePriceClient][{symbol}] Already up to date (no new data since {start_date})")
+                    return {'dates': [], 'prices': []}
+                else:
+                    logger.warning(f"[YFinancePriceClient][{symbol}] No price data available since {start_date}")
+                    return None
             
             # Extract close prices
             if 'Close' in df.columns:
@@ -227,8 +260,12 @@ class YFinancePriceClient:
                 return None
             
             if weekly_df.empty:
-                logger.warning(f"[YFinancePriceClient][{symbol}] No weekly data after filtering")
-                return None
+                if is_recent:
+                    logger.debug(f"[YFinancePriceClient][{symbol}] Already up to date (no new data since {start_date})")
+                    return {'dates': [], 'prices': []}
+                else:
+                    logger.warning(f"[YFinancePriceClient][{symbol}] No weekly data after filtering")
+                    return None
             
             # Skip the first row to avoid duplicate (it's the start_date we already have)
             if len(weekly_df) > 1:
