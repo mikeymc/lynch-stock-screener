@@ -35,13 +35,15 @@ def start():
     applescript = f'''
 tell application "iTerm"
     tell current session of current window
-        -- Start Flask app in current pane
+        -- Name and start Flask app in current pane
+        set name to "local dev server"
         write text "cd {backend_dir}"
         write text "uv run app.py"
         
         -- Split pane horizontally and start worker
         set newSession to (split horizontally with default profile)
         tell newSession
+            set name to "local dev worker"
             write text "cd {backend_dir}"
             write text "uv run python worker.py"
         end tell
