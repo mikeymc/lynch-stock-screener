@@ -43,14 +43,16 @@ class TestNewsFetcher:
             {'finnhub_id': 2, 'headline': 'Apple stock rises...', 'published_date': '2023-01-01'}
         ]
         
+        # Mock incremental fetch - return None for first-time fetch (no existing data)
+        mock_db.get_latest_news_timestamp.return_value = None
         mock_finnhub_client.fetch_all_news.return_value = raw_articles
         mock_finnhub_client.format_article.side_effect = formatted_articles
         
         # Execute
         fetcher.fetch_and_cache_news(symbol)
         
-        # Verify
-        mock_finnhub_client.fetch_all_news.assert_called_once_with(symbol)
+        # Verify - now passes since_timestamp parameter
+        mock_finnhub_client.fetch_all_news.assert_called_once_with(symbol, since_timestamp=None)
         assert mock_finnhub_client.format_article.call_count == 2
         assert mock_db.save_news_article.call_count == 2
         mock_db.save_news_article.assert_any_call(symbol, formatted_articles[0])

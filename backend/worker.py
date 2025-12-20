@@ -556,6 +556,7 @@ class BackgroundWorker:
         Cache news articles for all stocks via Finnhub.
         
         Orders stocks by overall_score (STRONG_BUY first) to prioritize the best stocks.
+        Uses database for stock list (only caches for stocks we actually have).
         
         Params:
             limit: Optional max number of stocks to process
@@ -566,7 +567,7 @@ class BackgroundWorker:
         
         from finnhub_news import FinnhubNewsClient
         
-        # Get stocks ordered by score
+        # Get stocks ordered by score (from DB - ensures FK constraint is satisfied)
         self.db.update_job_progress(job_id, progress_pct=5, progress_message='Loading stock list by priority...')
         all_symbols = self.db.get_stocks_ordered_by_score(limit=limit)
         
@@ -575,17 +576,19 @@ class BackgroundWorker:
         
         self.db.update_job_progress(job_id, progress_pct=10,
                                     progress_message=f'Caching news for {total} stocks...',
+                                    processed_count=0,
                                     total_count=total)
         
-        # Initialize fetcher
+        # Initialize fetcher with API key
         finnhub_client = FinnhubNewsClient(api_key=os.environ.get('FINNHUB_API_KEY', 'd4nkaqpr01qk2nucd6q0d4nkaqpr01qk2nucd6qg'))
-        news_fetcher_instance = NewsFetcher(self.db, finnhub_client)
+        news_fetcher = NewsFetcher(self.db, finnhub_client)
         
         processed = 0
         cached = 0
         errors = 0
         
         for symbol in all_symbols:
+            # Check for shutdown/cancellation
             if self.shutdown_requested:
                 logger.info("Shutdown requested, stopping news cache job")
                 break
@@ -597,7 +600,7 @@ class BackgroundWorker:
                 return
             
             try:
-                news_fetcher_instance.fetch_and_cache_news(symbol)
+                news_fetcher.fetch_and_cache_news(symbol)
                 cached += 1
             except Exception as e:
                 logger.debug(f"[{symbol}] News cache error: {e}")
@@ -617,7 +620,7 @@ class BackgroundWorker:
                 )
                 self._send_heartbeat(job_id)
             
-            if processed % 200 == 0:
+            if processed % 100 == 0:
                 logger.info(f"News cache progress: {processed}/{total} (cached: {cached}, errors: {errors})")
         
         # Complete job
@@ -629,6 +632,7 @@ class BackgroundWorker:
         }
         self.db.complete_job(job_id, result)
         logger.info(f"News cache complete: {result}")
+
 
     def _run_10k_cache(self, job_id: int, params: Dict[str, Any]):
         """

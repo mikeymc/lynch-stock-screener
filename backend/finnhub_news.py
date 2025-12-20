@@ -36,7 +36,7 @@ class FinnhubNewsClient:
         
         if time_since_last_request < self.RATE_LIMIT_DELAY:
             sleep_time = self.RATE_LIMIT_DELAY - time_since_last_request
-            logger.info(f"[NewsFetcher] Rate limiting: sleeping for {sleep_time:.2f}s")
+            logger.debug(f"[NewsFetcher] Rate limiting: sleeping for {sleep_time:.2f}s")
             time.sleep(sleep_time)
         
         self.last_request_time = time.time()
@@ -82,74 +82,49 @@ class FinnhubNewsClient:
             logger.error(f"[NewsFetcher] Error fetching news for {symbol}: {e}")
             return []
     
-    def fetch_all_news(self, symbol: str) -> List[Dict[str, Any]]:
+    def fetch_all_news(self, symbol: str, since_timestamp: int = None) -> List[Dict[str, Any]]:
         """
-        Fetch all available news for a stock from the last 2 years.
-        Handles pagination by making multiple requests if needed.
+        Fetch news for a stock. Supports incremental fetching.
         
         Args:
             symbol: Stock ticker symbol
+            since_timestamp: Optional Unix timestamp - only fetch articles newer than this.
+                           Uses 1-day buffer to handle timezone edge cases.
             
         Returns:
-            List of all article dictionaries sorted by date descending
+            List of article dictionaries sorted by date descending
         """
         all_articles = []
         
         # Calculate date range
         to_date = datetime.now()
-        from_date = to_date - timedelta(days=365 * self.LOOKBACK_YEARS)
         
-        logger.info(f"[NewsFetcher] Starting news fetch for {symbol} from {from_date.date()} to {to_date.date()}")
+        if since_timestamp:
+            # Incremental: start from 1 day before the most recent cached article
+            # This ensures we don't miss any articles due to timezone differences
+            from_date = datetime.fromtimestamp(since_timestamp) - timedelta(days=1)
+            logger.info(f"[NewsFetcher] Incremental fetch for {symbol} since {from_date.date()}")
+        else:
+            # Full fetch: go back 2 years
+            from_date = to_date - timedelta(days=365 * self.LOOKBACK_YEARS)
+            logger.info(f"[NewsFetcher] Full fetch for {symbol} from {from_date.date()} to {to_date.date()}")
         
-        # Initial fetch
+        # Fetch articles
         to_date_str = to_date.strftime('%Y-%m-%d')
         from_date_str = from_date.strftime('%Y-%m-%d')
         
         articles = self._fetch_news_page(symbol, from_date_str, to_date_str)
         
         if not articles:
-            logger.info(f"[NewsFetcher] No articles found for {symbol}")
+            logger.debug(f"[NewsFetcher] No articles found for {symbol}")
             return []
         
         all_articles.extend(articles)
         
-        # Check if we need to paginate
-        # If we got exactly MAX_ARTICLES_PER_CALL, there might be more
-        while len(articles) == self.MAX_ARTICLES_PER_CALL:
-            # Find the oldest article's date from this batch
-            oldest_article = min(articles, key=lambda x: x.get('datetime', 0))
-            oldest_datetime = oldest_article.get('datetime', 0)
-            
-            if oldest_datetime == 0:
-                logger.warning(f"[NewsFetcher] Article missing datetime field, stopping pagination")
-                break
-            
-            # Convert Unix timestamp to datetime
-            oldest_date = datetime.fromtimestamp(oldest_datetime)
-            
-            # Check if we've reached our lookback limit
-            if oldest_date <= from_date:
-                logger.info(f"[NewsFetcher] Reached {self.LOOKBACK_YEARS} year lookback limit for {symbol}")
-                break
-            
-            # Fetch next page: from start date to one day before oldest article
-            new_to_date = oldest_date - timedelta(days=1)
-            new_to_date_str = new_to_date.strftime('%Y-%m-%d')
-            
-            logger.info(f"[NewsFetcher] Fetching next page for {symbol}: {from_date_str} to {new_to_date_str}")
-            
-            articles = self._fetch_news_page(symbol, from_date_str, new_to_date_str)
-            
-            if not articles:
-                logger.info(f"[NewsFetcher] No more articles found for {symbol}")
-                break
-            
-            all_articles.extend(articles)
-        
         # Sort by datetime descending (most recent first)
         all_articles.sort(key=lambda x: x.get('datetime', 0), reverse=True)
         
-        logger.info(f"[NewsFetcher] Total articles fetched for {symbol}: {len(all_articles)}")
+        logger.info(f"[NewsFetcher] Fetched {len(all_articles)} articles for {symbol}")
         
         return all_articles
     

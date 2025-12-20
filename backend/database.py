@@ -9,7 +9,7 @@ import queue
 import time
 import logging
 from datetime import datetime
-from typing import Optional, Dict, Any, List
+from typing import Optional, Dict, Any, List, Set
 import json
 
 logger = logging.getLogger(__name__)
@@ -66,6 +66,10 @@ class Database:
         # Queue for database write operations
         self.write_queue = queue.Queue()
         self.write_batch_size = 50
+        
+        # Cache from symbol lookups (for FK validation)
+        self._symbol_cache: Optional[Set[str]] = None
+        self._symbol_cache_lock = threading.Lock()
 
         # Initialize schema
         logger.info("Initializing database schema...")
@@ -135,6 +139,45 @@ class Database:
                 self._connection_errors += 1
             logger.error(f"Error returning connection to pool: {e}")
             raise
+    
+    def _symbol_exists(self, symbol: str) -> bool:
+        """Check if a symbol exists in the stocks table.
+        
+        Uses a cached Set for efficiency during batch operations.
+        Cache is lazily initialized on first call and refreshed if miss.
+        
+        Args:
+            symbol: Stock ticker symbol
+            
+        Returns:
+            True if symbol exists in stocks table, False otherwise
+        """
+        with self._symbol_cache_lock:
+            # Lazy init: load all symbols on first use
+            if self._symbol_cache is None:
+                conn = self.get_connection()
+                try:
+                    cursor = conn.cursor()
+                    cursor.execute("SELECT symbol FROM stocks")
+                    self._symbol_cache = {row[0] for row in cursor.fetchall()}
+                finally:
+                    self.return_connection(conn)
+            
+            # Fast check against cache
+            if symbol in self._symbol_cache:
+                return True
+            
+            # Cache miss - check DB directly (symbol might have been added recently)
+            conn = self.get_connection()
+            try:
+                cursor = conn.cursor()
+                cursor.execute("SELECT 1 FROM stocks WHERE symbol = %s LIMIT 1", (symbol,))
+                exists = cursor.fetchone() is not None
+                if exists:
+                    self._symbol_cache.add(symbol)
+                return exists
+            finally:
+                self.return_connection(conn)
 
     def get_pool_stats(self) -> Dict[str, Any]:
         """Get connection pool statistics for monitoring"""
@@ -1915,12 +1958,19 @@ class Database:
 
     def save_news_article(self, symbol: str, article_data: Dict[str, Any]):
         """
-        Save a news article to the database
+        Save a news article to the database.
+        
+        Skips articles for symbols not in the stocks table to prevent FK violations.
+        This aligns with the price caching pattern that gracefully skips missing stocks.
         
         Args:
             symbol: Stock symbol
             article_data: Dict containing article data (finnhub_id, headline, summary, etc.)
         """
+        # Check if symbol exists in stocks table (skip if not - matches price cache pattern)
+        if not self._symbol_exists(symbol):
+            return
+        
         sql = """
             INSERT INTO news_articles
             (symbol, finnhub_id, headline, summary, source, url, image_url, category, datetime, published_date, last_updated)
@@ -2027,6 +2077,32 @@ class Database:
             'article_count': row[0],
             'last_updated': row[1]
         }
+
+    def get_latest_news_timestamp(self, symbol: str) -> Optional[int]:
+        """
+        Get the Unix timestamp of the most recent cached news article for a symbol.
+        
+        Used for incremental fetching - only fetch articles newer than this.
+        
+        Args:
+            symbol: Stock symbol
+            
+        Returns:
+            Unix timestamp (seconds) or None if no articles cached
+        """
+        conn = self.get_connection()
+        try:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT MAX(datetime) FROM news_articles
+                WHERE symbol = %s
+            """, (symbol,))
+            row = cursor.fetchone()
+            if not row or not row[0]:
+                return None
+            return int(row[0])
+        finally:
+            self.return_connection(conn)
 
     def save_material_event(self, symbol: str, event_data: Dict[str, Any]):
         """

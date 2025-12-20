@@ -175,6 +175,40 @@ class TestCacheJobRouting:
         assert callable(getattr(worker.BackgroundWorker, '_run_8k_cache'))
 
 
+class TestNewsCacheJob:
+    """Tests for news cache job implementation"""
+    
+    def test_news_cache_uses_db_ordering_only(self):
+        """Verify _run_news_cache uses get_stocks_ordered_by_score directly"""
+        import worker
+        import inspect
+        
+        source = inspect.getsource(worker.BackgroundWorker._run_news_cache)
+        
+        # Check source usage
+        assert 'get_stocks_ordered_by_score' in source, \
+            "News cache should get stocks ordered by score"
+        
+        # Check NO TradingView usage
+        assert 'TradingViewFetcher' not in source, \
+            "News cache should NOT use TradingViewFetcher anymore"
+        assert 'fetch_all_stocks' not in source, \
+            "News cache should NOT fetch_all_stocks from TradingView"
+
+    def test_news_cache_ignores_region_param(self):
+        """Verify _run_news_cache does not use region logic"""
+        import worker
+        import inspect
+        
+        source = inspect.getsource(worker.BackgroundWorker._run_news_cache)
+        
+        # Check region logic is gone (param might be in docstring, so check simplistic logic absence)
+        assert 'region_mapping' not in source, \
+            "News cache should not use region mapping"
+        assert 'tv_regions' not in source, \
+            "News cache should not calculate tv_regions"
+
+
 class TestDatabaseOrderByScore:
     """Tests for the new get_stocks_ordered_by_score database method"""
     

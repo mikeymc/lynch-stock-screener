@@ -1,5 +1,5 @@
 # ABOUTME: Fetches and caches news articles from Finnhub
-# ABOUTME: Handles news article formatting and database storage
+# ABOUTME: Handles news article formatting and database storage with incremental updates
 
 import logging
 from typing import Optional
@@ -20,15 +20,30 @@ class NewsFetcher:
         """
         Fetch and cache news articles for a symbol.
         
+        Uses incremental fetching: only retrieves articles newer than the most
+        recent cached one (with 1-day buffer for timezone safety).
+        Database ON CONFLICT handles any duplicates.
+        
         Args:
             symbol: Stock ticker symbol
         """
         try:
-            logger.debug(f"[NewsFetcher][{symbol}] Fetching news articles")
-            articles = self.finnhub_client.fetch_all_news(symbol)
+            # Check for existing cached news to determine fetch strategy
+            since_timestamp = self.db.get_latest_news_timestamp(symbol)
+            
+            if since_timestamp:
+                logger.debug(f"[NewsFetcher][{symbol}] Incremental update from timestamp {since_timestamp}")
+            else:
+                logger.debug(f"[NewsFetcher][{symbol}] Full history fetch (no existing data)")
+            
+            # Fetch articles (incremental if we have existing data)
+            articles = self.finnhub_client.fetch_all_news(symbol, since_timestamp=since_timestamp)
             
             if not articles:
-                logger.debug(f"[NewsFetcher][{symbol}] No news articles available")
+                if since_timestamp:
+                    logger.debug(f"[NewsFetcher][{symbol}] Already up to date")
+                else:
+                    logger.debug(f"[NewsFetcher][{symbol}] No news articles available")
                 return
             
             # Format and save articles
@@ -41,3 +56,4 @@ class NewsFetcher:
         except Exception as e:
             logger.error(f"[NewsFetcher][{symbol}] Error caching news: {e}")
             # Don't raise - news is optional
+

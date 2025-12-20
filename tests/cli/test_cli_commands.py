@@ -26,6 +26,19 @@ class TestCacheCommands:
         assert 'all' in command_names
 
 
+class TestNewsCacheCommand:
+    """Tests for the news cache command"""
+    
+    def test_news_command_has_prod_option(self):
+        """Verify news cache command has --prod option"""
+        from cli.commands.cache import news
+        
+        sig = inspect.signature(news)
+        params = list(sig.parameters.keys())
+        
+        assert 'prod' in params
+
+
 class TestScreenCommand:
     """Tests for the screen command"""
     
