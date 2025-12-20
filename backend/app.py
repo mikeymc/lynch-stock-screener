@@ -119,8 +119,10 @@ analyzer_corr = CorrelationAnalyzer(db)
 optimizer = AlgorithmOptimizer(db)
 
 # Initialize Finnhub client for news
-finnhub_api_key = os.environ.get('FINNHUB_API_KEY', 'd4nkaqpr01qk2nucd6q0d4nkaqpr01qk2nucd6qg')
-finnhub_client = FinnhubNewsClient(finnhub_api_key)
+finnhub_api_key = os.environ.get('FINNHUB_API_KEY')
+if not finnhub_api_key:
+    logger.warning("FINNHUB_API_KEY not set - news features will be unavailable")
+finnhub_client = FinnhubNewsClient(finnhub_api_key) if finnhub_api_key else None
 
 # Initialize SEC 8-K client for material events
 sec_user_agent = os.environ.get('SEC_USER_AGENT', 'Lynch Stock Screener info@lynchstocks.com')

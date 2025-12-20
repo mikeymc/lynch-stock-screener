@@ -580,7 +580,14 @@ class BackgroundWorker:
                                     total_count=total)
         
         # Initialize fetcher with API key
-        finnhub_client = FinnhubNewsClient(api_key=os.environ.get('FINNHUB_API_KEY', 'd4nkaqpr01qk2nucd6q0d4nkaqpr01qk2nucd6qg'))
+        finnhub_api_key = os.environ.get('FINNHUB_API_KEY')
+        if not finnhub_api_key:
+            error_msg = "FINNHUB_API_KEY not set - cannot cache news"
+            logger.error(error_msg)
+            self.db.fail_job(job_id, error_msg)
+            return
+        
+        finnhub_client = FinnhubNewsClient(api_key=finnhub_api_key)
         news_fetcher = NewsFetcher(self.db, finnhub_client)
         
         processed = 0
