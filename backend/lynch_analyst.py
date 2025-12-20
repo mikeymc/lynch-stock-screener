@@ -43,12 +43,21 @@ class LynchAnalyst:
 
         self.prompt_template = f"{main_prompt}\n\n---\n\n## Reference: Peter Lynch's Checklist\n\n{checklist_content}"
 
-        # Configure Gemini API
-        api_key = api_key or os.getenv('GEMINI_API_KEY')
-        if api_key:
-            self.client = genai.Client(api_key=api_key)
-        else:
-            self.client = genai.Client()
+        # Store API key for lazy client initialization
+        self._api_key = api_key or os.getenv('GEMINI_API_KEY')
+        self._client = None
+
+    @property
+    def client(self):
+        """Lazy initialization of Gemini client - only created when first accessed."""
+        if self._client is None:
+            if self._api_key:
+                self._client = genai.Client(api_key=self._api_key)
+            else:
+                # This will raise an error if no credentials are configured,
+                # but only when the client is actually used (not at import time)
+                self._client = genai.Client()
+        return self._client
 
     def _prepare_template_vars(self, stock_data: Dict[str, Any], history: List[Dict[str, Any]]) -> Dict[str, Any]:
         """Helper to prepare template variables from stock data and history"""
