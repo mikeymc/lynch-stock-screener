@@ -804,7 +804,10 @@ def get_cached_stocks():
 @app.route('/api/sessions/latest', methods=['GET'])
 def get_latest_session():
     """Get the most recent screening session with all results"""
-    session_data = db.get_latest_session()
+    # Get optional search parameter for filtering
+    search = request.args.get('search', None)
+    
+    session_data = db.get_latest_session(search=search)
 
     if not session_data:
         return jsonify({'error': 'No screening sessions found'}), 404

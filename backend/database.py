@@ -1462,7 +1462,7 @@ class Database:
         )
         self.write_queue.put((sql_insert, args_insert))
 
-    def get_latest_session(self) -> Optional[Dict[str, Any]]:
+    def get_latest_session(self, search: str = None) -> Optional[Dict[str, Any]]:
         conn = self.get_connection()
         try:
             cursor = conn.cursor()
@@ -1480,7 +1480,8 @@ class Database:
 
             session_id = session_row[0]
 
-            cursor.execute("""
+            # Build query with optional search filter
+            query = """
                 SELECT symbol, company_name, country, market_cap, sector, ipo_year,
                        price, pe_ratio, peg_ratio, debt_to_equity, institutional_ownership, dividend_yield,
                        earnings_cagr, revenue_cagr, consistency_score,
@@ -1488,7 +1489,15 @@ class Database:
                        institutional_ownership_status, institutional_ownership_score, overall_status
                 FROM screening_results
                 WHERE session_id = %s
-            """, (session_id,))
+            """
+            params = [session_id]
+            
+            if search:
+                query += " AND (symbol ILIKE %s OR company_name ILIKE %s)"
+                search_pattern = f"%{search}%"
+                params.extend([search_pattern, search_pattern])
+            
+            cursor.execute(query, params)
             result_rows = cursor.fetchall()
 
             results = []

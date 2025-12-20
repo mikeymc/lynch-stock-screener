@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect, useRef } from 'react'
+import { useState, useMemo, useEffect, useRef, useCallback } from 'react'
 import { Routes, Route, useNavigate, useSearchParams } from 'react-router-dom'
 import { Line } from 'react-chartjs-2'
 import {
@@ -131,6 +131,10 @@ function StockListView({
     marketCap: { max: null }
   })
   const [showAdvancedFilters, setShowAdvancedFilters] = useState(false)
+
+  // Debounced search state
+  const [searchLoading, setSearchLoading] = useState(false)
+  const debounceTimerRef = useRef(null)
 
   // Re-evaluate existing stocks when algorithm changes
   const prevAlgorithmRef = useRef(algorithm)
@@ -315,6 +319,45 @@ function StockListView({
 
     return () => controller.abort()
   }, [])
+
+  // Debounced search handler - calls backend API after delay
+  const handleSearchChange = useCallback((value) => {
+    setSearchQuery(value)
+
+    // Clear previous debounce timer
+    if (debounceTimerRef.current) {
+      clearTimeout(debounceTimerRef.current)
+    }
+
+    // If search is cleared, reload all results immediately
+    if (!value.trim()) {
+      setSearchLoading(true)
+      fetch(`${API_BASE}/sessions/latest`)
+        .then(response => response.json())
+        .then(data => {
+          if (data.results) {
+            setStocks(data.results)
+          }
+        })
+        .catch(err => console.error('Error loading results:', err))
+        .finally(() => setSearchLoading(false))
+      return
+    }
+
+    // Set debounce timer for search
+    debounceTimerRef.current = setTimeout(() => {
+      setSearchLoading(true)
+      fetch(`${API_BASE}/sessions/latest?search=${encodeURIComponent(value)}`)
+        .then(response => response.json())
+        .then(data => {
+          if (data.results) {
+            setStocks(data.results)
+          }
+        })
+        .catch(err => console.error('Error searching:', err))
+        .finally(() => setSearchLoading(false))
+    }, 200) // 200ms debounce
+  }, [setSearchQuery, setStocks])
 
   // Resume polling if there's an active screening session
   useEffect(() => {
@@ -613,16 +656,7 @@ function StockListView({
         return false
       }
 
-      // Apply search filter
-      if (searchQuery.trim()) {
-        const query = searchQuery.toLowerCase()
-        const symbol = (stock.symbol || '').toLowerCase()
-        const companyName = (stock.company_name || '').toLowerCase()
-
-        if (!symbol.includes(query) && !companyName.includes(query)) {
-          return false
-        }
-      }
+      // Search is now handled by backend API - no frontend filter needed
 
       // Apply advanced filters
       // Region/Country filter
@@ -735,7 +769,7 @@ function StockListView({
       }
     })
     return sorted
-  }, [stocks, filter, sortBy, sortDir, searchQuery, watchlist, advancedFilters])
+  }, [stocks, filter, sortBy, sortDir, watchlist, advancedFilters])
 
   const totalPages = Math.ceil(sortedStocks.length / itemsPerPage)
   const startIndex = (currentPage - 1) * itemsPerPage
@@ -809,18 +843,18 @@ function StockListView({
         <div className="filter-controls">
           <label>Search: </label>
           <div className="search-container">
-            <span className="search-icon">🔍</span>
+            <span className="search-icon">{searchLoading ? '⏳' : '🔍'}</span>
             <input
               type="text"
               className="search-input"
               value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Filter by symbol or company name..."
+              onChange={(e) => handleSearchChange(e.target.value)}
+              placeholder="Search by symbol or company name..."
             />
             {searchQuery && (
               <button
                 className="clear-button"
-                onClick={() => setSearchQuery('')}
+                onClick={() => handleSearchChange('')}
                 aria-label="Clear search"
               >
                 ×
