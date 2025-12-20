@@ -49,8 +49,4 @@ mock_typer.Exit = Exception
 
 # Mock CLI dependencies before any CLI imports happen
 sys.modules['typer'] = mock_typer
-sys.modules['rich'] = MagicMock()
-sys.modules['rich.console'] = MagicMock()
-sys.modules['rich.table'] = MagicMock()
 sys.modules['dotenv'] = MagicMock()
-sys.modules['httpx'] = MagicMock()

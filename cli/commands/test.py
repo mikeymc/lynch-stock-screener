@@ -17,28 +17,28 @@ def test(
     file: str = typer.Option(None, "--file", "-f", help="Test specific file"),
     match: str = typer.Option(None, "--match", "-k", help="Run tests matching pattern"),
 ):
-    """Run pytest tests"""
+    """Run pytest tests (backend, CLI, and e2e)"""
     cmd = ["uv", "run", "pytest"]
-    
+
     if file:
         cmd.append(file)
     else:
-        # Run backend tests by default (cli/e2e can be run with -f flag)
-        cmd.append(str(TESTS_DIR / "backend"))
-    
-    # Use -p no:cov to fully disable coverage plugin (fixes rich import conflict)
-    cmd.extend(["-v", "--tb=short", "-p", "no:cov"])
-    
+        # Run all test suites by default
+        cmd.extend([
+            str(TESTS_DIR / "backend"),
+            str(TESTS_DIR / "cli"),
+        ])
+
+    cmd.extend(["-v", "--tb=short"])
+
     if match:
         cmd.extend(["-k", match])
-    
+
     console.print(f"[bold blue]🧪 Running tests...[/bold blue]")
     console.print(f"[dim]Command: {' '.join(cmd)}[/dim]\n")
-    
-    # Run from backend/ directory to avoid Python path conflicts with rich module
-    backend_dir = PROJECT_ROOT / "backend"
-    result = subprocess.run(cmd, cwd=str(backend_dir))
-    
+
+    result = subprocess.run(cmd)
+
     if result.returncode == 0:
         console.print("\n[bold green]✓ All tests passed![/bold green]")
     else:
