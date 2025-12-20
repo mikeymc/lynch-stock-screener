@@ -2080,9 +2080,11 @@ class Database:
 
     def get_latest_news_timestamp(self, symbol: str) -> Optional[int]:
         """
-        Get the Unix timestamp of the most recent cached news article for a symbol.
+        Get the Unix timestamp of when we last cached news for a symbol.
         
-        Used for incremental fetching - only fetch articles newer than this.
+        Uses last_updated (cache time) not article datetime, so incremental
+        fetching starts from when we last checked, not when the last article
+        was published. This prevents re-fetching the same old articles.
         
         Args:
             symbol: Stock symbol
@@ -2093,8 +2095,9 @@ class Database:
         conn = self.get_connection()
         try:
             cursor = conn.cursor()
+            # Use last_updated (when we cached) not datetime (article publication)
             cursor.execute("""
-                SELECT MAX(datetime) FROM news_articles
+                SELECT EXTRACT(EPOCH FROM MAX(last_updated))::bigint FROM news_articles
                 WHERE symbol = %s
             """, (symbol,))
             row = cursor.fetchone()
