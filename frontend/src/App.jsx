@@ -651,6 +651,20 @@ function StockListView({
     }
   }
 
+  const formatStatusName = (status) => {
+    const statusMap = {
+      'STRONG_BUY': 'Strong Buy',
+      'BUY': 'Buy',
+      'HOLD': 'Hold',
+      'CAUTION': 'Caution',
+      'AVOID': 'Avoid',
+      'PASS': 'Pass',
+      'CLOSE': 'Close',
+      'FAIL': 'Fail'
+    }
+    return statusMap[status] || status
+  }
+
   const getStatusRank = (status) => {
     switch (status) {
       // Classic algorithm statuses
@@ -1082,7 +1096,7 @@ function StockListView({
                       />
                     </td>
                     <td style={{ backgroundColor: getStatusColor(stock.overall_status), color: '#000', fontWeight: 'bold' }}>
-                      {stock.overall_status}
+                      {formatStatusName(stock.overall_status)}
                     </td>
                   </tr>
                 ))}

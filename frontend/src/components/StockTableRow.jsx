@@ -28,6 +28,20 @@ function getStatusColor(status) {
   }
 }
 
+function formatStatusName(status) {
+  const statusMap = {
+    'STRONG_BUY': 'Strong Buy',
+    'BUY': 'Buy',
+    'HOLD': 'Hold',
+    'CAUTION': 'Caution',
+    'AVOID': 'Avoid',
+    'PASS': 'Pass',
+    'CLOSE': 'Close',
+    'FAIL': 'Fail'
+  }
+  return statusMap[status] || status
+}
+
 export default function StockTableRow({ stock, watchlist, onToggleWatchlist, onClick, readOnly = false }) {
   const handleClick = () => {
     if (!readOnly && onClick) {
@@ -92,7 +106,7 @@ export default function StockTableRow({ stock, watchlist, onToggleWatchlist, onC
         />
       </td>
       <td style={{ backgroundColor: getStatusColor(stock.overall_status), color: '#000', fontWeight: 'bold' }}>
-        {stock.overall_status}
+        {formatStatusName(stock.overall_status)}
       </td>
     </tr>
   )
