@@ -10,7 +10,10 @@ from database import Database
 class TestAlgorithmOptimizer:
     @pytest.fixture
     def db(self):
-        return Database()
+        import unittest.mock as mock
+        db_mock = mock.MagicMock()
+        db_mock.get_algorithm_configs.return_value = []
+        return db_mock
 
     @pytest.fixture
     def optimizer(self, db):
