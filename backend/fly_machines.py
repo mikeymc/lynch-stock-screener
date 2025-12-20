@@ -169,8 +169,8 @@ class FlyMachineManager:
                     'env': self.get_env_vars(),
                     'guest': {
                         'cpu_kind': 'shared',
-                        'cpus': 4,
-                        'memory_mb': 8192  # Increased from 4GB to handle parallel data fetching
+                        'cpus': 2,
+                        'memory_mb': 2048  # Downsized: actual usage ~500MB avg, 2GB gives 4x headroom
                     },
                     'auto_destroy': True,  # Destroy when process exits
                     'restart': {

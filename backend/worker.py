@@ -81,6 +81,28 @@ def get_memory_mb() -> float:
     return usage.ru_maxrss / 1024
 
 
+# Memory alerting thresholds (based on 2GB worker allocation)
+MEMORY_WARNING_MB = 1600   # 80% of 2GB - log warning
+MEMORY_CRITICAL_MB = 1900  # 95% of 2GB - log critical
+
+
+def check_memory_warning(context: str = "") -> None:
+    """
+    Check memory usage and log warnings if approaching limits.
+    Call this periodically during long-running jobs.
+    """
+    used_mb = get_memory_mb()
+    
+    if used_mb >= MEMORY_CRITICAL_MB:
+        logger.critical(
+            f"🚨 CRITICAL MEMORY: {used_mb:.0f}MB used (limit ~2048MB) - OOM risk! {context}"
+        )
+    elif used_mb >= MEMORY_WARNING_MB:
+        logger.warning(
+            f"⚠️ HIGH MEMORY: {used_mb:.0f}MB used (warning threshold: {MEMORY_WARNING_MB}MB) {context}"
+        )
+
+
 
 class BackgroundWorker:
     """Background worker that polls for and executes jobs from PostgreSQL"""
@@ -336,6 +358,7 @@ class BackgroundWorker:
                                             processed_count=processed_count)
                 
                 logger.info(f"========== SCREENING PROGRESS: {processed_count}/{total} ({progress_pct}%) | MEMORY: {get_memory_mb():.0f}MB ==========")
+                check_memory_warning(f"[screening {processed_count}/{total}]")
                 
                 # Periodic garbage collection to prevent memory buildup
                 if batch_start % 100 == 0:
@@ -540,6 +563,7 @@ class BackgroundWorker:
                 )
                 self._send_heartbeat(job_id)
                 logger.info(f"Price history cache progress: {processed}/{total} (cached: {cached}, errors: {errors}) | MEMORY: {get_memory_mb():.0f}MB")
+                check_memory_warning(f"[price_history {processed}/{total}]")
         
         # Complete job
         result = {
@@ -629,6 +653,7 @@ class BackgroundWorker:
             
             if processed % 100 == 0:
                 logger.info(f"News cache progress: {processed}/{total} (cached: {cached}, errors: {errors}) | MEMORY: {get_memory_mb():.0f}MB")
+                check_memory_warning(f"[news {processed}/{total}]")
         
         # Complete job
         result = {
@@ -752,6 +777,7 @@ class BackgroundWorker:
             
             if processed % 10 == 0:
                 logger.info(f"10-K/10-Q cache progress: {processed}/{total} (cached: {cached}, errors: {errors}) | MEMORY: {get_memory_mb():.0f}MB")
+                check_memory_warning(f"[10k {processed}/{total}]")
         
         # Complete job
         result = {
@@ -880,6 +906,7 @@ class BackgroundWorker:
             
             if processed % 10 == 0:
                 logger.info(f"8-K cache progress: {processed}/{total} (cached: {cached}, errors: {errors}) | MEMORY: {get_memory_mb():.0f}MB")
+                check_memory_warning(f"[8k {processed}/{total}]")
         
         # Complete job
         result = {
