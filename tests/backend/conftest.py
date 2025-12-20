@@ -7,8 +7,12 @@ import sys
 import os
 
 # Add backend directory to Python path for all test imports
+# Add backend directory to Python path for all test imports
+# Note: Root tests/conftest.py also adds this, but we keep it here to support 
+# running tests specifically from this directory if needed
 backend_path = os.path.join(os.path.dirname(__file__), '..', '..', 'backend')
-sys.path.insert(0, os.path.abspath(backend_path))
+if os.path.abspath(backend_path) not in sys.path:
+    sys.path.insert(0, os.path.abspath(backend_path))
 
 
 @pytest.fixture(scope="session", autouse=True)

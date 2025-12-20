@@ -23,9 +23,11 @@ def test(
     if file:
         cmd.append(file)
     else:
-        cmd.append(str(TESTS_DIR))
+        # Run backend tests by default (cli/e2e can be run with -f flag)
+        cmd.append(str(TESTS_DIR / "backend"))
     
-    cmd.extend(["-v", "--tb=short"])
+    # Use -p no:cov to fully disable coverage plugin (fixes rich import conflict)
+    cmd.extend(["-v", "--tb=short", "-p", "no:cov"])
     
     if match:
         cmd.extend(["-k", match])
@@ -33,7 +35,9 @@ def test(
     console.print(f"[bold blue]🧪 Running tests...[/bold blue]")
     console.print(f"[dim]Command: {' '.join(cmd)}[/dim]\n")
     
-    result = subprocess.run(cmd)
+    # Run from backend/ directory to avoid Python path conflicts with rich module
+    backend_dir = PROJECT_ROOT / "backend"
+    result = subprocess.run(cmd, cwd=str(backend_dir))
     
     if result.returncode == 0:
         console.print("\n[bold green]✓ All tests passed![/bold green]")

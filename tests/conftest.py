@@ -3,7 +3,14 @@ Shared pytest fixtures for all test suites.
 """
 import pytest
 import psycopg
+import sys
 import os
+
+# Add backend directory to Python path for all test imports
+# This must happen at module level, before any test collection,
+# to avoid import conflicts when pytest collects from multiple directories
+backend_path = os.path.join(os.path.dirname(__file__), '..', 'backend')
+sys.path.insert(0, os.path.abspath(backend_path))
 
 
 @pytest.fixture(scope="session", autouse=True)
