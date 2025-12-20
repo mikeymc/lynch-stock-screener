@@ -5,33 +5,34 @@ export default function StatusBar({ status, score, value, metricType }) {
   const displayValue = typeof value === 'number' ? value.toFixed(2) : (value || 'N/A')
   const tooltipText = `${status}: ${displayValue}`
 
-  // Calculate marker position based on metric type
-  // For consistency metrics: high score (100) should be on LEFT (green zone at 0%)
-  // For PE range: score is inverted before passing (high position = right), so use directly
-  // For other metrics (PEG, debt): invert score so low is on left (good)
-  const shouldInvert = !['revenue_consistency', 'income_consistency', 'pe_range'].includes(metricType)
-  const markerPosition = shouldInvert ? `${100 - score}%` : `${score}%`
+  // Calculate marker position - score 0 = left, score 100 = right
+  const markerPosition = `${score}%`
 
-  // Define zone configurations for each metric type
-  const getZoneConfig = () => {
+  // Check if this metric type uses a gradient
+  const useGradient = ['pe_range', 'revenue_consistency', 'income_consistency'].includes(metricType)
+
+  // Get gradient style based on metric type
+  const getGradientStyle = () => {
     switch (metricType) {
       case 'pe_range':
-        // 52-week P/E range: left = low P/E (good), right = high P/E (expensive)
-        return [
-          { class: 'excellent', width: '25%', label: 'Low' },
-          { class: 'good', width: '25%', label: 'Mid-Low' },
-          { class: 'fair', width: '25%', label: 'Mid-High' },
-          { class: 'poor', width: '25%', label: 'High' }
-        ]
+        // P/E Range: green (left, low P/E = good) -> red (right, high P/E = expensive)
+        return {
+          background: 'linear-gradient(to right, #22c55e 0%, #86efac 25%, #fde047 50%, #fb923c 75%, #ef4444 100%)'
+        }
       case 'revenue_consistency':
       case 'income_consistency':
-        // Consistency: left = poor (score 0), right = excellent (score 100)
-        return [
-          { class: 'poor', width: '25%', label: 'Poor' },
-          { class: 'fair', width: '25%', label: 'Fair' },
-          { class: 'good', width: '25%', label: 'Good' },
-          { class: 'excellent', width: '25%', label: 'Excellent' }
-        ]
+        // Consistency: red (left, low = bad) -> green (right, high = good)
+        return {
+          background: 'linear-gradient(to right, #ef4444 0%, #fb923c 25%, #fde047 50%, #86efac 75%, #22c55e 100%)'
+        }
+      default:
+        return {}
+    }
+  }
+
+  // Define zone configurations for non-gradient metric types
+  const getZoneConfig = () => {
+    switch (metricType) {
       case 'peg':
         return [
           { class: 'excellent', width: '25%', label: '0-1.0' },
@@ -70,15 +71,24 @@ export default function StatusBar({ status, score, value, metricType }) {
           className="status-marker"
           style={{ left: markerPosition }}
         ></div>
-        <div style={{ display: 'flex', width: '100%', height: '100%' }}>
-          {zones.map((zone, index) => (
-            <div
-              key={index}
-              className={`status-zone ${zone.class}`}
-              style={{ width: zone.width }}
-            ></div>
-          ))}
-        </div>
+        {useGradient ? (
+          <div style={{
+            width: '100%',
+            height: '100%',
+            borderRadius: '4px',
+            ...getGradientStyle()
+          }}></div>
+        ) : (
+          <div style={{ display: 'flex', width: '100%', height: '100%' }}>
+            {zones.map((zone, index) => (
+              <div
+                key={index}
+                className={`status-zone ${zone.class}`}
+                style={{ width: zone.width }}
+              ></div>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   )

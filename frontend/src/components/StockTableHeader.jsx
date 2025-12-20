@@ -75,9 +75,9 @@ export default function StockTableHeader({ sortBy, sortDir, onSort, readOnly = f
         <th onClick={() => handleSort('dividend_yield')} style={getCursorStyle()}>
           Div Yield{getSortIndicator('dividend_yield')}
         </th>
-        <th>TTM P/E Range</th>
-        <th>5y Rev Consistency</th>
-        <th>5y Inc Consistency</th>
+        <th style={{ width: '110px' }}>TTM P/E Range</th>
+        <th style={{ width: '110px' }}>5y Rev Consistency</th>
+        <th style={{ width: '110px' }}>5y Inc Consistency</th>
         <th onClick={() => handleSort('overall_status')} style={getCursorStyle()}>
           Overall{getSortIndicator('overall_status')}
         </th>
