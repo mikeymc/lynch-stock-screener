@@ -45,7 +45,8 @@ class FinnhubNewsClient:
         self, 
         symbol: str, 
         from_date: str, 
-        to_date: str
+        to_date: str,
+        retry_count: int = 0
     ) -> List[Dict[str, Any]]:
         """
         Fetch a single page of news articles from Finnhub
@@ -54,10 +55,14 @@ class FinnhubNewsClient:
             symbol: Stock ticker symbol
             from_date: Start date in YYYY-MM-DD format
             to_date: End date in YYYY-MM-DD format
+            retry_count: Current retry attempt (for backoff)
             
         Returns:
             List of article dictionaries
         """
+        MAX_RETRIES = 3
+        BASE_BACKOFF = 5  # seconds
+        
         self._rate_limit()
         
         url = f"{self.BASE_URL}/company-news"
@@ -71,6 +76,18 @@ class FinnhubNewsClient:
         try:
             logger.info(f"[NewsFetcher] Fetching news for {symbol} from {from_date} to {to_date}")
             response = self.session.get(url, params=params, timeout=30)
+            
+            # Handle 429 rate limit with exponential backoff
+            if response.status_code == 429:
+                if retry_count < MAX_RETRIES:
+                    backoff_time = BASE_BACKOFF * (3 ** retry_count)  # 5s, 15s, 45s
+                    logger.warning(f"[NewsFetcher] Rate limited (429), backing off {backoff_time}s (attempt {retry_count + 1}/{MAX_RETRIES})")
+                    time.sleep(backoff_time)
+                    return self._fetch_news_page(symbol, from_date, to_date, retry_count + 1)
+                else:
+                    logger.error(f"[NewsFetcher] Rate limited (429), max retries exceeded for {symbol}")
+                    return []
+            
             response.raise_for_status()
             
             articles = response.json()
