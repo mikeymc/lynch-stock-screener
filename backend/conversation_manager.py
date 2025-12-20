@@ -22,13 +22,24 @@ class ConversationManager:
         self.db = db
         self.rag_context = RAGContext(db)
 
-        # Configure Gemini
+        # Store API key for lazy client initialization
         import os
-        api_key = gemini_api_key or os.getenv('GEMINI_API_KEY')
-        if api_key:
-            self.client = genai.Client(api_key=api_key)
-        else:
-            self.client = genai.Client()
+        self._api_key = gemini_api_key or os.getenv('GEMINI_API_KEY')
+        self._client = None
+        
+        self.model_name = "gemini-3-pro-preview"
+
+    @property
+    def client(self):
+        """Lazy initialization of Gemini client - only created when first accessed."""
+        if self._client is None:
+            if self._api_key:
+                self._client = genai.Client(api_key=self._api_key)
+            else:
+                # This will raise an error if no credentials are configured,
+                # but only when the client is actually used (not at import time)
+                self._client = genai.Client()
+        return self._client
         
         self.model_name = "gemini-3-pro-preview"
 
