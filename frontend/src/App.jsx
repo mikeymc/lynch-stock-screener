@@ -256,41 +256,34 @@ function StockListView({
           const sessionData = await response.json()
           const results = sessionData.results || []
           setStocks(results)
+          setTotalPages(sessionData.total_pages || 1)
+          setTotalCount(sessionData.total_count || 0)
 
-          // Calculate counts based on the algorithm type
+          // Use status_counts from API (counts for full session, not just current page)
+          const counts = sessionData.status_counts || {}
+
           // Check if we have new algorithm statuses or old ones
-          const hasNewStatuses = results.some(s =>
-            ['STRONG_BUY', 'BUY', 'HOLD', 'CAUTION', 'AVOID'].includes(s.overall_status)
-          )
+          const hasNewStatuses = counts['STRONG_BUY'] !== undefined || counts['BUY'] !== undefined ||
+            counts['HOLD'] !== undefined || counts['AVOID'] !== undefined
 
           if (hasNewStatuses) {
             // New algorithm statuses
-            const strongBuyCount = results.filter(s => s.overall_status === 'STRONG_BUY').length
-            const buyCount = results.filter(s => s.overall_status === 'BUY').length
-            const holdCount = results.filter(s => s.overall_status === 'HOLD').length
-            const cautionCount = results.filter(s => s.overall_status === 'CAUTION').length
-            const avoidCount = results.filter(s => s.overall_status === 'AVOID').length
-
             setSummary({
-              totalAnalyzed: results.length,
-              strong_buy_count: strongBuyCount,
-              buy_count: buyCount,
-              hold_count: holdCount,
-              caution_count: cautionCount,
-              avoid_count: avoidCount,
-              algorithm: 'weighted' // Assume weighted for new statuses
+              totalAnalyzed: sessionData.total_count || results.length,
+              strong_buy_count: counts['STRONG_BUY'] || 0,
+              buy_count: counts['BUY'] || 0,
+              hold_count: counts['HOLD'] || 0,
+              caution_count: counts['CAUTION'] || 0,
+              avoid_count: counts['AVOID'] || 0,
+              algorithm: 'weighted'
             })
           } else {
             // Old algorithm statuses (classic)
-            const passCount = results.filter(s => s.overall_status === 'PASS').length
-            const closeCount = results.filter(s => s.overall_status === 'CLOSE').length
-            const failCount = results.filter(s => s.overall_status === 'FAIL').length
-
             setSummary({
-              totalAnalyzed: results.length,
-              passCount,
-              closeCount,
-              failCount,
+              totalAnalyzed: sessionData.total_count || results.length,
+              passCount: counts['PASS'] || 0,
+              closeCount: counts['CLOSE'] || 0,
+              failCount: counts['FAIL'] || 0,
               algorithm: 'classic'
             })
           }
@@ -320,44 +313,68 @@ function StockListView({
     return () => controller.abort()
   }, [])
 
+  // State for backend pagination
+  const [totalPages, setTotalPages] = useState(1)
+  const [totalCount, setTotalCount] = useState(0)
+
+  // Fetch stocks from backend with all parameters
+  const fetchStocks = useCallback((options = {}) => {
+    const {
+      search = searchQuery,
+      page = currentPage,
+      sort = sortBy,
+      dir = sortDir,
+      showLoading = true
+    } = options
+
+    if (showLoading) {
+      setSearchLoading(true)
+    }
+
+    const params = new URLSearchParams()
+    if (search) params.set('search', search)
+    params.set('page', page)
+    params.set('limit', itemsPerPage)
+    params.set('sort_by', sort)
+    params.set('sort_dir', dir)
+
+    const url = `${API_BASE}/sessions/latest?${params.toString()}`
+
+    return fetch(url)
+      .then(response => response.json())
+      .then(data => {
+        if (data.results) {
+          setStocks(data.results)
+          setTotalPages(data.total_pages || 1)
+          setTotalCount(data.total_count || 0)
+        }
+        return data
+      })
+      .catch(err => console.error('Error fetching stocks:', err))
+      .finally(() => setSearchLoading(false))
+  }, [searchQuery, currentPage, sortBy, sortDir, setStocks])
+
   // Debounced search handler - calls backend API after delay
   const handleSearchChange = useCallback((value) => {
     setSearchQuery(value)
+    setCurrentPage(1) // Reset to first page on new search
 
     // Clear previous debounce timer
     if (debounceTimerRef.current) {
       clearTimeout(debounceTimerRef.current)
     }
 
-    // If search is cleared, reload all results immediately
+    // If search is cleared, reload immediately
     if (!value.trim()) {
-      setSearchLoading(true)
-      fetch(`${API_BASE}/sessions/latest`)
-        .then(response => response.json())
-        .then(data => {
-          if (data.results) {
-            setStocks(data.results)
-          }
-        })
-        .catch(err => console.error('Error loading results:', err))
-        .finally(() => setSearchLoading(false))
+      fetchStocks({ search: '', page: 1 })
       return
     }
 
     // Set debounce timer for search
     debounceTimerRef.current = setTimeout(() => {
-      setSearchLoading(true)
-      fetch(`${API_BASE}/sessions/latest?search=${encodeURIComponent(value)}`)
-        .then(response => response.json())
-        .then(data => {
-          if (data.results) {
-            setStocks(data.results)
-          }
-        })
-        .catch(err => console.error('Error searching:', err))
-        .finally(() => setSearchLoading(false))
+      fetchStocks({ search: value, page: 1 })
     }, 200) // 200ms debounce
-  }, [setSearchQuery, setStocks])
+  }, [setSearchQuery, setCurrentPage, fetchStocks])
 
   // Resume polling if there's an active screening session
   useEffect(() => {
@@ -644,7 +661,7 @@ function StockListView({
     }
   }
 
-  const sortedStocks = useMemo(() => {
+  const filteredStocks = useMemo(() => {
     const filtered = stocks.filter(stock => {
       // Apply watchlist filter
       if (filter === 'watchlist' && !watchlist.has(stock.symbol)) {
@@ -768,21 +785,22 @@ function StockListView({
         return aVal > bVal ? -1 : aVal < bVal ? 1 : 0
       }
     })
-    return sorted
-  }, [stocks, filter, sortBy, sortDir, watchlist, advancedFilters])
+    return filtered  // No frontend sorting - backend handles it
+  }, [stocks, filter, watchlist, advancedFilters])
 
-  const totalPages = Math.ceil(sortedStocks.length / itemsPerPage)
-  const startIndex = (currentPage - 1) * itemsPerPage
-  const endIndex = startIndex + itemsPerPage
-  const paginatedStocks = sortedStocks.slice(startIndex, endIndex)
+  // Use backend pagination - stocks already come paginated and sorted
+  // Note: totalPages comes from the API response and is set in fetchStocks
 
   const toggleSort = (column) => {
-    if (sortBy === column) {
-      setSortDir(sortDir === 'asc' ? 'desc' : 'asc')
-    } else {
-      setSortBy(column)
-      setSortDir('asc')
-    }
+    const newDir = sortBy === column ? (sortDir === 'asc' ? 'desc' : 'asc') : 'desc'
+    const newSortBy = column
+
+    setSortBy(newSortBy)
+    setSortDir(newDir)
+    setCurrentPage(1) // Reset to first page on sort change
+
+    // Fetch with new sort params
+    fetchStocks({ sort: newSortBy, dir: newDir, page: 1 })
   }
 
   const handleStockClick = (symbol) => {
@@ -971,7 +989,7 @@ function StockListView({
         onToggle={() => setShowAdvancedFilters(!showAdvancedFilters)}
       />
 
-      {sortedStocks.length > 0 && (
+      {filteredStocks.length > 0 && (
         <>
           <div className="table-container">
             <table>
@@ -1008,7 +1026,7 @@ function StockListView({
                 </tr>
               </thead>
               <tbody>
-                {paginatedStocks.map(stock => (
+                {filteredStocks.map(stock => (
                   <tr
                     key={stock.symbol}
                     onClick={() => handleStockClick(stock.symbol)}
@@ -1067,14 +1085,18 @@ function StockListView({
           </div>
 
           <div className="pagination-info">
-            Showing {startIndex + 1}-{Math.min(endIndex, sortedStocks.length)} of {sortedStocks.length} stocks
+            Page {currentPage} of {totalPages} ({totalCount} total stocks)
           </div>
 
           {totalPages > 1 && (
             <div className="pagination">
               <button
-                onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
-                disabled={currentPage === 1}
+                onClick={() => {
+                  const newPage = Math.max(1, currentPage - 1)
+                  setCurrentPage(newPage)
+                  fetchStocks({ page: newPage })
+                }}
+                disabled={currentPage === 1 || searchLoading}
               >
                 Previous
               </button>
@@ -1082,8 +1104,12 @@ function StockListView({
                 Page {currentPage} of {totalPages}
               </span>
               <button
-                onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
-                disabled={currentPage === totalPages}
+                onClick={() => {
+                  const newPage = Math.min(totalPages, currentPage + 1)
+                  setCurrentPage(newPage)
+                  fetchStocks({ page: newPage })
+                }}
+                disabled={currentPage === totalPages || searchLoading}
               >
                 Next
               </button>
@@ -1100,13 +1126,13 @@ function StockListView({
         </div>
       )}
 
-      {!loadingSession && !loading && sortedStocks.length === 0 && stocks.length === 0 && (
+      {!loadingSession && !loading && filteredStocks.length === 0 && stocks.length === 0 && (
         <div className="empty-state">
           No stocks loaded. Click "Screen Stocks" to begin.
         </div>
       )}
 
-      {!loading && sortedStocks.length === 0 && stocks.length > 0 && (
+      {!loading && filteredStocks.length === 0 && stocks.length > 0 && (
         <div className="empty-state">
           No stocks match the current {searchQuery ? 'search and filter' : 'filter'}.
         </div>

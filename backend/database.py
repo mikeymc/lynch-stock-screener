@@ -1462,7 +1462,8 @@ class Database:
         )
         self.write_queue.put((sql_insert, args_insert))
 
-    def get_latest_session(self, search: str = None) -> Optional[Dict[str, Any]]:
+    def get_latest_session(self, search: str = None, page: int = 1, limit: int = 100, 
+                           sort_by: str = 'overall_status', sort_dir: str = 'asc') -> Optional[Dict[str, Any]]:
         conn = self.get_connection()
         try:
             cursor = conn.cursor()
@@ -1480,22 +1481,74 @@ class Database:
 
             session_id = session_row[0]
 
-            # Build query with optional search filter
-            query = """
+            # Whitelist of allowed sort columns to prevent SQL injection
+            allowed_sort_columns = {
+                'symbol', 'company_name', 'market_cap', 'price', 'pe_ratio', 'peg_ratio',
+                'debt_to_equity', 'institutional_ownership', 'dividend_yield',
+                'earnings_cagr', 'revenue_cagr', 'consistency_score', 'overall_status',
+                'overall_score', 'peg_score', 'debt_score', 'institutional_ownership_score'
+            }
+            
+            # Validate sort parameters
+            if sort_by not in allowed_sort_columns:
+                sort_by = 'overall_score'
+            if sort_dir.lower() not in ('asc', 'desc'):
+                sort_dir = 'desc'
+            
+            # Build base query
+            base_query = """
                 SELECT symbol, company_name, country, market_cap, sector, ipo_year,
                        price, pe_ratio, peg_ratio, debt_to_equity, institutional_ownership, dividend_yield,
                        earnings_cagr, revenue_cagr, consistency_score,
                        peg_status, peg_score, debt_status, debt_score,
-                       institutional_ownership_status, institutional_ownership_score, overall_status
+                       institutional_ownership_status, institutional_ownership_score, overall_status,
+                       overall_score
                 FROM screening_results
                 WHERE session_id = %s
             """
             params = [session_id]
             
             if search:
-                query += " AND (symbol ILIKE %s OR company_name ILIKE %s)"
+                base_query += " AND (symbol ILIKE %s OR company_name ILIKE %s)"
                 search_pattern = f"%{search}%"
                 params.extend([search_pattern, search_pattern])
+            
+            # Get total count for pagination
+            count_query = f"SELECT COUNT(*) FROM ({base_query}) AS filtered"
+            cursor.execute(count_query, params)
+            total_count = cursor.fetchone()[0]
+            
+            # Add ordering and pagination
+            # Special handling for overall_status - use CASE to rank properly
+            # Also use status ranking as fallback when overall_score is NULL
+            status_rank_expr = """CASE overall_status
+                WHEN 'STRONG_BUY' THEN 1
+                WHEN 'PASS' THEN 1
+                WHEN 'BUY' THEN 2
+                WHEN 'CLOSE' THEN 2
+                WHEN 'HOLD' THEN 3
+                WHEN 'CAUTION' THEN 4
+                WHEN 'AVOID' THEN 5
+                WHEN 'FAIL' THEN 5
+                ELSE 6
+            END"""
+            
+            if sort_by == 'overall_status':
+                # Use status ranking for text-based status sorting
+                order_expr = f"{status_rank_expr} {sort_dir.upper()}"
+            elif sort_by == 'overall_score':
+                # For overall_score, fall back to status ranking when score is NULL
+                order_expr = f"COALESCE(overall_score, 0) {sort_dir.upper()}, {status_rank_expr} ASC"
+            else:
+                # Handle NULL values in sorting - always put them last (IS NULL ASC = false first, true last)
+                order_expr = f"{sort_by} IS NULL ASC, {sort_by} {sort_dir.upper()}"
+            
+            query = base_query + f" ORDER BY {order_expr}"
+            
+            # Add pagination
+            offset = (page - 1) * limit
+            query += " LIMIT %s OFFSET %s"
+            params.extend([limit, offset])
             
             cursor.execute(query, params)
             result_rows = cursor.fetchall()
@@ -1524,8 +1577,19 @@ class Database:
                     'debt_score': row[18],
                     'institutional_ownership_status': row[19],
                     'institutional_ownership_score': row[20],
-                    'overall_status': row[21]
+                    'overall_status': row[21],
+                    'overall_score': row[22]
                 })
+
+            # Get status counts for full session (not affected by search/pagination)
+            cursor.execute("""
+                SELECT overall_status, COUNT(*) as count
+                FROM screening_results
+                WHERE session_id = %s
+                GROUP BY overall_status
+            """, (session_id,))
+            status_rows = cursor.fetchall()
+            status_counts = {row[0]: row[1] for row in status_rows if row[0]}
 
             return {
                 'session_id': session_id,
@@ -1534,7 +1598,12 @@ class Database:
                 'pass_count': session_row[3],
                 'close_count': session_row[4],
                 'fail_count': session_row[5],
-                'results': results
+                'results': results,
+                'total_count': total_count,
+                'page': page,
+                'limit': limit,
+                'total_pages': (total_count + limit - 1) // limit,  # Ceiling division
+                'status_counts': status_counts  # e.g. {'STRONG_BUY': 50, 'BUY': 100, ...}
             }
         finally:
             self.return_connection(conn)
