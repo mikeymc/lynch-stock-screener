@@ -39,6 +39,50 @@ class TestNewsCacheCommand:
         assert 'prod' in params
 
 
+class Test10KCacheCommand:
+    """Tests for the 10k cache command"""
+    
+    def test_10k_command_has_prod_option(self):
+        """Verify 10k cache command has --prod option"""
+        from cli.commands.cache import ten_k
+        
+        sig = inspect.signature(ten_k)
+        params = list(sig.parameters.keys())
+        
+        assert 'prod' in params
+    
+    def test_10k_command_has_region_option(self):
+        """Verify 10k cache command has --region option"""
+        from cli.commands.cache import ten_k
+        
+        sig = inspect.signature(ten_k)
+        params = list(sig.parameters.keys())
+        
+        assert 'region' in params
+
+
+class Test8KCacheCommand:
+    """Tests for the 8k cache command"""
+    
+    def test_8k_command_has_prod_option(self):
+        """Verify 8k cache command has --prod option"""
+        from cli.commands.cache import eight_k
+        
+        sig = inspect.signature(eight_k)
+        params = list(sig.parameters.keys())
+        
+        assert 'prod' in params
+    
+    def test_8k_command_has_region_option(self):
+        """Verify 8k cache command has --region option"""
+        from cli.commands.cache import eight_k
+        
+        sig = inspect.signature(eight_k)
+        params = list(sig.parameters.keys())
+        
+        assert 'region' in params
+
+
 class TestScreenCommand:
     """Tests for the screen command"""
     
@@ -51,3 +95,4 @@ class TestScreenCommand:
         params = list(sig.parameters.keys())
         
         assert 'region' in params
+

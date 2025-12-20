@@ -539,7 +539,7 @@ class BackgroundWorker:
                     total_count=total
                 )
                 self._send_heartbeat(job_id)
-                logger.info(f"Price history cache progress: {processed}/{total} (cached: {cached}, errors: {errors})")
+                logger.info(f"Price history cache progress: {processed}/{total} (cached: {cached}, errors: {errors}) | MEMORY: {get_memory_mb():.0f}MB")
         
         # Complete job
         result = {
@@ -628,7 +628,7 @@ class BackgroundWorker:
                 self._send_heartbeat(job_id)
             
             if processed % 100 == 0:
-                logger.info(f"News cache progress: {processed}/{total} (cached: {cached}, errors: {errors})")
+                logger.info(f"News cache progress: {processed}/{total} (cached: {cached}, errors: {errors}) | MEMORY: {get_memory_mb():.0f}MB")
         
         # Complete job
         result = {
@@ -645,26 +645,58 @@ class BackgroundWorker:
         """
         Cache 10-K and 10-Q filings/sections for all stocks.
         
-        Orders stocks by overall_score (STRONG_BUY first) to prioritize the best stocks.
+        Uses TradingView to get stock list (same as screening/prices) with region filtering.
+        Symbols are sorted by score (STRONG_BUY first) when available.
         Sequential processing due to SEC rate limits.
         
         Params:
             limit: Optional max number of stocks to process
+            region: Region filter (us, north-america, europe, asia, all)
             force_refresh: If True, bypass cache and fetch fresh data
         """
         limit = params.get('limit')
+        region = params.get('region', 'us')
         force_refresh = params.get('force_refresh', False)
         
-        logger.info(f"Starting 10-K/10-Q cache job {job_id}")
+        logger.info(f"Starting 10-K/10-Q cache job {job_id} (region={region})")
         
         from edgar_fetcher import EdgarFetcher
+        from tradingview_fetcher import TradingViewFetcher
         
-        # Get stocks ordered by score
-        self.db.update_job_progress(job_id, progress_pct=5, progress_message='Loading stock list by priority...')
-        all_symbols = self.db.get_stocks_ordered_by_score(limit=limit)
+        # Map CLI region to TradingView regions (same as screening/prices)
+        region_mapping = {
+            'us': ['us'],
+            'north-america': ['north_america'],
+            'south-america': ['south_america'],
+            'europe': ['europe'],
+            'asia': ['asia'],
+            'all': None  # All regions
+        }
+        tv_regions = region_mapping.get(region, ['us'])
+        
+        # Get stock list from TradingView (same as prices does)
+        self.db.update_job_progress(job_id, progress_pct=5, progress_message=f'Fetching stock list from TradingView ({region})...')
+        tv_fetcher = TradingViewFetcher()
+        market_data_cache = tv_fetcher.fetch_all_stocks(limit=20000, regions=tv_regions)
+        
+        # TradingView already filters via _should_skip_ticker (OTC, warrants, etc.)
+        all_symbols = list(market_data_cache.keys())
+        
+        # Sort by screening score if available (prioritize STRONG_BUY stocks)
+        scored_symbols = self.db.get_stocks_ordered_by_score(limit=None)
+        scored_set = set(scored_symbols)
+        
+        # Put scored symbols first (in score order), then remaining unscored symbols
+        sorted_symbols = [s for s in scored_symbols if s in set(all_symbols)]
+        remaining = [s for s in all_symbols if s not in scored_set]
+        all_symbols = sorted_symbols + remaining
+        
+        # Apply limit if specified
+        if limit and limit < len(all_symbols):
+            all_symbols = all_symbols[:limit]
         
         total = len(all_symbols)
-        logger.info(f"Caching 10-K/10-Q for {total} stocks (ordered by score)")
+        logger.info(f"Caching 10-K/10-Q for {total} stocks (region={region}, sorted by score)")
         
         # Initialize SEC fetcher with CIK cache
         sec_user_agent = os.environ.get('SEC_USER_AGENT', 'Lynch Stock Screener mikey@example.com')
@@ -718,8 +750,8 @@ class BackgroundWorker:
                 )
                 self._send_heartbeat(job_id)
             
-            if processed % 100 == 0:
-                logger.info(f"10-K/10-Q cache progress: {processed}/{total} (cached: {cached}, errors: {errors})")
+            if processed % 10 == 0:
+                logger.info(f"10-K/10-Q cache progress: {processed}/{total} (cached: {cached}, errors: {errors}) | MEMORY: {get_memory_mb():.0f}MB")
         
         # Complete job
         result = {
@@ -735,27 +767,60 @@ class BackgroundWorker:
         """
         Cache 8-K material events for all stocks.
         
-        Orders stocks by overall_score (STRONG_BUY first) to prioritize the best stocks.
+        Uses TradingView to get stock list (same as screening/prices) with region filtering.
+        Symbols are sorted by score (STRONG_BUY first) when available.
         Sequential processing due to SEC rate limits.
+        Uses incremental fetching - only fetches events newer than last cached.
         
         Params:
             limit: Optional max number of stocks to process
+            region: Region filter (us, north-america, europe, asia, all)
             force_refresh: If True, bypass cache and fetch fresh data
         """
         limit = params.get('limit')
+        region = params.get('region', 'us')
         force_refresh = params.get('force_refresh', False)
         
-        logger.info(f"Starting 8-K cache job {job_id}")
+        logger.info(f"Starting 8-K cache job {job_id} (region={region})")
         
         from edgar_fetcher import EdgarFetcher
         from sec_8k_client import SEC8KClient
+        from tradingview_fetcher import TradingViewFetcher
         
-        # Get stocks ordered by score
-        self.db.update_job_progress(job_id, progress_pct=5, progress_message='Loading stock list by priority...')
-        all_symbols = self.db.get_stocks_ordered_by_score(limit=limit)
+        # Map CLI region to TradingView regions (same as screening/prices)
+        region_mapping = {
+            'us': ['us'],
+            'north-america': ['north_america'],
+            'south-america': ['south_america'],
+            'europe': ['europe'],
+            'asia': ['asia'],
+            'all': None  # All regions
+        }
+        tv_regions = region_mapping.get(region, ['us'])
+        
+        # Get stock list from TradingView (same as prices does)
+        self.db.update_job_progress(job_id, progress_pct=5, progress_message=f'Fetching stock list from TradingView ({region})...')
+        tv_fetcher = TradingViewFetcher()
+        market_data_cache = tv_fetcher.fetch_all_stocks(limit=20000, regions=tv_regions)
+        
+        # TradingView already filters via _should_skip_ticker (OTC, warrants, etc.)
+        all_symbols = list(market_data_cache.keys())
+        
+        # Sort by screening score if available (prioritize STRONG_BUY stocks)
+        scored_symbols = self.db.get_stocks_ordered_by_score(limit=None)
+        scored_set = set(scored_symbols)
+        
+        # Put scored symbols first (in score order), then remaining unscored symbols
+        sorted_symbols = [s for s in scored_symbols if s in set(all_symbols)]
+        remaining = [s for s in all_symbols if s not in scored_set]
+        all_symbols = sorted_symbols + remaining
+        
+        # Apply limit if specified
+        if limit and limit < len(all_symbols):
+            all_symbols = all_symbols[:limit]
         
         total = len(all_symbols)
-        logger.info(f"Caching 8-K events for {total} stocks (ordered by score)")
+        logger.info(f"Caching 8-K events for {total} stocks (region={region}, sorted by score)")
         
         # Initialize SEC fetchers with CIK cache
         sec_user_agent = os.environ.get('SEC_USER_AGENT', 'Lynch Stock Screener mikey@example.com')
@@ -813,8 +878,8 @@ class BackgroundWorker:
                 )
                 self._send_heartbeat(job_id)
             
-            if processed % 100 == 0:
-                logger.info(f"8-K cache progress: {processed}/{total} (cached: {cached}, errors: {errors})")
+            if processed % 10 == 0:
+                logger.info(f"8-K cache progress: {processed}/{total} (cached: {cached}, errors: {errors}) | MEMORY: {get_memory_mb():.0f}MB")
         
         # Complete job
         result = {

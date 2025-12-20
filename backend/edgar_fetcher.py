@@ -1622,9 +1622,13 @@ class EdgarFetcher:
 
         return fundamentals
 
-    def fetch_recent_filings(self, ticker: str) -> List[Dict[str, Any]]:
+    def fetch_recent_filings(self, ticker: str, since_date: str = None) -> List[Dict[str, Any]]:
         """
         Fetch recent 10-K and 10-Q filings for a ticker
+
+        Args:
+            ticker: Stock ticker symbol
+            since_date: Optional date string (YYYY-MM-DD) to filter filings newer than this date
 
         Returns:
             List of filing dicts with 'type', 'date', 'url', 'accession_number'
@@ -1658,6 +1662,12 @@ class EdgarFetcher:
             filings = []
             for i, form in enumerate(forms):
                 if form in ['10-K', '10-Q']:
+                    filing_date = filing_dates[i]
+                    
+                    # Skip filings older than since_date (incremental fetch)
+                    if since_date and filing_date <= since_date:
+                        continue
+                    
                     # Remove dashes from accession number for URL
                     acc_num = accession_numbers[i]
                     acc_num_no_dashes = acc_num.replace('-', '')
@@ -1673,12 +1683,16 @@ class EdgarFetcher:
 
                     filings.append({
                         'type': form,
-                        'date': filing_dates[i],
+                        'date': filing_date,
                         'url': doc_url,
                         'accession_number': acc_num
                     })
 
-            logger.info(f"[SECDataFetcher][{ticker}] Found {len(filings)} 10-K/10-Q filings")
+            if since_date and not filings:
+                logger.debug(f"[SECDataFetcher][{ticker}] No new 10-K/10-Q filings since {since_date}")
+            else:
+                logger.info(f"[SECDataFetcher][{ticker}] Found {len(filings)} 10-K/10-Q filings" + 
+                           (f" (new since {since_date})" if since_date else ""))
             return filings
 
         except Exception as e:
