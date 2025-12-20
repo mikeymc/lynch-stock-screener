@@ -1019,9 +1019,15 @@ function StockListView({
                   <th onClick={() => toggleSort('revenue_cagr')}>5Y Rev Growth {sortBy === 'revenue_cagr' && (sortDir === 'asc' ? '↑' : '↓')}</th>
                   <th onClick={() => toggleSort('earnings_cagr')}>5Y Inc Growth {sortBy === 'earnings_cagr' && (sortDir === 'asc' ? '↑' : '↓')}</th>
                   <th onClick={() => toggleSort('dividend_yield')}>Div Yield {sortBy === 'dividend_yield' && (sortDir === 'asc' ? '↑' : '↓')}</th>
-                  <th>PEG Status</th>
-                  <th>Debt Status</th>
-                  <th>Inst Own Status</th>
+                  <th title="52-week P/E Range: Shows where current P/E sits within its 52-week range. Left = low (cheap), Right = high (expensive).">
+                    P/E Range
+                  </th>
+                  <th title="5-Year Revenue Consistency: Measures how steady revenue growth has been. Higher is more consistent.">
+                    Rev Consistency
+                  </th>
+                  <th title="5-Year Income Consistency: Measures how steady net income growth has been. Higher is more consistent.">
+                    Inc Consistency
+                  </th>
                   <th onClick={() => toggleSort('overall_status')}>Overall {sortBy === 'overall_status' && (sortDir === 'asc' ? '↑' : '↓')}</th>
                 </tr>
               </thead>
@@ -1053,26 +1059,26 @@ function StockListView({
                     <td>{typeof stock.dividend_yield === 'number' ? `${stock.dividend_yield.toFixed(1)}%` : 'N/A'}</td>
                     <td>
                       <StatusBar
-                        status={stock.peg_status}
-                        score={stock.peg_score || 0}
-                        value={stock.peg_ratio}
-                        metricType="peg"
+                        status={stock.pe_52_week_position !== null ? `${stock.pe_52_week_min?.toFixed(1)} - ${stock.pe_52_week_max?.toFixed(1)}` : 'N/A'}
+                        score={stock.pe_52_week_position !== null ? (100 - stock.pe_52_week_position) : 50}
+                        value={stock.pe_ratio}
+                        metricType="pe_range"
                       />
                     </td>
                     <td>
                       <StatusBar
-                        status={stock.debt_status}
-                        score={stock.debt_score || 0}
-                        value={stock.debt_to_equity}
-                        metricType="debt"
+                        status={stock.revenue_consistency_score !== null ? 'Revenue Consistency' : 'N/A'}
+                        score={stock.revenue_consistency_score || 50}
+                        value={stock.revenue_consistency_score}
+                        metricType="revenue_consistency"
                       />
                     </td>
                     <td>
                       <StatusBar
-                        status={stock.institutional_ownership_status}
-                        score={stock.institutional_ownership_score || 0}
-                        value={stock.institutional_ownership}
-                        metricType="institutional"
+                        status={stock.income_consistency_score !== null ? 'Income Consistency' : 'N/A'}
+                        score={stock.income_consistency_score || 50}
+                        value={stock.income_consistency_score}
+                        metricType="income_consistency"
                       />
                     </td>
                     <td style={{ backgroundColor: getStatusColor(stock.overall_status), color: '#000', fontWeight: 'bold' }}>

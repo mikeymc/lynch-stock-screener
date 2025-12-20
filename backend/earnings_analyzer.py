@@ -48,12 +48,17 @@ class EarningsAnalyzer:
         # Calculate CAGRs - these will return None if start values are <= 0
         earnings_cagr = self.calculate_cagr(start_net_income, end_net_income, years)
         revenue_cagr = self.calculate_cagr(start_revenue, end_revenue, years)
-        consistency_score = self.calculate_growth_consistency(net_income_values)
+        
+        # Calculate consistency scores for both income and revenue
+        income_consistency_score = self.calculate_growth_consistency(net_income_values)
+        revenue_consistency_score = self.calculate_growth_consistency(revenue_values)
 
         return {
             'earnings_cagr': earnings_cagr,
             'revenue_cagr': revenue_cagr,
-            'consistency_score': consistency_score
+            'consistency_score': income_consistency_score,  # Keep for backward compatibility
+            'income_consistency_score': income_consistency_score,
+            'revenue_consistency_score': revenue_consistency_score
         }
 
     def calculate_cagr(self, start_value: float, end_value: float, years: int) -> Optional[float]:

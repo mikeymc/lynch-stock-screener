@@ -521,6 +521,29 @@ def get_screening_results(session_id):
     """Get results for a screening session"""
     try:
         results = db.get_session_results(session_id)
+        
+        # Enrich results with on-the-fly computed metrics
+        for result in results:
+            symbol = result.get('symbol')
+            
+            # Compute P/E range position from cached weekly prices
+            pe_range = criteria._calculate_pe_52_week_range(symbol, result.get('pe_ratio'))
+            result['pe_52_week_min'] = pe_range.get('pe_52_week_min')
+            result['pe_52_week_max'] = pe_range.get('pe_52_week_max')
+            result['pe_52_week_position'] = pe_range.get('pe_52_week_position')
+            
+            # Compute consistency scores from earnings history
+            growth_data = analyzer.calculate_earnings_growth(symbol)
+            if growth_data:
+                # Normalize to 0-100 scale (100 = best consistency)
+                raw_income = growth_data.get('income_consistency_score')
+                raw_revenue = growth_data.get('revenue_consistency_score')
+                result['income_consistency_score'] = max(0.0, 100.0 - (raw_income * 2.0)) if raw_income is not None else None
+                result['revenue_consistency_score'] = max(0.0, 100.0 - (raw_revenue * 2.0)) if raw_revenue is not None else None
+            else:
+                result['income_consistency_score'] = None
+                result['revenue_consistency_score'] = None
+        
         # Clean NaN values before returning
         clean_results = [clean_nan_values(result) for result in results]
         return jsonify({'results': clean_results})
@@ -822,8 +845,30 @@ def get_latest_session():
     if not session_data:
         return jsonify({'error': 'No screening sessions found'}), 404
 
-    # Clean NaN values in results
+    # Enrich results with on-the-fly computed metrics
     if 'results' in session_data:
+        for result in session_data['results']:
+            symbol = result.get('symbol')
+            
+            # Compute P/E range position from cached weekly prices
+            pe_range = criteria._calculate_pe_52_week_range(symbol, result.get('pe_ratio'))
+            result['pe_52_week_min'] = pe_range.get('pe_52_week_min')
+            result['pe_52_week_max'] = pe_range.get('pe_52_week_max')
+            result['pe_52_week_position'] = pe_range.get('pe_52_week_position')
+            
+            # Compute consistency scores from earnings history
+            growth_data = analyzer.calculate_earnings_growth(symbol)
+            if growth_data:
+                # Normalize to 0-100 scale (100 = best consistency)
+                raw_income = growth_data.get('income_consistency_score')
+                raw_revenue = growth_data.get('revenue_consistency_score')
+                result['income_consistency_score'] = max(0.0, 100.0 - (raw_income * 2.0)) if raw_income is not None else None
+                result['revenue_consistency_score'] = max(0.0, 100.0 - (raw_revenue * 2.0)) if raw_revenue is not None else None
+            else:
+                result['income_consistency_score'] = None
+                result['revenue_consistency_score'] = None
+        
+        # Clean NaN values in results
         session_data['results'] = [clean_nan_values(result) for result in session_data['results']]
 
     return jsonify(session_data)

@@ -2,15 +2,36 @@
 // ABOUTME: Displays metric-specific color zones with a marker indicating the score position
 
 export default function StatusBar({ status, score, value, metricType }) {
-  const displayValue = typeof value === 'number' ? value.toFixed(2) : 'N/A'
+  const displayValue = typeof value === 'number' ? value.toFixed(2) : (value || 'N/A')
   const tooltipText = `${status}: ${displayValue}`
 
-  // Invert position: score 100 (best) = left (0%), score 0 (worst) = right (100%)
-  const markerPosition = `${100 - score}%`
+  // Calculate marker position based on metric type
+  // For consistency metrics: high score (100) should be on LEFT (green zone at 0%)
+  // For PE range: score is inverted before passing (high position = right), so use directly
+  // For other metrics (PEG, debt): invert score so low is on left (good)
+  const shouldInvert = !['revenue_consistency', 'income_consistency', 'pe_range'].includes(metricType)
+  const markerPosition = shouldInvert ? `${100 - score}%` : `${score}%`
 
   // Define zone configurations for each metric type
   const getZoneConfig = () => {
     switch (metricType) {
+      case 'pe_range':
+        // 52-week P/E range: left = low P/E (good), right = high P/E (expensive)
+        return [
+          { class: 'excellent', width: '25%', label: 'Low' },
+          { class: 'good', width: '25%', label: 'Mid-Low' },
+          { class: 'fair', width: '25%', label: 'Mid-High' },
+          { class: 'poor', width: '25%', label: 'High' }
+        ]
+      case 'revenue_consistency':
+      case 'income_consistency':
+        // Consistency: left = poor (score 0), right = excellent (score 100)
+        return [
+          { class: 'poor', width: '25%', label: 'Poor' },
+          { class: 'fair', width: '25%', label: 'Fair' },
+          { class: 'good', width: '25%', label: 'Good' },
+          { class: 'excellent', width: '25%', label: 'Excellent' }
+        ]
       case 'peg':
         return [
           { class: 'excellent', width: '25%', label: '0-1.0' },

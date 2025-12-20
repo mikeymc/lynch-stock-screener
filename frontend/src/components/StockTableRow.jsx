@@ -69,26 +69,26 @@ export default function StockTableRow({ stock, watchlist, onToggleWatchlist, onC
       <td>{typeof stock.dividend_yield === 'number' ? `${stock.dividend_yield.toFixed(1)}%` : 'N/A'}</td>
       <td>
         <StatusBar
-          status={stock.peg_status}
-          score={stock.peg_score || 0}
-          value={stock.peg_ratio}
-          metricType="peg"
+          status={stock.pe_52_week_position !== null ? 'info' : 'N/A'}
+          score={stock.pe_52_week_position !== null ? 100 - stock.pe_52_week_position : 0}
+          value={stock.pe_52_week_position !== null ? `${stock.pe_52_week_position.toFixed(0)}%` : 'N/A'}
+          metricType="pe_range"
         />
       </td>
       <td>
         <StatusBar
-          status={stock.debt_status}
-          score={stock.debt_score || 0}
-          value={stock.debt_to_equity}
-          metricType="debt"
+          status={stock.revenue_consistency_score !== null ? 'info' : 'N/A'}
+          score={stock.revenue_consistency_score || 0}
+          value={stock.revenue_consistency_score !== null ? `${stock.revenue_consistency_score.toFixed(0)}%` : 'N/A'}
+          metricType="revenue_consistency"
         />
       </td>
       <td>
         <StatusBar
-          status={stock.institutional_ownership_status}
-          score={stock.institutional_ownership_score || 0}
-          value={stock.institutional_ownership}
-          metricType="institutional"
+          status={stock.income_consistency_score !== null ? 'info' : 'N/A'}
+          score={stock.income_consistency_score || 0}
+          value={stock.income_consistency_score !== null ? `${stock.income_consistency_score.toFixed(0)}%` : 'N/A'}
+          metricType="income_consistency"
         />
       </td>
       <td style={{ backgroundColor: getStatusColor(stock.overall_status), color: '#000', fontWeight: 'bold' }}>

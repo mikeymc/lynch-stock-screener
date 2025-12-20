@@ -161,6 +161,100 @@ class LynchCriteria:
             # Default to weighted if unknown algorithm
             return self._evaluate_weighted(symbol, base_data, overrides)
 
+    def _calculate_pe_52_week_range(self, symbol: str, current_pe: float) -> Dict[str, Any]:
+        """
+        Calculate where current P/E sits within its 52-week range.
+        
+        Uses consistent EPS (fiscal year) for all P/E calculations to ensure
+        apples-to-apples comparison. The current P/E in stock_metrics uses TTM EPS
+        which can differ from fiscal year EPS.
+        
+        Returns:
+            Dictionary with pe_52_week_min, pe_52_week_max, pe_52_week_position (0-100)
+            Position 0 = at 52-week low, Position 100 = at 52-week high
+        """
+        from datetime import datetime, timedelta
+        
+        result = {
+            'pe_52_week_min': None,
+            'pe_52_week_max': None,
+            'pe_52_week_position': None
+        }
+        
+        try:
+            # Get weekly prices from cache
+            weekly_prices = self.db.get_weekly_prices(symbol)
+            
+            if not weekly_prices or not weekly_prices.get('dates') or not weekly_prices.get('prices'):
+                return result
+            
+            # Get earnings history to calculate P/E for each week
+            earnings_history = self.db.get_earnings_history(symbol)
+            if not earnings_history:
+                return result
+            
+            # Build EPS by year map (annual EPS values)
+            eps_by_year = {}
+            for entry in earnings_history:
+                if entry.get('eps') and entry.get('eps') > 0:
+                    eps_by_year[entry['year']] = entry['eps']
+            
+            if not eps_by_year:
+                return result
+            
+            # Calculate cutoff date for 52 weeks ago
+            cutoff_date = datetime.now() - timedelta(weeks=52)
+            cutoff_str = cutoff_date.strftime('%Y-%m-%d')
+            
+            # Calculate P/E for each week in the last 52 weeks
+            pe_values = []
+            latest_pe = None  # Track the most recent P/E calculated with consistent EPS
+            
+            for i, date_str in enumerate(weekly_prices['dates']):
+                # Only include last 52 weeks
+                if date_str < cutoff_str:
+                    continue
+                    
+                year = int(date_str[:4])
+                price = weekly_prices['prices'][i]
+                
+                # Use EPS from the current year, or fall back to previous year
+                eps = eps_by_year.get(year) or eps_by_year.get(year - 1)
+                
+                if eps and eps > 0 and price and price > 0:
+                    pe = price / eps
+                    # Filter out extreme outliers (e.g., P/E > 1000)
+                    if pe < 1000:
+                        pe_values.append(pe)
+                        latest_pe = pe  # Keep track of the most recent valid P/E
+            
+            if len(pe_values) < 4:  # Need at least 4 weeks of data
+                return result
+                
+            pe_min = min(pe_values)
+            pe_max = max(pe_values)
+            
+            # Use the most recent P/E calculated with consistent EPS for position
+            # This ensures we're comparing apples to apples
+            current_pe_consistent = latest_pe if latest_pe is not None else current_pe
+            
+            # Calculate position (0-100 scale)
+            if pe_max > pe_min and current_pe_consistent is not None:
+                # Position 0 = at min (best), 100 = at max (worst for P/E)
+                position = ((current_pe_consistent - pe_min) / (pe_max - pe_min)) * 100
+                position = max(0, min(100, position))  # Clamp to 0-100
+            else:
+                position = 50  # No range, put in middle
+            
+            result['pe_52_week_min'] = round(pe_min, 2)
+            result['pe_52_week_max'] = round(pe_max, 2)
+            result['pe_52_week_position'] = round(position, 1)
+            
+        except Exception as e:
+            logger.debug(f"Error calculating 52-week P/E range for {symbol}: {e}")
+        
+        return result
+
     def _get_base_metrics(self, symbol: str) -> Optional[Dict[str, Any]]:
         """Get base metrics and growth data for a stock."""
         metrics = self.db.get_stock_metrics(symbol)
@@ -173,18 +267,23 @@ class LynchCriteria:
         earnings_cagr = growth_data['earnings_cagr'] if growth_data else None
         revenue_cagr = growth_data['revenue_cagr'] if growth_data else None
         
-        # Normalize consistency score (std_dev) to 0-100 scale where 100 is best
-        # raw_consistency is standard deviation of growth rates
+        # Get raw consistency scores (std_dev values)
+        raw_income_consistency = growth_data.get('income_consistency_score') if growth_data else None
+        raw_revenue_consistency = growth_data.get('revenue_consistency_score') if growth_data else None
+        
+        # Normalize consistency scores to 0-100 scale where 100 is best
         # Lower std dev = Higher consistency
-        raw_consistency = growth_data['consistency_score'] if growth_data else None
-        if raw_consistency is not None:
+        def normalize_consistency(raw_value):
+            if raw_value is None:
+                return None
             # Formula: 100 - (std_dev * 2), capped at 0
-            # Example: std_dev 0 -> 100
-            # Example: std_dev 10 -> 80
-            # Example: std_dev 50 -> 0
-            consistency_score = max(0.0, 100.0 - (raw_consistency * 2.0))
-        else:
-            consistency_score = None
+            return max(0.0, 100.0 - (raw_value * 2.0))
+        
+        income_consistency_score = normalize_consistency(raw_income_consistency)
+        revenue_consistency_score = normalize_consistency(raw_revenue_consistency)
+        
+        # Keep consistency_score for backward compatibility (uses income consistency)
+        consistency_score = income_consistency_score
 
         pe_ratio = metrics.get('pe_ratio')
 
@@ -211,6 +310,9 @@ class LynchCriteria:
         # Calculate growth scores
         revenue_growth_score = self.calculate_revenue_growth_score(revenue_cagr)
         income_growth_score = self.calculate_income_growth_score(earnings_cagr)
+        
+        # Calculate 52-week P/E range
+        pe_range_data = self._calculate_pe_52_week_range(symbol, pe_ratio)
 
         # Return base data that all algorithms can use
         return {
@@ -230,6 +332,8 @@ class LynchCriteria:
             'earnings_cagr': earnings_cagr,
             'revenue_cagr': revenue_cagr,
             'consistency_score': consistency_score,
+            'income_consistency_score': income_consistency_score,
+            'revenue_consistency_score': revenue_consistency_score,
             'peg_status': peg_status,
             'peg_score': peg_score,
             'debt_status': debt_status,
@@ -238,6 +342,10 @@ class LynchCriteria:
             'institutional_ownership_score': inst_ownership_score,
             'revenue_growth_score': revenue_growth_score,
             'income_growth_score': income_growth_score,
+            # 52-week P/E range data
+            'pe_52_week_min': pe_range_data['pe_52_week_min'],
+            'pe_52_week_max': pe_range_data['pe_52_week_max'],
+            'pe_52_week_position': pe_range_data['pe_52_week_position'],
         }
 
     def _evaluate_classic(self, symbol: str, base_data: Dict[str, Any]) -> Dict[str, Any]:

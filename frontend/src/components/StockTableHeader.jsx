@@ -75,9 +75,9 @@ export default function StockTableHeader({ sortBy, sortDir, onSort, readOnly = f
         <th onClick={() => handleSort('dividend_yield')} style={getCursorStyle()}>
           Div Yield{getSortIndicator('dividend_yield')}
         </th>
-        <th>PEG Status</th>
-        <th>Debt Status</th>
-        <th>Inst Own Status</th>
+        <th>P/E Range</th>
+        <th>Rev Consistency</th>
+        <th>Income Consistency</th>
         <th onClick={() => handleSort('overall_status')} style={getCursorStyle()}>
           Overall{getSortIndicator('overall_status')}
         </th>
