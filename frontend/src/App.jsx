@@ -653,11 +653,11 @@ function StockListView({
 
   const formatStatusName = (status) => {
     const statusMap = {
-      'STRONG_BUY': 'Strong Buy',
-      'BUY': 'Buy',
-      'HOLD': 'Hold',
-      'CAUTION': 'Caution',
-      'AVOID': 'Avoid',
+      'STRONG_BUY': 'Excellent',
+      'BUY': 'Good',
+      'HOLD': 'Fair',
+      'CAUTION': 'Weak',
+      'AVOID': 'Poor',
       'PASS': 'Pass',
       'CLOSE': 'Close',
       'FAIL': 'Fail'
