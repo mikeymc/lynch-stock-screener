@@ -177,36 +177,36 @@ class TestCacheJobRouting:
 
 class TestNewsCacheJob:
     """Tests for news cache job implementation"""
-    
-    def test_news_cache_uses_db_ordering_only(self):
-        """Verify _run_news_cache uses get_stocks_ordered_by_score directly"""
-        import worker
-        import inspect
-        
-        source = inspect.getsource(worker.BackgroundWorker._run_news_cache)
-        
-        # Check source usage
-        assert 'get_stocks_ordered_by_score' in source, \
-            "News cache should get stocks ordered by score"
-        
-        # Check NO TradingView usage
-        assert 'TradingViewFetcher' not in source, \
-            "News cache should NOT use TradingViewFetcher anymore"
-        assert 'fetch_all_stocks' not in source, \
-            "News cache should NOT fetch_all_stocks from TradingView"
 
-    def test_news_cache_ignores_region_param(self):
-        """Verify _run_news_cache does not use region logic"""
+    def test_news_cache_uses_tradingview_with_ordering(self):
+        """Verify _run_news_cache uses TradingView like other cache methods and orders by score"""
         import worker
         import inspect
-        
+
         source = inspect.getsource(worker.BackgroundWorker._run_news_cache)
-        
-        # Check region logic is gone (param might be in docstring, so check simplistic logic absence)
-        assert 'region_mapping' not in source, \
-            "News cache should not use region mapping"
-        assert 'tv_regions' not in source, \
-            "News cache should not calculate tv_regions"
+
+        # Check TradingView usage (consistent with other cache methods)
+        assert 'TradingViewFetcher' in source, \
+            "News cache should use TradingViewFetcher like other cache methods"
+        assert 'fetch_all_stocks' in source, \
+            "News cache should fetch_all_stocks from TradingView"
+
+        # Check score ordering is used
+        assert 'get_stocks_ordered_by_score' in source, \
+            "News cache should prioritize stocks ordered by score"
+
+    def test_news_cache_uses_region_param(self):
+        """Verify _run_news_cache uses region logic like other cache methods"""
+        import worker
+        import inspect
+
+        source = inspect.getsource(worker.BackgroundWorker._run_news_cache)
+
+        # Check region logic exists (consistent with other cache methods)
+        assert 'region_mapping' in source, \
+            "News cache should use region mapping like other cache methods"
+        assert 'tv_regions' in source, \
+            "News cache should calculate tv_regions from region param"
 
 
 class TestDatabaseOrderByScore:
