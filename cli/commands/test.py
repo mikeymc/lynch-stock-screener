@@ -16,6 +16,7 @@ TESTS_DIR = PROJECT_ROOT / "tests"
 def test(
     file: str = typer.Option(None, "--file", "-f", help="Test specific file"),
     match: str = typer.Option(None, "--match", "-k", help="Run tests matching pattern"),
+    skip_e2e: bool = typer.Option(False, "--skip-e2e", help="Skip e2e tests"),
 ):
     """Run pytest tests (backend, CLI, and e2e)"""
     cmd = ["uv", "run", "pytest"]
@@ -24,10 +25,14 @@ def test(
         cmd.append(file)
     else:
         # Run all test suites by default
-        cmd.extend([
+        test_dirs = [
             str(TESTS_DIR / "backend"),
             str(TESTS_DIR / "cli"),
-        ])
+        ]
+        if not skip_e2e:
+            test_dirs.append(str(TESTS_DIR / "e2e"))
+
+        cmd.extend(test_dirs)
 
     cmd.extend(["-v", "--tb=short"])
 

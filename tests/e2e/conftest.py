@@ -44,7 +44,7 @@ def backend_server(test_database):
     # Note: stdout=None, stderr=None allows backend output to print to console for debugging
     # Get project root (two directories up from this conftest.py file)
     project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
-    venv_python = os.path.join(project_root, 'backend', '.venv', 'bin', 'python3')
+    venv_python = os.path.join(project_root, '.venv', 'bin', 'python3')
 
     backend_process = subprocess.Popen(
         [venv_python, 'backend/app.py'],

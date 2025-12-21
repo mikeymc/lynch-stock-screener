@@ -48,7 +48,7 @@ def test_app_initialization_and_ui_elements(page: Page, servers):
     expect(filter_controls.get_by_text('Search:')).to_be_visible()
     search_input = filter_controls.locator('input[type="text"]')
     expect(search_input).to_be_visible()
-    expect(search_input).to_have_attribute('placeholder', re.compile(r'Filter by symbol'))
+    expect(search_input).to_have_attribute('placeholder', re.compile(r'Search by symbol'))
     
     # Verify filter dropdown
     print("[E2E] Checking filter dropdown...")
@@ -127,9 +127,9 @@ def test_app_initialization_and_ui_elements(page: Page, servers):
         '5Y Rev Growth',
         '5Y Inc Growth',
         'Div Yield',
-        'PEG Status',
-        'Debt Status',
-        'Inst Own Status',
+        'TTM P/E Range',
+        '5y Rev Consistency',
+        '5y Inc Consistency',
         'Overall'
     ]
     
@@ -146,11 +146,11 @@ def test_app_initialization_and_ui_elements(page: Page, servers):
     print(f"[E2E] Found {row_count} stock rows")
     assert row_count == 51, f"Expected 51 rows (test dataset), got {row_count}"
     
-    # Verify first row is STRONG_BUY
+    # Verify first row is Excellent
     print("[E2E] Checking first row status...")
     first_row = stock_rows.first
     overall_status_cell = first_row.locator('td').last
-    expect(overall_status_cell).to_contain_text('STRONG_BUY')
+    expect(overall_status_cell).to_contain_text('Excellent')
     
     # Verify first row has all expected data
     print("[E2E] Verifying first row data completeness...")
