@@ -11,6 +11,7 @@ import math
 import time
 import os
 import numpy as np
+import pandas as pd
 import yfinance as yf
 from datetime import datetime, timedelta
 from dotenv import load_dotenv
@@ -494,6 +495,111 @@ def get_stock(symbol):
         'evaluation': clean_nan_values(evaluation)
     })
 
+
+
+@app.route('/api/stock/<symbol>/outlook', methods=['GET'])
+def get_stock_outlook(symbol):
+    """
+    Get data for the 'Future Outlook' tab:
+    1. Forward Metrics (PEG, PE, EPS)
+    2. Insider Buying/Selling Activity
+    3. Inventory vs Sales Growth
+    4. Gross Margin Stability
+    """
+    symbol = symbol.upper()
+    
+    # 1. Get Metrics (DB)
+    metrics = db.get_stock_metrics(symbol)
+    if not metrics:
+        return jsonify({'error': 'Stock not found (please analyze first)'}), 404
+    
+    # 2. Get Insider Trades (DB) - filter to last 365 days
+    all_trades = db.get_insider_trades(symbol)
+    one_year_ago = datetime.now() - timedelta(days=365)
+    trades = [
+        t for t in all_trades 
+        if datetime.strptime(t['transaction_date'], '%Y-%m-%d') >= one_year_ago
+    ]
+    
+    # 3. Calculate Trends (Live from yfinance cache via helper)
+    # We do this live because we don't store Inventory/GrossProfit yet
+    # Use fetcher's protected methods to assume caching policies apply
+    inventory_data = []
+    margin_data = []
+    
+    try:
+        # Fetch Financials & Balance Sheet
+        financials = fetcher._get_yf_financials(symbol)
+        balance_sheet = fetcher._get_yf_balance_sheet(symbol)
+        
+        if financials is not None and not financials.empty and balance_sheet is not None and not balance_sheet.empty:
+            # Common years
+            years = sorted([c for c in financials.columns if hasattr(c, 'year')], key=lambda x: x)
+            # Filter for last 5 years
+            years = years[-5:]
+            
+            for date in years:
+                year_node = {'year': date.year}
+                
+                # --- Gross Margin ---
+                # Gross Profit / Total Revenue
+                rev = None
+                gross_profit = None
+                
+                if 'Total Revenue' in financials.index:
+                    rev = financials.loc['Total Revenue', date]
+                if 'Gross Profit' in financials.index:
+                    gross_profit = financials.loc['Gross Profit', date]
+                
+                if rev and gross_profit and rev != 0:
+                    margin = (gross_profit / rev) * 100
+                    margin_data.append({'year': date.year, 'value': margin})
+                    
+                # --- Inventory vs Sales ---
+                # Inventory (Balance Sheet) / Revenue (Financials)
+                # Compare Growth Rates
+                inventory = None
+                if 'Inventory' in balance_sheet.index:
+                    if date in balance_sheet.columns:
+                        inventory = balance_sheet.loc['Inventory', date]
+                elif 'Inventories' in balance_sheet.index: # Alternative key
+                     if date in balance_sheet.columns:
+                        inventory = balance_sheet.loc['Inventories', date]
+                
+                if inventory is not None and rev is not None and pd.notna(inventory) and pd.notna(rev):
+                    year_node['revenue'] = rev
+                    year_node['inventory'] = inventory
+                    inventory_data.append(year_node)
+            
+            # Calculate Growth Rates for Inventory Chart
+            # Return absolute values (in billions) for cleaner display
+            inventory_chart = []
+            for item in inventory_data:
+                inventory_chart.append({
+                    'year': item['year'],
+                    'revenue': item['revenue'] / 1e9 if item['revenue'] else 0,  # Convert to billions
+                    'inventory': item['inventory'] / 1e9 if item['inventory'] else 0  # Convert to billions
+                })
+
+    except Exception as e:
+        logger.warning(f"[{symbol}] Failed to calculate outlook trends: {e}")
+
+    # Filter out records with None/NaN values before returning
+    margin_data_clean = [m for m in margin_data if m.get('value') is not None and not (isinstance(m.get('value'), float) and math.isnan(m.get('value')))]
+    inventory_chart_clean = [i for i in inventory_chart if i.get('revenue') is not None and i.get('inventory') is not None]
+
+    return jsonify({
+        'symbol': symbol,
+        'metrics': {
+            'forward_pe': metrics.get('forward_pe'),
+            'forward_peg_ratio': metrics.get('forward_peg_ratio'),
+            'forward_eps': metrics.get('forward_eps'),
+            'insider_net_buying_6m': metrics.get('insider_net_buying_6m')
+        },
+        'insider_trades': trades,
+        'inventory_vs_revenue': clean_nan_values(inventory_chart_clean),
+        'gross_margin_history': clean_nan_values(margin_data_clean)
+    })
 
 
 @app.route('/api/screen/progress/<int:session_id>', methods=['GET'])

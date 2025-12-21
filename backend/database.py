@@ -403,7 +403,58 @@ class Database:
                 total_debt REAL,
                 interest_expense REAL,
                 effective_tax_rate REAL,
+                forward_pe REAL,
+                forward_peg_ratio REAL,
+                forward_eps REAL,
+                insider_net_buying_6m REAL,
                 FOREIGN KEY (symbol) REFERENCES stocks(symbol)
+            )
+        """)
+
+        # Migration: Add future indicator columns to stock_metrics
+        cursor.execute("""
+            DO $$
+            BEGIN
+                -- forward_pe
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns 
+                               WHERE table_name = 'stock_metrics' AND column_name = 'forward_pe') THEN
+                    ALTER TABLE stock_metrics ADD COLUMN forward_pe REAL;
+                END IF;
+                
+                -- forward_peg_ratio
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns 
+                               WHERE table_name = 'stock_metrics' AND column_name = 'forward_peg_ratio') THEN
+                    ALTER TABLE stock_metrics ADD COLUMN forward_peg_ratio REAL;
+                END IF;
+                
+                -- forward_eps
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns 
+                               WHERE table_name = 'stock_metrics' AND column_name = 'forward_eps') THEN
+                    ALTER TABLE stock_metrics ADD COLUMN forward_eps REAL;
+                END IF;
+                
+                -- insider_net_buying_6m
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns 
+                               WHERE table_name = 'stock_metrics' AND column_name = 'insider_net_buying_6m') THEN
+                    ALTER TABLE stock_metrics ADD COLUMN insider_net_buying_6m REAL;
+                END IF;
+            END $$;
+        """)
+
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS insider_trades (
+                id SERIAL PRIMARY KEY,
+                symbol TEXT,
+                name TEXT,
+                position TEXT,
+                transaction_date DATE,
+                transaction_type TEXT,
+                shares REAL,
+                value REAL,
+                filing_url TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (symbol) REFERENCES stocks(symbol),
+                UNIQUE(symbol, name, transaction_date, transaction_type, shares)
             )
         """)
 
@@ -992,8 +1043,8 @@ class Database:
     def save_stock_metrics(self, symbol: str, metrics: Dict[str, Any]):
         sql = """
             INSERT INTO stock_metrics
-            (symbol, price, pe_ratio, market_cap, debt_to_equity, institutional_ownership, revenue, dividend_yield, beta, total_debt, interest_expense, effective_tax_rate, last_updated)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            (symbol, price, pe_ratio, market_cap, debt_to_equity, institutional_ownership, revenue, dividend_yield, beta, total_debt, interest_expense, effective_tax_rate, forward_pe, forward_peg_ratio, forward_eps, insider_net_buying_6m, last_updated)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             ON CONFLICT (symbol) DO UPDATE SET
                 price = EXCLUDED.price,
                 pe_ratio = EXCLUDED.pe_ratio,
@@ -1006,6 +1057,10 @@ class Database:
                 total_debt = EXCLUDED.total_debt,
                 interest_expense = EXCLUDED.interest_expense,
                 effective_tax_rate = EXCLUDED.effective_tax_rate,
+                forward_pe = EXCLUDED.forward_pe,
+                forward_peg_ratio = EXCLUDED.forward_peg_ratio,
+                forward_eps = EXCLUDED.forward_eps,
+                insider_net_buying_6m = EXCLUDED.insider_net_buying_6m,
                 last_updated = EXCLUDED.last_updated
         """
         args = (
@@ -1021,9 +1076,66 @@ class Database:
             metrics.get('total_debt'),
             metrics.get('interest_expense'),
             metrics.get('effective_tax_rate'),
+            metrics.get('forward_pe'),
+            metrics.get('forward_peg_ratio'),
+            metrics.get('forward_eps'),
+            metrics.get('insider_net_buying_6m'),
             datetime.now()
         )
         self.write_queue.put((sql, args))
+
+    def save_insider_trades(self, symbol: str, trades: List[Dict[str, Any]]):
+        """
+        Batch save insider trades.
+        Expects keys: name, position, transaction_date, transaction_type, shares, value, filing_url (optional)
+        """
+        if not trades:
+            return
+
+        sql = """
+            INSERT INTO insider_trades
+            (symbol, name, position, transaction_date, transaction_type, shares, value, filing_url)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+            ON CONFLICT (symbol, name, transaction_date, transaction_type, shares) DO NOTHING
+        """
+        
+        for trade in trades:
+            args = (
+                symbol,
+                trade.get('name'),
+                trade.get('position'),
+                trade.get('transaction_date'),
+                trade.get('transaction_type'),
+                trade.get('shares'),
+                trade.get('value'),
+                trade.get('filing_url')
+            )
+            self.write_queue.put((sql, args))
+
+    def get_insider_trades(self, symbol: str, limit: int = 50) -> List[Dict[str, Any]]:
+        conn = self.get_connection()
+        try:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT name, position, transaction_date, transaction_type, shares, value, filing_url
+                FROM insider_trades
+                WHERE symbol = %s
+                ORDER BY transaction_date DESC
+                LIMIT %s
+            """, (symbol, limit))
+            
+            rows = cursor.fetchall()
+            return [{
+                'name': row[0],
+                'position': row[1],
+                'transaction_date': row[2].isoformat() if row[2] else None,
+                'transaction_type': row[3],
+                'shares': row[4],
+                'value': row[5],
+                'filing_url': row[6]
+            } for row in rows]
+        finally:
+            self.return_connection(conn)
 
     def save_earnings_history(self, symbol: str, year: int, eps: float, revenue: float, fiscal_end: Optional[str] = None, debt_to_equity: Optional[float] = None, period: str = 'annual', net_income: Optional[float] = None, dividend_amount: Optional[float] = None, operating_cash_flow: Optional[float] = None, capital_expenditures: Optional[float] = None, free_cash_flow: Optional[float] = None):
         sql = """
@@ -1069,7 +1181,47 @@ class Database:
 
             if not row:
                 return None
+            
+            # Map row by index based on SELECT sm.* order
+            # Current schema order:
+            # symbol, price, pe_ratio, market_cap, debt_to_equity, institutional_ownership, revenue, dividend_yield, 
+            # last_updated, beta, total_debt, interest_expense, effective_tax_rate, forward_pe, forward_peg_ratio, forward_eps, insider_net_buying_6m
+            
+            # Since sm.* can depend on DB column order, we should be careful. 
+            # Ideally we'd name columns explicitly, but sm.* is convenient.
+            # Let's assume the order matches CREATE TABLE and migration appends order.
+            
+            # 0: symbol
+            # 1: price
+            # 2: pe_ratio
+            # 3: market_cap
+            # 4: debt_to_equity
+            # 5: institutional_ownership
+            # 6: revenue
+            # 7: dividend_yield
+            # 8: last_updated
+            # 9: beta
+            # 10: total_debt
+            # 11: interest_expense
+            # 12: effective_tax_rate
+            # 13: forward_pe
+            # 14: forward_peg_ratio
+            # 15: forward_eps
+            # 16: insider_net_buying_6m
+            # 17: company_name (joined)
+            # 18: exchange (joined)
+            # 19: sector (joined)
+            # 20: country (joined)
+            # 21: ipo_year (joined)
 
+            # NOTE: If columns were added via migration they are at the end of the table
+            # Python's cursor description could be used to map names safely, but for now we follow the append logic
+            
+            # Check length to determine if new columns exist (to support code running before migration completes fully or old cached connections)
+            has_new_cols = len(row) >= 22 
+            
+            offset = 0 # base offset
+            
             return {
                 'symbol': row[0],
                 'price': row[1],
@@ -1077,18 +1229,23 @@ class Database:
                 'market_cap': row[3],
                 'debt_to_equity': row[4],
                 'institutional_ownership': row[5],
-                'revenue': row[6],
+                'revenue': row[6],\
                 'dividend_yield': row[7],
                 'last_updated': row[8],
                 'beta': row[9],
                 'total_debt': row[10],
                 'interest_expense': row[11],
                 'effective_tax_rate': row[12],
-                'company_name': row[13],
-                'exchange': row[14],
-                'sector': row[15],
-                'country': row[16],
-                'ipo_year': row[17]
+                'forward_pe': row[13] if has_new_cols else None,
+                'forward_peg_ratio': row[14] if has_new_cols else None,
+                'forward_eps': row[15] if has_new_cols else None,
+                'insider_net_buying_6m': row[16] if has_new_cols else None,
+                # Join columns are appended at the end of sm.* result
+                'company_name': row[-5],
+                'exchange': row[-4],
+                'sector': row[-3],
+                'country': row[-2],
+                'ipo_year': row[-1]
             }
         finally:
             self.return_connection(conn)

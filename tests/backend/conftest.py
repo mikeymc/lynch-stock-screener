@@ -139,11 +139,16 @@ def test_db(shared_db):
     # Clear all data - try each table individually to handle tables that may not exist
     # Order matters: delete from child tables before parent tables (due to foreign keys)
     tables_to_clear = [
-        'message_sources', 'messages', 'conversations', 'watchlist',
-        'weekly_prices', 'stock_metrics', 'earnings_history',
-        'lynch_analyses', 'chart_analyses', 'news_articles',
+        # Child tables first (foreign key dependencies)
+        'message_sources', 'messages', 'conversations',
+        'watchlist', 'weekly_prices', 'stock_metrics', 'earnings_history',
+        'lynch_analyses', 'chart_analyses', 'news_articles', 'material_events',
         'filing_sections', 'sec_filings', 'screening_results',
-        'screening_sessions', 'background_jobs', 'stocks', 'users'
+        'insider_trades', 'dcf_recommendations', 'backtest_results',
+        'optimization_runs', 'algorithm_configurations',
+        # Parent tables last
+        'screening_sessions', 'background_jobs', 'app_settings',
+        'stocks', 'users'
     ]
 
     for table in tables_to_clear:

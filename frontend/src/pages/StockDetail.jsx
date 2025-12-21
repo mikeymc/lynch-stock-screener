@@ -13,6 +13,7 @@ import ErrorBoundary from '../components/ErrorBoundary'
 import DCFAnalysis from '../components/DCFAnalysis'
 import StockNews from '../components/StockNews'
 import MaterialEvents from '../components/MaterialEvents'
+import FutureOutlook from '../components/FutureOutlook'
 
 const API_BASE = '/api'
 
@@ -314,6 +315,12 @@ export default function StockDetail({ watchlist, toggleWatchlist }) {
             News
           </button>
           <button
+            className={`tab-button ${activeTab === 'outlook' ? 'active' : ''}`}
+            onClick={() => setActiveTab('outlook')}
+          >
+            Future Outlook
+          </button>
+          <button
             className={`tab-button ${activeTab === 'events' ? 'active' : ''}`}
             onClick={() => setActiveTab('events')}
           >
@@ -382,6 +389,10 @@ export default function StockDetail({ watchlist, toggleWatchlist }) {
                     symbol={stock.symbol}
                     stockName={stock.company_name}
                   />
+                )}
+
+                {activeTab === 'outlook' && (
+                  <FutureOutlook symbol={stock.symbol} />
                 )}
 
                 {activeTab === 'news' && (
