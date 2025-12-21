@@ -562,6 +562,20 @@ class Database:
             END $$;
         """)
 
+        # Create dcf_recommendations table for storing AI-generated DCF scenarios
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS dcf_recommendations (
+                id SERIAL PRIMARY KEY,
+                user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                symbol TEXT NOT NULL,
+                recommendations_json TEXT NOT NULL,
+                generated_at TIMESTAMP,
+                model_version TEXT,
+                CONSTRAINT dcf_recommendations_user_symbol_unique UNIQUE(user_id, symbol),
+                FOREIGN KEY (symbol) REFERENCES stocks(symbol)
+            )
+        """)
+
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS sec_filings (
                 id SERIAL PRIMARY KEY,
@@ -1302,6 +1316,53 @@ class Database:
             }
         finally:
             self.return_connection(conn)
+
+    def set_dcf_recommendations(self, user_id: int, symbol: str, recommendations: Dict[str, Any], model_version: str):
+        """Save DCF recommendations for a user/symbol"""
+        conn = self.get_connection()
+        try:
+            cursor = conn.cursor()
+            # Store scenarios and reasoning as JSON
+            recommendations_json = json.dumps(recommendations)
+            cursor.execute("""
+                INSERT INTO dcf_recommendations
+                (user_id, symbol, recommendations_json, generated_at, model_version)
+                VALUES (%s, %s, %s, %s, %s)
+                ON CONFLICT (user_id, symbol) DO UPDATE SET
+                    recommendations_json = EXCLUDED.recommendations_json,
+                    generated_at = EXCLUDED.generated_at,
+                    model_version = EXCLUDED.model_version
+            """, (user_id, symbol, recommendations_json, datetime.now(), model_version))
+            conn.commit()
+        finally:
+            self.return_connection(conn)
+
+    def get_dcf_recommendations(self, user_id: int, symbol: str) -> Optional[Dict[str, Any]]:
+        """Get cached DCF recommendations for a user/symbol"""
+        conn = self.get_connection()
+        try:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT symbol, recommendations_json, generated_at, model_version
+                FROM dcf_recommendations
+                WHERE user_id = %s AND symbol = %s
+            """, (user_id, symbol))
+            row = cursor.fetchone()
+
+            if not row:
+                return None
+
+            recommendations = json.loads(row[1])
+            return {
+                'symbol': row[0],
+                'scenarios': recommendations.get('scenarios', {}),
+                'reasoning': recommendations.get('reasoning', ''),
+                'generated_at': row[2],
+                'model_version': row[3]
+            }
+        finally:
+            self.return_connection(conn)
+
 
     def create_session(self, algorithm: str, total_count: int, total_analyzed: int = 0, pass_count: int = 0, close_count: int = 0, fail_count: int = 0) -> int:
         """Create a new screening session with initial status"""

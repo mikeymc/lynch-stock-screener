@@ -1510,6 +1510,99 @@ def get_unified_chart_analysis(symbol, user_id):
         return jsonify({'error': f'Failed to generate analysis: {str(e)}'}), 500
 
 
+@app.route('/api/stock/<symbol>/dcf-recommendations', methods=['POST'])
+@require_user_auth
+def get_dcf_recommendations(symbol, user_id):
+    """
+    Generate AI-powered DCF model recommendations.
+    Returns three scenarios (conservative, base, optimistic) with reasoning.
+    """
+    symbol = symbol.upper()
+    data = request.get_json() or {}
+
+    # Check if stock exists
+    stock_metrics = db.get_stock_metrics(symbol)
+    if not stock_metrics:
+        return jsonify({'error': f'Stock {symbol} not found'}), 404
+
+    # Get historical data
+    history = db.get_earnings_history(symbol)
+    if not history:
+        return jsonify({'error': f'No historical data for {symbol}'}), 404
+
+    # Prepare stock data for analysis
+    evaluation = criteria.evaluate_stock(symbol)
+    stock_data = {
+        **stock_metrics,
+        'peg_ratio': evaluation.get('peg_ratio') if evaluation else None,
+        'earnings_cagr': evaluation.get('earnings_cagr') if evaluation else None,
+        'revenue_cagr': evaluation.get('revenue_cagr') if evaluation else None
+    }
+
+    # Get model from request body (default to gemini-3-pro-preview for DCF)
+    model = data.get('model', 'gemini-3-pro-preview')
+    if model not in AVAILABLE_AI_MODELS:
+        return jsonify({'error': f'Invalid model: {model}. Must be one of {AVAILABLE_AI_MODELS}'}), 400
+
+    # Check cache first
+    force_refresh = data.get('force_refresh', False)
+    only_cached = data.get('only_cached', False)
+
+    cached_recommendations = db.get_dcf_recommendations(user_id, symbol)
+
+    if cached_recommendations and not force_refresh:
+        return jsonify({
+            'scenarios': cached_recommendations['scenarios'],
+            'reasoning': cached_recommendations['reasoning'],
+            'cached': True,
+            'generated_at': cached_recommendations['generated_at']
+        })
+
+    # If only_cached is True and no cache, return empty
+    if only_cached:
+        return jsonify({})
+
+    try:
+        # Get WACC data
+        wacc_data = calculate_wacc(stock_metrics) if stock_metrics else None
+
+        # Get filing sections if available (for US stocks only)
+        sections_data = None
+        country = stock_metrics.get('country', '')
+        if not country or country.upper() in ['US', 'USA', 'UNITED STATES']:
+            sections_data = db.get_filing_sections(symbol)
+
+        # Fetch material events and news articles for context
+        material_events = db.get_material_events(symbol, limit=10)
+        news_articles = db.get_news_articles(symbol, limit=20)
+
+        # Generate DCF recommendations
+        result = lynch_analyst.generate_dcf_recommendations(
+            stock_data,
+            history,
+            wacc_data=wacc_data,
+            sections=sections_data,
+            news=news_articles,
+            material_events=material_events,
+            model_version=model
+        )
+
+        # Save to cache for this user
+        db.set_dcf_recommendations(user_id, symbol, result, model)
+
+        return jsonify({
+            'scenarios': result['scenarios'],
+            'reasoning': result.get('reasoning', ''),
+            'cached': False,
+            'generated_at': datetime.now().isoformat()
+        })
+    except Exception as e:
+        print(f"Error generating DCF recommendations for {symbol}: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': f'Failed to generate recommendations: {str(e)}'}), 500
+
+
 @app.route('/api/watchlist', methods=['GET'])
 @require_user_auth
 def get_watchlist(user_id):

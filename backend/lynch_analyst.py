@@ -525,3 +525,201 @@ class LynchAnalyst:
         self.db.save_lynch_analysis(user_id, symbol, analysis_text, model_version)
 
         return analysis_text
+
+    def generate_dcf_recommendations(
+        self,
+        stock_data: Dict[str, Any],
+        history: List[Dict[str, Any]],
+        wacc_data: Optional[Dict[str, Any]] = None,
+        sections: Optional[Dict[str, Any]] = None,
+        news: Optional[List[Dict[str, Any]]] = None,
+        material_events: Optional[List[Dict[str, Any]]] = None,
+        model_version: str = "gemini-3-pro-preview"
+    ) -> Dict[str, Any]:
+        """
+        Generate DCF model recommendations using AI.
+        Returns three scenarios (conservative, base, optimistic) with reasoning.
+
+        Args:
+            stock_data: Dict containing current stock metrics
+            history: List of dicts containing historical earnings/revenue data
+            wacc_data: Optional dict with WACC calculation details
+            sections: Optional dict of filing sections
+            news: Optional list of news articles
+            material_events: Optional list of material events (8-K filings)
+            model_version: Gemini model to use for generation
+
+        Returns:
+            Dict with 'scenarios' and 'reasoning' keys
+
+        Raises:
+            ValueError: If model_version is not in AVAILABLE_MODELS
+        """
+        if model_version not in AVAILABLE_MODELS:
+            raise ValueError(f"Invalid model: {model_version}. Must be one of {AVAILABLE_MODELS}")
+
+        # Load the DCF prompt template
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        prompt_path = os.path.join(script_dir, "dcf_analysis_prompt.md")
+
+        with open(prompt_path, 'r') as f:
+            prompt_template = f.read()
+
+        # Filter for annual history with FCF
+        annual_history = [h for h in history if h.get('period') == 'annual' and h.get('free_cash_flow') is not None]
+        annual_history.sort(key=lambda x: x['year'], reverse=True)
+
+        # Build FCF history text
+        fcf_lines = []
+        for h in sorted(annual_history, key=lambda x: x['year']):
+            fcf = h.get('free_cash_flow')
+            fcf_str = f"${fcf/1e9:.2f}B" if fcf is not None else "N/A"
+            fcf_lines.append(f"  {h['year']}: {fcf_str}")
+        fcf_history_text = "\n".join(fcf_lines) if fcf_lines else "No FCF history available"
+
+        # Calculate FCF CAGRs
+        def calc_cagr(start_val, end_val, years):
+            if not start_val or not end_val or years <= 0 or start_val <= 0:
+                return None
+            return ((end_val / start_val) ** (1 / years) - 1) * 100
+
+        fcf_values = [h.get('free_cash_flow') for h in annual_history]
+        fcf_cagr_3yr = "N/A"
+        fcf_cagr_5yr = "N/A"
+        fcf_cagr_10yr = "N/A"
+
+        if len(fcf_values) >= 4:
+            cagr = calc_cagr(fcf_values[3], fcf_values[0], 3)
+            if cagr is not None:
+                fcf_cagr_3yr = f"{cagr:.1f}%"
+        if len(fcf_values) >= 6:
+            cagr = calc_cagr(fcf_values[5], fcf_values[0], 5)
+            if cagr is not None:
+                fcf_cagr_5yr = f"{cagr:.1f}%"
+        if len(fcf_values) >= 11:
+            cagr = calc_cagr(fcf_values[10], fcf_values[0], 10)
+            if cagr is not None:
+                fcf_cagr_10yr = f"{cagr:.1f}%"
+
+        # Format WACC text
+        wacc_text = "WACC data not available"
+        if wacc_data:
+            wacc_text = f"""- **Calculated WACC**: {wacc_data.get('wacc', 'N/A')}%
+- **Cost of Equity**: {wacc_data.get('cost_of_equity', 'N/A')}% (Beta: {wacc_data.get('beta', 'N/A')})
+- **After-Tax Cost of Debt**: {wacc_data.get('after_tax_cost_of_debt', 'N/A')}%
+- **Capital Structure**: {wacc_data.get('equity_weight', 'N/A')}% Equity / {wacc_data.get('debt_weight', 'N/A')}% Debt"""
+
+        # Prepare template variables
+        price = stock_data.get('price') or 0
+        market_cap = stock_data.get('market_cap') or 0
+
+        template_vars = {
+            'symbol': stock_data.get('symbol', 'N/A'),
+            'company_name': stock_data.get('company_name', 'N/A'),
+            'sector': stock_data.get('sector', 'N/A'),
+            'current_date': datetime.now().strftime('%B %d, %Y'),
+            'price': price,
+            'market_cap_billions': market_cap / 1e9,
+            'pe_ratio': stock_data.get('pe_ratio', 'N/A'),
+            'forward_pe': stock_data.get('forward_pe', 'N/A'),
+            'forward_peg': stock_data.get('forward_peg_ratio', 'N/A'),
+            'forward_eps': stock_data.get('forward_eps', 'N/A'),
+            'fcf_history_text': fcf_history_text,
+            'fcf_cagr_3yr': fcf_cagr_3yr,
+            'fcf_cagr_5yr': fcf_cagr_5yr,
+            'fcf_cagr_10yr': fcf_cagr_10yr,
+            'wacc_text': wacc_text,
+            'news_text': '',
+            'events_text': '',
+            'business_text': '',
+            'mda_text': ''
+        }
+
+        # Add news context
+        if news and len(news) > 0:
+            news_lines = []
+            for article in news[:10]:
+                headline = article.get('headline', 'No headline')
+                source = article.get('source', 'Unknown')
+                news_lines.append(f"- {headline} ({source})")
+            template_vars['news_text'] = "\n".join(news_lines)
+        else:
+            template_vars['news_text'] = "No recent news available"
+
+        # Add material events context
+        if material_events and len(material_events) > 0:
+            events_lines = []
+            for event in material_events[:5]:
+                headline = event.get('headline', 'No headline')
+                filing_date = event.get('filing_date', 'Unknown date')
+                events_lines.append(f"- {headline} ({filing_date})")
+            template_vars['events_text'] = "\n".join(events_lines)
+        else:
+            template_vars['events_text'] = "No recent 8-K filings available"
+
+        # Add SEC filing context
+        if sections:
+            if 'business' in sections:
+                content = sections['business'].get('content', '')
+                # Truncate to avoid token limits
+                template_vars['business_text'] = content[:2000] + "..." if len(content) > 2000 else content
+            else:
+                template_vars['business_text'] = "Not available"
+
+            if 'mda' in sections:
+                content = sections['mda'].get('content', '')
+                template_vars['mda_text'] = content[:2000] + "..." if len(content) > 2000 else content
+            else:
+                template_vars['mda_text'] = "Not available"
+        else:
+            template_vars['business_text'] = "Not available"
+            template_vars['mda_text'] = "Not available"
+
+        # Format the prompt
+        final_prompt = prompt_template.format(**template_vars)
+
+        # Generate response
+        response = self.client.models.generate_content(
+            model=model_version,
+            contents=final_prompt
+        )
+
+        # Check if response was blocked or has no content
+        if not response.parts:
+            error_msg = "Gemini API returned no content. "
+            if hasattr(response, 'prompt_feedback'):
+                error_msg += f"Prompt feedback: {response.prompt_feedback}"
+            raise Exception(error_msg)
+
+        response_text = response.text
+
+        # Parse JSON from response
+        import json
+        import re
+
+        # Try to extract JSON from the response (may be wrapped in markdown code block)
+        json_match = re.search(r'```(?:json)?\s*(\{.*?\})\s*```', response_text, re.DOTALL)
+        if json_match:
+            json_str = json_match.group(1)
+        else:
+            # Try to find raw JSON
+            json_match = re.search(r'(\{.*\})', response_text, re.DOTALL)
+            if json_match:
+                json_str = json_match.group(1)
+            else:
+                raise Exception(f"Could not parse JSON from response: {response_text[:500]}")
+
+        try:
+            result = json.loads(json_str)
+        except json.JSONDecodeError as e:
+            raise Exception(f"Invalid JSON in response: {e}. Response: {json_str[:500]}")
+
+        # Validate response structure
+        if 'scenarios' not in result:
+            raise Exception(f"Response missing 'scenarios' key: {result}")
+
+        for scenario in ['conservative', 'base', 'optimistic']:
+            if scenario not in result['scenarios']:
+                raise Exception(f"Response missing '{scenario}' scenario: {result}")
+
+        return result

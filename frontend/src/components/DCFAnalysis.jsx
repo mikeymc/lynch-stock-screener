@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Line } from 'react-chartjs-2';
+import DCFAIRecommendations from './DCFAIRecommendations';
 import {
   Chart as ChartJS,
   CategoryScale,
@@ -381,6 +382,22 @@ const DCFAnalysis = ({ stockData, earningsHistory }) => {
           </div>
         </div>
       )}
+
+      {/* AI Recommendations */}
+      <DCFAIRecommendations
+        symbol={stockData.symbol}
+        onApplyScenario={(scenario) => {
+          setAssumptions(prev => ({
+            ...prev,
+            growthRate: scenario.growthRate,
+            terminalGrowthRate: scenario.terminalGrowthRate,
+            discountRate: scenario.discountRate
+          }));
+          if (scenario.baseYearMethod) {
+            setBaseYearMethod(scenario.baseYearMethod);
+          }
+        }}
+      />
 
       <div className="dcf-grid">
         {/* Assumptions Panel */}
