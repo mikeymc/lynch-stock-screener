@@ -1714,34 +1714,53 @@ class EdgarFetcher:
                 - mda: Item 7 (10-K) or Item 2 (10-Q)
                 - market_risk: Item 7A (10-K) or Item 3 (10-Q)
         """
+        import time
+        t_start = time.time()
+        
         logger.info(f"[SECDataFetcher][{ticker}] Extracting sections from {filing_type} using edgartools")
         sections = {}
 
         try:
             # Get CIK first to avoid edgartools ticker lookup issues
+            t0 = time.time()
             cik = self.get_cik_for_ticker(ticker)
+            t_cik = (time.time() - t0) * 1000
+            
             if not cik:
                 logger.warning(f"[SECDataFetcher][{ticker}] Could not find CIK for section extraction")
                 return {}
 
             # Get company using cached Company object (avoids redundant SEC calls)
+            t0 = time.time()
             company = self.get_company(cik)
+            t_company = (time.time() - t0) * 1000
+            
             if not company:
                 logger.warning(f"[SECDataFetcher][{ticker}] Could not get Company object")
                 return {}
+            
+            # Get filings list
+            t0 = time.time()
             filings = company.get_filings(form=filing_type)
+            t_get_filings = (time.time() - t0) * 1000
 
             if not filings:
                 logger.warning(f"[SECDataFetcher][{ticker}] No {filing_type} filings found")
                 return {}
 
+            t0 = time.time()
             latest_filing = filings.latest()
             filing_date = str(latest_filing.filing_date)
+            t_latest = (time.time() - t0) * 1000
             logger.info(f"[SECDataFetcher][{ticker}] Found {filing_type} filing from {filing_date}")
 
-            # Get the structured filing object
+            # Get the structured filing object - THIS IS THE EXPENSIVE PART
+            t0 = time.time()
             filing_obj = latest_filing.obj()
+            t_obj = (time.time() - t0) * 1000
 
+            # Extract sections
+            t0 = time.time()
             if filing_type == '10-K':
                 # Extract 10-K sections
                 if hasattr(filing_obj, 'business') and filing_obj.business:
@@ -1807,6 +1826,12 @@ class EdgarFetcher:
                 except (KeyError, AttributeError):
                     logger.info(f"[SECDataFetcher][{ticker}] Item 3 (Market Risk) not available in 10-Q")
 
+            t_extract = (time.time() - t0) * 1000
+            t_total = (time.time() - t_start) * 1000
+            
+            # Detailed timing log for extract_filing_sections
+            logger.info(f"[{ticker}] extract_{filing_type}: cik={t_cik:.0f}ms company={t_company:.0f}ms get_filings={t_get_filings:.0f}ms latest={t_latest:.0f}ms OBJ={t_obj:.0f}ms extract={t_extract:.0f}ms TOTAL={t_total:.0f}ms")
+            
             logger.info(f"[SECDataFetcher][{ticker}] Successfully extracted {len(sections)} sections from {filing_type}")
             return sections
 

@@ -3,7 +3,9 @@
 
 import yfinance as yf
 import logging
+import logging
 import time
+from datetime import datetime, timedelta
 from typing import Dict, Any, Optional, List
 from database import Database
 from edgar_fetcher import EdgarFetcher

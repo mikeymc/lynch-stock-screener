@@ -2,6 +2,7 @@
 # ABOUTME: Handles both 10-K and 10-Q filings for US stocks only
 
 import logging
+import time
 from typing import Optional, Dict, Any
 from database import Database
 from edgar_fetcher import EdgarFetcher
@@ -30,34 +31,45 @@ class SECDataFetcher:
             symbol: Stock ticker symbol
             force_refresh: If True, bypass cache and fetch all data
         """
+        t_start = time.time()
+        
         try:
-            # Only fetch for US stocks
+            # Stage 1: Check country
+            t0 = time.time()
             stock_metrics = self.db.get_stock_metrics(symbol)
+            t_metrics = (time.time() - t0) * 1000
+            
             if stock_metrics:
                 country = stock_metrics.get('country', '').upper()
                 if country not in ('US', 'USA', 'UNITED STATES', ''):
                     logger.debug(f"[SECDataFetcher][{symbol}] Skipping SEC data (non-US stock: {country})")
                     return
             
-            # Get the latest cached filing date for incremental fetch
+            # Stage 2: Get the latest cached filing date for incremental fetch
+            t0 = time.time()
             since_date = None
             if not force_refresh:
                 since_date = self.db.get_latest_sec_filing_date(symbol)
                 if since_date:
                     logger.debug(f"[SECDataFetcher][{symbol}] Incremental fetch: looking for filings after {since_date}")
+            t_since = (time.time() - t0) * 1000
             
-            # Fetch filings list (will only return new filings if since_date is set)
-            logger.debug(f"[SECDataFetcher][{symbol}] Fetching SEC filings")
+            # Stage 3: Fetch filings list (will only return new filings if since_date is set)
+            t0 = time.time()
             filings = self.edgar_fetcher.fetch_recent_filings(symbol, since_date=since_date)
+            t_filings = (time.time() - t0) * 1000
             
             if not filings:
                 if since_date:
                     logger.debug(f"[SECDataFetcher][{symbol}] No new 10-K/10-Q filings since {since_date}")
                 else:
                     logger.debug(f"[SECDataFetcher][{symbol}] No 10-K/10-Q filings available")
+                # Log timing even for early return
+                logger.info(f"[{symbol}] timing: metrics={t_metrics:.0f}ms since_date={t_since:.0f}ms filings={t_filings:.0f}ms (no new filings)")
                 return
             
-            # Save new filings
+            # Stage 4: Save new filings
+            t0 = time.time()
             for filing in filings:
                 self.db.save_sec_filing(
                     symbol,
@@ -66,16 +78,21 @@ class SECDataFetcher:
                     filing['url'],
                     filing['accession_number']
                 )
+            t_save_filings = (time.time() - t0) * 1000
             logger.info(f"[SECDataFetcher][{symbol}] Cached {len(filings)} {'new ' if since_date else ''}SEC filings")
             
             # Check if we have new 10-K filings - extract sections if so
             has_new_10k = any(f['type'] == '10-K' for f in filings)
             has_new_10q = any(f['type'] == '10-Q' for f in filings)
             
-            # Fetch 10-K sections if we have a new 10-K
+            t_10k = 0
+            t_10q = 0
+            
+            # Stage 5: Fetch 10-K sections if we have a new 10-K
             if has_new_10k or force_refresh:
-                logger.debug(f"[SECDataFetcher][{symbol}] Fetching 10-K sections")
+                t0 = time.time()
                 sections_10k = self.edgar_fetcher.extract_filing_sections(symbol, '10-K')
+                t_10k = (time.time() - t0) * 1000
                 
                 if sections_10k:
                     for name, data in sections_10k.items():
@@ -85,10 +102,11 @@ class SECDataFetcher:
                         )
                     logger.info(f"[SECDataFetcher][{symbol}] Cached {len(sections_10k)} 10-K sections")
             
-            # Fetch 10-Q sections if we have a new 10-Q
+            # Stage 6: Fetch 10-Q sections if we have a new 10-Q
             if has_new_10q or force_refresh:
-                logger.debug(f"[SECDataFetcher][{symbol}] Fetching 10-Q sections")
+                t0 = time.time()
                 sections_10q = self.edgar_fetcher.extract_filing_sections(symbol, '10-Q')
+                t_10q = (time.time() - t0) * 1000
                 
                 if sections_10q:
                     for name, data in sections_10q.items():
@@ -97,6 +115,10 @@ class SECDataFetcher:
                             data['filing_type'], data['filing_date']
                         )
                     logger.info(f"[SECDataFetcher][{symbol}] Cached {len(sections_10q)} 10-Q sections")
+            
+            # Final timing summary
+            t_total = (time.time() - t_start) * 1000
+            logger.info(f"[{symbol}] timing: metrics={t_metrics:.0f}ms since={t_since:.0f}ms filings={t_filings:.0f}ms save={t_save_filings:.0f}ms 10K={t_10k:.0f}ms 10Q={t_10q:.0f}ms TOTAL={t_total:.0f}ms")
         
         except Exception as e:
             logger.error(f"[SECDataFetcher][{symbol}] Error caching SEC data: {e}")
