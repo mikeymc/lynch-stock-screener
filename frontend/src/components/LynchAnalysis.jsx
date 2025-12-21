@@ -103,7 +103,7 @@ function LynchAnalysis({ symbol, stockName, onAnalysisLoaded }) {
         </div>
         <div className="lynch-analysis-loading">
           <div className="spinner"></div>
-          <p>Checking for AI analysis...</p>
+          <p>Producing AI analysis. Please wait...</p>
         </div>
       </div>
     )
