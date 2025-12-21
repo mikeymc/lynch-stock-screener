@@ -368,10 +368,10 @@ def create_job():
         job_id = db.create_background_job(job_type, params)
         logger.info(f"Created background job {job_id}")
 
-        # Start worker machine if configured
+        # Start worker machine if configured (spawns new worker up to max for parallel jobs)
         fly_manager = get_fly_manager()
-        worker_started = fly_manager.ensure_worker_running()
-        logger.info(f"Worker startup triggered: {worker_started}")
+        worker_id = fly_manager.start_worker_for_job(max_workers=4)
+        logger.info(f"Worker startup triggered: {worker_id}")
 
         response_data = {
             'job_id': job_id,

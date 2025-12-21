@@ -169,8 +169,8 @@ class FlyMachineManager:
                     'env': self.get_env_vars(),
                     'guest': {
                         'cpu_kind': 'shared',
-                        'cpus': 2,
-                        'memory_mb': 2048  # Downsized: actual usage ~500MB avg, 2GB gives 4x headroom
+                        'cpus': 1,  # 1 vCPU sufficient for I/O-bound work
+                        'memory_mb': 2048  # Keep 2GB - peak usage ~1.2GB
                     },
                     'auto_destroy': True,  # Destroy when process exits
                     'restart': {
@@ -237,6 +237,43 @@ class FlyMachineManager:
         """
         machine_id = self.start_worker_if_needed()
         return machine_id is not None
+
+    def start_worker_for_job(self, max_workers: int = 4) -> Optional[str]:
+        """
+        Start a worker for a new job, respecting the max worker limit.
+        
+        Unlike ensure_worker_running() which reuses existing workers,
+        this creates a new worker for each job to enable parallel processing.
+        
+        Args:
+            max_workers: Maximum number of concurrent workers (default 4)
+            
+        Returns:
+            Machine ID of the started/created worker, or None if at limit
+        """
+        if not self._is_configured():
+            logger.info("Fly.io not configured - worker will not be started")
+            return None
+
+        # Count running workers
+        running = self.get_running_workers()
+        running_count = len(running)
+        
+        if running_count >= max_workers:
+            logger.info(f"At max workers ({running_count}/{max_workers}), job will be queued")
+            return running[0]['id']  # Return existing worker ID
+        
+        # Check for stopped workers to restart first (cheaper than creating new)
+        stopped = self.get_stopped_workers()
+        if stopped:
+            machine_id = stopped[0]['id']
+            logger.info(f"Restarting stopped worker: {machine_id} ({running_count + 1}/{max_workers})")
+            if self.start_machine(machine_id):
+                return machine_id
+        
+        # Create new worker
+        logger.info(f"Creating new worker ({running_count + 1}/{max_workers})")
+        return self.create_worker_machine()
 
 
 # Global instance for convenience

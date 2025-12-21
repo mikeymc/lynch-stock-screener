@@ -944,6 +944,37 @@ class Database:
         args = (symbol, company_name, exchange, sector, country, ipo_year, datetime.now())
         self.write_queue.put((sql, args))
 
+    def ensure_stocks_exist_batch(self, market_data_cache: Dict[str, Dict[str, Any]]):
+        """
+        Ensure stocks exist in the database before caching related data.
+        
+        This prevents FK violations when caching jobs run in parallel with screening.
+        Uses batch upsert for efficiency - inserts minimal stock records if missing,
+        leaves existing records untouched (DO NOTHING).
+        
+        Args:
+            market_data_cache: Dict from TradingView {symbol: {name, price, market_cap, ...}}
+        """
+        if not market_data_cache:
+            return
+        
+        conn = self.get_connection()
+        try:
+            cursor = conn.cursor()
+            
+            # Batch upsert - insert if not exists, do nothing if already present
+            # This is lighter than save_stock_basic since we don't update existing
+            for symbol, data in market_data_cache.items():
+                cursor.execute("""
+                    INSERT INTO stocks (symbol, company_name, last_updated)
+                    VALUES (%s, %s, %s)
+                    ON CONFLICT (symbol) DO NOTHING
+                """, (symbol, data.get('name', symbol), datetime.now()))
+            
+            conn.commit()
+        finally:
+            self.return_connection(conn)
+
     def save_stock_metrics(self, symbol: str, metrics: Dict[str, Any]):
         sql = """
             INSERT INTO stock_metrics
