@@ -1168,6 +1168,11 @@ td strong {
 }
 
 /* Stock Detail Page */
+.stock-charts {
+  padding-left: 50px;
+  padding-right: 50px;
+}
+
 .stock-detail-container {
   width: 100%;
 }
@@ -1636,12 +1641,13 @@ td strong {
 /* Markdown Content Styling */
 .markdown-content {
   color: #cbd5e1;
-  font-size: 0.95rem;
-  line-height: 1.6;
+  font-size: 1rem;
+  line-height: 1.5;
 }
 
 /* Larger font for unified chat */
-.unified-chat-messages .markdown-content {
+.unified-chat-messages .markdown-content,
+.charts-section .markdown-content {
   font-size: 1.05rem;
   line-height: 1.75;
 }
