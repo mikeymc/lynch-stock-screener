@@ -173,6 +173,12 @@ class TestCacheJobRouting:
         import worker
         assert hasattr(worker.BackgroundWorker, '_run_8k_cache')
         assert callable(getattr(worker.BackgroundWorker, '_run_8k_cache'))
+    
+    def test_execute_job_routes_outlook_cache(self):
+        """Verify _execute_job routes outlook_cache job type"""
+        import worker
+        assert hasattr(worker.BackgroundWorker, '_run_outlook_cache')
+        assert callable(getattr(worker.BackgroundWorker, '_run_outlook_cache'))
 
 
 class TestNewsCacheJob:

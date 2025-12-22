@@ -504,20 +504,126 @@ def eight_k(
         raise typer.Exit(1)
 
 
+# Outlook Cache (forward metrics + insider trades)
+@app.command("outlook")
+def outlook(
+    action: str = typer.Argument(..., help="Action: start or stop"),
+    job_id: int = typer.Argument(None, help="Job ID (required for stop)"),
+    prod: bool = typer.Option(False, "--prod", help="Trigger production API instead of local"),
+    limit: int = typer.Option(None, "--limit", "-l", help="Limit number of stocks"),
+    region: str = typer.Option("us", "--region", "-r",
+                               help="Region to cache: us, north-america, south-america, europe, asia, all"),
+):
+    """Cache future outlook data: forward P/E, PEG, EPS, and insider trades (yfinance)"""
+    if action == "start":
+        # Validate region
+        valid_regions = ['us', 'north-america', 'south-america', 'europe', 'asia', 'all']
+        if region not in valid_regions:
+            console.print(f"[bold red]✗ Invalid region: {region}[/bold red]")
+            console.print(f"[yellow]Valid regions: {', '.join(valid_regions)}[/yellow]")
+            raise typer.Exit(1)
+        
+        # Build params
+        params = {"region": region}
+        if limit:
+            params["limit"] = limit
+        
+        # Determine API URL
+        api_url = API_URL if prod else "http://localhost:5001"
+        
+        # Get token if prod
+        if prod:
+            token = get_api_token()
+            headers = {
+                "Content-Type": "application/json",
+                "Authorization": f"Bearer {token}"
+            }
+        else:
+            headers = {"Content-Type": "application/json"}
+        
+        console.print(f"[bold blue]🚀 Starting outlook cache ({region})...[/bold blue]")
+        console.print("[dim]Caching: forward P/E, forward PEG, forward EPS, insider trades[/dim]")
+        
+        payload = {
+            "type": "outlook_cache",
+            "params": params
+        }
+        
+        try:
+            response = httpx.post(
+                f"{api_url}/api/jobs",
+                json=payload,
+                headers=headers,
+                timeout=30.0
+            )
+            response.raise_for_status()
+            
+            data = response.json()
+            job_id = data.get("job_id")
+            
+            console.print(f"[bold green]✓ Outlook cache job started![/bold green]")
+            console.print(f"[dim]Job ID: {job_id}[/dim]")
+            console.print(f"[dim]Monitor: {api_url}/api/jobs/{job_id}[/dim]")
+            return job_id
+            
+        except httpx.HTTPError as e:
+            console.print(f"[bold red]✗ Failed to start outlook cache:[/bold red] {e}")
+            if not prod:
+                console.print("[yellow]Make sure local server is running[/yellow]")
+            raise typer.Exit(1)
+            
+    elif action == "stop":
+        if not job_id:
+            console.print("[bold red]✗ Job ID required for stop[/bold red]")
+            raise typer.Exit(1)
+        
+        # Determine API URL (same as start)
+        api_url = API_URL if prod else "http://localhost:5001"
+        
+        # Get token if prod
+        if prod:
+            token = get_api_token()
+            headers = {"Authorization": f"Bearer {token}"}
+        else:
+            headers = {}
+        
+        console.print(f"[bold blue]🛑 Cancelling outlook cache job {job_id}...[/bold blue]")
+        
+        try:
+            response = httpx.post(
+                f"{api_url}/api/jobs/{job_id}/cancel",
+                headers=headers,
+                timeout=30.0
+            )
+            response.raise_for_status()
+            console.print(f"[bold green]✓ Job {job_id} cancelled![/bold green]")
+            
+        except httpx.HTTPError as e:
+            console.print(f"[bold red]✗ Failed to cancel job:[/bold red] {e}")
+            if not prod:
+                console.print("[yellow]Make sure local server is running[/yellow]")
+            raise typer.Exit(1)
+    else:
+        console.print(f"[bold red]✗ Unknown action: {action}[/bold red]")
+        raise typer.Exit(1)
+
+
 # All caches
 @app.command("all")
 def all_caches(
     action: str = typer.Argument(..., help="Action: start or stop"),
     limit: int = typer.Option(None, "--limit", "-l", help="Limit number of stocks"),
 ):
-    """Start all 4 cache jobs"""
+    """Start all 5 cache jobs"""
     if action == "start":
         console.print("[bold blue]🚀 Starting all cache jobs...[/bold blue]")
         _start_cache_job("price_history_cache", "Price History", limit=limit)
         _start_cache_job("news_cache", "News", limit=limit)
         _start_cache_job("10k_cache", "10-K/10-Q", limit=limit)
         _start_cache_job("8k_cache", "8-K Events", limit=limit)
+        _start_cache_job("outlook_cache", "Outlook (Forward Metrics + Insiders)", limit=limit)
         console.print("[bold green]✓ All cache jobs started![/bold green]")
     else:
         console.print("[yellow]Use individual commands to stop specific jobs[/yellow]")
         console.print("[dim]Example: bag cache prices stop <job_id>[/dim]")
+

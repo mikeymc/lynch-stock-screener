@@ -201,6 +201,8 @@ class BackgroundWorker:
             self._run_10k_cache(job_id, params)
         elif job_type == '8k_cache':
             self._run_8k_cache(job_id, params)
+        elif job_type == 'outlook_cache':
+            self._run_outlook_cache(job_id, params)
         else:
             raise ValueError(f"Unknown job type: {job_type}")
 
@@ -964,6 +966,203 @@ class BackgroundWorker:
         }
         self.db.complete_job(job_id, result)
         logger.info(f"8-K cache complete: {result}")
+
+    def _run_outlook_cache(self, job_id: int, params: Dict[str, Any]):
+        """
+        Cache forward metrics (forward P/E, PEG, EPS) and insider trades for stocks.
+        
+        Unlike other cache jobs, this ONLY fetches data for stocks that have been screened,
+        since these are expensive yfinance calls (one per stock).
+        
+        Params:
+            limit: Optional max number of stocks to process
+            region: Region filter (us, north-america, europe, asia, all)
+        """
+        import yfinance as yf
+        import pandas as pd
+        from datetime import datetime, timedelta
+        
+        limit = params.get('limit')
+        region = params.get('region', 'us')
+        
+        logger.info(f"Starting outlook cache job {job_id} (region={region})")
+        
+        # Get screened stocks ordered by score (best stocks first)
+        self.db.update_job_progress(job_id, progress_pct=5, progress_message='Getting screened stocks...')
+        
+        all_symbols = self.db.get_stocks_ordered_by_score(limit=None)
+        
+        if not all_symbols:
+            logger.warning("No screened stocks found - run screening first")
+            self.db.complete_job(job_id, {'error': 'No screened stocks found'})
+            return
+        
+        # Apply limit if specified
+        if limit and limit < len(all_symbols):
+            all_symbols = all_symbols[:limit]
+        
+        total = len(all_symbols)
+        logger.info(f"Caching outlook data for {total} screened stocks")
+        
+        self.db.update_job_progress(job_id, progress_pct=10,
+                                    progress_message=f'Caching outlook for {total} stocks...',
+                                    total_count=total)
+        
+        processed = 0
+        cached = 0
+        errors = 0
+        
+        # Process stocks - use moderate parallelism since we're hitting yfinance
+        BATCH_SIZE = 20
+        MAX_WORKERS = 8
+        
+        def fetch_outlook_data(symbol: str) -> bool:
+            """Fetch forward metrics and insider trades for a single symbol."""
+            try:
+                ticker = yf.Ticker(symbol)
+                info = ticker.info
+                
+                if not info:
+                    return False
+                
+                # Extract forward metrics
+                forward_pe = info.get('forwardPE')
+                forward_peg = info.get('pegRatio') or info.get('trailingPegRatio')
+                forward_eps = info.get('forwardEps')
+                
+                # Fetch insider transactions
+                insider_df = ticker.insider_transactions
+                one_year_ago = datetime.now() - timedelta(days=365)
+                net_buying = 0.0
+                trades_to_save = []
+                
+                if insider_df is not None and not insider_df.empty:
+                    date_col = 'Start Date' if 'Start Date' in insider_df.columns else 'Date'
+                    
+                    if date_col in insider_df.columns:
+                        insider_df[date_col] = pd.to_datetime(insider_df[date_col])
+                        
+                        for _, row in insider_df.iterrows():
+                            t_date = row[date_col]
+                            if pd.isna(t_date):
+                                continue
+                            
+                            is_recent = t_date >= one_year_ago
+                            
+                            text = str(row.get('Text', '')).lower()
+                            if 'purchase' in text:
+                                transaction_type = 'Buy'
+                            elif 'sale' in text:
+                                transaction_type = 'Sell'
+                            else:
+                                transaction_type = 'Other'
+                            
+                            value = row.get('Value')
+                            if pd.isna(value):
+                                value = 0.0
+                            
+                            shares = row.get('Shares')
+                            if pd.isna(shares):
+                                shares = 0
+                            
+                            # Calculate net buying for recent transactions
+                            if is_recent:
+                                if transaction_type == 'Buy':
+                                    net_buying += value
+                                elif transaction_type == 'Sell':
+                                    net_buying -= value
+                            
+                            trades_to_save.append({
+                                'name': row.get('Insider', 'Unknown'),
+                                'position': row.get('Position', 'Unknown'),
+                                'transaction_date': t_date.strftime('%Y-%m-%d'),
+                                'transaction_type': transaction_type,
+                                'shares': float(shares),
+                                'value': float(value),
+                                'filing_url': row.get('URL', '')
+                            })
+                
+                # Save to database
+                # Update metrics with forward indicators
+                metrics = {
+                    'forward_pe': forward_pe,
+                    'forward_peg_ratio': forward_peg,
+                    'forward_eps': forward_eps,
+                    'insider_net_buying_6m': net_buying  # Column name kept for compatibility
+                }
+                
+                # Get existing metrics and merge
+                existing = self.db.get_stock_metrics(symbol)
+                if existing:
+                    existing.update({k: v for k, v in metrics.items() if v is not None})
+                    self.db.save_stock_metrics(symbol, existing)
+                
+                # Save insider trades
+                if trades_to_save:
+                    self.db.save_insider_trades(symbol, trades_to_save)
+                
+                return True
+                
+            except Exception as e:
+                logger.debug(f"[{symbol}] Outlook fetch error: {e}")
+                return False
+        
+        with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
+            for batch_start in range(0, total, BATCH_SIZE):
+                if self.shutdown_requested:
+                    logger.info("Shutdown requested, stopping outlook cache job")
+                    break
+                
+                # Check if job was cancelled
+                job_status = self.db.get_background_job(job_id)
+                if job_status and job_status.get('status') == 'cancelled':
+                    logger.info(f"Job {job_id} was cancelled, stopping")
+                    return
+                
+                batch_end = min(batch_start + BATCH_SIZE, total)
+                batch = all_symbols[batch_start:batch_end]
+                
+                futures = {executor.submit(fetch_outlook_data, symbol): symbol for symbol in batch}
+                
+                for future in as_completed(futures):
+                    symbol = futures[future]
+                    try:
+                        success = future.result()
+                        if success:
+                            cached += 1
+                        else:
+                            errors += 1
+                    except Exception as e:
+                        logger.debug(f"[{symbol}] Outlook cache error: {e}")
+                        errors += 1
+                    processed += 1
+                
+                # Update progress
+                if processed % 50 == 0 or batch_end == total:
+                    pct = 10 + int((processed / total) * 85)
+                    self.db.update_job_progress(
+                        job_id,
+                        progress_pct=pct,
+                        progress_message=f'Cached {processed}/{total} stocks ({cached} successful, {errors} errors)',
+                        processed_count=processed,
+                        total_count=total
+                    )
+                    self._send_heartbeat(job_id)
+                    logger.info(f"Outlook cache progress: {processed}/{total} (cached: {cached}, errors: {errors}) | MEMORY: {get_memory_mb():.0f}MB")
+                    check_memory_warning(f"[outlook {processed}/{total}]")
+                
+                # Small delay between batches to avoid rate limiting
+                time.sleep(0.5)
+        
+        # Complete job
+        result = {
+            'total_stocks': total,
+            'processed': processed,
+            'cached': cached,
+            'errors': errors
+        }
+        self.db.complete_job(job_id, result)
+        logger.info(f"Outlook cache complete: {result}")
 
 
 def main():
