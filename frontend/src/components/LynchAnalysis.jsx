@@ -128,9 +128,6 @@ function LynchAnalysis({ symbol, stockName, onAnalysisLoaded }) {
   if (!analysis) {
     return (
       <div className="lynch-analysis-container">
-        <div className="lynch-analysis-header">
-          <h3>AI Analysis</h3>
-        </div>
         <div className="lynch-analysis-empty">
           <p>No analysis generated yet for {stockName}.</p>
           <div style={{ display: 'flex', flexDirection: 'row', gap: '1rem', alignItems: 'center', justifyContent: 'center' }}>
@@ -140,7 +137,7 @@ function LynchAnalysis({ symbol, stockName, onAnalysisLoaded }) {
               storageKey="lynchAnalysisModel"
             />
             <button onClick={handleGenerate} className="generate-button">
-              ✨ Generate Analysis
+              ✨ Generate
             </button>
           </div>
         </div>
@@ -152,7 +149,6 @@ function LynchAnalysis({ symbol, stockName, onAnalysisLoaded }) {
     <div className="lynch-analysis-container">
       <div className="lynch-analysis-header">
         <div>
-          <h3>AI Analysis: {stockName}</h3>
           <p className="analysis-metadata">
             {cached ? '📦 Cached' : '✨ Freshly Generated'} • Generated {formatDate(generatedAt)}
           </p>
