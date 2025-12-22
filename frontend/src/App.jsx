@@ -927,11 +927,11 @@ function StockListView({
               </>
             ) : (
               <>
-                <span className="summary-stat strong-buy">{summary.strong_buy_count || 0} Strong Buy</span>
-                <span className="summary-stat buy">{summary.buy_count || 0} Buy</span>
-                <span className="summary-stat hold">{summary.hold_count || 0} Hold</span>
-                <span className="summary-stat caution">{summary.caution_count || 0} Caution</span>
-                <span className="summary-stat avoid">{summary.avoid_count || 0} Avoid</span>
+                <span className="summary-stat strong-buy">{summary.strong_buy_count || 0} Excellent</span>
+                <span className="summary-stat buy">{summary.buy_count || 0} Good</span>
+                <span className="summary-stat hold">{summary.hold_count || 0} Neutral</span>
+                <span className="summary-stat caution">{summary.caution_count || 0} Weak</span>
+                <span className="summary-stat avoid">{summary.avoid_count || 0} Poor</span>
               </>
             )}
           </div>
@@ -1030,15 +1030,15 @@ function StockListView({
                   >Inst Own{sortBy === 'institutional_ownership' && (sortDir === 'asc' ? '↑' : '↓')}</th>
                   <th onClick={() => toggleSort('revenue_cagr')}>5Y Rev Growth {sortBy === 'revenue_cagr' && (sortDir === 'asc' ? '↑' : '↓')}</th>
                   <th onClick={() => toggleSort('earnings_cagr')}>5Y Inc Growth {sortBy === 'earnings_cagr' && (sortDir === 'asc' ? '↑' : '↓')}</th>
-                  <th onClick={() => toggleSort('dividend_yield')}>Div Yield {sortBy === 'dividend_yield' && (sortDir === 'asc' ? '↑' : '↓')}</th>
+                  <th onClick={() => toggleSort('dividend_yield')}>Dividend Yield {sortBy === 'dividend_yield' && (sortDir === 'asc' ? '↑' : '↓')}</th>
                   <th title="52-week P/E Range: Shows where current P/E sits within its 52-week range. Left = low (cheap), Right = high (expensive)." style={{ width: '110px' }}>
                     TTM P/E Range
                   </th>
                   <th title="5-Year Revenue Consistency: Measures how steady revenue growth has been. Higher is more consistent." style={{ width: '110px' }}>
-                    5y Rev Consistency
+                    5y Revenue Consistency
                   </th>
                   <th title="5-Year Income Consistency: Measures how steady net income growth has been. Higher is more consistent." style={{ width: '110px' }}>
-                    5y Inc Consistency
+                    5y Income Consistency
                   </th>
                   <th onClick={() => toggleSort('overall_status')}>Overall {sortBy === 'overall_status' && (sortDir === 'asc' ? '↑' : '↓')}</th>
                 </tr>

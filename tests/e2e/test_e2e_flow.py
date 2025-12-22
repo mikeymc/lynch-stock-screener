@@ -126,10 +126,10 @@ def test_app_initialization_and_ui_elements(page: Page, servers):
         'Inst Own',
         '5Y Rev Growth',
         '5Y Inc Growth',
-        'Div Yield',
+        'Dividend Yield',
         'TTM P/E Range',
-        '5y Rev Consistency',
-        '5y Inc Consistency',
+        '5y Revenue Consistency',
+        '5y Income Consistency',
         'Overall'
     ]
     
@@ -275,7 +275,7 @@ def test_stock_detail_header_and_tabs(page: Page, servers):
     
     # Verify all tab buttons
     print("[E2E] Verifying tab buttons...")
-    expected_tabs = ['Charts', 'DCF Analysis', 'Reports', 'Analysis & Chat', 'News', 'Material Events']
+    expected_tabs = ['Charts', 'DCF', 'Reports', 'Analysis & Chat', 'News', 'Material Events']
     for tab_name in expected_tabs:
         tab_button = controls.get_by_role('button', name=tab_name)
         expect(tab_button).to_be_visible()
@@ -349,7 +349,7 @@ def test_stock_detail_dcf_tab(page: Page, servers):
     
     # Click DCF Analysis tab
     print("[E2E] Clicking DCF Analysis tab...")
-    dcf_tab = page.get_by_role('button', name='DCF Analysis')
+    dcf_tab = page.get_by_role('button', name='DCF')
     dcf_tab.click()
     page.wait_for_timeout(2000)
     
