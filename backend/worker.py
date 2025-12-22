@@ -971,8 +971,8 @@ class BackgroundWorker:
         """
         Cache forward metrics (forward P/E, PEG, EPS) and insider trades for stocks.
         
-        Unlike other cache jobs, this ONLY fetches data for stocks that have been screened,
-        since these are expensive yfinance calls (one per stock).
+        Uses TradingView to get stock list (same as screening/prices) with region filtering.
+        Symbols are sorted by score (STRONG_BUY first) when available.
         
         Params:
             limit: Optional max number of stocks to process
@@ -981,28 +981,51 @@ class BackgroundWorker:
         import yfinance as yf
         import pandas as pd
         from datetime import datetime, timedelta
+        from tradingview_fetcher import TradingViewFetcher
         
         limit = params.get('limit')
         region = params.get('region', 'us')
         
         logger.info(f"Starting outlook cache job {job_id} (region={region})")
         
-        # Get screened stocks ordered by score (best stocks first)
-        self.db.update_job_progress(job_id, progress_pct=5, progress_message='Getting screened stocks...')
+        # Map CLI region to TradingView regions (same as screening/prices)
+        region_mapping = {
+            'us': ['us'],
+            'north-america': ['north_america'],
+            'south-america': ['south_america'],
+            'europe': ['europe'],
+            'asia': ['asia'],
+            'all': None  # All regions
+        }
+        tv_regions = region_mapping.get(region, ['us'])
         
-        all_symbols = self.db.get_stocks_ordered_by_score(limit=None)
+        # Get stock list from TradingView (same as screening/prices)
+        self.db.update_job_progress(job_id, progress_pct=5, progress_message=f'Fetching stock list from TradingView ({region})...')
+        tv_fetcher = TradingViewFetcher()
+        market_data_cache = tv_fetcher.fetch_all_stocks(limit=20000, regions=tv_regions)
         
-        if not all_symbols:
-            logger.warning("No screened stocks found - run screening first")
-            self.db.complete_job(job_id, {'error': 'No screened stocks found'})
-            return
+        # Ensure all stocks exist in DB before caching (prevents FK violations)
+        self.db.update_job_progress(job_id, progress_pct=8, progress_message='Ensuring stocks exist in database...')
+        self.db.ensure_stocks_exist_batch(market_data_cache)
+        
+        # TradingView already filters via _should_skip_ticker (OTC, warrants, etc.)
+        all_symbols = list(market_data_cache.keys())
+        
+        # Sort by screening score if available (prioritize STRONG_BUY stocks)
+        scored_symbols = self.db.get_stocks_ordered_by_score(limit=None)
+        scored_set = set(scored_symbols)
+        
+        # Put scored symbols first (in score order), then remaining unscored symbols
+        sorted_symbols = [s for s in scored_symbols if s in set(all_symbols)]
+        remaining = [s for s in all_symbols if s not in scored_set]
+        all_symbols = sorted_symbols + remaining
         
         # Apply limit if specified
         if limit and limit < len(all_symbols):
             all_symbols = all_symbols[:limit]
         
         total = len(all_symbols)
-        logger.info(f"Caching outlook data for {total} screened stocks")
+        logger.info(f"Caching outlook data for {total} stocks (region={region}, sorted by score)")
         
         self.db.update_job_progress(job_id, progress_pct=10,
                                     progress_message=f'Caching outlook for {total} stocks...',
