@@ -11,8 +11,6 @@ import {
   Tooltip,
   Legend
 } from 'chart.js'
-import LynchAnalysis from './components/LynchAnalysis'
-import ChatInterface from './components/ChatInterface'
 import StockDetail from './pages/StockDetail'
 
 

@@ -978,6 +978,10 @@ td strong {
 .chat-message {
   padding: 1rem;
   border-radius: 0.5rem;
+}
+
+/* Only apply 85% max-width in old chat container, not unified */
+.chat-container .chat-message {
   max-width: 85%;
 }
 
@@ -1636,6 +1640,12 @@ td strong {
   line-height: 1.6;
 }
 
+/* Larger font for unified chat */
+.unified-chat-messages .markdown-content {
+  font-size: 1.05rem;
+  line-height: 1.75;
+}
+
 .markdown-content h1,
 .markdown-content h2,
 .markdown-content h3,
@@ -1868,4 +1878,187 @@ td strong {
 
 .filter-range .filter-input {
   flex: 1;
+}
+
+/* Unified Chat Container (ChatGPT/Claude style) */
+.unified-chat-container {
+  display: flex;
+  flex-direction: column;
+  height: calc(100vh - 300px);
+  min-height: 500px;
+  background-color: #0f172a;
+  border-radius: 0.75rem;
+  overflow: hidden;
+}
+
+.unified-chat-messages {
+  flex: 1;
+  overflow-y: auto;
+  padding: 1.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  align-items: center;
+  /* Hide scrollbar but keep scrolling */
+  scrollbar-width: none;
+  /* Firefox */
+  -ms-overflow-style: none;
+  /* IE/Edge */
+}
+
+.unified-chat-messages::-webkit-scrollbar {
+  display: none;
+  /* Chrome/Safari/Opera */
+}
+
+/* Center message content at 800px max */
+.unified-chat-messages .chat-message {
+  max-width: 800px;
+  width: 100%;
+}
+
+.unified-chat-messages::-webkit-scrollbar {
+  display: none;
+  /* Chrome/Safari/Opera */
+}
+
+/* Analysis message styled as first assistant message */
+.chat-message.analysis-message {
+  background-color: transparent;
+  border: none;
+  padding: 0;
+}
+
+.analysis-metadata-bar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.75rem 1rem;
+  background-color: transparent;
+}
+
+.analysis-metadata-bar .analysis-metadata {
+  color: #94a3b8;
+  font-size: 0.875rem;
+}
+
+.refresh-button-small {
+  background-color: #334155;
+  color: #e2e8f0;
+  border: none;
+  border-radius: 0.375rem;
+  padding: 0.375rem 0.75rem;
+  font-size: 0.875rem;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.refresh-button-small:hover:not(:disabled) {
+  background-color: #475569;
+}
+
+.refresh-button-small:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.analysis-message .chat-message-content {
+  background-color: transparent;
+  border: none;
+  border-radius: 0;
+  padding: 0 1rem 1rem 1rem;
+}
+
+/* Unified chat input at bottom */
+.unified-chat-input-container {
+  display: flex;
+  gap: 0.75rem;
+  padding: 1rem 1.5rem;
+  background-color: #0f172a;
+  justify-content: center;
+}
+
+.unified-chat-input-container .chat-input-wrapper {
+  display: flex;
+  gap: 0.75rem;
+  width: 100%;
+  max-width: 750px;
+}
+
+.unified-chat-input-container .chat-input {
+  flex: 1;
+  background-color: #1e293b;
+  color: #e2e8f0;
+  border: 1px solid #334155;
+  border-radius: 0.5rem;
+  padding: 0.75rem 1rem;
+  font-size: 1rem;
+  font-family: inherit;
+  resize: none;
+  min-height: 44px;
+  max-height: 120px;
+}
+
+.unified-chat-input-container .chat-input:focus {
+  outline: none;
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2);
+}
+
+.unified-chat-input-container .chat-send-button {
+  background-color: #3b82f6;
+  color: white;
+  border: none;
+  padding: 0.75rem 1.5rem;
+  border-radius: 0.5rem;
+  font-size: 1rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background-color 0.2s;
+  align-self: flex-end;
+}
+
+.unified-chat-input-container .chat-send-button:hover:not(:disabled) {
+  background-color: #2563eb;
+}
+
+.unified-chat-input-container .chat-send-button:disabled {
+  background-color: #475569;
+  cursor: not-allowed;
+}
+
+/* Make assistant messages seamless like analysis */
+.unified-chat-messages .chat-message.assistant {
+  background-color: transparent;
+  border: none;
+  align-self: center;
+}
+
+/* Scroll indicator arrow */
+.scroll-indicator {
+  display: flex;
+  justify-content: center;
+  padding: 0.5rem 0;
+  background: linear-gradient(to bottom, transparent, #0f172a 50%);
+  margin-top: -2rem;
+  position: relative;
+  z-index: 10;
+}
+
+.scroll-indicator span {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  background-color: #334155;
+  border-radius: 50%;
+  color: #e2e8f0;
+  font-size: 1rem;
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.scroll-indicator span:hover {
+  background-color: #475569;
 }
