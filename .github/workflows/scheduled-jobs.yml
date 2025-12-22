@@ -1,14 +1,20 @@
 # ABOUTME: GitHub Actions workflow to trigger scheduled background jobs
-# ABOUTME: Runs daily screening and weekly SEC data refresh via the job API
+# ABOUTME: Runs nightly screening and caching jobs via the job API
 
 name: Scheduled Jobs
 
 on:
   schedule:
-    # Daily screening at 9 AM UTC (4 AM ET) on weekdays
-    - cron: '0 9 * * 1-5'
-    # Weekly SEC refresh at 8 AM UTC on Sundays
-    - cron: '0 8 * * 0'
+    # Full screening at 10:00 PM ET (3:00 AM UTC) daily
+    - cron: '0 3 * * *'
+    # News cache at 10:10 PM ET (3:10 AM UTC) daily
+    - cron: '10 3 * * *'
+    # 10K cache at 10:20 PM ET (3:20 AM UTC) daily
+    - cron: '20 3 * * *'
+    # 8K cache at 10:30 PM ET (3:30 AM UTC) daily
+    - cron: '30 3 * * *'
+    # Price history cache at 12:00 AM ET (5:00 AM UTC) daily
+    - cron: '0 5 * * *'
   workflow_dispatch:
     inputs:
       job_type:
@@ -18,7 +24,10 @@ on:
         type: choice
         options:
           - full_screening
-          - sec_refresh
+          - price_history_cache
+          - news_cache
+          - 10k_cache
+          - 8k_cache
 
 jobs:
   trigger-job:
@@ -29,12 +38,24 @@ jobs:
         run: |
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             echo "type=${{ inputs.job_type }}" >> $GITHUB_OUTPUT
-          elif [ "$(date -u +%u)" = "7" ]; then
-            # Sunday - run SEC refresh
-            echo "type=sec_refresh" >> $GITHUB_OUTPUT
           else
-            # Weekday - run screening
-            echo "type=full_screening" >> $GITHUB_OUTPUT
+            # Determine job type based on cron schedule (minute of hour at 3 AM or 5 AM UTC)
+            HOUR=$(date -u +%H)
+            MINUTE=$(date -u +%M)
+            
+            if [ "$HOUR" = "03" ] && [ "$MINUTE" -lt "5" ]; then
+              echo "type=full_screening" >> $GITHUB_OUTPUT
+            elif [ "$HOUR" = "03" ] && [ "$MINUTE" -ge "5" ] && [ "$MINUTE" -lt "15" ]; then
+              echo "type=news_cache" >> $GITHUB_OUTPUT
+            elif [ "$HOUR" = "03" ] && [ "$MINUTE" -ge "15" ] && [ "$MINUTE" -lt "25" ]; then
+              echo "type=10k_cache" >> $GITHUB_OUTPUT
+            elif [ "$HOUR" = "03" ] && [ "$MINUTE" -ge "25" ]; then
+              echo "type=8k_cache" >> $GITHUB_OUTPUT
+            elif [ "$HOUR" = "05" ]; then
+              echo "type=price_history_cache" >> $GITHUB_OUTPUT
+            else
+              echo "type=full_screening" >> $GITHUB_OUTPUT
+            fi
           fi
 
       - name: Trigger background job
@@ -46,7 +67,7 @@ jobs:
             "${{ secrets.API_URL }}/api/jobs" \
             -H "Content-Type: application/json" \
             -H "Authorization: Bearer ${{ secrets.API_TOKEN }}" \
-            -d "{\"type\": \"$JOB_TYPE\", \"params\": {\"algorithm\": \"weighted\"}}")
+            -d "{\"type\": \"$JOB_TYPE\", \"params\": {}}")
 
           HTTP_CODE=$(echo "$RESPONSE" | tail -n1)
           BODY=$(echo "$RESPONSE" | sed '$d')
