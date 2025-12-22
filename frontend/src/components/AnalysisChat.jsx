@@ -362,7 +362,7 @@ export default function AnalysisChat({ symbol, stockName }) {
 
         {/* Chat messages */}
         {messages.map((msg, idx) => (
-          <div key={idx} className={`chat-message ${msg.role}`}>
+          <div key={idx} className={`chat-message ${msg.role} analysis-message`}>
             <div className="chat-message-header">
               {msg.role === 'user' ? '👤 You' : msg.role === 'assistant' ? '📊 Analyst' : '⚠️ Error'}
             </div>

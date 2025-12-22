@@ -989,7 +989,7 @@ td strong {
   background-color: #3b82f6;
   color: #ffffff;
   align-self: flex-end;
-  margin-left: auto;
+  text-align: right;
 }
 
 .chat-message.assistant {
@@ -2032,6 +2032,33 @@ td strong {
   background-color: transparent;
   border: none;
   align-self: center;
+}
+
+/* User messages in unified chat - right-aligned bubble within 800px area */
+.unified-chat-messages .chat-message.user {
+  background-color: transparent;
+  border: none;
+  align-self: center;
+  /* align-self: center;
+  max-width: 800px;
+  width: 100%;
+  background-color: transparent;
+  padding: 0;
+  margin-left: auto;
+  text-align: right; */
+}
+
+.unified-chat-messages .chat-message.user .chat-message-header {
+  text-align: right;
+}
+
+.unified-chat-messages .chat-message.user .chat-message-content {
+  display: inline-block;
+  background-color: #334155;
+  padding: 0.75rem 1rem;
+  border-radius: 0.5rem;
+  max-width: 70%;
+  text-align: left;
 }
 
 /* Scroll indicator arrow */
