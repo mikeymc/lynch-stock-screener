@@ -297,22 +297,16 @@ export default function StockDetail({ watchlist, toggleWatchlist }) {
 
         <div style={{ display: 'flex', gap: '10px', marginLeft: '20px', overflowX: 'auto' }}>
           <button
-            className={`tab-button ${activeTab === 'charts' ? 'active' : ''}`}
-            onClick={() => setActiveTab('charts')}
-          >
-            Charts
-          </button>
-          <button
             className={`tab-button ${activeTab === 'analysis' ? 'active' : ''}`}
             onClick={() => setActiveTab('analysis')}
           >
             Analysis & Chat
           </button>
           <button
-            className={`tab-button ${activeTab === 'news' ? 'active' : ''}`}
-            onClick={() => setActiveTab('news')}
+            className={`tab-button ${activeTab === 'charts' ? 'active' : ''}`}
+            onClick={() => setActiveTab('charts')}
           >
-            News
+            Charts
           </button>
           <button
             className={`tab-button ${activeTab === 'outlook' ? 'active' : ''}`}
@@ -321,22 +315,28 @@ export default function StockDetail({ watchlist, toggleWatchlist }) {
             Future Outlook
           </button>
           <button
-            className={`tab-button ${activeTab === 'events' ? 'active' : ''}`}
-            onClick={() => setActiveTab('events')}
-          >
-            Material Events
-          </button>
-          <button
             className={`tab-button ${activeTab === 'dcf' ? 'active' : ''}`}
             onClick={() => setActiveTab('dcf')}
           >
-            DCF Analysis
+            DCF
+          </button>
+          <button
+            className={`tab-button ${activeTab === 'news' ? 'active' : ''}`}
+            onClick={() => setActiveTab('news')}
+          >
+            News
           </button>
           <button
             className={`tab-button ${activeTab === 'reports' ? 'active' : ''}`}
             onClick={() => setActiveTab('reports')}
           >
             Reports
+          </button>
+          <button
+            className={`tab-button ${activeTab === 'events' ? 'active' : ''}`}
+            onClick={() => setActiveTab('events')}
+          >
+            Material Events
           </button>
         </div>
       </div>
