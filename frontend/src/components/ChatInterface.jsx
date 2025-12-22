@@ -1,4 +1,4 @@
-// ABOUTME: Chat interface component for conversing with Peter Lynch about stocks
+// ABOUTME: Chat interface component for conversing about stocks using Lynch methodology
 // ABOUTME: Displays message history and handles user input with streaming API integration
 
 import { useState, useEffect, useRef } from 'react'
@@ -215,7 +215,7 @@ export default function ChatInterface({ symbol, lynchAnalysis }) {
         {messages.map((msg, idx) => (
           <div key={idx} className={`chat-message ${msg.role}`}>
             <div className="chat-message-header">
-              {msg.role === 'user' ? '👤 You' : msg.role === 'assistant' ? '🎩 Peter Lynch' : '⚠️ Error'}
+              {msg.role === 'user' ? '👤 You' : msg.role === 'assistant' ? '📊 Analyst' : '⚠️ Error'}
             </div>
             <div className="chat-message-content markdown-content">
               <ReactMarkdown>{msg.content}</ReactMarkdown>
@@ -228,7 +228,7 @@ export default function ChatInterface({ symbol, lynchAnalysis }) {
 
         {loading && (
           <div className="chat-message assistant streaming">
-            <div className="chat-message-header">🎩 Thinking...</div>
+            <div className="chat-message-header">📊 Thinking...</div>
             <div className="chat-message-content markdown-content">
               {streamingMessage ? (
                 <ReactMarkdown>{streamingMessage}</ReactMarkdown>

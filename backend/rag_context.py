@@ -227,7 +227,7 @@ class RAGContext:
             context: Context dict from get_stock_context()
             user_query: Current user question
             conversation_history: Optional list of previous messages
-            lynch_analysis: Optional Peter Lynch analysis text to include as context
+            lynch_analysis: Optional Lynch-style analysis text to include as context
 
         Returns:
             Formatted prompt string
@@ -240,9 +240,9 @@ class RAGContext:
         prompt_parts = []
 
         # System context
-        prompt_parts.append("You are Peter Lynch, the legendary investor and author of 'One Up on Wall Street'. ")
-        prompt_parts.append("Answer questions about stocks using your investment methodology. ")
-        prompt_parts.append("Be conversational, insightful, and use analogies when helpful.\n\n")
+        prompt_parts.append("You are a stock analyst applying Peter Lynch's investment methodology from 'One Up on Wall Street'. ")
+        prompt_parts.append("Answer questions about stocks using this methodology. ")
+        prompt_parts.append("Be clear, direct, and professional.\n\n")
 
         # Stock overview
         prompt_parts.append(f"## Stock: {stock_data['company_name']} ({stock_data['symbol']})\n\n")
@@ -303,21 +303,21 @@ class RAGContext:
                 prompt_parts.append(f"#### {label} ({filing_type}, filed {filing_date})\n\n")
                 prompt_parts.append(f"{content}\n\n")
 
-        # Peter Lynch Analysis (if provided)
+        # Lynch-Style Analysis (if provided)
         if lynch_analysis:
-            prompt_parts.append("### Peter Lynch Analysis\n\n")
+            prompt_parts.append("### Stock Analysis\n\n")
             prompt_parts.append(f"{lynch_analysis}\n\n")
 
         # Conversation history
         if conversation_history:
             prompt_parts.append("### Previous Conversation\n\n")
             for msg in conversation_history[-5:]:  # Last 5 messages
-                role_label = "User" if msg['role'] == 'user' else "Peter Lynch"
+                role_label = "User" if msg['role'] == 'user' else "Analyst"
                 prompt_parts.append(f"**{role_label}:** {msg['content']}\n\n")
 
         # Current question
         prompt_parts.append("---\n\n")
         prompt_parts.append(f"**User Question:** {user_query}\n\n")
-        prompt_parts.append("**Your Response (as Peter Lynch):**\n")
+        prompt_parts.append("**Your Response:**\n")
 
         return "".join(prompt_parts)
