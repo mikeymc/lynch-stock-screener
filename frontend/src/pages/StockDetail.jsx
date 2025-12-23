@@ -351,18 +351,20 @@ export default function StockDetail({ watchlist, toggleWatchlist }) {
           </div>
         ) : (
           <ErrorBoundary>
-            <div className="sticky-header">
-              <table className="stocks-table">
-                <StockTableHeader readOnly={true} />
-                <tbody>
-                  <StockTableRow
-                    stock={stock}
-                    watchlist={watchlist}
-                    onToggleWatchlist={toggleWatchlist}
-                    readOnly={true}
-                  />
-                </tbody>
-              </table>
+            <div className="table-container">
+              <div className="sticky-header">
+                <table className="stocks-table">
+                  <StockTableHeader readOnly={true} />
+                  <tbody>
+                    <StockTableRow
+                      stock={stock}
+                      watchlist={watchlist}
+                      onToggleWatchlist={toggleWatchlist}
+                      readOnly={true}
+                    />
+                  </tbody>
+                </table>
+              </div>
             </div>
 
             <div className="tabs-container">

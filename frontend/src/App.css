@@ -6,6 +6,7 @@
 
 html {
   font-size: 12px;
+  overflow-y: scroll;
 }
 
 body {
@@ -371,6 +372,11 @@ td {
 
 tr:hover {
   background-color: #293548;
+}
+
+/* Disable hover highlight on stock detail page header row */
+.sticky-header tr:hover {
+  background-color: transparent;
 }
 
 tr:last-child td {
