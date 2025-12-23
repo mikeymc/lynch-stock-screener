@@ -906,11 +906,11 @@ function StockListView({
               </>
             ) : (
               <>
-                <option value="STRONG_BUY">Strong Buy</option>
-                <option value="BUY">Buy</option>
-                <option value="HOLD">Hold</option>
-                <option value="CAUTION">Caution</option>
-                <option value="AVOID">Avoid</option>
+                <option value="STRONG_BUY">Excellent</option>
+                <option value="BUY">Good</option>
+                <option value="HOLD">Neutral</option>
+                <option value="CAUTION">Weak</option>
+                <option value="AVOID">Poor</option>
               </>
             )}
           </select>
