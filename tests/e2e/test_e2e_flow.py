@@ -275,14 +275,14 @@ def test_stock_detail_header_and_tabs(page: Page, servers):
     
     # Verify all tab buttons
     print("[E2E] Verifying tab buttons...")
-    expected_tabs = ['Charts', 'DCF', 'Reports', 'Analysis & Chat', 'News', 'Material Events']
+    expected_tabs = ['Financials', 'DCF Analysis', 'Quarterly & Annual Reports', 'Forward Metrics', 'Analysis & Chat', 'News', 'Material Event Filings']
     for tab_name in expected_tabs:
         tab_button = controls.get_by_role('button', name=tab_name)
         expect(tab_button).to_be_visible()
         print(f"[E2E] Found tab: {tab_name}")
     
     # Verify Charts tab is active by default
-    charts_tab = controls.get_by_role('button', name='Charts')
+    charts_tab = controls.get_by_role('button', name='Financials')
     expect(charts_tab).to_have_class(re.compile(r'active'))
     
     # Verify stock data table
@@ -315,7 +315,7 @@ def test_stock_detail_charts_tab(page: Page, servers):
     
     # Ensure Charts tab is active
     print("[E2E] Verifying Charts tab...")
-    charts_tab = page.get_by_role('button', name='Charts')
+    charts_tab = page.get_by_role('button', name='Financials')
     expect(charts_tab).to_have_class(re.compile(r'active'))
     
     # Verify tabs content container
@@ -349,7 +349,7 @@ def test_stock_detail_dcf_tab(page: Page, servers):
     
     # Click DCF Analysis tab
     print("[E2E] Clicking DCF Analysis tab...")
-    dcf_tab = page.get_by_role('button', name='DCF')
+    dcf_tab = page.get_by_role('button', name='DCF Analysis')
     dcf_tab.click()
     page.wait_for_timeout(2000)
     
@@ -380,7 +380,7 @@ def test_stock_detail_reports_tab(page: Page, servers):
     
     # Click Reports tab
     print("[E2E] Clicking Reports tab...")
-    reports_tab = page.get_by_role('button', name='Reports')
+    reports_tab = page.get_by_role('button', name='Quarterly & Annual Reports')
     reports_tab.click()
     page.wait_for_timeout(3000)  # Reports may take time to load
     
@@ -472,7 +472,7 @@ def test_stock_detail_material_events_tab(page: Page, servers):
     
     # Click Material Events tab
     print("[E2E] Clicking Material Events tab...")
-    events_tab = page.get_by_role('button', name='Material Events')
+    events_tab = page.get_by_role('button', name='Material Event Filings')
     events_tab.click()
     page.wait_for_timeout(2000)
     
@@ -480,7 +480,7 @@ def test_stock_detail_material_events_tab(page: Page, servers):
     expect(events_tab).to_have_class(re.compile(r'active'))
     
     # Verify events content
-    print("[E2E] Verifying Material Events content...")
+    print("[E2E] Verifying Material Event content...")
     tabs_content = page.locator('.tabs-content')
     expect(tabs_content).to_be_visible()
     expect(tabs_content).not_to_be_empty()

@@ -306,19 +306,19 @@ export default function StockDetail({ watchlist, toggleWatchlist }) {
             className={`tab-button ${activeTab === 'charts' ? 'active' : ''}`}
             onClick={() => setActiveTab('charts')}
           >
-            Charts
+            Financials
           </button>
           <button
             className={`tab-button ${activeTab === 'outlook' ? 'active' : ''}`}
             onClick={() => setActiveTab('outlook')}
           >
-            Future Outlook
+            Forward Metrics
           </button>
           <button
             className={`tab-button ${activeTab === 'dcf' ? 'active' : ''}`}
             onClick={() => setActiveTab('dcf')}
           >
-            DCF
+            DCF Analysis
           </button>
           <button
             className={`tab-button ${activeTab === 'news' ? 'active' : ''}`}
@@ -330,13 +330,13 @@ export default function StockDetail({ watchlist, toggleWatchlist }) {
             className={`tab-button ${activeTab === 'reports' ? 'active' : ''}`}
             onClick={() => setActiveTab('reports')}
           >
-            Reports
+            Quarterly & Annual Reports
           </button>
           <button
             className={`tab-button ${activeTab === 'events' ? 'active' : ''}`}
             onClick={() => setActiveTab('events')}
           >
-            Material Events
+            Material Event Filings
           </button>
         </div>
       </div>
