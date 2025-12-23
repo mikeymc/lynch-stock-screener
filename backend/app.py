@@ -596,6 +596,19 @@ def get_stock_outlook(symbol):
             'forward_eps': metrics.get('forward_eps'),
             'insider_net_buying_6m': metrics.get('insider_net_buying_6m')
         },
+        'analyst_consensus': {
+            'rating': metrics.get('analyst_rating'),  # e.g., "buy", "hold", "sell"
+            'rating_score': metrics.get('analyst_rating_score'),  # 1.0 (Strong Buy) to 5.0 (Sell)
+            'analyst_count': metrics.get('analyst_count'),
+            'price_target_high': metrics.get('price_target_high'),
+            'price_target_low': metrics.get('price_target_low'),
+            'price_target_mean': metrics.get('price_target_mean')
+        },
+        'short_interest': {
+            'short_ratio': metrics.get('short_ratio'),  # Days to cover
+            'short_percent_float': metrics.get('short_percent_float')
+        },
+        'current_price': metrics.get('price'),
         'insider_trades': trades,
         'inventory_vs_revenue': clean_nan_values(inventory_chart_clean),
         'gross_margin_history': clean_nan_values(margin_data_clean)

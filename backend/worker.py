@@ -1105,13 +1105,33 @@ class BackgroundWorker:
                                 'filing_url': row.get('URL', '')
                             })
                 
+                # Extract analyst data
+                analyst_rating = info.get('recommendationKey')  # e.g., "buy", "hold", "sell"
+                analyst_rating_score = info.get('recommendationMean')  # 1.0 (Strong Buy) to 5.0 (Sell)
+                analyst_count = info.get('numberOfAnalystOpinions')
+                price_target_high = info.get('targetHighPrice')
+                price_target_low = info.get('targetLowPrice')
+                price_target_mean = info.get('targetMeanPrice')
+                
+                # Extract short interest data
+                short_ratio = info.get('shortRatio')  # Days to cover
+                short_percent_float = info.get('shortPercentOfFloat')
+                
                 # Save to database
-                # Update metrics with forward indicators
+                # Update metrics with forward indicators + analyst data
                 metrics = {
                     'forward_pe': forward_pe,
                     'forward_peg_ratio': forward_peg,
                     'forward_eps': forward_eps,
-                    'insider_net_buying_6m': net_buying  # Column name kept for compatibility
+                    'insider_net_buying_6m': net_buying,  # Column name kept for compatibility
+                    'analyst_rating': analyst_rating,
+                    'analyst_rating_score': analyst_rating_score,
+                    'analyst_count': analyst_count,
+                    'price_target_high': price_target_high,
+                    'price_target_low': price_target_low,
+                    'price_target_mean': price_target_mean,
+                    'short_ratio': short_ratio,
+                    'short_percent_float': short_percent_float
                 }
                 
                 # Get existing metrics and merge

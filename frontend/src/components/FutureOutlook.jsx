@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react'
 import InsiderTradesTable from './InsiderTradesTable'
 import Sparkline from './Sparkline'
@@ -57,11 +56,13 @@ export default function FutureOutlook({ symbol }) {
     if (error) return <div className="error" style={{ padding: '2rem' }}>Error: {error}</div>
     if (!data) return null
 
-    const { metrics, insider_trades, inventory_vs_revenue, gross_margin_history } = data
+    const { metrics, analyst_consensus, short_interest, current_price, insider_trades, inventory_vs_revenue, gross_margin_history } = data
 
     // --- Formatters ---
     const formatCurrency = (val) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(val)
+    const formatCurrencyDecimal = (val) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 2 }).format(val)
     const formatNumber = (val) => new Intl.NumberFormat('en-US', { maximumFractionDigits: 2 }).format(val)
+    const formatPercent = (val) => new Intl.NumberFormat('en-US', { style: 'percent', maximumFractionDigits: 2 }).format(val)
 
     // --- Styles ---
     const cardStyle = {
@@ -82,18 +83,63 @@ export default function FutureOutlook({ symbol }) {
     }
 
     // --- Helper for Net Insider Buying Color ---
-    const netBuying = metrics.insider_net_buying_6m || 0
+    const netBuying = metrics?.insider_net_buying_6m || 0
     const netBuyingColor = netBuying > 0 ? '#4ade80' : (netBuying < 0 ? '#f87171' : '#94a3b8')
     const netBuyingText = netBuying > 0 ? 'Net Buying' : (netBuying < 0 ? 'Net Selling' : 'Neutral')
 
     // --- Helper for PEG Color ---
-    const peg = metrics.forward_peg_ratio
+    const peg = metrics?.forward_peg_ratio
     let pegColor = '#94a3b8'
     let pegStatus = 'N/A'
     if (peg) {
         if (peg < 1.0) { pegColor = '#4ade80'; pegStatus = 'Undervalued (< 1.0)' }
         else if (peg < 1.5) { pegColor = '#22d3ee'; pegStatus = 'Fair Value' }
         else { pegColor = '#f87171'; pegStatus = 'Overvalued (> 1.5)' }
+    }
+
+    // --- Analyst Rating Helpers ---
+    const ratingScore = analyst_consensus?.rating_score
+    const ratingText = analyst_consensus?.rating?.toUpperCase() || 'N/A'
+    const analystCount = analyst_consensus?.analyst_count || 0
+
+    // Rating score is 1 (Strong Buy) to 5 (Sell)
+    // Invert for display: 5 - score gives us 0-4 range, then normalize to percentage
+    const ratingPercent = ratingScore ? ((5 - ratingScore) / 4) * 100 : 50
+    let ratingColor = '#94a3b8'
+    if (ratingScore) {
+        if (ratingScore <= 1.5) ratingColor = '#22c55e' // Strong Buy - green
+        else if (ratingScore <= 2.5) ratingColor = '#4ade80' // Buy - light green
+        else if (ratingScore <= 3.5) ratingColor = '#fbbf24' // Hold - yellow
+        else if (ratingScore <= 4.5) ratingColor = '#f97316' // Underperform - orange
+        else ratingColor = '#ef4444' // Sell - red
+    }
+
+    // Price target calculations
+    const targetLow = analyst_consensus?.price_target_low
+    const targetHigh = analyst_consensus?.price_target_high
+    const targetMean = analyst_consensus?.price_target_mean
+    const priceNow = current_price || 0
+
+    // Calculate position of current price within target range
+    let pricePosition = 50 // Default to middle
+    if (targetLow && targetHigh && priceNow && targetHigh !== targetLow) {
+        pricePosition = ((priceNow - targetLow) / (targetHigh - targetLow)) * 100
+        pricePosition = Math.max(0, Math.min(100, pricePosition)) // Clamp to 0-100
+    }
+
+    // Calculate upside from mean target
+    const upside = targetMean && priceNow ? ((targetMean - priceNow) / priceNow) : null
+
+    // Short interest helpers
+    const shortRatio = short_interest?.short_ratio
+    const shortPercentFloat = short_interest?.short_percent_float
+    let shortColor = '#94a3b8'
+    let shortStatus = 'Normal'
+    if (shortPercentFloat) {
+        if (shortPercentFloat > 0.20) { shortColor = '#ef4444'; shortStatus = 'Very High (>20%)' }
+        else if (shortPercentFloat > 0.10) { shortColor = '#f97316'; shortStatus = 'Elevated (>10%)' }
+        else if (shortPercentFloat > 0.05) { shortColor = '#fbbf24'; shortStatus = 'Moderate (>5%)' }
+        else { shortColor = '#4ade80'; shortStatus = 'Low' }
     }
 
     // --- Inventory Chart Data (Absolute values in $B) ---
@@ -153,7 +199,155 @@ export default function FutureOutlook({ symbol }) {
     return (
         <div className="future-outlook-container" style={{ padding: '1rem' }}>
 
-            {/* ROW 1: Insider Signals */}
+            {/* ROW 1: Wall Street Consensus */}
+            {(analyst_consensus?.rating || short_interest?.short_percent_float) && (
+                <div style={cardStyle}>
+                    <h3 style={sectionTitleStyle}>Wall Street Consensus</h3>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '2rem' }}>
+
+                        {/* Analyst Rating */}
+                        {analyst_consensus?.rating && (
+                            <div>
+                                <div style={{ fontSize: '0.9rem', color: '#94a3b8', marginBottom: '0.75rem' }}>
+                                    Analyst Rating ({analystCount} analysts)
+                                </div>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginBottom: '0.5rem' }}>
+                                    <div style={{
+                                        flex: 1,
+                                        height: '12px',
+                                        backgroundColor: '#334155',
+                                        borderRadius: '6px',
+                                        overflow: 'hidden',
+                                        position: 'relative'
+                                    }}>
+                                        <div style={{
+                                            width: `${ratingPercent}%`,
+                                            height: '100%',
+                                            background: `linear-gradient(90deg, ${ratingColor} 0%, ${ratingColor}88 100%)`,
+                                            borderRadius: '6px',
+                                            transition: 'width 0.3s ease'
+                                        }} />
+                                    </div>
+                                    <div style={{ fontWeight: 'bold', color: ratingColor, minWidth: '80px' }}>
+                                        {ratingText}
+                                    </div>
+                                </div>
+                                {ratingScore && (
+                                    <div style={{ fontSize: '0.85rem', color: '#64748b' }}>
+                                        Score: {formatNumber(ratingScore)} (1 = Strong Buy, 5 = Sell)
+                                    </div>
+                                )}
+                            </div>
+                        )}
+
+                        {/* Price Target */}
+                        {targetLow && targetHigh && (
+                            <div>
+                                <div style={{ fontSize: '0.9rem', color: '#94a3b8', marginBottom: '0.75rem' }}>
+                                    Price Target Range
+                                </div>
+                                <div style={{ position: 'relative', marginBottom: '1rem' }}>
+                                    <div style={{
+                                        display: 'flex',
+                                        justifyContent: 'space-between',
+                                        fontSize: '0.85rem',
+                                        marginBottom: '0.25rem'
+                                    }}>
+                                        <span style={{ color: '#94a3b8' }}>{formatCurrencyDecimal(targetLow)}</span>
+                                        <span style={{ color: '#94a3b8' }}>{formatCurrencyDecimal(targetHigh)}</span>
+                                    </div>
+                                    <div style={{
+                                        height: '8px',
+                                        backgroundColor: '#334155',
+                                        borderRadius: '4px',
+                                        position: 'relative'
+                                    }}>
+                                        {/* Mean target marker */}
+                                        {targetMean && (
+                                            <div style={{
+                                                position: 'absolute',
+                                                left: `${((targetMean - targetLow) / (targetHigh - targetLow)) * 100}%`,
+                                                top: '-2px',
+                                                width: '4px',
+                                                height: '12px',
+                                                backgroundColor: '#3b82f6',
+                                                borderRadius: '2px',
+                                                transform: 'translateX(-50%)'
+                                            }} />
+                                        )}
+                                        {/* Current price marker */}
+                                        <div style={{
+                                            position: 'absolute',
+                                            left: `${pricePosition}%`,
+                                            top: '-6px',
+                                            width: '12px',
+                                            height: '20px',
+                                            backgroundColor: '#22c55e',
+                                            borderRadius: '4px',
+                                            transform: 'translateX(-50%)',
+                                            border: '2px solid #0f172a'
+                                        }} />
+                                    </div>
+                                    <div style={{
+                                        display: 'flex',
+                                        justifyContent: 'center',
+                                        marginTop: '0.75rem',
+                                        gap: '2rem'
+                                    }}>
+                                        <div style={{ textAlign: 'center' }}>
+                                            <div style={{ fontSize: '0.75rem', color: '#64748b' }}>Current</div>
+                                            <div style={{ fontWeight: 'bold', color: '#22c55e' }}>{formatCurrencyDecimal(priceNow)}</div>
+                                        </div>
+                                        {targetMean && (
+                                            <div style={{ textAlign: 'center' }}>
+                                                <div style={{ fontSize: '0.75rem', color: '#64748b' }}>Mean Target</div>
+                                                <div style={{ fontWeight: 'bold', color: '#3b82f6' }}>
+                                                    {formatCurrencyDecimal(targetMean)}
+                                                    {upside !== null && (
+                                                        <span style={{
+                                                            color: upside >= 0 ? '#4ade80' : '#f87171',
+                                                            marginLeft: '0.5rem',
+                                                            fontSize: '0.9rem'
+                                                        }}>
+                                                            ({upside >= 0 ? '+' : ''}{formatPercent(upside)})
+                                                        </span>
+                                                    )}
+                                                </div>
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* Short Interest */}
+                        {shortPercentFloat && (
+                            <div>
+                                <div style={{ fontSize: '0.9rem', color: '#94a3b8', marginBottom: '0.75rem' }}>
+                                    Short Interest
+                                </div>
+                                <div style={{ display: 'flex', alignItems: 'baseline', gap: '0.5rem', marginBottom: '0.25rem' }}>
+                                    <span style={{ fontSize: '1.75rem', fontWeight: 'bold', color: shortColor }}>
+                                        {formatPercent(shortPercentFloat)}
+                                    </span>
+                                    <span style={{ color: '#94a3b8' }}>of float</span>
+                                </div>
+                                <div style={{ fontSize: '0.85rem', color: shortColor, marginBottom: '0.5rem' }}>
+                                    {shortStatus}
+                                </div>
+                                {shortRatio && (
+                                    <div style={{ fontSize: '0.85rem', color: '#64748b' }}>
+                                        Days to cover: {formatNumber(shortRatio)}
+                                    </div>
+                                )}
+                            </div>
+                        )}
+
+                    </div>
+                </div>
+            )}
+
+            {/* ROW 2: Insider Signals */}
             <div style={cardStyle}>
                 <h3 style={sectionTitleStyle}>Insider Trading</h3>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginBottom: '0.5rem' }}>
@@ -169,7 +363,7 @@ export default function FutureOutlook({ symbol }) {
                 </div>
             </div>
 
-            {/* ROW 2: Business Health Checks */}
+            {/* ROW 3: Business Health Checks */}
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(400px, 1fr))', gap: '1.5rem' }}>
 
                 {/* Inventory Check */}
@@ -233,7 +427,7 @@ export default function FutureOutlook({ symbol }) {
                 </div>
             </div>
 
-            {/* ROW 3: Valuation Reality */}
+            {/* ROW 4: Valuation Reality */}
             <div style={cardStyle}>
                 <h3 style={sectionTitleStyle}>Forward Indicators</h3>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '2rem' }}>
@@ -251,7 +445,7 @@ export default function FutureOutlook({ symbol }) {
                     <div style={{ textAlign: 'center', padding: '1rem', backgroundColor: 'rgba(0,0,0,0.2)', borderRadius: '0.5rem' }}>
                         <div style={{ fontSize: '0.9rem', color: '#94a3b8', marginBottom: '0.5rem' }}>Forward P/E</div>
                         <div style={{ fontSize: '2rem', fontWeight: 'bold', color: '#e2e8f0' }}>
-                            {metrics.forward_pe ? formatNumber(metrics.forward_pe) : 'N/A'}
+                            {metrics?.forward_pe ? formatNumber(metrics.forward_pe) : 'N/A'}
                         </div>
                     </div>
 
@@ -259,7 +453,7 @@ export default function FutureOutlook({ symbol }) {
                     <div style={{ textAlign: 'center', padding: '1rem', backgroundColor: 'rgba(0,0,0,0.2)', borderRadius: '0.5rem' }}>
                         <div style={{ fontSize: '0.9rem', color: '#94a3b8', marginBottom: '0.5rem' }}>Forward EPS</div>
                         <div style={{ fontSize: '2rem', fontWeight: 'bold', color: '#e2e8f0' }}>
-                            {metrics.forward_eps ? formatCurrency(metrics.forward_eps) : 'N/A'}
+                            {metrics?.forward_eps ? formatCurrency(metrics.forward_eps) : 'N/A'}
                         </div>
                     </div>
 

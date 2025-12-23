@@ -407,6 +407,14 @@ class Database:
                 forward_peg_ratio REAL,
                 forward_eps REAL,
                 insider_net_buying_6m REAL,
+                analyst_rating TEXT,
+                analyst_rating_score REAL,
+                analyst_count INTEGER,
+                price_target_high REAL,
+                price_target_low REAL,
+                price_target_mean REAL,
+                short_ratio REAL,
+                short_percent_float REAL,
                 FOREIGN KEY (symbol) REFERENCES stocks(symbol)
             )
         """)
@@ -437,6 +445,54 @@ class Database:
                 IF NOT EXISTS (SELECT 1 FROM information_schema.columns 
                                WHERE table_name = 'stock_metrics' AND column_name = 'insider_net_buying_6m') THEN
                     ALTER TABLE stock_metrics ADD COLUMN insider_net_buying_6m REAL;
+                END IF;
+                
+                -- analyst_rating
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns 
+                               WHERE table_name = 'stock_metrics' AND column_name = 'analyst_rating') THEN
+                    ALTER TABLE stock_metrics ADD COLUMN analyst_rating TEXT;
+                END IF;
+                
+                -- analyst_rating_score
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns 
+                               WHERE table_name = 'stock_metrics' AND column_name = 'analyst_rating_score') THEN
+                    ALTER TABLE stock_metrics ADD COLUMN analyst_rating_score REAL;
+                END IF;
+                
+                -- analyst_count
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns 
+                               WHERE table_name = 'stock_metrics' AND column_name = 'analyst_count') THEN
+                    ALTER TABLE stock_metrics ADD COLUMN analyst_count INTEGER;
+                END IF;
+                
+                -- price_target_high
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns 
+                               WHERE table_name = 'stock_metrics' AND column_name = 'price_target_high') THEN
+                    ALTER TABLE stock_metrics ADD COLUMN price_target_high REAL;
+                END IF;
+                
+                -- price_target_low
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns 
+                               WHERE table_name = 'stock_metrics' AND column_name = 'price_target_low') THEN
+                    ALTER TABLE stock_metrics ADD COLUMN price_target_low REAL;
+                END IF;
+                
+                -- price_target_mean
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns 
+                               WHERE table_name = 'stock_metrics' AND column_name = 'price_target_mean') THEN
+                    ALTER TABLE stock_metrics ADD COLUMN price_target_mean REAL;
+                END IF;
+                
+                -- short_ratio
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns 
+                               WHERE table_name = 'stock_metrics' AND column_name = 'short_ratio') THEN
+                    ALTER TABLE stock_metrics ADD COLUMN short_ratio REAL;
+                END IF;
+                
+                -- short_percent_float
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns 
+                               WHERE table_name = 'stock_metrics' AND column_name = 'short_percent_float') THEN
+                    ALTER TABLE stock_metrics ADD COLUMN short_percent_float REAL;
                 END IF;
             END $$;
         """)
