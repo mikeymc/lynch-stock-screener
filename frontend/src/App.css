@@ -1173,12 +1173,6 @@ td strong {
   cursor: not-allowed;
 }
 
-/* Stock Detail Page */
-.stock-charts {
-  padding-left: 50px;
-  padding-right: 50px;
-}
-
 .stock-detail-container {
   width: 100%;
 }
@@ -1215,6 +1209,8 @@ td strong {
 /* Tabs */
 .tabs-container {
   width: 100%;
+  padding-left: 40px;
+  padding-right: 40px;
 }
 
 .tabs-header {
