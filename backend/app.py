@@ -1302,10 +1302,123 @@ def get_stock_sections(symbol):
     # Get sections from database (cached during screening)
     try:
         sections = db.get_filing_sections(symbol)
+        
+        # Also get any cached summaries
+        summaries = db.get_filing_section_summaries(symbol)
+        
+        # Merge summaries into sections response
+        if sections and summaries:
+            for section_name, summary_data in summaries.items():
+                if section_name in sections:
+                    sections[section_name]['summary'] = summary_data['summary']
+        
         return jsonify({'sections': sections if sections else {}, 'cached': True})
     except Exception as e:
         logger.error(f"Error fetching cached sections for {symbol}: {e}")
         return jsonify({'error': f'Failed to fetch sections: {str(e)}'}), 500
+
+
+@app.route('/api/stock/<symbol>/section-summaries', methods=['GET'])
+def get_section_summaries(symbol):
+    """
+    Get AI-generated summaries for SEC filing sections.
+    Generates summaries on-demand if not cached.
+    """
+    symbol = symbol.upper()
+    logger.info(f"[SECTION-SUMMARIES] Fetching/generating summaries for {symbol}")
+
+    # Check if stock exists
+    stock_metrics = db.get_stock_metrics(symbol)
+    if not stock_metrics:
+        return jsonify({'error': f'Stock {symbol} not found'}), 404
+
+    # Only return for US stocks
+    country = stock_metrics.get('country', '')
+    if country:
+        country_upper = country.upper()
+        if country_upper not in ('US', 'USA', 'UNITED STATES'):
+            return jsonify({'summaries': {}, 'cached': True})
+
+    company_name = stock_metrics.get('company_name', symbol)
+
+    try:
+        # Get raw sections from database
+        sections = db.get_filing_sections(symbol)
+        if not sections:
+            return jsonify({'summaries': {}, 'message': 'No filing sections available'})
+
+        # Get any existing cached summaries
+        cached_summaries = db.get_filing_section_summaries(symbol) or {}
+        
+        # Check which sections need summaries generated
+        summaries = {}
+        sections_to_generate = []
+        
+        for section_name, section_data in sections.items():
+            if section_name in cached_summaries:
+                # Use cached summary
+                summaries[section_name] = {
+                    'summary': cached_summaries[section_name]['summary'],
+                    'filing_type': section_data.get('filing_type'),
+                    'filing_date': section_data.get('filing_date'),
+                    'cached': True
+                }
+            else:
+                # Need to generate
+                sections_to_generate.append((section_name, section_data))
+        
+        # Generate missing summaries
+        for section_name, section_data in sections_to_generate:
+            try:
+                content = section_data.get('content', '')
+                filing_type = section_data.get('filing_type', '10-K')
+                filing_date = section_data.get('filing_date', '')
+                
+                if not content:
+                    continue
+                
+                # Generate summary using AI
+                summary = lynch_analyst.generate_filing_section_summary(
+                    section_name=section_name,
+                    section_content=content,
+                    company_name=company_name,
+                    filing_type=filing_type
+                )
+                
+                # Cache the summary
+                db.save_filing_section_summary(
+                    symbol=symbol,
+                    section_name=section_name,
+                    summary=summary,
+                    filing_type=filing_type,
+                    filing_date=filing_date
+                )
+                
+                summaries[section_name] = {
+                    'summary': summary,
+                    'filing_type': filing_type,
+                    'filing_date': filing_date,
+                    'cached': False
+                }
+                
+                logger.info(f"[SECTION-SUMMARIES] Generated summary for {symbol}/{section_name}")
+                
+            except Exception as e:
+                logger.error(f"Error generating summary for {symbol}/{section_name}: {e}")
+                # Continue with other sections even if one fails
+                continue
+        
+        return jsonify({
+            'summaries': summaries,
+            'generated_count': len(sections_to_generate),
+            'cached_count': len(cached_summaries)
+        })
+        
+    except Exception as e:
+        logger.error(f"Error fetching section summaries for {symbol}: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': f'Failed to fetch summaries: {str(e)}'}), 500
 
 
 @app.route('/api/stock/<symbol>/news', methods=['GET'])

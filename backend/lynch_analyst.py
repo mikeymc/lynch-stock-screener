@@ -526,6 +526,81 @@ class LynchAnalyst:
 
         return analysis_text
 
+    def generate_filing_section_summary(
+        self,
+        section_name: str,
+        section_content: str,
+        company_name: str,
+        filing_type: str = "10-K",
+        model_version: str = DEFAULT_MODEL
+    ) -> str:
+        """
+        Generate an AI summary of a SEC filing section.
+        Returns a concise bullet-point summary focused on key investor takeaways.
+
+        Args:
+            section_name: Name of the section (e.g., 'business', 'risk_factors', 'mda', 'market_risk')
+            section_content: Raw text content from the SEC filing
+            company_name: Name of the company
+            filing_type: '10-K' or '10-Q'
+            model_version: Gemini model to use for generation
+
+        Returns:
+            Markdown-formatted bullet point summary
+
+        Raises:
+            ValueError: If model_version is not in AVAILABLE_MODELS
+        """
+        if model_version not in AVAILABLE_MODELS:
+            raise ValueError(f"Invalid model: {model_version}. Must be one of {AVAILABLE_MODELS}")
+
+        # Map section names to human-readable titles
+        section_titles = {
+            'business': 'Business Description (Item 1)',
+            'risk_factors': 'Risk Factors (Item 1A)',
+            'mda': "Management's Discussion & Analysis",
+            'market_risk': 'Market Risk Disclosures'
+        }
+        section_title = section_titles.get(section_name, section_name)
+
+        # Craft a prompt for summarization
+        prompt = f"""You are an expert financial analyst summarizing SEC filing content for investors.
+
+**Company**: {company_name}
+**Filing Type**: {filing_type}
+**Section**: {section_title}
+
+**Instructions**:
+Provide a focused summary (4-5 bullet points) of the key investor-relevant takeaways from this section.
+Focus on:
+- For Business Description: Core business model, competitive advantages, key products/services, market position, revenue streams
+- For Risk Factors: Most significant and unique risks (not generic boilerplate), material concerns
+- For MD&A: Recent performance drivers, management's outlook, key initiatives, segment performance
+- For Market Risk: Significant exposures, hedging strategies, sensitivity analysis
+
+Format as bullet points using markdown. Be specific and quantitative where possible.
+Each bullet should be substantive (1-2 sentences) with concrete details.
+Do NOT include a header - just the bullet points.
+
+**Section Content**:
+{section_content[:20000]}
+"""
+
+        # Use gemini-2.5-flash for fast summaries (1.5-flash not available in v1beta API)
+        response = self.client.models.generate_content(
+            model="gemini-2.5-flash",
+            contents=prompt
+        )
+
+        # Check if response was blocked or has no content
+        if not response.parts:
+            error_msg = "Gemini API returned no content for section summary."
+            if hasattr(response, 'prompt_feedback'):
+                error_msg += f" Prompt feedback: {response.prompt_feedback}"
+            raise Exception(error_msg)
+
+        return response.text.strip()
+
     def generate_dcf_recommendations(
         self,
         stock_data: Dict[str, Any],

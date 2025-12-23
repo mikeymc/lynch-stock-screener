@@ -655,6 +655,21 @@ class Database:
             )
         """)
 
+        # AI-generated summaries of filing sections
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS filing_section_summaries (
+                id SERIAL PRIMARY KEY,
+                symbol TEXT NOT NULL,
+                section_name TEXT NOT NULL,
+                summary TEXT NOT NULL,
+                filing_type TEXT NOT NULL,
+                filing_date TEXT,
+                last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (symbol) REFERENCES stocks(symbol),
+                UNIQUE(symbol, section_name, filing_type)
+            )
+        """)
+
         # DEPRECATED: price_history table replaced by weekly_prices
         # Keeping commented for reference - will be dropped in migration
         # cursor.execute("""
@@ -2260,6 +2275,50 @@ class Database:
         last_updated = row[0]
         age_days = (datetime.now() - last_updated).total_seconds() / 86400
         return age_days < max_age_days
+
+    def save_filing_section_summary(self, symbol: str, section_name: str, summary: str, 
+                                     filing_type: str, filing_date: str):
+        """Save an AI-generated summary for a filing section."""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        cursor.execute("""
+            INSERT INTO filing_section_summaries
+            (symbol, section_name, summary, filing_type, filing_date, last_updated)
+            VALUES (%s, %s, %s, %s, %s, %s)
+            ON CONFLICT (symbol, section_name, filing_type) DO UPDATE SET
+                summary = EXCLUDED.summary,
+                filing_date = EXCLUDED.filing_date,
+                last_updated = EXCLUDED.last_updated
+        """, (symbol, section_name, summary, filing_type, filing_date, datetime.now()))
+        conn.commit()
+        self.return_connection(conn)
+
+    def get_filing_section_summaries(self, symbol: str) -> Optional[Dict[str, Any]]:
+        """Get all AI-generated summaries for a symbol's filing sections."""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT section_name, summary, filing_type, filing_date, last_updated
+            FROM filing_section_summaries
+            WHERE symbol = %s
+        """, (symbol,))
+        rows = cursor.fetchall()
+        self.return_connection(conn)
+
+        if not rows:
+            return None
+
+        summaries = {}
+        for row in rows:
+            section_name = row[0]
+            summaries[section_name] = {
+                'summary': row[1],
+                'filing_type': row[2],
+                'filing_date': row[3],
+                'last_updated': row[4]
+            }
+
+        return summaries
 
     def get_setting(self, key: str, default: Any = None) -> Any:
         """Get a setting value by key, with optional default"""

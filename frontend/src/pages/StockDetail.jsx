@@ -379,6 +379,7 @@ export default function StockDetail({ watchlist, toggleWatchlist }) {
 
                 {activeTab === 'reports' && (
                   <StockReports
+                    symbol={symbol}
                     filingsData={filingsData}
                     loadingFilings={loadingFilings}
                     sectionsData={sectionsData}
