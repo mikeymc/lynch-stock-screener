@@ -50,12 +50,15 @@ export default function InsiderTradesTable({ trades }) {
         }
     })
 
-    const summaryData = Object.values(groupedByPerson).sort((a, b) => {
-        // Sort by net activity (biggest movers first)
-        const netA = a.totalBought - a.totalSold
-        const netB = b.totalBought - b.totalSold
-        return Math.abs(netB) - Math.abs(netA)
-    })
+    const summaryData = Object.values(groupedByPerson)
+        // Only show insiders who have actual buy/sell activity with value
+        .filter(person => person.totalBought > 0 || person.totalSold > 0)
+        .sort((a, b) => {
+            // Sort by net activity (biggest movers first)
+            const netA = a.totalBought - a.totalSold
+            const netB = b.totalBought - b.totalSold
+            return Math.abs(netB) - Math.abs(netA)
+        })
 
     // Override global th styles
     const thStyle = {
