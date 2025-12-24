@@ -12,6 +12,7 @@ import {
   Legend
 } from 'chart.js'
 import StockDetail from './pages/StockDetail'
+import StockTableHeader from './components/StockTableHeader'
 
 
 import AlgorithmTuning from './pages/AlgorithmTuning'
@@ -1005,44 +1006,11 @@ function StockListView({
         <>
           <div className="table-container">
             <table>
-              <thead>
-                <tr>
-                  <th className="watchlist-header">⭐</th>
-                  <th onClick={() => toggleSort('symbol')}>Symbol {sortBy === 'symbol' && (sortDir === 'asc' ? '↑' : '↓')}</th>
-                  <th onClick={() => toggleSort('company_name')}>Company {sortBy === 'company_name' && (sortDir === 'asc' ? '↑' : '↓')}</th>
-                  <th onClick={() => toggleSort('country')}>Country {sortBy === 'country' && (sortDir === 'asc' ? '↑' : '↓')}</th>
-                  <th onClick={() => toggleSort('market_cap')}>Market Cap {sortBy === 'market_cap' && (sortDir === 'asc' ? '↑' : '↓')}</th>
-                  <th onClick={() => toggleSort('sector')}>Sector {sortBy === 'sector' && (sortDir === 'asc' ? '↑' : '↓')}</th>
-                  <th onClick={() => toggleSort('ipo_year')}>Age (Years) {sortBy === 'ipo_year' && (sortDir === 'asc' ? '↑' : '↓')}</th>
-                  <th onClick={() => toggleSort('price')}>Price {sortBy === 'price' && (sortDir === 'asc' ? '↑' : '↓')}</th>
-                  <th
-                    onClick={() => toggleSort('peg_ratio')}
-                    title="PEG Ratio = P/E Ratio / 5-Year Earnings Growth Rate. A value under 1.0 is ideal. e.g., A company with a P/E of 20 and 25% earnings growth has a PEG of 0.8 (20 / 25)."
-                  >PEG{sortBy === 'peg_ratio' && (sortDir === 'asc' ? '↑' : '↓')}</th>
-                  <th onClick={() => toggleSort('pe_ratio')}>P/E {sortBy === 'pe_ratio' && (sortDir === 'asc' ? '↑' : '↓')}</th>
-                  <th
-                    onClick={() => toggleSort('debt_to_equity')}
-                    title="Debt to Equity (D/E) Ratio = Total Liabilities / Shareholder Equity. It shows how much a company relies on debt to finance its assets. A lower ratio is generally better."
-                  >D/E{sortBy === 'debt_to_equity' && (sortDir === 'asc' ? '↑' : '↓')}</th>
-                  <th
-                    onClick={() => toggleSort('institutional_ownership')}
-                    title="Institutional Ownership: The percentage of a company's shares held by large organizations like mutual funds, pension funds, insurance companies, and hedge funds."
-                  >Inst Own{sortBy === 'institutional_ownership' && (sortDir === 'asc' ? '↑' : '↓')}</th>
-                  <th onClick={() => toggleSort('revenue_cagr')}>5Y Rev Growth {sortBy === 'revenue_cagr' && (sortDir === 'asc' ? '↑' : '↓')}</th>
-                  <th onClick={() => toggleSort('earnings_cagr')}>5Y Inc Growth {sortBy === 'earnings_cagr' && (sortDir === 'asc' ? '↑' : '↓')}</th>
-                  <th onClick={() => toggleSort('dividend_yield')}>Dividend Yield {sortBy === 'dividend_yield' && (sortDir === 'asc' ? '↑' : '↓')}</th>
-                  <th title="52-week P/E Range: Shows where current P/E sits within its 52-week range. Left = low (cheap), Right = high (expensive)." style={{ width: '110px' }}>
-                    TTM P/E Range
-                  </th>
-                  <th title="5-Year Revenue Consistency: Measures how steady revenue growth has been. Higher is more consistent." style={{ width: '110px' }}>
-                    5y Revenue Consistency
-                  </th>
-                  <th title="5-Year Income Consistency: Measures how steady net income growth has been. Higher is more consistent." style={{ width: '110px' }}>
-                    5y Income Consistency
-                  </th>
-                  <th onClick={() => toggleSort('overall_status')}>Overall {sortBy === 'overall_status' && (sortDir === 'asc' ? '↑' : '↓')}</th>
-                </tr>
-              </thead>
+              <StockTableHeader
+                sortBy={sortBy}
+                sortDir={sortDir}
+                onSort={toggleSort}
+              />
               <tbody>
                 {filteredStocks.map(stock => (
                   <tr

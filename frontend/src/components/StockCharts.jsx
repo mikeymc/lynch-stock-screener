@@ -46,6 +46,26 @@ export default function StockCharts({ historyData, loading, symbol }) {
 
   const labels = historyData?.labels || historyData?.years || []
 
+  // Helper function to create year-only tick callback for weekly data
+  // Each call creates a new Set to track seen years for a specific chart
+  const createYearTickCallback = (dates) => {
+    const seenYears = new Set()
+    return function (value, index, values) {
+      const label = this.getLabelForValue(value)
+      if (!label || !dates?.length) return label
+
+      // Extract year from date string (assumes YYYY-MM-DD format)
+      const year = label.substring(0, 4)
+
+      // Only show if we haven't seen this year yet
+      if (!seenYears.has(year)) {
+        seenYears.add(year)
+        return year
+      }
+      return null
+    }
+  }
+
   // Plugin to draw a dashed zero line
   const zeroLinePlugin = {
     id: 'zeroLine',
@@ -308,14 +328,7 @@ export default function StockCharts({ historyData, loading, symbol }) {
                           display: false
                         },
                         ticks: {
-                          callback: function (value, index, values) {
-                            const label = this.getLabelForValue(value);
-                            // Show only year labels for first week of January
-                            if (label && label.includes('-01-0')) {
-                              return label.substring(0, 4);
-                            }
-                            return null;
-                          },
+                          callback: createYearTickCallback(historyData.weekly_dividend_yields?.dates),
                           maxRotation: 45,
                           minRotation: 45,
                           autoSkip: false
@@ -371,18 +384,7 @@ export default function StockCharts({ historyData, loading, symbol }) {
                           display: false
                         },
                         ticks: {
-                          // Show only year labels, not every week
-                          callback: function (value, index, values) {
-                            const label = this.getLabelForValue(value);
-                            // For weekly data, only show label if it's first week of January
-                            if (historyData.weekly_prices?.dates?.length > 0) {
-                              if (label && label.includes('-01-0')) {
-                                return label.substring(0, 4); // Return just the year
-                              }
-                              return null; // Hide other labels
-                            }
-                            return label; // For annual data, show as-is
-                          },
+                          callback: createYearTickCallback(historyData.weekly_prices?.dates),
                           maxRotation: 45,
                           minRotation: 45,
                           autoSkip: false
@@ -425,16 +427,7 @@ export default function StockCharts({ historyData, loading, symbol }) {
                           display: false
                         },
                         ticks: {
-                          callback: function (value, index, values) {
-                            const label = this.getLabelForValue(value);
-                            if (historyData.weekly_pe_ratios?.dates?.length > 0) {
-                              if (label && label.includes('-01-0')) {
-                                return label.substring(0, 4);
-                              }
-                              return null;
-                            }
-                            return label;
-                          },
+                          callback: createYearTickCallback(historyData.weekly_pe_ratios?.dates),
                           maxRotation: 45,
                           minRotation: 45,
                           autoSkip: false
