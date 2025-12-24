@@ -1,3 +1,12 @@
+/* Design Tokens */
+:root {
+  --controls-height: 65px;
+  --color-bg-primary: #0f172a;
+  --color-bg-secondary: #1e293b;
+  --color-bg-tertiary: #334155;
+  --color-border: #475569;
+}
+
 * {
   margin: 0;
   padding: 0;
@@ -13,7 +22,7 @@ body {
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
     'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
     sans-serif;
-  background-color: #0f172a;
+  background-color: var(--color-bg-primary);
   color: #e2e8f0;
 }
 
@@ -23,7 +32,58 @@ body {
 }
 
 .app.stock-list-view {
-  padding-top: 65px;
+  padding-top: var(--controls-height);
+}
+
+/* ==========================================================================
+   Stock Detail Page - Flexbox Layout with Sticky Zone
+   ========================================================================== */
+
+.stock-detail-page {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+}
+
+/* Sticky zone contains controls + stock summary - sticks together */
+.sticky-zone {
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  background-color: var(--color-bg-primary);
+}
+
+/* Override fixed positioning for controls when inside stock detail page */
+.stock-detail-page .controls {
+  position: static;
+}
+
+/* Stock summary section (single stock row) */
+.stock-summary-section {
+  background-color: var(--color-bg-secondary);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.stock-summary-section .table-container {
+  margin: 0;
+  padding: 0;
+  border-radius: 0;
+}
+
+.stock-summary-section table {
+  margin: 0;
+  min-width: 100%;
+}
+
+.stock-summary-section th {
+  position: static;
+  /* Override sticky th from main table styles */
+}
+
+/* Content area - fills remaining space */
+.stock-detail-content {
+  flex: 1;
+  padding: 20px 40px;
 }
 
 header {

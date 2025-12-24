@@ -284,132 +284,125 @@ export default function StockDetail({ watchlist, toggleWatchlist }) {
   }
 
   return (
-    <div className="app stock-list-view">
-      <div className="controls">
-        <div style={{ display: 'flex', gap: '10px' }}>
-          <button className="back-button" onClick={() => navigate('/')}>
-            Back to List
-          </button>
-          <button className="refresh-button" onClick={handleRefresh}>
-            Refresh Data
-          </button>
-        </div>
-
-        <div style={{ display: 'flex', gap: '10px', marginLeft: '20px', overflowX: 'auto' }}>
-          <button
-            className={`tab-button ${activeTab === 'analysis' ? 'active' : ''}`}
-            onClick={() => setActiveTab('analysis')}
-          >
-            Analysis & Chat
-          </button>
-          <button
-            className={`tab-button ${activeTab === 'charts' ? 'active' : ''}`}
-            onClick={() => setActiveTab('charts')}
-          >
-            Financials
-          </button>
-          <button
-            className={`tab-button ${activeTab === 'outlook' ? 'active' : ''}`}
-            onClick={() => setActiveTab('outlook')}
-          >
-            Forward Metrics
-          </button>
-          <button
-            className={`tab-button ${activeTab === 'dcf' ? 'active' : ''}`}
-            onClick={() => setActiveTab('dcf')}
-          >
-            DCF Analysis
-          </button>
-          <button
-            className={`tab-button ${activeTab === 'news' ? 'active' : ''}`}
-            onClick={() => setActiveTab('news')}
-          >
-            News
-          </button>
-          <button
-            className={`tab-button ${activeTab === 'reports' ? 'active' : ''}`}
-            onClick={() => setActiveTab('reports')}
-          >
-            Quarterly & Annual Reports
-          </button>
-          <button
-            className={`tab-button ${activeTab === 'events' ? 'active' : ''}`}
-            onClick={() => setActiveTab('events')}
-          >
-            Material Event Filings
-          </button>
-        </div>
-      </div>
-
-      <div className="stock-detail-container">
-        {loading ? (
-          <div className="loading">Loading stock data...</div>
-        ) : !stock ? (
-          <div className="error">
-            Stock {symbol} not found
-            <button onClick={() => navigate('/')} style={{ marginLeft: '10px' }}>Back to List</button>
+    <div className="stock-detail-page">
+      {/* Sticky zone - controls and stock summary stick together */}
+      <div className="sticky-zone">
+        <div className="controls">
+          <div style={{ display: 'flex', gap: '10px' }}>
+            <button className="back-button" onClick={() => navigate('/')}>
+              Back to List
+            </button>
+            <button className="refresh-button" onClick={handleRefresh}>
+              Refresh Data
+            </button>
           </div>
-        ) : (
-          <ErrorBoundary>
-            <div className="table-container">
-              <div className="sticky-header">
-                <table className="stocks-table">
-                  <StockTableHeader readOnly={true} />
-                  <tbody>
-                    <StockTableRow
-                      stock={stock}
-                      watchlist={watchlist}
-                      onToggleWatchlist={toggleWatchlist}
-                      readOnly={true}
-                    />
-                  </tbody>
-                </table>
-              </div>
-            </div>
 
-            <div className="tabs-container">
-              <div className="tabs-content">
-                {activeTab === 'charts' && (
-                  <StockCharts historyData={historyData} loading={loadingHistory} symbol={symbol} />
-                )}
+          <div style={{ display: 'flex', gap: '10px', marginLeft: '20px', overflowX: 'auto' }}>
+            <button
+              className={`tab-button ${activeTab === 'analysis' ? 'active' : ''}`}
+              onClick={() => setActiveTab('analysis')}
+            >
+              Analysis & Chat
+            </button>
+            <button
+              className={`tab-button ${activeTab === 'charts' ? 'active' : ''}`}
+              onClick={() => setActiveTab('charts')}
+            >
+              Financials
+            </button>
+            <button
+              className={`tab-button ${activeTab === 'outlook' ? 'active' : ''}`}
+              onClick={() => setActiveTab('outlook')}
+            >
+              Forward Metrics
+            </button>
+            <button
+              className={`tab-button ${activeTab === 'dcf' ? 'active' : ''}`}
+              onClick={() => setActiveTab('dcf')}
+            >
+              DCF Analysis
+            </button>
+            <button
+              className={`tab-button ${activeTab === 'news' ? 'active' : ''}`}
+              onClick={() => setActiveTab('news')}
+            >
+              News
+            </button>
+            <button
+              className={`tab-button ${activeTab === 'reports' ? 'active' : ''}`}
+              onClick={() => setActiveTab('reports')}
+            >
+              Quarterly & Annual Reports
+            </button>
+            <button
+              className={`tab-button ${activeTab === 'events' ? 'active' : ''}`}
+              onClick={() => setActiveTab('events')}
+            >
+              Material Event Filings
+            </button>
+          </div>
+        </div>
 
-                {activeTab === 'dcf' && (
-                  <DCFAnalysis stockData={stock} earningsHistory={historyData} />
-                )}
-
-                {activeTab === 'reports' && (
-                  <StockReports
-                    symbol={symbol}
-                    filingsData={filingsData}
-                    loadingFilings={loadingFilings}
-                    sectionsData={sectionsData}
-                    loadingSections={loadingSections}
-                  />
-                )}
-
-                {activeTab === 'analysis' && (
-                  <AnalysisChat
-                    symbol={stock.symbol}
-                    stockName={stock.company_name}
-                  />
-                )}
-
-                {activeTab === 'outlook' && (
-                  <FutureOutlook symbol={stock.symbol} />
-                )}
-
-                {activeTab === 'news' && (
-                  <StockNews newsData={newsData} loading={loadingNews} />
-                )}
-
-                {activeTab === 'events' && (
-                  <MaterialEvents eventsData={materialEventsData} loading={loadingMaterialEvents} />
-                )}
-              </div>
-            </div>
-          </ErrorBoundary>
-        )}
+        {/* Stock summary row - part of sticky zone */}
+        <div className="stock-summary-section">
+          <div className="table-container">
+            <table className="stocks-table">
+              <StockTableHeader readOnly={true} />
+              <tbody>
+                <StockTableRow
+                  stock={stock}
+                  watchlist={watchlist}
+                  onToggleWatchlist={toggleWatchlist}
+                  readOnly={true}
+                />
+              </tbody>
+            </table>
+          </div>
+        </div>
       </div>
+
+      {/* Content area - fills remaining space */}
+      <ErrorBoundary>
+        <div className="stock-detail-content">
+          {activeTab === 'charts' && (
+            <StockCharts historyData={historyData} loading={loadingHistory} symbol={symbol} />
+          )}
+
+          {activeTab === 'dcf' && (
+            <DCFAnalysis stockData={stock} earningsHistory={historyData} />
+          )}
+
+          {activeTab === 'reports' && (
+            <StockReports
+              symbol={symbol}
+              filingsData={filingsData}
+              loadingFilings={loadingFilings}
+              sectionsData={sectionsData}
+              loadingSections={loadingSections}
+            />
+          )}
+
+          {activeTab === 'analysis' && (
+            <AnalysisChat
+              symbol={stock.symbol}
+              stockName={stock.company_name}
+            />
+          )}
+
+          {activeTab === 'outlook' && (
+            <FutureOutlook symbol={stock.symbol} />
+          )}
+
+          {activeTab === 'news' && (
+            <StockNews newsData={newsData} loading={loadingNews} />
+          )}
+
+          {activeTab === 'events' && (
+            <MaterialEvents eventsData={materialEventsData} loading={loadingMaterialEvents} />
+          )}
+        </div>
+      </ErrorBoundary>
     </div>
   )
 }
+
