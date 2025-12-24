@@ -729,6 +729,15 @@ class BackgroundWorker:
         from edgar_fetcher import EdgarFetcher
         from tradingview_fetcher import TradingViewFetcher
         
+        # Disable edgartools disk caching - not useful for batch jobs on ephemeral workers
+        # (each stock is only processed once, cache would be discarded anyway)
+        try:
+            from edgar import httpclient
+            httpclient.CACHE_DIRECTORY = None
+            logger.info("Disabled edgartools HTTP disk cache for batch job")
+        except Exception as e:
+            logger.warning(f"Could not disable edgartools cache: {e}")
+        
         # Map CLI region to TradingView regions (same as screening/prices)
         region_mapping = {
             'us': ['us'],
@@ -857,6 +866,15 @@ class BackgroundWorker:
         from edgar_fetcher import EdgarFetcher
         from sec_8k_client import SEC8KClient
         from tradingview_fetcher import TradingViewFetcher
+        
+        # Disable edgartools disk caching - not useful for batch jobs on ephemeral workers
+        # (each stock is only processed once, cache would be discarded anyway)
+        try:
+            from edgar import httpclient
+            httpclient.CACHE_DIRECTORY = None
+            logger.info("Disabled edgartools HTTP disk cache for batch job")
+        except Exception as e:
+            logger.warning(f"Could not disable edgartools cache: {e}")
         
         # Map CLI region to TradingView regions (same as screening/prices)
         region_mapping = {
