@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import './ModelSelector.css'
 
-const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:5001/api'
+const API_BASE = '/api'
 
 const ModelSelector = ({ selectedModel, onModelChange, storageKey }) => {
   const [models, setModels] = useState([])

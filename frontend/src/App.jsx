@@ -33,7 +33,7 @@ ChartJS.register(
   Legend
 )
 
-const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:5001/api'
+const API_BASE = '/api'
 
 // FilingSections component displays expandable filing content
 function FilingSections({ sections }) {

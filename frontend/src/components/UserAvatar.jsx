@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect, useLayoutEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { useAuth } from '../context/AuthContext';
 
-const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:5001/api';
+const API_BASE = '/api';
 
 export default function UserAvatar() {
   const { user, logout } = useAuth();

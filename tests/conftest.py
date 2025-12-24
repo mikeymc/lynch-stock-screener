@@ -22,6 +22,46 @@ def configure_test_environment():
     # Cleanup if needed
 
 
+def _ensure_template_exists(cursor, template_db):
+    """
+    Ensure the test template database exists.
+    If it doesn't exist, automatically create it from production data.
+    """
+    cursor.execute(
+        "SELECT 1 FROM pg_database WHERE datname = %s AND datistemplate = TRUE",
+        (template_db,)
+    )
+    
+    if cursor.fetchone():
+        print(f"[TEST DB] Template '{template_db}' found")
+        return True
+    
+    print(f"[TEST DB] Template '{template_db}' not found - creating automatically...")
+    
+    # Import and run the template creation script
+    try:
+        # Add tests/backend to path temporarily for the import
+        tests_backend_path = os.path.join(os.path.dirname(__file__), 'backend')
+        sys.path.insert(0, tests_backend_path)
+        
+        from create_test_template import create_template_database
+        create_template_database()
+        
+        # Remove from path
+        sys.path.remove(tests_backend_path)
+        
+        print(f"[TEST DB] ✓ Template created successfully")
+        return True
+        
+    except Exception as e:
+        print(f"[TEST DB] ✗ Failed to create template: {e}")
+        raise Exception(
+            f"Failed to auto-create template database '{template_db}'.\n"
+            f"Error: {e}\n"
+            f"You can try manually: python tests/backend/create_test_template.py"
+        )
+
+
 @pytest.fixture(scope="session")
 def test_database():
     """Create test database from template for test session, drop after completion."""
@@ -41,18 +81,8 @@ def test_database():
     )
     cursor = conn.cursor()
 
-    # Verify template exists
-    cursor.execute(
-        "SELECT 1 FROM pg_database WHERE datname = %s AND datistemplate = TRUE",
-        (TEMPLATE_DB,)
-    )
-    if not cursor.fetchone():
-        cursor.close()
-        conn.close()
-        raise Exception(
-            f"Template database '{TEMPLATE_DB}' not found.\n"
-            f"Run 'python backend/tests/create_test_template.py' first."
-        )
+    # Ensure template exists (auto-creates if missing)
+    _ensure_template_exists(cursor, TEMPLATE_DB)
 
     # Terminate any existing connections to test database
     cursor.execute(f"""
@@ -89,4 +119,3 @@ def test_database():
 
     cursor.close()
     conn.close()
-

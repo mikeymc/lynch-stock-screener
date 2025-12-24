@@ -18,6 +18,27 @@ OAUTH_REDIRECT_URI = os.getenv('OAUTH_REDIRECT_URI', 'http://localhost:5000/api/
 if 'localhost' in OAUTH_REDIRECT_URI or '127.0.0.1' in OAUTH_REDIRECT_URI:
     os.environ['OAUTHLIB_INSECURE_TRANSPORT'] = '1'
 
+# =============================================================================
+# Dev Auth Bypass Configuration
+# =============================================================================
+# Only allow bypass if ALL conditions are true:
+# 1. DEV_AUTH_BYPASS env var is explicitly "true"
+# 2. FLASK_ENV is not "production"
+# 3. Running on localhost (based on redirect URI)
+
+_is_localhost = 'localhost' in OAUTH_REDIRECT_URI or '127.0.0.1' in OAUTH_REDIRECT_URI
+_bypass_enabled = os.getenv('DEV_AUTH_BYPASS', 'false').lower() == 'true'
+_not_production = os.getenv('FLASK_ENV', 'development') != 'production'
+
+DEV_AUTH_BYPASS = _bypass_enabled and _not_production and _is_localhost
+
+if DEV_AUTH_BYPASS:
+    print("=" * 60)
+    print("⚠️  DEV AUTH BYPASS IS ENABLED")
+    print("   All routes will use 'dev-user-bypass' as user_id")
+    print("   DO NOT USE IN PRODUCTION!")
+    print("=" * 60)
+
 
 def init_oauth_client():
     """Initialize Google OAuth client"""
@@ -48,14 +69,23 @@ def require_user_auth(f):
     """
     Decorator to protect routes that require user authentication.
     Checks for user_id in session and injects it as a parameter to the route function.
+    
+    If DEV_AUTH_BYPASS is enabled (local dev only), allows unauthenticated access
+    with a dev user ID.
     """
     @wraps(f)
     def decorated_function(*args, **kwargs):
-        if 'user_id' not in session:
+        if 'user_id' in session:
+            # Normal authenticated user
+            kwargs['user_id'] = session['user_id']
+        elif DEV_AUTH_BYPASS:
+            # Dev bypass enabled - use mock user
+            kwargs['user_id'] = 'dev-user-bypass'
+        else:
+            # No auth and no bypass - reject
             return jsonify({'error': 'Unauthorized', 'message': 'Please log in'}), 401
-
-        # Inject user_id into kwargs
-        kwargs['user_id'] = session['user_id']
+        
         return f(*args, **kwargs)
 
     return decorated_function
+

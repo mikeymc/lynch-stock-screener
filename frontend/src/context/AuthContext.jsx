@@ -2,7 +2,25 @@ import React, { createContext, useContext, useState, useEffect } from 'react';
 
 const AuthContext = createContext(null);
 
-const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:5001/api';
+const API_BASE = '/api';
+
+// =============================================================================
+// Dev Auth Bypass Configuration
+// =============================================================================
+// Only allow bypass if VITE_DEV_AUTH_BYPASS is explicitly "true"
+// In production builds, this env var should never be set
+const DEV_AUTH_BYPASS = import.meta.env.VITE_DEV_AUTH_BYPASS === 'true';
+
+if (DEV_AUTH_BYPASS) {
+  console.warn('⚠️ DEV AUTH BYPASS IS ENABLED - Using mock user for development');
+}
+
+// Mock user for dev bypass
+const DEV_MOCK_USER = {
+  email: 'dev@localhost',
+  name: 'Dev User',
+  is_admin: true,
+};
 
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
@@ -17,12 +35,21 @@ export function AuthProvider({ children }) {
       if (response.ok) {
         const userData = await response.json();
         setUser(userData);
+      } else if (DEV_AUTH_BYPASS) {
+        // Dev bypass enabled - use mock user
+        setUser(DEV_MOCK_USER);
       } else {
+        // No auth and no bypass
         setUser(null);
       }
     } catch (error) {
       console.error('Error checking auth:', error);
-      setUser(null);
+      if (DEV_AUTH_BYPASS) {
+        // Dev bypass enabled - use mock user even on error
+        setUser(DEV_MOCK_USER);
+      } else {
+        setUser(null);
+      }
     } finally {
       setLoading(false);
     }
@@ -59,3 +86,4 @@ export function useAuth() {
   }
   return context;
 }
+

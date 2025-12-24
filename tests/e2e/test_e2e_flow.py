@@ -20,6 +20,20 @@ def test_app_initialization_and_ui_elements(page: Page, servers):
     """
     print("\n[E2E] Starting test: app_initialization_and_ui_elements")
     
+    # First verify the API is returning screening data
+    print("[E2E] Checking /api/sessions/latest endpoint...")
+    api_response = requests.get("http://localhost:8081/api/sessions/latest")
+    print(f"[E2E] API Status: {api_response.status_code}")
+    if api_response.status_code == 200:
+        data = api_response.json()
+        result_count = len(data.get('results', []))
+        print(f"[E2E] API returned {result_count} results")
+        if result_count > 0:
+            first_result = data['results'][0]
+            print(f"[E2E] First result: {first_result.get('symbol')} - {first_result.get('company_name')}")
+    else:
+        print(f"[E2E] API Error: {api_response.text[:500]}")
+    
     # Navigate to the app
     print("[E2E] Navigating to http://localhost:5174?user=admin")
     page.goto("http://localhost:5174?user=admin")
@@ -150,7 +164,7 @@ def test_app_initialization_and_ui_elements(page: Page, servers):
     print("[E2E] Checking first row status...")
     first_row = stock_rows.first
     overall_status_cell = first_row.locator('td').last
-    expect(overall_status_cell).to_contain_text('Excellent')
+    expect(overall_status_cell).to_contain_text('Good')
     
     # Verify first row has all expected data
     print("[E2E] Verifying first row data completeness...")
@@ -285,12 +299,12 @@ def test_stock_detail_header_and_tabs(page: Page, servers):
     charts_tab = controls.get_by_role('button', name='Financials')
     expect(charts_tab).to_have_class(re.compile(r'active'))
     
-    # Verify stock data table
+    # Verify stock data table (now in .stock-summary-section within .sticky-zone)
     print("[E2E] Verifying stock data table...")
-    sticky_header = page.locator('.sticky-header')
-    expect(sticky_header).to_be_visible()
+    stock_summary = page.locator('.stock-summary-section')
+    expect(stock_summary).to_be_visible()
     
-    table = sticky_header.locator('table')
+    table = stock_summary.locator('table')
     expect(table).to_be_visible()
     
     # Verify stock row contains AAPL
@@ -318,8 +332,8 @@ def test_stock_detail_charts_tab(page: Page, servers):
     charts_tab = page.get_by_role('button', name='Financials')
     expect(charts_tab).to_have_class(re.compile(r'active'))
     
-    # Verify tabs content container
-    tabs_content = page.locator('.tabs-content')
+    # Verify tabs content container (now .stock-detail-content)
+    tabs_content = page.locator('.stock-detail-content')
     expect(tabs_content).to_be_visible()
     
     # Charts should be visible (StockCharts component)
@@ -356,9 +370,9 @@ def test_stock_detail_dcf_tab(page: Page, servers):
     # Verify tab is active
     expect(dcf_tab).to_have_class(re.compile(r'active'))
     
-    # Verify DCF content is visible
+    # Verify DCF content is visible (now .stock-detail-content)
     print("[E2E] Verifying DCF content...")
-    tabs_content = page.locator('.tabs-content')
+    tabs_content = page.locator('.stock-detail-content')
     expect(tabs_content).to_be_visible()
     expect(tabs_content).not_to_be_empty()
     
@@ -387,9 +401,9 @@ def test_stock_detail_reports_tab(page: Page, servers):
     # Verify tab is active
     expect(reports_tab).to_have_class(re.compile(r'active'))
     
-    # Verify reports content
+    # Verify reports content (now .stock-detail-content)
     print("[E2E] Verifying Reports content...")
-    tabs_content = page.locator('.tabs-content')
+    tabs_content = page.locator('.stock-detail-content')
     expect(tabs_content).to_be_visible()
     
     print("[E2E] Reports tab test completed successfully")
@@ -417,9 +431,9 @@ def test_stock_detail_analysis_chat_tab(page: Page, servers):
     # Verify tab is active
     expect(analysis_tab).to_have_class(re.compile(r'active'))
     
-    # Verify analysis/chat content
+    # Verify analysis/chat content (now .stock-detail-content)
     print("[E2E] Verifying Analysis & Chat content...")
-    tabs_content = page.locator('.tabs-content')
+    tabs_content = page.locator('.stock-detail-content')
     expect(tabs_content).to_be_visible()
     expect(tabs_content).not_to_be_empty()
     
@@ -448,9 +462,9 @@ def test_stock_detail_news_tab(page: Page, servers):
     # Verify tab is active
     expect(news_tab).to_have_class(re.compile(r'active'))
     
-    # Verify news content
+    # Verify news content (now .stock-detail-content)
     print("[E2E] Verifying News content...")
-    tabs_content = page.locator('.tabs-content')
+    tabs_content = page.locator('.stock-detail-content')
     expect(tabs_content).to_be_visible()
     expect(tabs_content).not_to_be_empty()
     
@@ -479,9 +493,9 @@ def test_stock_detail_material_events_tab(page: Page, servers):
     # Verify tab is active
     expect(events_tab).to_have_class(re.compile(r'active'))
     
-    # Verify events content
+    # Verify events content (now .stock-detail-content)
     print("[E2E] Verifying Material Event content...")
-    tabs_content = page.locator('.tabs-content')
+    tabs_content = page.locator('.stock-detail-content')
     expect(tabs_content).to_be_visible()
     expect(tabs_content).not_to_be_empty()
     

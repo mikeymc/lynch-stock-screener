@@ -41,6 +41,7 @@ TEST_STOCKS = [
 ]
 
 # Tables to copy data from (in dependency order)
+# Tables that filter by symbol
 TABLES_TO_COPY = [
     'stocks',
     'stock_metrics',
@@ -55,7 +56,15 @@ TABLES_TO_COPY = [
     'material_events',
     'conversations',
     'messages',
-    'message_sources'
+    'message_sources',
+    'screening_sessions',  # Required for stock list page
+    'screening_results',   # Required for stock list page - contains evaluated stocks
+]
+
+# Tables that don't have a symbol column - copy ALL rows
+# These are needed for foreign key constraints
+TABLES_COPY_ALL = [
+    'users',  # Referenced by lynch_analyses, watchlist, etc.
 ]
 
 
@@ -192,7 +201,56 @@ def copy_test_data():
 
     total_rows_copied = 0
 
+    # First, copy tables that don't filter by symbol (ALL rows)
+    # These need to be copied first for foreign key constraints
+    for table in TABLES_COPY_ALL:
+        prod_cursor.execute(f"""
+            SELECT column_name
+            FROM information_schema.columns
+            WHERE table_name = '{table}'
+            ORDER BY ordinal_position
+        """)
+        columns = [row[0] for row in prod_cursor.fetchall()]
+        if not columns:
+            continue  # Table doesn't exist
+            
+        column_list = ', '.join(columns)
+        
+        # Copy ALL rows from this table
+        prod_cursor.execute(f"SELECT {column_list} FROM {table}")
+        rows = prod_cursor.fetchall()
+        
+        if rows:
+            BATCH_SIZE = 100
+            placeholders = ', '.join(['%s'] * len(columns))
+            
+            for i in range(0, len(rows), BATCH_SIZE):
+                batch = rows[i:i + BATCH_SIZE]
+                template_cursor.execute(f"""
+                    INSERT INTO {table} ({column_list})
+                    VALUES {', '.join([f'({placeholders})' for _ in batch])}
+                    ON CONFLICT DO NOTHING
+                """, [item for row in batch for item in row])
+            
+            template_conn.commit()
+            print(f"   {table}: {len(rows)} rows (all users)")
+            total_rows_copied += len(rows)
+            
+            # Reset the sequence for the id column to avoid conflicts with new inserts
+            if table == 'users':
+                template_cursor.execute("""
+                    SELECT setval('users_id_seq', (SELECT COALESCE(MAX(id), 0) + 1 FROM users), false)
+                """)
+                template_conn.commit()
+                print(f"   {table}: sequence reset")
+
+    # Now copy symbol-filtered tables
+
     for table in TABLES_TO_COPY:
+        # Skip screening tables - handled specially below
+        if table in ('screening_sessions', 'screening_results'):
+            continue
+            
         # Check if table has a symbol column
         prod_cursor.execute(f"""
             SELECT column_name
@@ -225,17 +283,96 @@ def copy_test_data():
         rows = prod_cursor.fetchall()
 
         if rows:
-            # Insert rows into template database
+            # Insert rows in batches to avoid exceeding PostgreSQL parameter limit (65535)
+            BATCH_SIZE = 100
             placeholders = ', '.join(['%s'] * len(columns))
-            template_cursor.execute(f"""
-                INSERT INTO {table} ({column_list})
-                VALUES {', '.join([f'({placeholders})' for _ in rows])}
-                ON CONFLICT DO NOTHING
-            """, [item for row in rows for item in row])
+            
+            for i in range(0, len(rows), BATCH_SIZE):
+                batch = rows[i:i + BATCH_SIZE]
+                template_cursor.execute(f"""
+                    INSERT INTO {table} ({column_list})
+                    VALUES {', '.join([f'({placeholders})' for _ in batch])}
+                    ON CONFLICT DO NOTHING
+                """, [item for row in batch for item in row])
 
             template_conn.commit()
             print(f"   {table}: {len(rows)} rows")
             total_rows_copied += len(rows)
+
+    # Special handling for screening_sessions and screening_results
+    # Copy the most recent screening session and its results for test stocks
+    print("   Copying screening session and results...")
+    
+    # Get the most recent session
+    prod_cursor.execute("""
+        SELECT id, created_at, algorithm, status, processed_count, total_count,
+               current_symbol, total_analyzed, pass_count, close_count, fail_count
+        FROM screening_sessions
+        ORDER BY created_at DESC
+        LIMIT 1
+    """)
+    session_row = prod_cursor.fetchone()
+    
+    if session_row:
+        old_session_id = session_row[0]
+        
+        # Insert the session with a new ID (let it auto-increment)
+        template_cursor.execute("""
+            INSERT INTO screening_sessions 
+            (created_at, algorithm, status, processed_count, total_count,
+             current_symbol, total_analyzed, pass_count, close_count, fail_count)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            RETURNING id
+        """, session_row[1:])
+        new_session_id = template_cursor.fetchone()[0]
+        template_conn.commit()
+        print(f"   screening_sessions: 1 row (session_id={new_session_id})")
+        
+        # Get column names for screening_results
+        prod_cursor.execute("""
+            SELECT column_name
+            FROM information_schema.columns
+            WHERE table_name = 'screening_results'
+            ORDER BY ordinal_position
+        """)
+        result_columns = [row[0] for row in prod_cursor.fetchall()]
+        
+        # Copy screening results for test stocks, replacing session_id
+        prod_cursor.execute(f"""
+            SELECT {', '.join(result_columns)}
+            FROM screening_results
+            WHERE session_id = %s AND symbol = ANY(%s)
+        """, (old_session_id, TEST_STOCKS))
+        
+        result_rows = prod_cursor.fetchall()
+        
+        if result_rows:
+            # Find the index of session_id and id columns
+            session_id_idx = result_columns.index('session_id') if 'session_id' in result_columns else None
+            id_idx = result_columns.index('id') if 'id' in result_columns else None
+            
+            # Build column list without 'id' (let it auto-increment)
+            insert_columns = [c for c in result_columns if c != 'id']
+            
+            for row in result_rows:
+                row_list = list(row)
+                # Replace old session_id with new session_id
+                if session_id_idx is not None:
+                    row_list[session_id_idx] = new_session_id
+                # Remove 'id' value if present
+                if id_idx is not None:
+                    row_list.pop(id_idx)
+                
+                placeholders = ', '.join(['%s'] * len(insert_columns))
+                template_cursor.execute(f"""
+                    INSERT INTO screening_results ({', '.join(insert_columns)})
+                    VALUES ({placeholders})
+                    ON CONFLICT DO NOTHING
+                """, row_list)
+            
+            template_conn.commit()
+            print(f"   screening_results: {len(result_rows)} rows")
+            total_rows_copied += len(result_rows) + 1
 
     prod_cursor.close()
     template_cursor.close()

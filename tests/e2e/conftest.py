@@ -96,7 +96,7 @@ def frontend_server():
     env = os.environ.copy()
     env.update({
         'PORT': str(test_port),
-        'VITE_API_URL': 'http://localhost:8081'  # Point to test backend on 8081
+        'VITE_API_URL': 'http://localhost:8081'  # Proxy target - must match vite.config.js env var name (no /api suffix)
     })
 
     print(f"[E2E] Starting frontend on port {test_port}, pointing to backend on port 8081")
@@ -106,8 +106,9 @@ def frontend_server():
     project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
     frontend_dir = os.path.join(project_root, 'frontend')
 
+    # Use --mode test to make Vite load .env.test which points to test backend on 8081
     frontend_process = subprocess.Popen(
-        ['npm', 'run', 'dev', '--', '--port', str(test_port)],
+        ['npm', 'run', 'dev', '--', '--port', str(test_port), '--mode', 'test'],
         cwd=frontend_dir,
         env=env,
         stdout=subprocess.PIPE,

@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 
-const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:5001/api';
+const API_BASE = '/api';
 
 export default function LoginModal() {
   const [loading, setLoading] = useState(false);
