@@ -86,8 +86,11 @@ const AnalysisChat = forwardRef(function AnalysisChat({ symbol, stockName, chatO
   // Auto-scroll to bottom when messages change
   useEffect(() => {
     if (messages.length > 0 || streamingMessage) {
-      // Scroll the messagesEndRef element into view within the container
-      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+      // Scroll within the container only, not the whole page
+      const container = messagesContainerRef.current
+      if (container) {
+        container.scrollTop = container.scrollHeight
+      }
     }
   }, [messages, streamingMessage])
 

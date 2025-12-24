@@ -45,6 +45,13 @@ body {
   min-height: 100vh;
 }
 
+/* When reports layout is inside, lock the page to viewport height */
+.stock-detail-page:has(.reports-layout) {
+  height: 100vh;
+  overflow: hidden;
+}
+
+
 /* Sticky zone contains controls + stock summary - sticks together */
 .sticky-zone {
   position: sticky;
@@ -84,6 +91,11 @@ body {
 .stock-detail-content {
   flex: 1;
   padding: 20px 40px;
+}
+
+/* When reports layout is inside, don't scroll the outer container */
+.stock-detail-content:has(.reports-layout) {
+  overflow: hidden;
 }
 
 header {
@@ -1371,7 +1383,7 @@ td strong {
 
 .chat-message-content {
   line-height: 1.6;
-  white-space: pre-wrap;
+  white-space: normal;
   word-wrap: break-word;
 }
 
@@ -2447,6 +2459,7 @@ td strong {
 .scroll-indicator span:hover {
   background-color: #475569;
 }
+
 /* ============================================
    Inline Comment Feature Styles
    ============================================ */
@@ -2471,17 +2484,23 @@ td strong {
 
 /* Floating Plus Button */
 .selection-plus-button {
-  width: 28px;
-  height: 28px;
-  background: linear-gradient(135deg, #3b82f6 0%, #8b5cf6 100%);
+  width: 20px;
+  height: 20px;
+  min-width: 20px;
+  min-height: 20px;
+  max-width: 20px;
+  max-height: 20px;
+  padding: 0;
+  aspect-ratio: 1 / 1;
+  background-color: #0f172a;
   color: white;
-  border: none;
-  border-radius: 50%;
-  font-size: 1.25rem;
+  border: 1px solid #475569;
+  border-radius: 4px;
+  font-size: 0.875rem;
   font-weight: 600;
   line-height: 1;
   cursor: pointer;
-  box-shadow: 0 4px 12px rgba(59, 130, 246, 0.4);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
   transition: transform 0.15s, box-shadow 0.15s;
   z-index: 1000;
   display: flex;
@@ -2491,7 +2510,7 @@ td strong {
 
 .selection-plus-button:hover {
   transform: scale(1.1);
-  box-shadow: 0 6px 16px rgba(59, 130, 246, 0.5);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
 }
 
 /* Comment Popover */

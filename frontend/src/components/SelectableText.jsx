@@ -69,7 +69,9 @@ export default function SelectableText({ children, sectionName, onAddComment, co
         return () => document.removeEventListener('mousedown', handleClickOutside)
     }, [showPopover])
 
-    const handlePlusClick = () => {
+    const handlePlusClick = (e) => {
+        e.preventDefault()
+        e.stopPropagation()
         setShowPopover(true)
     }
 
@@ -121,7 +123,7 @@ export default function SelectableText({ children, sectionName, onAddComment, co
                         left: buttonPosition.left,
                         transform: 'translateX(-50%)'
                     }}
-                    onClick={handlePlusClick}
+                    onMouseDown={handlePlusClick}
                     title="Add comment"
                 >
                     +
