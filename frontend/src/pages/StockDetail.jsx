@@ -38,6 +38,29 @@ export default function StockDetail({ watchlist, toggleWatchlist }) {
   const [materialEventsData, setMaterialEventsData] = useState(null)
   const [loadingMaterialEvents, setLoadingMaterialEvents] = useState(false)
 
+  // Comments state for inline commenting feature
+  const [comments, setComments] = useState([])
+  const [isReviewingComments, setIsReviewingComments] = useState(false)
+
+  // Handler to add a new comment
+  const handleAddComment = (comment) => {
+    setComments(prev => [...prev, { ...comment, id: Date.now() }])
+  }
+
+  // Handler to clear all comments
+  const handleClearComments = () => {
+    setComments([])
+  }
+
+  // Handler to review all comments (sends to chat)
+  const handleReviewComments = async (message) => {
+    setIsReviewingComments(true)
+    console.log('Review message:', message)
+    setTimeout(() => {
+      setComments([])
+      setIsReviewingComments(false)
+    }, 1000)
+  }
 
 
   // Load stock data
@@ -379,6 +402,11 @@ export default function StockDetail({ watchlist, toggleWatchlist }) {
               loadingFilings={loadingFilings}
               sectionsData={sectionsData}
               loadingSections={loadingSections}
+              comments={comments}
+              onAddComment={handleAddComment}
+              onClearComments={handleClearComments}
+              onReviewComments={handleReviewComments}
+              isReviewingComments={isReviewingComments}
             />
           )}
 

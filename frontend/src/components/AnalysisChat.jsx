@@ -1,7 +1,7 @@
 // ABOUTME: Unified component displaying analysis as first message in chat-style conversation
 // ABOUTME: Creates seamless flow from analysis to discussion like ChatGPT/Claude
 
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, forwardRef, useImperativeHandle } from 'react'
 import ReactMarkdown from 'react-markdown'
 import ModelSelector from './ModelSelector'
 
@@ -38,7 +38,7 @@ function SourceCitation({ sources }) {
   )
 }
 
-export default function AnalysisChat({ symbol, stockName }) {
+const AnalysisChat = forwardRef(function AnalysisChat({ symbol, stockName, chatOnly = false }, ref) {
   // Analysis state
   const [analysis, setAnalysis] = useState(null)
   const [analysisLoading, setAnalysisLoading] = useState(true)
@@ -61,6 +61,11 @@ export default function AnalysisChat({ symbol, stockName }) {
   const messagesEndRef = useRef(null)
   const messagesContainerRef = useRef(null)
 
+  // Expose sendMessage to parent via ref for batch review
+  useImperativeHandle(ref, () => ({
+    sendMessage: (message, options) => sendMessage(message, options)
+  }))
+
   // Track scroll position to show/hide scroll indicator
   const handleScroll = () => {
     const container = messagesContainerRef.current
@@ -77,6 +82,14 @@ export default function AnalysisChat({ symbol, stockName }) {
   useEffect(() => {
     handleScroll()
   }, [analysis, messages, analysisLoading])
+
+  // Auto-scroll to bottom when messages change
+  useEffect(() => {
+    if (messages.length > 0 || streamingMessage) {
+      // Scroll the messagesEndRef element into view within the container
+      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+    }
+  }, [messages, streamingMessage])
 
   // Fetch analysis
   const fetchAnalysis = async (forceRefresh = false, signal = null, onlyCached = false) => {
@@ -161,12 +174,16 @@ export default function AnalysisChat({ symbol, stockName }) {
     loadConversationHistory()
   }, [symbol])
 
-  // Auto-fetch analysis on mount (cache only)
+  // Auto-fetch analysis on mount (cache only) - skip in chatOnly mode
   useEffect(() => {
+    if (chatOnly) {
+      setAnalysisLoading(false)
+      return
+    }
     const controller = new AbortController()
     fetchAnalysis(false, controller.signal, true)
     return () => controller.abort()
-  }, [symbol, selectedModel])
+  }, [symbol, selectedModel, chatOnly])
 
   const formatDate = (isoString) => {
     if (!isoString) return ''
@@ -188,12 +205,15 @@ export default function AnalysisChat({ symbol, stockName }) {
     fetchAnalysis(false)
   }
 
-  const sendMessage = async (messageText = null) => {
+  const sendMessage = async (messageText = null, options = {}) => {
     const userMessage = (messageText || inputMessage).trim()
     if (!userMessage || chatLoading) return
 
     setInputMessage('')
-    setMessages(prev => [...prev, { role: 'user', content: userMessage }])
+    // Only show user message bubble if not hidden (for comment reviews)
+    if (!options.hideUserMessage) {
+      setMessages(prev => [...prev, { role: 'user', content: userMessage }])
+    }
     setChatLoading(true)
     setStreamingMessage('')
     setStreamingSources([])
@@ -221,7 +241,44 @@ export default function AnalysisChat({ symbol, stockName }) {
 
       while (true) {
         const { done, value } = await reader.read()
-        if (done) break
+        if (done) {
+          // Process any remaining data in buffer when stream ends
+          if (buffer.trim()) {
+            const remainingLines = buffer.split('\n')
+            for (const line of remainingLines) {
+              if (line.startsWith('data: ')) {
+                try {
+                  const data = JSON.parse(line.slice(6))
+                  if (data.type === 'done') {
+                    setMessages(prev => [...prev, {
+                      role: 'assistant',
+                      content: fullMessage,
+                      sources: sources,
+                      message_id: data.data.message_id
+                    }])
+                    setStreamingMessage('')
+                    setStreamingSources([])
+                    setChatLoading(false)
+                  }
+                } catch (e) {
+                  console.error('Error parsing final buffer:', e)
+                }
+              }
+            }
+          }
+          // Ensure we finalize if we have a message but never got 'done'
+          if (fullMessage && chatLoading) {
+            setMessages(prev => [...prev, {
+              role: 'assistant',
+              content: fullMessage,
+              sources: sources
+            }])
+            setStreamingMessage('')
+            setStreamingSources([])
+            setChatLoading(false)
+          }
+          break
+        }
 
         buffer += decoder.decode(value, { stream: true })
         const lines = buffer.split('\n')
@@ -289,68 +346,72 @@ export default function AnalysisChat({ symbol, stockName }) {
         ref={messagesContainerRef}
         onScroll={handleScroll}
       >
-        {/* Analysis as first message */}
-        {analysisLoading ? (
-          <div className="chat-message assistant analysis-message">
-            <div className="chat-message-content">
-              <div className="chat-loading">
-                <span className="typing-indicator">●</span>
-                <span className="typing-indicator">●</span>
-                <span className="typing-indicator">●</span>
+        {/* Analysis as first message - hidden in chatOnly mode */}
+        {!chatOnly && (
+          <>
+            {analysisLoading ? (
+              <div className="chat-message assistant analysis-message">
+                <div className="chat-message-content">
+                  <div className="chat-loading">
+                    <span className="typing-indicator">●</span>
+                    <span className="typing-indicator">●</span>
+                    <span className="typing-indicator">●</span>
+                  </div>
+                  <p style={{ marginTop: '0.5rem', opacity: 0.7 }}>Loading analysis...</p>
+                </div>
               </div>
-              <p style={{ marginTop: '0.5rem', opacity: 0.7 }}>Loading analysis...</p>
-            </div>
-          </div>
-        ) : analysisError ? (
-          <div className="chat-message assistant analysis-message">
-            <div className="chat-message-content">
-              <p>Failed to load analysis: {analysisError}</p>
-              <button onClick={() => fetchAnalysis(false, null, true)} className="retry-button">
-                Retry
-              </button>
-            </div>
-          </div>
-        ) : !analysis ? (
-          <div className="chat-message assistant analysis-message">
-            <div className="chat-message-content">
-              <p>No analysis generated yet for {stockName}.</p>
-              <div style={{ display: 'flex', flexDirection: 'row', gap: '1rem', alignItems: 'center', marginTop: '1rem' }}>
-                <ModelSelector
-                  selectedModel={selectedModel}
-                  onModelChange={setSelectedModel}
-                  storageKey="lynchAnalysisModel"
-                />
-                <button onClick={handleGenerate} className="generate-button">
-                  ✨ Generate
-                </button>
+            ) : analysisError ? (
+              <div className="chat-message assistant analysis-message">
+                <div className="chat-message-content">
+                  <p>Failed to load analysis: {analysisError}</p>
+                  <button onClick={() => fetchAnalysis(false, null, true)} className="retry-button">
+                    Retry
+                  </button>
+                </div>
               </div>
-            </div>
-          </div>
-        ) : (
-          <div className="chat-message assistant analysis-message">
-            <div className="analysis-metadata-bar">
-              <span className="analysis-metadata">
-                {cached ? '📦 Cached' : '✨ Freshly Generated'} • Generated {formatDate(generatedAt)}
-              </span>
-              <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
-                <ModelSelector
-                  selectedModel={selectedModel}
-                  onModelChange={setSelectedModel}
-                  storageKey="lynchAnalysisModel"
-                />
-                <button
-                  onClick={handleRefresh}
-                  disabled={refreshing}
-                  className="refresh-button-small"
-                >
-                  {refreshing ? '...' : '🔄'}
-                </button>
+            ) : !analysis ? (
+              <div className="chat-message assistant analysis-message">
+                <div className="chat-message-content">
+                  <p>No analysis generated yet for {stockName}.</p>
+                  <div style={{ display: 'flex', flexDirection: 'row', gap: '1rem', alignItems: 'center', marginTop: '1rem' }}>
+                    <ModelSelector
+                      selectedModel={selectedModel}
+                      onModelChange={setSelectedModel}
+                      storageKey="lynchAnalysisModel"
+                    />
+                    <button onClick={handleGenerate} className="generate-button">
+                      ✨ Generate
+                    </button>
+                  </div>
+                </div>
               </div>
-            </div>
-            <div className="chat-message-content markdown-content">
-              <ReactMarkdown>{analysis}</ReactMarkdown>
-            </div>
-          </div>
+            ) : (
+              <div className="chat-message assistant analysis-message">
+                <div className="analysis-metadata-bar">
+                  <span className="analysis-metadata">
+                    {cached ? '📦 Cached' : '✨ Freshly Generated'} • Generated {formatDate(generatedAt)}
+                  </span>
+                  <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+                    <ModelSelector
+                      selectedModel={selectedModel}
+                      onModelChange={setSelectedModel}
+                      storageKey="lynchAnalysisModel"
+                    />
+                    <button
+                      onClick={handleRefresh}
+                      disabled={refreshing}
+                      className="refresh-button-small"
+                    >
+                      {refreshing ? '...' : '🔄'}
+                    </button>
+                  </div>
+                </div>
+                <div className="chat-message-content markdown-content">
+                  <ReactMarkdown>{analysis}</ReactMarkdown>
+                </div>
+              </div>
+            )}
+          </>
         )}
 
         {/* Loading history indicator */}
@@ -430,3 +491,6 @@ export default function AnalysisChat({ symbol, stockName }) {
     </div>
   )
 }
+)
+
+export default AnalysisChat

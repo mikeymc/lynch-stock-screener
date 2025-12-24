@@ -126,6 +126,12 @@ export default function StockCharts({ historyData, loading, symbol }) {
       }
     },
     scales: {
+      x: {
+        ticks: {
+          maxRotation: 45,
+          minRotation: 45
+        }
+      },
       y: {
         title: {
           display: true,
@@ -298,18 +304,21 @@ export default function StockCharts({ historyData, loading, symbol }) {
                       ...createChartOptions('Dividend Yield', 'Yield (%)').scales,
                       x: {
                         type: 'category',
+                        grid: {
+                          display: false
+                        },
                         ticks: {
                           callback: function (value, index, values) {
                             const label = this.getLabelForValue(value);
-                            // Show only year labels for January entries
-                            if (label && label.includes('-01-')) {
+                            // Show only year labels for first week of January
+                            if (label && label.includes('-01-0')) {
                               return label.substring(0, 4);
                             }
                             return null;
                           },
-                          maxRotation: 0,
-                          autoSkip: true,
-                          maxTicksLimit: 12
+                          maxRotation: 45,
+                          minRotation: 45,
+                          autoSkip: false
                         }
                       }
                     }
@@ -358,22 +367,25 @@ export default function StockCharts({ historyData, loading, symbol }) {
                       ...createChartOptions('Stock Price', 'Price ($)').scales,
                       x: {
                         type: 'category',
+                        grid: {
+                          display: false
+                        },
                         ticks: {
                           // Show only year labels, not every week
                           callback: function (value, index, values) {
                             const label = this.getLabelForValue(value);
-                            // For weekly data, only show label if it's January (first week of year)
+                            // For weekly data, only show label if it's first week of January
                             if (historyData.weekly_prices?.dates?.length > 0) {
-                              if (label && label.includes('-01-')) {
+                              if (label && label.includes('-01-0')) {
                                 return label.substring(0, 4); // Return just the year
                               }
                               return null; // Hide other labels
                             }
                             return label; // For annual data, show as-is
                           },
-                          maxRotation: 0,
-                          autoSkip: true,
-                          maxTicksLimit: 12
+                          maxRotation: 45,
+                          minRotation: 45,
+                          autoSkip: false
                         }
                       }
                     }
@@ -409,20 +421,23 @@ export default function StockCharts({ historyData, loading, symbol }) {
                       ...createChartOptions('P/E Ratio', 'P/E Ratio').scales,
                       x: {
                         type: 'category',
+                        grid: {
+                          display: false
+                        },
                         ticks: {
                           callback: function (value, index, values) {
                             const label = this.getLabelForValue(value);
                             if (historyData.weekly_pe_ratios?.dates?.length > 0) {
-                              if (label && label.includes('-01-')) {
+                              if (label && label.includes('-01-0')) {
                                 return label.substring(0, 4);
                               }
                               return null;
                             }
                             return label;
                           },
-                          maxRotation: 0,
-                          autoSkip: true,
-                          maxTicksLimit: 12
+                          maxRotation: 45,
+                          minRotation: 45,
+                          autoSkip: false
                         }
                       }
                     }

@@ -3,8 +3,9 @@
 
 import { useState, useEffect } from 'react'
 import ReactMarkdown from 'react-markdown'
+import SelectableText from './SelectableText'
 
-export default function FilingSections({ sections, symbol, filingsData }) {
+export default function FilingSections({ sections, symbol, filingsData, comments = [], onAddComment }) {
   const [showFullText, setShowFullText] = useState(new Set())
   const [summaries, setSummaries] = useState({})
   const [loadingSummaries, setLoadingSummaries] = useState(false)
@@ -88,99 +89,102 @@ export default function FilingSections({ sections, symbol, filingsData }) {
     .map(name => [name, sections[name]])
 
   return (
-    <div className="sections-container">
-      <h3>Key Filing Sections</h3>
-      <div className="sections-list">
-        {orderedSections.map(([sectionName, sectionData]) => {
-          const isShowingFullText = showFullText.has(sectionName)
-          const title = sectionTitles[sectionName] || sectionName
-          const filingType = sectionData.filing_type
-          const filingDate = sectionData.filing_date
-          const content = sectionData.content
-          const summary = summaries[sectionName]?.summary || sectionData.summary
-          const filingUrl = getFilingUrl(filingType)
+    <div className="sections-list">
+      {orderedSections.map(([sectionName, sectionData]) => {
+        const isShowingFullText = showFullText.has(sectionName)
+        const title = sectionTitles[sectionName] || sectionName
+        const filingType = sectionData.filing_type
+        const filingDate = sectionData.filing_date
+        const content = sectionData.content
+        const summary = summaries[sectionName]?.summary || sectionData.summary
+        const filingUrl = getFilingUrl(filingType)
 
-          return (
-            <div key={sectionName} className="section-item">
-              <div className="section-header-simple">
-                <span className="section-title">{title}</span>
-                {filingUrl ? (
-                  <a
-                    href={filingUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="section-metadata-link"
-                    onClick={(e) => e.stopPropagation()}
-                  >
-                    ({filingType} · {formatDate(filingDate)})
-                  </a>
-                ) : (
-                  <span className="section-metadata">({filingType} · {formatDate(filingDate)})</span>
-                )}
-              </div>
-              <div className="section-content">
-                {/* AI Summary */}
-                {!isShowingFullText && (
-                  <div className="section-summary">
-                    {loadingSummaries ? (
-                      <div className="summary-loading">
-                        <span className="loading-spinner"></span>
-                        <span>Generating summary...</span>
-                      </div>
-                    ) : summary ? (
-                      <>
+        return (
+          <div key={sectionName} className="section-item">
+            <div className="section-header-simple">
+              <span className="section-title">{title}</span>
+              {filingUrl ? (
+                <a
+                  href={filingUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="section-metadata-link"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  ({filingType} · {formatDate(filingDate)})
+                </a>
+              ) : (
+                <span className="section-metadata">({filingType} · {formatDate(filingDate)})</span>
+              )}
+            </div>
+            <div className="section-content">
+              {/* AI Summary */}
+              {!isShowingFullText && (
+                <div className="section-summary">
+                  {loadingSummaries ? (
+                    <div className="summary-loading">
+                      <span className="loading-spinner"></span>
+                      <span>Generating summary...</span>
+                    </div>
+                  ) : summary ? (
+                    <>
+                      <SelectableText
+                        sectionName={sectionName}
+                        onAddComment={onAddComment}
+                        comments={comments}
+                      >
                         <div className="summary-content">
                           <ReactMarkdown>{summary}</ReactMarkdown>
                         </div>
-                        <button
-                          className="view-fulltext-btn"
-                          onClick={() => toggleFullText(sectionName)}
-                        >
-                          View Full Text
-                        </button>
-                      </>
-                    ) : summaryError ? (
-                      <div className="summary-error">
-                        <p>Unable to generate summary</p>
-                        <button
-                          className="view-fulltext-btn"
-                          onClick={() => toggleFullText(sectionName)}
-                        >
-                          View Full Text
-                        </button>
-                      </div>
-                    ) : (
-                      <div className="summary-loading">
-                        <span className="loading-spinner"></span>
-                        <span>Loading...</span>
-                      </div>
-                    )}
-                  </div>
-                )}
-
-                {/* Full Text */}
-                {isShowingFullText && (
-                  <div className="section-fulltext">
-                    <button
-                      className="view-summary-btn"
-                      onClick={() => toggleFullText(sectionName)}
-                    >
-                      ← Back to Summary
-                    </button>
-                    <div className="fulltext-content">
-                      {content.split('\n').map((paragraph, idx) => {
-                        // Skip empty lines
-                        if (paragraph.trim() === '') return null
-                        return <p key={idx}>{paragraph}</p>
-                      })}
+                      </SelectableText>
+                      <button
+                        className="view-fulltext-btn"
+                        onClick={() => toggleFullText(sectionName)}
+                      >
+                        View Full Text
+                      </button>
+                    </>
+                  ) : summaryError ? (
+                    <div className="summary-error">
+                      <p>Unable to generate summary</p>
+                      <button
+                        className="view-fulltext-btn"
+                        onClick={() => toggleFullText(sectionName)}
+                      >
+                        View Full Text
+                      </button>
                     </div>
+                  ) : (
+                    <div className="summary-loading">
+                      <span className="loading-spinner"></span>
+                      <span>Loading...</span>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Full Text */}
+              {isShowingFullText && (
+                <div className="section-fulltext">
+                  <button
+                    className="view-summary-btn"
+                    onClick={() => toggleFullText(sectionName)}
+                  >
+                    ← Back to Summary
+                  </button>
+                  <div className="fulltext-content">
+                    {content.split('\n').map((paragraph, idx) => {
+                      // Skip empty lines
+                      if (paragraph.trim() === '') return null
+                      return <p key={idx}>{paragraph}</p>
+                    })}
                   </div>
-                )}
-              </div>
+                </div>
+              )}
             </div>
-          )
-        })}
-      </div>
+          </div>
+        )
+      })}
     </div>
   )
 }
