@@ -421,7 +421,7 @@ table {
 
 th {
   position: sticky;
-  top: 65px;
+  top: var(--controls-height);
   z-index: 50;
   background-color: #334155;
   padding: 1rem;
@@ -883,7 +883,9 @@ td strong {
 .reports-main-column {
   flex: 2;
   min-width: 0;
+  max-width: 100%;
   overflow-y: auto;
+  overflow-x: hidden;
   padding-right: 0.5rem;
   /* Add bottom padding for content to clear */
   padding-bottom: 2rem;
@@ -1558,7 +1560,7 @@ td strong {
 /* Sticky Header */
 .sticky-header {
   position: sticky;
-  top: 65px;
+  top: var(--controls-height);
   z-index: 100;
   background-color: #1a1a2e;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
@@ -1716,12 +1718,35 @@ td strong {
 
 /* DCF Analysis Styles */
 .dcf-container {
-  padding: 1rem;
+  width: 100%;
+  max-width: 100%;
+  overflow-x: hidden;
+}
+
+/* When DCF is inside the reports layout, constrain it */
+.reports-main-column .dcf-container {
+  box-sizing: border-box;
+}
+
+.reports-main-column .dcf-grid {
+  grid-template-columns: 280px 1fr;
+  max-width: 100%;
 }
 
 .dcf-grid {
   display: grid;
   grid-template-columns: 300px 1fr;
+  gap: 1.5rem;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.dcf-content {
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
   gap: 1.5rem;
 }
 
@@ -1730,12 +1755,43 @@ td strong {
   border-radius: 0.5rem;
   padding: 1.5rem;
   border: 1px solid #334155;
+  min-width: 0;
+  overflow: hidden;
+}
+
+/* Add spacing between dcf-container direct children */
+.dcf-container>.dcf-panel,
+.dcf-container>.dcf-grid {
+  margin-top: 1.5rem;
+}
+
+.dcf-container>*:first-child {
+  margin-top: 0;
 }
 
 .dcf-panel h3 {
   margin: 0 0 1.5rem 0;
   color: #f1f5f9;
   font-size: 1.1rem;
+}
+
+/* Override global table min-width for DCF panels */
+.dcf-panel table {
+  min-width: auto;
+  width: 100%;
+}
+
+.dcf-panel .table-container {
+  overflow-x: auto;
+  margin: 0;
+  padding: 0;
+  background: transparent;
+}
+
+/* Reset sticky header for DCF tables */
+.dcf-panel th {
+  position: static;
+  top: auto;
 }
 
 .assumption-group {

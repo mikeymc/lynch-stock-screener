@@ -1,6 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Line } from 'react-chartjs-2';
 import DCFAIRecommendations from './DCFAIRecommendations';
+import AnalysisChat from './AnalysisChat';
 import {
   Chart as ChartJS,
   CategoryScale,
@@ -51,6 +52,7 @@ const DCFAnalysis = ({ stockData, earningsHistory }) => {
   const [error, setError] = useState(null);
   const [historicalMetrics, setHistoricalMetrics] = useState(null);
   const [showSensitivity, setShowSensitivity] = useState(false);
+  const chatRef = useRef(null);
 
   // Update discount rate when WACC becomes available
   useEffect(() => {
@@ -373,289 +375,305 @@ const DCFAnalysis = ({ stockData, earningsHistory }) => {
   }
 
   return (
-    <div className="dcf-container">
-      {/* Historical FCF Chart */}
-      {historicalMetrics && getChartData() && (
-        <div className="dcf-panel dcf-historical-chart">
-          <div style={{ height: '250px' }}>
-            <Line data={getChartData()} options={chartOptions} />
-          </div>
-        </div>
-      )}
-
-      {/* AI Recommendations */}
-      <DCFAIRecommendations
-        symbol={stockData.symbol}
-        onApplyScenario={(scenario) => {
-          setAssumptions(prev => ({
-            ...prev,
-            growthRate: scenario.growthRate,
-            terminalGrowthRate: scenario.terminalGrowthRate,
-            discountRate: scenario.discountRate
-          }));
-          if (scenario.baseYearMethod) {
-            setBaseYearMethod(scenario.baseYearMethod);
-          }
-        }}
-      />
-
-      <div className="dcf-grid">
-        {/* Assumptions Panel */}
-        <div className="dcf-panel assumptions-panel">
-          <h3>Assumptions</h3>
-
-          {/* Base Year Selection */}
-          {historicalMetrics && (
-            <div className="assumption-group">
-              <div className="assumption-header">
-                <label>Base Year FCF</label>
-                <span className="assumption-value">
-                  ${(analysis.baseFCF / 1000000).toFixed(0)}M
-                </span>
-              </div>
-              <div className="base-year-selector">
-                <label className={baseYearMethod === 'latest' ? 'active' : ''}>
-                  <input
-                    type="radio"
-                    name="baseYear"
-                    value="latest"
-                    checked={baseYearMethod === 'latest'}
-                    onChange={(e) => setBaseYearMethod(e.target.value)}
-                  />
-                  Latest Year ({historicalMetrics.annualHistory[0].year})
-                </label>
-                {historicalMetrics.avg3 && (
-                  <label className={baseYearMethod === 'avg3' ? 'active' : ''}>
-                    <input
-                      type="radio"
-                      name="baseYear"
-                      value="avg3"
-                      checked={baseYearMethod === 'avg3'}
-                      onChange={(e) => setBaseYearMethod(e.target.value)}
-                    />
-                    3-Year Average
-                  </label>
-                )}
-                {historicalMetrics.avg5 && (
-                  <label className={baseYearMethod === 'avg5' ? 'active' : ''}>
-                    <input
-                      type="radio"
-                      name="baseYear"
-                      value="avg5"
-                      checked={baseYearMethod === 'avg5'}
-                      onChange={(e) => setBaseYearMethod(e.target.value)}
-                    />
-                    5-Year Average
-                  </label>
-                )}
+    <div className="reports-layout">
+      {/* Left Column - DCF Content (2/3) */}
+      <div className="reports-main-column">
+        <div className="dcf-container">
+          {/* Historical FCF Chart */}
+          {historicalMetrics && getChartData() && (
+            <div className="dcf-panel dcf-historical-chart">
+              <div style={{ height: '250px' }}>
+                <Line data={getChartData()} options={chartOptions} />
               </div>
             </div>
           )}
 
-          <div className="assumption-group">
-            <div className="assumption-header">
-              <label>Growth Rate (First 5 Years)</label>
-              <span className="assumption-value">{assumptions.growthRate}%</span>
-            </div>
-            <input
-              type="range"
-              min="-10"
-              max="30"
-              value={assumptions.growthRate}
-              onChange={(e) => handleAssumptionChange('growthRate', e.target.value)}
-              className="assumption-slider"
-            />
-            {historicalMetrics && (
-              <div className="historical-growth-rates">
-                <small>Historical FCF Growth: </small>
-                {historicalMetrics.cagr3 !== null && (
-                  <small>3yr: {historicalMetrics.cagr3.toFixed(1)}%</small>
+          {/* AI Recommendations */}
+          <DCFAIRecommendations
+            symbol={stockData.symbol}
+            onApplyScenario={(scenario) => {
+              setAssumptions(prev => ({
+                ...prev,
+                growthRate: scenario.growthRate,
+                terminalGrowthRate: scenario.terminalGrowthRate,
+                discountRate: scenario.discountRate
+              }));
+              if (scenario.baseYearMethod) {
+                setBaseYearMethod(scenario.baseYearMethod);
+              }
+            }}
+          />
+
+          <div className="dcf-grid">
+            {/* Assumptions Panel */}
+            <div className="dcf-panel assumptions-panel">
+              <h3>Assumptions</h3>
+
+              {/* Base Year Selection */}
+              {historicalMetrics && (
+                <div className="assumption-group">
+                  <div className="assumption-header">
+                    <label>Base Year FCF</label>
+                    <span className="assumption-value">
+                      ${(analysis.baseFCF / 1000000).toFixed(0)}M
+                    </span>
+                  </div>
+                  <div className="base-year-selector">
+                    <label className={baseYearMethod === 'latest' ? 'active' : ''}>
+                      <input
+                        type="radio"
+                        name="baseYear"
+                        value="latest"
+                        checked={baseYearMethod === 'latest'}
+                        onChange={(e) => setBaseYearMethod(e.target.value)}
+                      />
+                      Latest Year ({historicalMetrics.annualHistory[0].year})
+                    </label>
+                    {historicalMetrics.avg3 && (
+                      <label className={baseYearMethod === 'avg3' ? 'active' : ''}>
+                        <input
+                          type="radio"
+                          name="baseYear"
+                          value="avg3"
+                          checked={baseYearMethod === 'avg3'}
+                          onChange={(e) => setBaseYearMethod(e.target.value)}
+                        />
+                        3-Year Average
+                      </label>
+                    )}
+                    {historicalMetrics.avg5 && (
+                      <label className={baseYearMethod === 'avg5' ? 'active' : ''}>
+                        <input
+                          type="radio"
+                          name="baseYear"
+                          value="avg5"
+                          checked={baseYearMethod === 'avg5'}
+                          onChange={(e) => setBaseYearMethod(e.target.value)}
+                        />
+                        5-Year Average
+                      </label>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              <div className="assumption-group">
+                <div className="assumption-header">
+                  <label>Growth Rate (First 5 Years)</label>
+                  <span className="assumption-value">{assumptions.growthRate}%</span>
+                </div>
+                <input
+                  type="range"
+                  min="-10"
+                  max="30"
+                  value={assumptions.growthRate}
+                  onChange={(e) => handleAssumptionChange('growthRate', e.target.value)}
+                  className="assumption-slider"
+                />
+                {historicalMetrics && (
+                  <div className="historical-growth-rates">
+                    <small>Historical FCF Growth: </small>
+                    {historicalMetrics.cagr3 !== null && (
+                      <small>3yr: {historicalMetrics.cagr3.toFixed(1)}%</small>
+                    )}
+                    {historicalMetrics.cagr5 !== null && (
+                      <small> | 5yr: {historicalMetrics.cagr5.toFixed(1)}%</small>
+                    )}
+                    {historicalMetrics.cagr10 !== null && (
+                      <small> | 10yr: {historicalMetrics.cagr10.toFixed(1)}%</small>
+                    )}
+                  </div>
                 )}
-                {historicalMetrics.cagr5 !== null && (
-                  <small> | 5yr: {historicalMetrics.cagr5.toFixed(1)}%</small>
+              </div>
+
+              <div className="assumption-group">
+                <div className="assumption-header">
+                  <label>Discount Rate (WACC)</label>
+                  <span className="assumption-value">{assumptions.discountRate}%</span>
+                </div>
+                <input
+                  type="range"
+                  min="5"
+                  max="20"
+                  value={assumptions.discountRate}
+                  onChange={(e) => handleAssumptionChange('discountRate', e.target.value)}
+                  className="assumption-slider"
+                />
+                {earningsHistory?.wacc && (
+                  <div className="wacc-breakdown">
+                    <small>
+                      <strong>Calculated WACC: {earningsHistory.wacc.wacc}%</strong>
+                      <span className="info-icon" title="Weighted Average Cost of Capital">ⓘ</span>
+                    </small>
+                    <small>
+                      • Cost of Equity: {earningsHistory.wacc.cost_of_equity}% (Beta: {earningsHistory.wacc.beta})
+                    </small>
+                    <small>
+                      • After-Tax Cost of Debt: {earningsHistory.wacc.after_tax_cost_of_debt}%
+                    </small>
+                    <small>
+                      • Capital Structure: {earningsHistory.wacc.equity_weight}% Equity / {earningsHistory.wacc.debt_weight}% Debt
+                    </small>
+                  </div>
                 )}
-                {historicalMetrics.cagr10 !== null && (
-                  <small> | 10yr: {historicalMetrics.cagr10.toFixed(1)}%</small>
-                )}
               </div>
-            )}
-          </div>
 
-          <div className="assumption-group">
-            <div className="assumption-header">
-              <label>Discount Rate (WACC)</label>
-              <span className="assumption-value">{assumptions.discountRate}%</span>
-            </div>
-            <input
-              type="range"
-              min="5"
-              max="20"
-              value={assumptions.discountRate}
-              onChange={(e) => handleAssumptionChange('discountRate', e.target.value)}
-              className="assumption-slider"
-            />
-            {earningsHistory?.wacc && (
-              <div className="wacc-breakdown">
-                <small>
-                  <strong>Calculated WACC: {earningsHistory.wacc.wacc}%</strong>
-                  <span className="info-icon" title="Weighted Average Cost of Capital">ⓘ</span>
-                </small>
-                <small>
-                  • Cost of Equity: {earningsHistory.wacc.cost_of_equity}% (Beta: {earningsHistory.wacc.beta})
-                </small>
-                <small>
-                  • After-Tax Cost of Debt: {earningsHistory.wacc.after_tax_cost_of_debt}%
-                </small>
-                <small>
-                  • Capital Structure: {earningsHistory.wacc.equity_weight}% Equity / {earningsHistory.wacc.debt_weight}% Debt
-                </small>
-              </div>
-            )}
-          </div>
-
-          <div className="assumption-group">
-            <div className="assumption-header">
-              <label>Terminal Growth Rate</label>
-              <span className="assumption-value">{assumptions.terminalGrowthRate}%</span>
-            </div>
-            <input
-              type="range"
-              min="0"
-              max="10"
-              step="0.1"
-              value={assumptions.terminalGrowthRate}
-              onChange={(e) => handleAssumptionChange('terminalGrowthRate', e.target.value)}
-              className="assumption-slider"
-            />
-          </div>
-        </div>
-
-        {/* Results Panel */}
-        <div className="dcf-content">
-          <div className="dcf-panel results-panel">
-            <h3>Valuation Results</h3>
-            <div className="results-grid">
-              <div className="result-card">
-                <span className="result-label">Intrinsic Value</span>
-                <span className="result-value highlight">${analysis.intrinsicValuePerShare.toFixed(2)}</span>
-              </div>
-              <div className="result-card">
-                <span className="result-label">Current Price</span>
-                <span className="result-value">${stockData.price.toFixed(2)}</span>
-              </div>
-              <div className={`result-card ${analysis.upside > 0 ? 'positive' : 'negative'}`}>
-                <span className="result-label">Upside / Downside</span>
-                <span className="result-value">
-                  {analysis.upside > 0 ? '+' : ''}{analysis.upside.toFixed(2)}%
-                </span>
+              <div className="assumption-group">
+                <div className="assumption-header">
+                  <label>Terminal Growth Rate</label>
+                  <span className="assumption-value">{assumptions.terminalGrowthRate}%</span>
+                </div>
+                <input
+                  type="range"
+                  min="0"
+                  max="10"
+                  step="0.1"
+                  value={assumptions.terminalGrowthRate}
+                  onChange={(e) => handleAssumptionChange('terminalGrowthRate', e.target.value)}
+                  className="assumption-slider"
+                />
               </div>
             </div>
-          </div>
 
-          <div className="dcf-panel projections-panel">
-            <h3>Projections</h3>
-            <div className="table-container">
-              <table>
-                <thead>
-                  <tr>
-                    <th>Year</th>
-                    <th align="right">Projected FCF</th>
-                    <th align="right">Discount Factor</th>
-                    <th align="right">Present Value</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {analysis.projections.map((row) => (
-                    <tr key={row.year}>
-                      <td>{row.year}</td>
-                      <td align="right">${(row.fcf / 1000000).toFixed(0)}M</td>
-                      <td align="right">{row.discountFactor.toFixed(3)}</td>
-                      <td align="right">${(row.presentValue / 1000000).toFixed(0)}M</td>
-                    </tr>
-                  ))}
-                  <tr className="summary-row">
-                    <td colSpan={3} align="right"><strong>Sum of PV of FCF</strong></td>
-                    <td align="right"><strong>${(analysis.totalPresentValue / 1000000).toFixed(0)}M</strong></td>
-                  </tr>
-                  <tr className="summary-row">
-                    <td colSpan={3} align="right">
-                      <strong>Terminal Value PV</strong>
-                      <span className="info-icon" title={`Terminal Value: $${(analysis.terminalValue / 1000000).toFixed(0)}M`}>ⓘ</span>
-                    </td>
-                    <td align="right"><strong>${(analysis.terminalValuePresent / 1000000).toFixed(0)}M</strong></td>
-                  </tr>
-                  <tr className="total-row">
-                    <td colSpan={3} align="right"><strong>Total Equity Value</strong></td>
-                    <td align="right"><strong>${(analysis.totalEquityValue / 1000000).toFixed(0)}M</strong></td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
-          </div>
-        </div>
-      </div>
+            {/* Results Panel */}
+            <div className="dcf-content">
+              <div className="dcf-panel results-panel">
+                <h3>Valuation Results</h3>
+                <div className="results-grid">
+                  <div className="result-card">
+                    <span className="result-label">Intrinsic Value</span>
+                    <span className="result-value highlight">${analysis.intrinsicValuePerShare.toFixed(2)}</span>
+                  </div>
+                  <div className="result-card">
+                    <span className="result-label">Current Price</span>
+                    <span className="result-value">${stockData.price.toFixed(2)}</span>
+                  </div>
+                  <div className={`result-card ${analysis.upside > 0 ? 'positive' : 'negative'}`}>
+                    <span className="result-label">Upside / Downside</span>
+                    <span className="result-value">
+                      {analysis.upside > 0 ? '+' : ''}{analysis.upside.toFixed(2)}%
+                    </span>
+                  </div>
+                </div>
+              </div>
 
-      {/* Sensitivity Analysis */}
-      <div className="dcf-panel">
-        <div
-          className="sensitivity-toggle"
-          onClick={() => setShowSensitivity(!showSensitivity)}
-        >
-          <span>{showSensitivity ? '▼' : '▶'}</span>
-          <h3>Sensitivity Analysis</h3>
-        </div>
-        {showSensitivity && (() => {
-          const sensitivity = calculateSensitivity();
-          if (!sensitivity) return null;
-
-          return (
-            <div className="sensitivity-content">
-              <p style={{ color: '#94a3b8', fontSize: '0.9rem', marginBottom: '1rem' }}>
-                Intrinsic value at different growth and discount rates (current assumption highlighted)
-              </p>
-              <div className="table-container">
-                <table className="sensitivity-table">
-                  <thead>
-                    <tr>
-                      <th>Discount Rate ↓ / Growth Rate →</th>
-                      {sensitivity.growthRates.map(rate => (
-                        <th key={rate} align="center">{rate}%</th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {sensitivity.results.map(row => (
-                      <tr key={row.discountRate}>
-                        <td><strong>{row.discountRate}%</strong></td>
-                        {row.values.map((cell, idx) => {
-                          const currentPrice = stockData.price;
-                          const percentDiff = ((cell.value - currentPrice) / currentPrice) * 100;
-                          let colorClass = '';
-                          if (percentDiff > 20) colorClass = 'sens-high';
-                          else if (percentDiff > 0) colorClass = 'sens-medium';
-                          else if (percentDiff > -20) colorClass = 'sens-low';
-                          else colorClass = 'sens-very-low';
-
-                          return (
-                            <td
-                              key={idx}
-                              align="center"
-                              className={`${colorClass} ${cell.isCurrent ? 'sens-current' : ''}`}
-                            >
-                              ${cell.value.toFixed(0)}
-                            </td>
-                          );
-                        })}
+              <div className="dcf-panel projections-panel">
+                <h3>Projections</h3>
+                <div className="table-container">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Year</th>
+                        <th align="right">Projected FCF</th>
+                        <th align="right">Discount Factor</th>
+                        <th align="right">Present Value</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
+                    </thead>
+                    <tbody>
+                      {analysis.projections.map((row) => (
+                        <tr key={row.year}>
+                          <td>{row.year}</td>
+                          <td align="right">${(row.fcf / 1000000).toFixed(0)}M</td>
+                          <td align="right">{row.discountFactor.toFixed(3)}</td>
+                          <td align="right">${(row.presentValue / 1000000).toFixed(0)}M</td>
+                        </tr>
+                      ))}
+                      <tr className="summary-row">
+                        <td colSpan={3} align="right"><strong>Sum of PV of FCF</strong></td>
+                        <td align="right"><strong>${(analysis.totalPresentValue / 1000000).toFixed(0)}M</strong></td>
+                      </tr>
+                      <tr className="summary-row">
+                        <td colSpan={3} align="right">
+                          <strong>Terminal Value PV</strong>
+                          <span className="info-icon" title={`Terminal Value: $${(analysis.terminalValue / 1000000).toFixed(0)}M`}>ⓘ</span>
+                        </td>
+                        <td align="right"><strong>${(analysis.terminalValuePresent / 1000000).toFixed(0)}M</strong></td>
+                      </tr>
+                      <tr className="total-row">
+                        <td colSpan={3} align="right"><strong>Total Equity Value</strong></td>
+                        <td align="right"><strong>${(analysis.totalEquityValue / 1000000).toFixed(0)}M</strong></td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
               </div>
             </div>
-          );
-        })()}
+          </div>
+
+          {/* Sensitivity Analysis */}
+          <div className="dcf-panel">
+            <div
+              className="sensitivity-toggle"
+              onClick={() => setShowSensitivity(!showSensitivity)}
+            >
+              <span>{showSensitivity ? '▼' : '▶'}</span>
+              <h3>Sensitivity Analysis</h3>
+            </div>
+            {showSensitivity && (() => {
+              const sensitivity = calculateSensitivity();
+              if (!sensitivity) return null;
+
+              return (
+                <div className="sensitivity-content">
+                  <p style={{ color: '#94a3b8', fontSize: '0.9rem', marginBottom: '1rem' }}>
+                    Intrinsic value at different growth and discount rates (current assumption highlighted)
+                  </p>
+                  <div className="table-container">
+                    <table className="sensitivity-table">
+                      <thead>
+                        <tr>
+                          <th>Discount Rate ↓ / Growth Rate →</th>
+                          {sensitivity.growthRates.map(rate => (
+                            <th key={rate} align="center">{rate}%</th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {sensitivity.results.map(row => (
+                          <tr key={row.discountRate}>
+                            <td><strong>{row.discountRate}%</strong></td>
+                            {row.values.map((cell, idx) => {
+                              const currentPrice = stockData.price;
+                              const percentDiff = ((cell.value - currentPrice) / currentPrice) * 100;
+                              let colorClass = '';
+                              if (percentDiff > 20) colorClass = 'sens-high';
+                              else if (percentDiff > 0) colorClass = 'sens-medium';
+                              else if (percentDiff > -20) colorClass = 'sens-low';
+                              else colorClass = 'sens-very-low';
+
+                              return (
+                                <td
+                                  key={idx}
+                                  align="center"
+                                  className={`${colorClass} ${cell.isCurrent ? 'sens-current' : ''}`}
+                                >
+                                  ${cell.value.toFixed(0)}
+                                </td>
+                              );
+                            })}
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              );
+            })()}
+          </div>
+
+        </div>
       </div>
 
+      {/* Right Column - Chat Sidebar (1/3) */}
+      <div className="reports-chat-sidebar">
+        <div className="chat-sidebar-header">
+          <h3>💬 Ask Questions</h3>
+          <p>Ask about this DCF analysis</p>
+        </div>
+        <div className="chat-sidebar-content">
+          <AnalysisChat ref={chatRef} symbol={stockData.symbol} chatOnly={true} />
+        </div>
+      </div>
     </div>
   );
 };
