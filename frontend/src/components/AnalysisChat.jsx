@@ -478,7 +478,7 @@ const AnalysisChat = forwardRef(function AnalysisChat({ symbol, stockName, chatO
             value={inputMessage}
             onChange={(e) => setInputMessage(e.target.value)}
             onKeyPress={handleKeyPress}
-            placeholder="Ask a follow-up question..."
+            placeholder="Ask anything"
             rows="2"
             disabled={chatLoading}
           />
