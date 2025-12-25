@@ -472,7 +472,7 @@ th {
   top: var(--controls-height);
   z-index: 50;
   background-color: #334155;
-  padding: 1rem;
+  padding: 0.4rem 1rem;
   text-align: left;
   font-weight: 600;
   color: #f1f5f9;
