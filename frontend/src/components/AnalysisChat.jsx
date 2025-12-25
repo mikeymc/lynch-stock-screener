@@ -1,5 +1,5 @@
-// ABOUTME: Unified component displaying analysis as first message in chat-style conversation
-// ABOUTME: Creates seamless flow from analysis to discussion like ChatGPT/Claude
+// ABOUTME: Brief page component with AI-generated stock analysis and chat interface
+// ABOUTME: Two-column layout in full mode (analysis left, chat right); chatOnly mode for sidebar use
 
 import { useState, useEffect, useRef, forwardRef, useImperativeHandle } from 'react'
 import ReactMarkdown from 'react-markdown'
@@ -342,81 +342,78 @@ const AnalysisChat = forwardRef(function AnalysisChat({ symbol, stockName, chatO
     }
   }
 
-  return (
+  // Analysis content component (for left column in two-column mode)
+  const AnalysisContent = () => (
+    <div className="brief-analysis-container">
+      <div className="section-item">
+        <div className="section-content">
+          {analysisLoading ? (
+            <div className="section-summary">
+              <div className="summary-loading">
+                <span className="loading-spinner"></span>
+                <span>Loading analysis...</span>
+              </div>
+            </div>
+          ) : analysisError ? (
+            <div className="section-summary">
+              <p>Failed to load analysis: {analysisError}</p>
+              <button onClick={() => fetchAnalysis(false, null, true)} className="retry-button">
+                Retry
+              </button>
+            </div>
+          ) : !analysis ? (
+            <div className="section-summary">
+              <p>No brief generated yet for {stockName}.</p>
+              <div style={{ display: 'flex', flexDirection: 'row', gap: '1rem', alignItems: 'center', marginTop: '1rem' }}>
+                <ModelSelector
+                  selectedModel={selectedModel}
+                  onModelChange={setSelectedModel}
+                  storageKey="lynchAnalysisModel"
+                />
+                <button onClick={handleGenerate} className="generate-button">
+                  ✨ Generate
+                </button>
+              </div>
+            </div>
+          ) : (
+            <>
+              <div className="brief-controls">
+                <span className="brief-metadata">
+                  {cached ? '📦 Cached' : '✨ Fresh'} · {formatDate(generatedAt)}
+                </span>
+                <ModelSelector
+                  selectedModel={selectedModel}
+                  onModelChange={setSelectedModel}
+                  storageKey="lynchAnalysisModel"
+                />
+                <button
+                  onClick={handleRefresh}
+                  disabled={refreshing}
+                  className="generate-button"
+                >
+                  {refreshing ? '...' : '🔄 Regenerate'}
+                </button>
+              </div>
+              <div className="section-summary">
+                <div className="summary-content">
+                  <ReactMarkdown>{analysis}</ReactMarkdown>
+                </div>
+              </div>
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+
+  // Chat component (for right column or standalone)
+  const ChatSection = () => (
     <div className="unified-chat-container">
       <div
         className="unified-chat-messages"
         ref={messagesContainerRef}
         onScroll={handleScroll}
       >
-        {/* Analysis as first message - hidden in chatOnly mode */}
-        {!chatOnly && (
-          <>
-            {analysisLoading ? (
-              <div className="chat-message assistant analysis-message">
-                <div className="chat-message-content">
-                  <div className="chat-loading">
-                    <span className="typing-indicator">●</span>
-                    <span className="typing-indicator">●</span>
-                    <span className="typing-indicator">●</span>
-                  </div>
-                  <p style={{ marginTop: '0.5rem', opacity: 0.7 }}>Loading analysis...</p>
-                </div>
-              </div>
-            ) : analysisError ? (
-              <div className="chat-message assistant analysis-message">
-                <div className="chat-message-content">
-                  <p>Failed to load analysis: {analysisError}</p>
-                  <button onClick={() => fetchAnalysis(false, null, true)} className="retry-button">
-                    Retry
-                  </button>
-                </div>
-              </div>
-            ) : !analysis ? (
-              <div className="chat-message assistant analysis-message">
-                <div className="chat-message-content">
-                  <p>No brief generated yet for {stockName}.</p>
-                  <div style={{ display: 'flex', flexDirection: 'row', gap: '1rem', alignItems: 'center', marginTop: '1rem' }}>
-                    <ModelSelector
-                      selectedModel={selectedModel}
-                      onModelChange={setSelectedModel}
-                      storageKey="lynchAnalysisModel"
-                    />
-                    <button onClick={handleGenerate} className="generate-button">
-                      ✨ Generate
-                    </button>
-                  </div>
-                </div>
-              </div>
-            ) : (
-              <div className="chat-message assistant analysis-message">
-                <div className="analysis-metadata-bar">
-                  <span className="analysis-metadata">
-                    {cached ? '📦 Cached' : '✨ Freshly Generated'} • Generated {formatDate(generatedAt)}
-                  </span>
-                  <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
-                    <ModelSelector
-                      selectedModel={selectedModel}
-                      onModelChange={setSelectedModel}
-                      storageKey="lynchAnalysisModel"
-                    />
-                    <button
-                      onClick={handleRefresh}
-                      disabled={refreshing}
-                      className="refresh-button-small"
-                    >
-                      {refreshing ? '...' : '🔄'}
-                    </button>
-                  </div>
-                </div>
-                <div className="chat-message-content markdown-content">
-                  <ReactMarkdown>{analysis}</ReactMarkdown>
-                </div>
-              </div>
-            )}
-          </>
-        )}
-
         {/* Loading history indicator */}
         {loadingHistory && (
           <div className="chat-loading-history">
@@ -489,6 +486,28 @@ const AnalysisChat = forwardRef(function AnalysisChat({ symbol, stockName, chatO
           >
             {chatLoading ? '...' : 'Send'}
           </button>
+        </div>
+      </div>
+    </div>
+  )
+
+  // In chatOnly mode, just render the chat
+  if (chatOnly) {
+    return <ChatSection />
+  }
+
+  // In full mode, use two-column layout
+  return (
+    <div className="reports-layout">
+      {/* Left Column - Analysis Content (2/3) */}
+      <div className="reports-main-column">
+        <AnalysisContent />
+      </div>
+
+      {/* Right Column - Chat Sidebar (1/3) */}
+      <div className="reports-chat-sidebar">
+        <div className="chat-sidebar-content">
+          <ChatSection />
         </div>
       </div>
     </div>

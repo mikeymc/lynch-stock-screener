@@ -50,9 +50,6 @@ const ModelSelector = ({ selectedModel, onModelChange, storageKey }) => {
 
   return (
     <div className="model-selector">
-      <label htmlFor={`model-select-${storageKey}`}>
-        AI Model:
-      </label>
       <select
         id={`model-select-${storageKey}`}
         value={selectedModel}

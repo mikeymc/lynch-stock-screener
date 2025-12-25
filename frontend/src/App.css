@@ -1117,6 +1117,20 @@ td strong {
   background-color: #1e293b;
 }
 
+/* Brief page controls */
+.brief-controls {
+  display: flex;
+  gap: 0.75rem;
+  align-items: center;
+  margin-bottom: 1rem;
+}
+
+.brief-metadata {
+  font-size: 0.875rem;
+  color: #94a3b8;
+  margin-right: auto;
+}
+
 /* AI Summary Styles */
 .section-summary {
   background: linear-gradient(135deg, rgba(59, 130, 246, 0.08) 0%, rgba(139, 92, 246, 0.08) 100%);
@@ -1160,6 +1174,20 @@ td strong {
 .section-summary .summary-content strong {
   color: #f1f5f9;
   font-weight: 600;
+}
+
+.section-summary .summary-content h2,
+.section-summary .summary-content h3,
+.section-summary .summary-content h4 {
+  margin-top: 1.5rem;
+  margin-bottom: 0.75rem;
+  color: #f1f5f9;
+}
+
+.section-summary .summary-content h2:first-child,
+.section-summary .summary-content h3:first-child,
+.section-summary .summary-content h4:first-child {
+  margin-top: 0;
 }
 
 /* Summary Loading State */
