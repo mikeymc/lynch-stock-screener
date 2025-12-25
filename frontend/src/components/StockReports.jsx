@@ -63,10 +63,6 @@ export default function StockReports({
 
       {/* Right Column - Chat Sidebar (1/3) */}
       <div className="reports-chat-sidebar">
-        <div className="chat-sidebar-header">
-          <h3>💬 Ask Questions</h3>
-          <p>Ask about the filings or select text to add comments</p>
-        </div>
         <div className="chat-sidebar-content">
           <AnalysisChat ref={chatRef} symbol={symbol} chatOnly={true} />
         </div>

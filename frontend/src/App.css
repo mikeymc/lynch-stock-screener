@@ -939,7 +939,7 @@ td strong {
 .reports-chat-sidebar {
   flex: 1;
   min-height: 0;
-  height: calc(100vh - 275px);
+  height: calc(100vh - 200px);
   display: flex;
   flex-direction: column;
   background-color: #1e293b;
