@@ -394,7 +394,7 @@ export default function StockDetail({ watchlist, toggleWatchlist }) {
           )}
 
           {activeTab === 'news' && (
-            <StockNews newsData={newsData} loading={loadingNews} />
+            <StockNews newsData={newsData} loading={loadingNews} symbol={stock.symbol} />
           )}
 
           {activeTab === 'events' && (
