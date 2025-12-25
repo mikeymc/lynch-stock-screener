@@ -856,128 +856,131 @@ function StockListView({
 
   return (
     <div className="app stock-list-view">
-      <div className="controls">
-        {isAdmin && (
-          <div className="flex gap-2">
-            {activeSessionId ? (
-              <button onClick={stopScreening} className="stop-button">
-                Stop Screening
-              </button>
-            ) : (
-              <button onClick={() => screenStocks(null)} disabled={loading}>
-                Screen All Stocks
-              </button>
-            )}
-          </div>
-        )}
-
-        <div className="filter-controls">
-          <label>Search: </label>
-          <div className="search-container">
-            <span className="search-icon">{searchLoading ? '⏳' : '🔍'}</span>
-            <input
-              type="text"
-              className="search-input"
-              value={searchQuery}
-              onChange={(e) => handleSearchChange(e.target.value)}
-              placeholder="Search by symbol or company name..."
-            />
-            {searchQuery && (
-              <button
-                className="clear-button"
-                onClick={() => handleSearchChange('')}
-                aria-label="Clear search"
-              >
-                ×
-              </button>
-            )}
-          </div>
-        </div>
-
-        <div className="filter-controls">
-          <label>Filter: </label>
-          <select value={filter} onChange={(e) => setFilter(e.target.value)}>
-            <option value="all">All</option>
-            <option value="watchlist">⭐ Watchlist</option>
-            {algorithm === 'classic' ? (
-              <>
-                <option value="PASS">Pass Only</option>
-                <option value="CLOSE">Close Only</option>
-                <option value="FAIL">Fail Only</option>
-              </>
-            ) : (
-              <>
-                <option value="STRONG_BUY">Excellent</option>
-                <option value="BUY">Good</option>
-                <option value="HOLD">Neutral</option>
-                <option value="CAUTION">Weak</option>
-                <option value="AVOID">Poor</option>
-              </>
-            )}
-          </select>
-        </div>
-
-        {summary && (
-          <div className="summary-stats">
-            <strong>Analyzed {summary.totalAnalyzed} stocks:</strong>
-            {algorithm === 'classic' ? (
-              <>
-                <span className="summary-stat pass">{summary.passCount || 0} PASS</span>
-                <span className="summary-stat close">{summary.closeCount || 0} CLOSE</span>
-                <span className="summary-stat fail">{summary.failCount || 0} FAIL</span>
-              </>
-            ) : (
-              <>
-                <span className="summary-stat strong-buy">{summary.strong_buy_count || 0} Excellent</span>
-                <span className="summary-stat buy">{summary.buy_count || 0} Good</span>
-                <span className="summary-stat hold">{summary.hold_count || 0} Neutral</span>
-                <span className="summary-stat caution">{summary.caution_count || 0} Weak</span>
-                <span className="summary-stat avoid">{summary.avoid_count || 0} Poor</span>
-              </>
-            )}
-          </div>
-        )}
-
-        <AlgorithmSelector
-          selectedAlgorithm={algorithm}
-          onAlgorithmChange={setAlgorithm}
-        />
-
-        <button
-          onClick={() => setShowAdvancedFilters(!showAdvancedFilters)}
-          className="filter-button"
-          title="Advanced Filters"
-        >
-          <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"></polygon>
-          </svg>
-          {getActiveFilterCount() > 0 && (
-            <span className="filter-badge">{getActiveFilterCount()}</span>
+      {/* Sticky zone - controls stick together */}
+      <div className="sticky-zone stock-list-sticky">
+        <div className="controls">
+          {isAdmin && (
+            <div className="flex gap-2">
+              {activeSessionId ? (
+                <button onClick={stopScreening} className="stop-button">
+                  Stop Screening
+                </button>
+              ) : (
+                <button onClick={() => screenStocks(null)} disabled={loading}>
+                  Screen All Stocks
+                </button>
+              )}
+            </div>
           )}
-        </button>
 
-        {isAdmin && (
+          <div className="filter-controls">
+            <label>Search: </label>
+            <div className="search-container">
+              <span className="search-icon">{searchLoading ? '⏳' : '🔍'}</span>
+              <input
+                type="text"
+                className="search-input"
+                value={searchQuery}
+                onChange={(e) => handleSearchChange(e.target.value)}
+                placeholder="Search by symbol or company name..."
+              />
+              {searchQuery && (
+                <button
+                  className="clear-button"
+                  onClick={() => handleSearchChange('')}
+                  aria-label="Clear search"
+                >
+                  ×
+                </button>
+              )}
+            </div>
+          </div>
+
+          <div className="filter-controls">
+            <label>Filter: </label>
+            <select value={filter} onChange={(e) => setFilter(e.target.value)}>
+              <option value="all">All</option>
+              <option value="watchlist">⭐ Watchlist</option>
+              {algorithm === 'classic' ? (
+                <>
+                  <option value="PASS">Pass Only</option>
+                  <option value="CLOSE">Close Only</option>
+                  <option value="FAIL">Fail Only</option>
+                </>
+              ) : (
+                <>
+                  <option value="STRONG_BUY">Excellent</option>
+                  <option value="BUY">Good</option>
+                  <option value="HOLD">Neutral</option>
+                  <option value="CAUTION">Weak</option>
+                  <option value="AVOID">Poor</option>
+                </>
+              )}
+            </select>
+          </div>
+
+          {summary && (
+            <div className="summary-stats">
+              <strong>Analyzed {summary.totalAnalyzed} stocks:</strong>
+              {algorithm === 'classic' ? (
+                <>
+                  <span className="summary-stat pass">{summary.passCount || 0} PASS</span>
+                  <span className="summary-stat close">{summary.closeCount || 0} CLOSE</span>
+                  <span className="summary-stat fail">{summary.failCount || 0} FAIL</span>
+                </>
+              ) : (
+                <>
+                  <span className="summary-stat strong-buy">{summary.strong_buy_count || 0} Excellent</span>
+                  <span className="summary-stat buy">{summary.buy_count || 0} Good</span>
+                  <span className="summary-stat hold">{summary.hold_count || 0} Neutral</span>
+                  <span className="summary-stat caution">{summary.caution_count || 0} Weak</span>
+                  <span className="summary-stat avoid">{summary.avoid_count || 0} Poor</span>
+                </>
+              )}
+            </div>
+          )}
+
+          <AlgorithmSelector
+            selectedAlgorithm={algorithm}
+            onAlgorithmChange={setAlgorithm}
+          />
+
           <button
-            onClick={() => navigate('/tuning')}
-            className="settings-button"
-            title="Tune Algorithm"
-            style={{ marginLeft: '5px' }}
+            onClick={() => setShowAdvancedFilters(!showAdvancedFilters)}
+            className="filter-button"
+            title="Advanced Filters"
           >
             <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <line x1="4" y1="21" x2="4" y2="14"></line>
-              <line x1="4" y1="10" x2="4" y2="3"></line>
-              <line x1="12" y1="21" x2="12" y2="12"></line>
-              <line x1="12" y1="8" x2="12" y2="3"></line>
-              <line x1="20" y1="21" x2="20" y2="16"></line>
-              <line x1="20" y1="12" x2="20" y2="3"></line>
-              <line x1="1" y1="14" x2="7" y2="14"></line>
-              <line x1="9" y1="8" x2="15" y2="8"></line>
-              <line x1="17" y1="16" x2="23" y2="16"></line>
+              <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"></polygon>
             </svg>
+            {getActiveFilterCount() > 0 && (
+              <span className="filter-badge">{getActiveFilterCount()}</span>
+            )}
           </button>
-        )}
 
-        <UserAvatar />
+          {isAdmin && (
+            <button
+              onClick={() => navigate('/tuning')}
+              className="settings-button"
+              title="Tune Algorithm"
+              style={{ marginLeft: '5px' }}
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <line x1="4" y1="21" x2="4" y2="14"></line>
+                <line x1="4" y1="10" x2="4" y2="3"></line>
+                <line x1="12" y1="21" x2="12" y2="12"></line>
+                <line x1="12" y1="8" x2="12" y2="3"></line>
+                <line x1="20" y1="21" x2="20" y2="16"></line>
+                <line x1="20" y1="12" x2="20" y2="3"></line>
+                <line x1="1" y1="14" x2="7" y2="14"></line>
+                <line x1="9" y1="8" x2="15" y2="8"></line>
+                <line x1="17" y1="16" x2="23" y2="16"></line>
+              </svg>
+            </button>
+          )}
+
+          <UserAvatar />
+        </div>
       </div>
 
       {loading && (
@@ -1004,8 +1007,8 @@ function StockListView({
 
       {filteredStocks.length > 0 && (
         <>
-          <div className="table-container">
-            <table>
+          <div className="table-container stock-list-table">
+            <table className="stocks-table">
               <StockTableHeader
                 sortBy={sortBy}
                 sortDir={sortDir}

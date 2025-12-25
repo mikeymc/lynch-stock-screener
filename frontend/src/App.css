@@ -32,7 +32,8 @@ body {
 }
 
 .app.stock-list-view {
-  padding-top: var(--controls-height);
+  /* Layout handled by sticky zone - no additional styles needed */
+  display: block;
 }
 
 /* ==========================================================================
@@ -52,7 +53,7 @@ body {
 }
 
 
-/* Sticky zone contains controls + stock summary - sticks together */
+/* Sticky zone contains controls + stock summary/header - sticks together */
 .sticky-zone {
   position: sticky;
   top: 0;
@@ -60,10 +61,44 @@ body {
   background-color: var(--color-bg-primary);
 }
 
-/* Override fixed positioning for controls when inside stock detail page */
-.stock-detail-page .controls {
+/* Override fixed positioning for controls when inside ANY sticky zone */
+.sticky-zone .controls {
   position: static;
 }
+
+/* ==========================================================================
+   Stock List Page - Sticky Zone Styles
+   ========================================================================== */
+
+/* Stock list table body container - no top margin to connect with controls */
+.table-container.stock-list-table {
+  margin-top: 0;
+  padding-top: 0;
+  border-radius: 0 0 0.5rem 0.5rem;
+}
+
+/* Make thead stick right below the controls in stock list */
+.stock-list-table th {
+  top: 0;
+}
+
+/* Visually-hidden utility for screen readers */
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* ==========================================================================
+   Stock Detail Page - Summary Section Styles
+   ========================================================================== */
+
 
 /* Stock summary section (single stock row) */
 .stock-summary-section {
@@ -409,7 +444,6 @@ button:disabled {
 .table-container {
   background-color: #1e293b;
   border-radius: 0.5rem;
-  padding: 1rem;
   margin-top: 1rem;
 }
 
