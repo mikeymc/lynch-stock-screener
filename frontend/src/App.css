@@ -466,6 +466,9 @@ button:disabled {
 table {
   width: 100%;
   border-collapse: collapse;
+}
+
+.stocks-table {
   min-width: 1200px;
 }
 
