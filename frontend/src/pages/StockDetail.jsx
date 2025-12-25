@@ -398,7 +398,7 @@ export default function StockDetail({ watchlist, toggleWatchlist }) {
           )}
 
           {activeTab === 'events' && (
-            <MaterialEvents eventsData={materialEventsData} loading={loadingMaterialEvents} />
+            <MaterialEvents eventsData={materialEventsData} loading={loadingMaterialEvents} symbol={stock.symbol} />
           )}
         </div>
       </ErrorBoundary>
