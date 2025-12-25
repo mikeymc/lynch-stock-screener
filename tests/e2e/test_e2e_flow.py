@@ -277,19 +277,15 @@ def test_stock_detail_header_and_tabs(page: Page, servers):
     controls = page.locator('.controls')
     expect(controls).to_be_visible()
     
-    # Verify Back button
-    back_button = controls.get_by_role('button', name='Back to List')
-    expect(back_button).to_be_visible()
-    expect(back_button).to_be_enabled()
+    # Verify All Stocks button
+    all_stocks_button = controls.get_by_role('button', name='All Stocks')
+    expect(all_stocks_button).to_be_visible()
+    expect(all_stocks_button).to_be_enabled()
     
-    # Verify Refresh button
-    refresh_button = controls.get_by_role('button', name='Refresh Data')
-    expect(refresh_button).to_be_visible()
-    expect(refresh_button).to_be_enabled()
     
     # Verify all tab buttons
     print("[E2E] Verifying tab buttons...")
-    expected_tabs = ['Financials', 'DCF Analysis', 'Quarterly & Annual Reports', 'Forward Metrics', 'Analysis & Chat', 'News', 'Material Event Filings']
+    expected_tabs = ['Financials', 'DCF Analysis', 'Quarterly & Annual Reports', 'Forward Metrics', 'Brief', 'News', 'Material Event Filings']
     for tab_name in expected_tabs:
         tab_button = controls.get_by_role('button', name=tab_name)
         expect(tab_button).to_be_visible()
@@ -409,35 +405,35 @@ def test_stock_detail_reports_tab(page: Page, servers):
     print("[E2E] Reports tab test completed successfully")
 
 
-def test_stock_detail_analysis_chat_tab(page: Page, servers):
+def test_stock_detail_brief_tab(page: Page, servers):
     """
-    Test the Analysis & Chat tab:
+    Test the Brief tab:
     1. Navigate to AAPL
-    2. Click Analysis & Chat tab
+    2. Click Brief tab
     3. Verify chat interface is present
     """
-    print("\n[E2E] Starting test: stock_detail_analysis_chat_tab")
+    print("\n[E2E] Starting test: stock_detail_brief_tab")
     
     page.goto("http://localhost:5174/stock/AAPL")
     page.wait_for_load_state("networkidle")
     page.wait_for_timeout(3000)
     
-    # Click Analysis & Chat tab
-    print("[E2E] Clicking Analysis & Chat tab...")
-    analysis_tab = page.get_by_role('button', name='Analysis & Chat')
-    analysis_tab.click()
+    # Click Brief tab
+    print("[E2E] Clicking Brief tab...")
+    brief_tab = page.get_by_role('button', name='Brief')
+    brief_tab.click()
     page.wait_for_timeout(2000)
     
     # Verify tab is active
-    expect(analysis_tab).to_have_class(re.compile(r'active'))
+    expect(brief_tab).to_have_class(re.compile(r'active'))
     
-    # Verify analysis/chat content (now .stock-detail-content)
-    print("[E2E] Verifying Analysis & Chat content...")
+    # Verify brief content (now .stock-detail-content)
+    print("[E2E] Verifying Brief content...")
     tabs_content = page.locator('.stock-detail-content')
     expect(tabs_content).to_be_visible()
     expect(tabs_content).not_to_be_empty()
     
-    print("[E2E] Analysis & Chat tab test completed successfully")
+    print("[E2E] Brief tab test completed successfully")
 
 
 def test_stock_detail_news_tab(page: Page, servers):

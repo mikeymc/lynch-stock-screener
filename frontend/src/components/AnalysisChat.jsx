@@ -375,7 +375,7 @@ const AnalysisChat = forwardRef(function AnalysisChat({ symbol, stockName, chatO
             ) : !analysis ? (
               <div className="chat-message assistant analysis-message">
                 <div className="chat-message-content">
-                  <p>No analysis generated yet for {stockName}.</p>
+                  <p>No brief generated yet for {stockName}.</p>
                   <div style={{ display: 'flex', flexDirection: 'row', gap: '1rem', alignItems: 'center', marginTop: '1rem' }}>
                     <ModelSelector
                       selectedModel={selectedModel}

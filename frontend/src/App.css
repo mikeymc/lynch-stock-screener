@@ -165,6 +165,20 @@ header p {
   overflow-x: auto;
 }
 
+/* Navigation button (All Stocks) - left aligned */
+.controls .nav-button {
+  flex-shrink: 0;
+}
+
+/* Tab button group - centered with flex-grow */
+.controls .tab-button-group {
+  flex: 1;
+  display: flex;
+  justify-content: center;
+  gap: 0.5rem;
+  overflow-x: auto;
+}
+
 button {
   background-color: #3b82f6;
   color: white;
@@ -1619,25 +1633,31 @@ td strong {
 }
 
 .controls .tab-button {
-  background-color: #1e293b;
-  color: #94a3b8;
-  border: 1px solid #475569;
-  padding: 0.75rem 1.5rem;
-  border-radius: 0.5rem;
+  padding: 0.6rem 1.25rem;
+  color: #64748b;
+  background: transparent;
+  border: none;
+  border-radius: 2rem;
   font-size: 1rem;
-  font-weight: 600;
+  font-weight: 500;
   cursor: pointer;
-  transition: all 0.2s;
+  transition: all 0.2s ease;
+  white-space: nowrap;
 }
 
 .controls .tab-button:hover {
-  background-color: rgba(59, 130, 246, 0.1);
-  color: #e2e8f0;
+  color: #94a3b8;
+  background: rgba(100, 116, 139, 0.1);
 }
 
 .controls .tab-button.active {
-  background-color: #3b82f6;
-  color: white;
+  color: #60a5fa;
+  background: rgba(59, 130, 246, 0.15);
+}
+
+.controls .tab-button:focus,
+.controls .tab-button:focus-visible {
+  outline: none;
 }
 
 .tabs-content {

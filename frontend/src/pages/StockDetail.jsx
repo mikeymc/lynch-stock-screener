@@ -269,30 +269,6 @@ export default function StockDetail({ watchlist, toggleWatchlist }) {
   }, [activeTab])
 
 
-
-  const handleRefresh = async () => {
-    setLoading(true)
-    try {
-      const response = await fetch(`${API_BASE}/stock/${symbol}?refresh=true`)
-      if (response.ok) {
-        const data = await response.json()
-        if (data.evaluation) {
-          setStock(data.evaluation)
-          // Reset other data states to trigger re-fetch via useEffects
-          setHistoryData(null)
-          setFilingsData(null)
-          setSectionsData(null)
-          setNewsData(null)
-          setMaterialEventsData(null)
-        }
-      }
-    } catch (err) {
-      console.error('Error refreshing stock data:', err)
-    } finally {
-      setLoading(false)
-    }
-  }
-
   if (loading) {
     return <div className="app"><div className="loading">Loading stock data...</div></div>
   }
@@ -311,22 +287,18 @@ export default function StockDetail({ watchlist, toggleWatchlist }) {
       {/* Sticky zone - controls and stock summary stick together */}
       <div className="sticky-zone">
         <div className="controls">
-          <div style={{ display: 'flex', gap: '10px' }}>
-            <button className="back-button" onClick={() => navigate('/')}>
-              Back to List
-            </button>
-            <button className="refresh-button" onClick={handleRefresh}>
-              Refresh Data
-            </button>
-          </div>
+          {/* Left: All Stocks button */}
+          <button className="tab-button nav-button" onClick={() => navigate('/')}>
+            All Stocks
+          </button>
 
-          <div style={{ display: 'flex', gap: '10px', marginLeft: '20px', overflowX: 'auto' }}>
-            <button
-              className={`tab-button ${activeTab === 'analysis' ? 'active' : ''}`}
-              onClick={() => setActiveTab('analysis')}
-            >
-              Analysis & Chat
-            </button>
+          {/* Center: Tab buttons */}
+          <div className="tab-button-group"><button
+            className={`tab-button ${activeTab === 'analysis' ? 'active' : ''}`}
+            onClick={() => setActiveTab('analysis')}
+          >
+            Brief
+          </button>
             <button
               className={`tab-button ${activeTab === 'charts' ? 'active' : ''}`}
               onClick={() => setActiveTab('charts')}
