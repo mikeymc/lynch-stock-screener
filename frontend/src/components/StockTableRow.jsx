@@ -84,7 +84,7 @@ export default function StockTableRow({ stock, watchlist, onToggleWatchlist, onC
       <td>
         <StatusBar
           status={stock.pe_52_week_position !== null ? 'info' : 'N/A'}
-          score={stock.pe_52_week_position !== null ? 100 - stock.pe_52_week_position : 0}
+          score={stock.pe_52_week_position !== null ? stock.pe_52_week_position : 0}
           value={stock.pe_52_week_position !== null ? `${stock.pe_52_week_position.toFixed(0)}%` : 'N/A'}
           metricType="pe_range"
         />

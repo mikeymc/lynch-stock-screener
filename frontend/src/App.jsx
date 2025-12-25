@@ -1043,7 +1043,7 @@ function StockListView({
                     <td>
                       <StatusBar
                         status={stock.pe_52_week_position !== null ? `${stock.pe_52_week_min?.toFixed(1)} - ${stock.pe_52_week_max?.toFixed(1)}` : 'N/A'}
-                        score={stock.pe_52_week_position !== null ? (100 - stock.pe_52_week_position) : 50}
+                        score={stock.pe_52_week_position !== null ? stock.pe_52_week_position : 50}
                         value={stock.pe_ratio}
                         metricType="pe_range"
                       />
