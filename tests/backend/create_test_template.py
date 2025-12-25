@@ -1,5 +1,5 @@
 # ABOUTME: Creates PostgreSQL template database for E2E tests
-# ABOUTME: Initializes schema and populates with 37 diverse test stocks from production
+# ABOUTME: Initializes schema and populates with 51 diverse test stocks from production
 
 import sys
 import os

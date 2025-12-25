@@ -24,6 +24,25 @@ def backend_server(test_database):
     # Use port 8081 for test backend to avoid conflicts with dev server
     test_port = 8081
 
+    # Kill any existing processes on the test port (leftover from previous runs)
+    try:
+        result = subprocess.run(
+            ['lsof', '-ti', f':{test_port}'],
+            capture_output=True,
+            text=True
+        )
+        if result.stdout.strip():
+            pids = result.stdout.strip().split('\n')
+            for pid in pids:
+                try:
+                    os.kill(int(pid), 9)  # SIGKILL
+                    print(f"[E2E] Killed stale process on port {test_port}: PID {pid}")
+                except (ProcessLookupError, PermissionError):
+                    pass
+            time.sleep(1)  # Wait for port to be released
+    except Exception as e:
+        print(f"[E2E] Warning: Could not check/kill processes on port {test_port}: {e}")
+
     # Set environment variables for the backend
     env = os.environ.copy()
     env.update({
@@ -91,6 +110,25 @@ def frontend_server():
 
     # Use port 5174 for test frontend to avoid conflicts with dev server
     test_port = 5174
+
+    # Kill any existing processes on the test port (leftover from previous runs)
+    try:
+        result = subprocess.run(
+            ['lsof', '-ti', f':{test_port}'],
+            capture_output=True,
+            text=True
+        )
+        if result.stdout.strip():
+            pids = result.stdout.strip().split('\n')
+            for pid in pids:
+                try:
+                    os.kill(int(pid), 9)  # SIGKILL
+                    print(f"[E2E] Killed stale process on port {test_port}: PID {pid}")
+                except (ProcessLookupError, PermissionError):
+                    pass
+            time.sleep(1)  # Wait for port to be released
+    except Exception as e:
+        print(f"[E2E] Warning: Could not check/kill processes on port {test_port}: {e}")
 
     # Set environment variables for the frontend
     env = os.environ.copy()
