@@ -1053,12 +1053,8 @@ function StockListView({
             </table>
           </div>
 
-          <div className="pagination-info">
-            Page {currentPage} of {totalPages} ({totalCount} total stocks)
-          </div>
-
-          {totalPages > 1 && (
-            <div className="pagination">
+          <div className="pagination">
+            {totalPages > 1 && (
               <button
                 onClick={() => {
                   const newPage = Math.max(1, currentPage - 1)
@@ -1069,9 +1065,11 @@ function StockListView({
               >
                 Previous
               </button>
-              <span className="page-info">
-                Page {currentPage} of {totalPages}
-              </span>
+            )}
+            <span className="page-info">
+              Page {currentPage} of {totalPages}
+            </span>
+            {totalPages > 1 && (
               <button
                 onClick={() => {
                   const newPage = Math.min(totalPages, currentPage + 1)
@@ -1082,8 +1080,8 @@ function StockListView({
               >
                 Next
               </button>
-            </div>
-          )}
+            )}
+          </div>
         </>
       )}
 
