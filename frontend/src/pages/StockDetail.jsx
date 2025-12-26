@@ -15,6 +15,7 @@ import StockNews from '../components/StockNews'
 import MaterialEvents from '../components/MaterialEvents'
 import FutureOutlook from '../components/FutureOutlook'
 import SearchPopover from '../components/SearchPopover'
+import UserAvatar from '../components/UserAvatar'
 
 const API_BASE = '/api'
 
@@ -340,6 +341,8 @@ export default function StockDetail({ watchlist, toggleWatchlist }) {
               Material Event Filings
             </button>
           </div>
+
+          <UserAvatar />
         </div>
 
         {/* Stock summary row - part of sticky zone */}
