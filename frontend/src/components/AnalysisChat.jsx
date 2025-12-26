@@ -46,6 +46,7 @@ const AnalysisChat = forwardRef(function AnalysisChat({ symbol, stockName, chatO
   const [generatedAt, setGeneratedAt] = useState(null)
   const [cached, setCached] = useState(false)
   const [refreshing, setRefreshing] = useState(false)
+  const [isGenerating, setIsGenerating] = useState(false)
   const [selectedModel, setSelectedModel] = useState('gemini-3-flash-preview')
 
   // Chat state
@@ -103,6 +104,7 @@ const AnalysisChat = forwardRef(function AnalysisChat({ symbol, stockName, chatO
         setAnalysisLoading(true)
       }
       setAnalysisError(null)
+      setIsGenerating(true)
 
       let baseUrl = forceRefresh
         ? `${API_BASE}/stock/${symbol}/lynch-analysis/refresh`
@@ -166,7 +168,11 @@ const AnalysisChat = forwardRef(function AnalysisChat({ symbol, stockName, chatO
                 setCached(data.cached)
                 setGeneratedAt(data.generated_at)
               } else if (data.type === 'chunk') {
-                setAnalysis(prev => (prev || '') + data.content)
+                // Filter out debug metadata lines like [Prompt: 0.00s, 17,448 chars]
+                const content = data.content
+                if (!content.startsWith('[Prompt:')) {
+                  setAnalysis(prev => (prev || '') + content)
+                }
               } else if (data.type === 'error') {
                 throw new Error(data.message)
               }
@@ -186,6 +192,7 @@ const AnalysisChat = forwardRef(function AnalysisChat({ symbol, stockName, chatO
     } finally {
       setAnalysisLoading(false)
       setRefreshing(false)
+      setIsGenerating(false)
     }
   }
 
@@ -395,7 +402,7 @@ const AnalysisChat = forwardRef(function AnalysisChat({ symbol, stockName, chatO
             <div className="section-summary">
               <div className="summary-loading">
                 <span className="loading-spinner"></span>
-                <span>Loading analysis...</span>
+                <span>Generating brief. This could take up to a minute...</span>
               </div>
             </div>
           ) : analysisError ? (
@@ -404,6 +411,16 @@ const AnalysisChat = forwardRef(function AnalysisChat({ symbol, stockName, chatO
               <button onClick={() => fetchAnalysis(false, null, true)} className="retry-button">
                 Retry
               </button>
+            </div>
+          ) : isGenerating && !analysis ? (
+            <div className="section-summary">
+              <div className="brief-generating">
+                <div className="generating-spinner"></div>
+                <div className="generating-text">
+                  <span className="generating-title">Generating brief...</span>
+                  <span className="generating-subtitle">Analyzing SEC filings and financial data</span>
+                </div>
+              </div>
             </div>
           ) : !analysis ? (
             <div className="section-summary">
