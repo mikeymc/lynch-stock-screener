@@ -1185,48 +1185,48 @@ class Database:
             self.return_connection(conn)
 
     def save_stock_metrics(self, symbol: str, metrics: Dict[str, Any]):
-        sql = """
-            INSERT INTO stock_metrics
-            (symbol, price, pe_ratio, market_cap, debt_to_equity, institutional_ownership, revenue, dividend_yield, beta, total_debt, interest_expense, effective_tax_rate, forward_pe, forward_peg_ratio, forward_eps, insider_net_buying_6m, last_updated)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-            ON CONFLICT (symbol) DO UPDATE SET
-                price = EXCLUDED.price,
-                pe_ratio = EXCLUDED.pe_ratio,
-                market_cap = EXCLUDED.market_cap,
-                debt_to_equity = EXCLUDED.debt_to_equity,
-                institutional_ownership = EXCLUDED.institutional_ownership,
-                revenue = EXCLUDED.revenue,
-                dividend_yield = EXCLUDED.dividend_yield,
-                beta = EXCLUDED.beta,
-                total_debt = EXCLUDED.total_debt,
-                interest_expense = EXCLUDED.interest_expense,
-                effective_tax_rate = EXCLUDED.effective_tax_rate,
-                forward_pe = EXCLUDED.forward_pe,
-                forward_peg_ratio = EXCLUDED.forward_peg_ratio,
-                forward_eps = EXCLUDED.forward_eps,
-                insider_net_buying_6m = EXCLUDED.insider_net_buying_6m,
-                last_updated = EXCLUDED.last_updated
         """
-        args = (
-            symbol,
-            metrics.get('price'),
-            metrics.get('pe_ratio'),
-            metrics.get('market_cap'),
-            metrics.get('debt_to_equity'),
-            metrics.get('institutional_ownership'),
-            metrics.get('revenue'),
-            metrics.get('dividend_yield'),
-            metrics.get('beta'),
-            metrics.get('total_debt'),
-            metrics.get('interest_expense'),
-            metrics.get('effective_tax_rate'),
-            metrics.get('forward_pe'),
-            metrics.get('forward_peg_ratio'),
-            metrics.get('forward_eps'),
-            metrics.get('insider_net_buying_6m'),
-            datetime.now()
-        )
-        self.write_queue.put((sql, args))
+        Save or update stock metrics.
+        Supports partial updates - only keys present in metrics dict will be updated.
+        """
+        # Always update last_updated
+        metrics['last_updated'] = datetime.now()
+        
+        # Valid columns map to ensure we only try to update valid fields
+        valid_columns = {
+            'price', 'pe_ratio', 'market_cap', 'debt_to_equity', 
+            'institutional_ownership', 'revenue', 'dividend_yield', 
+            'beta', 'total_debt', 'interest_expense', 'effective_tax_rate',
+            'forward_pe', 'forward_peg_ratio', 'forward_eps',
+            'insider_net_buying_6m', 'last_updated'
+        }
+        
+        # Filter metrics to only valid columns
+        update_data = {k: v for k, v in metrics.items() if k in valid_columns}
+        
+        if not update_data:
+            return
+
+        # Build dynamic SQL
+        columns = ['symbol'] + list(update_data.keys())
+        placeholders = ['%s'] * len(columns)
+        
+        # Build SET clause for ON CONFLICT DO UPDATE
+        # updates = [f"{col} = EXCLUDED.{col}" for col in update_data.keys()]
+        # better: use explicit value passing to avoid issues with EXCLUDED if safe
+        # actually EXCLUDED is standard for upsert. 
+        updates = [f"{col} = EXCLUDED.{col}" for col in update_data.keys()]
+
+        sql = f"""
+            INSERT INTO stock_metrics ({', '.join(columns)})
+            VALUES ({', '.join(placeholders)})
+            ON CONFLICT (symbol) DO UPDATE SET
+                {', '.join(updates)}
+        """
+        
+        args = [symbol] + list(update_data.values())
+        
+        self.write_queue.put((sql, tuple(args)))
 
     def save_insider_trades(self, symbol: str, trades: List[Dict[str, Any]]):
         """

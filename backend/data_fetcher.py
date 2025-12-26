@@ -273,82 +273,11 @@ class DataFetcher:
                 'forward_pe': info.get('forwardPE'),
                 'forward_peg_ratio': info.get('pegRatio') if info.get('pegRatio') else info.get('trailingPegRatio'), # Prefer 5yr exepcted, fallback to trailing
                 'forward_eps': info.get('forwardEps'),
-                'insider_net_buying_6m': 0.0 # Will be updated if transactions found
+                # insider_net_buying_6m removed - calculated by worker from Form 4 data only
             }
 
-            # Fetch and process Insider Transactions (Rule: Phase 1 Future Indicator)
-            try:
-                if not using_tradingview_cache: # Only fetch if we are doing a deep dive (or simple cache)
-                    insider_df = self._get_yf_insider_transactions(symbol)
-                    if insider_df is not None and not insider_df.empty:
-                        # Process trades
-                        one_year_ago = datetime.now() - timedelta(days=365)
-                        net_buying = 0.0
-                        trades_to_save = []
-                        
-                        # Dataframe columns vary. Ensure we have DATE.
-                        # yfinance usually has 'Start Date' or 'Date'
-                        date_col = 'Start Date' if 'Start Date' in insider_df.columns else 'Date'
-                        if date_col in insider_df.columns:
-                            # Normalize dates
-                            insider_df[date_col] = pd.to_datetime(insider_df[date_col])
-                            
-                            for _, row in insider_df.iterrows():
-                                t_date = row[date_col]
-                                if pd.isna(t_date):
-                                    continue
-                                
-                                # Check recency
-                                is_recent = t_date >= one_year_ago
-                                
-                                # Determine Type (Buy/Sell)
-                                # Text is most reliable: "Sale at...", "Purchase at..."
-                                text = str(row.get('Text', '')).lower()
-                                transaction_type = 'Starting' # Default
-                                
-                                is_buy = 'purchase' in text
-                                is_sell = 'sale' in text
-                                
-                                if is_buy:
-                                    transaction_type = 'Buy'
-                                elif is_sell:
-                                    transaction_type = 'Sell'
-                                else:
-                                    transaction_type = 'Other' # Gift, Option Exercise, etc.
-
-                                value = row.get('Value')
-                                if pd.isna(value):
-                                    value = 0.0
-                                
-                                shares = row.get('Shares')
-                                if pd.isna(shares):
-                                    shares = 0
-                                
-                                # Calculate Net Buying (Only for Open Market Buy/Sell)
-                                if is_recent:
-                                    if transaction_type == 'Buy':
-                                        net_buying += value
-                                    elif transaction_type == 'Sell':
-                                        net_buying -= value
-                                
-                                # Prepare DB row
-                                trades_to_save.append({
-                                    'name': row.get('Insider', 'Unknown'),
-                                    'position': row.get('Position', 'Unknown'),
-                                    'transaction_date': t_date.strftime('%Y-%m-%d'),
-                                    'transaction_type': transaction_type,
-                                    'shares': float(shares),
-                                    'value': float(value),
-                                    'filing_url': row.get('URL', '')
-                                })
-                        
-                        # Update metrics and save trades
-                        metrics['insider_net_buying_6m'] = net_buying
-                        if trades_to_save:
-                            self.db.save_insider_trades(symbol, trades_to_save)
-                            logger.info(f"[{symbol}] Processed {len(trades_to_save)} insider trades. Net Buying (6m): ${net_buying:,.0f}")
-            except Exception as e:
-                logger.warning(f"[{symbol}] Failed to fetch/process insider transactions: {e}")
+            # Legacy insider transaction fetching removed (moved to Form 4 worker)
+            # self.db.save_insider_trades(symbol, trades_to_save)
 
             self.db.save_stock_metrics(symbol, metrics)
             # Use EDGAR net income if available (≥5 years), otherwise fall back to yfinance

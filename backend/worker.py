@@ -1098,6 +1098,30 @@ class BackgroundWorker:
                     self.db.save_insider_trades(symbol, transactions)
                     total_transactions += len(transactions)
                     cached += 1
+                    
+                    # Calculate Insider Net Buying (Last 6 Months)
+                    # Use accurate Form 4 data (Buy = P, Sell = S/F/D)
+                    from datetime import datetime, timedelta
+                    cutoff_date = datetime.now() - timedelta(days=180)
+                    net_buying = 0.0
+                    
+                    for t in transactions:
+                        try:
+                            # Form 4 dates are YYYY-MM-DD
+                            t_date = datetime.strptime(t['transaction_date'], '%Y-%m-%d')
+                            if t_date >= cutoff_date:
+                                t_type = t.get('transaction_type') # 'Buy', 'Sell', 'Other'
+                                val = t.get('value', 0.0) or 0.0
+                                
+                                if t_type == 'Buy':
+                                    net_buying += val
+                                elif t_type == 'Sell':
+                                    net_buying -= val
+                        except (ValueError, TypeError):
+                            continue
+                    
+                    # Update metrics using partial update (safe thanks to database.py refactor)
+                    self.db.save_stock_metrics(symbol, {'insider_net_buying_6m': net_buying})
                 else:
                     # No transactions found (not an error, just no Form 4s)
                     cached += 1
