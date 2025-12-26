@@ -857,7 +857,7 @@ function StockListView({
 
   return (
     <div className="app stock-list-view">
-      {/* Sticky zone - controls stick together */}
+      {/* Sticky zone - controls + table header stick together */}
       <div className="sticky-zone stock-list-sticky">
         <div className="controls">
           {isAdmin && (
