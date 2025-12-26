@@ -56,17 +56,17 @@ def test_app_initialization_and_ui_elements(page: Page, servers):
     expect(screen_button).to_be_visible()
     expect(screen_button).to_be_enabled()
     
-    # Verify search bar
-    print("[E2E] Checking search bar...")
-    filter_controls = controls.locator('.filter-controls').first
-    expect(filter_controls.get_by_text('Search:')).to_be_visible()
-    search_input = filter_controls.locator('input[type="text"]')
+    # Verify search popover
+    print("[E2E] Checking search popover...")
+    search_container = controls.locator('.search-popover-container')
+    expect(search_container).to_be_visible()
+    search_input = search_container.locator('input[type="text"]')
     expect(search_input).to_be_visible()
-    expect(search_input).to_have_attribute('placeholder', re.compile(r'Search by symbol'))
+    expect(search_input).to_have_attribute('placeholder', re.compile(r'Search'))
     
     # Verify filter dropdown
     print("[E2E] Checking filter dropdown...")
-    filter_dropdown_container = controls.locator('.filter-controls').nth(1)
+    filter_dropdown_container = controls.locator('.filter-controls').first
     expect(filter_dropdown_container.get_by_text('Filter:')).to_be_visible()
     filter_select = filter_dropdown_container.locator('select')
     expect(filter_select).to_be_visible()
@@ -207,11 +207,11 @@ def test_app_initialization_and_ui_elements(page: Page, servers):
 
 def test_search_functionality(page: Page, servers):
     """
-    Test the search functionality:
+    Test the search popover functionality:
     1. Navigate to app
-    2. Use search to find AAPL
-    3. Verify filtered results
-    4. Click on stock to view details
+    2. Use search popover to find AAPL
+    3. Verify dropdown shows results
+    4. Select stock to navigate to details
     """
     print("\n[E2E] Starting test: search_functionality")
     
@@ -219,34 +219,25 @@ def test_search_functionality(page: Page, servers):
     page.wait_for_load_state("networkidle")
     page.wait_for_timeout(2000)
     
-    # Find and use search input
+    # Find and use search popover input
     print("[E2E] Searching for AAPL...")
-    search_input = page.locator('input[type="text"]').first
+    search_container = page.locator('.search-popover-container')
+    search_input = search_container.locator('input[type="text"]')
     search_input.fill("AAPL")
-    page.keyboard.press("Enter")
-    page.wait_for_timeout(1000)
+    page.wait_for_timeout(500)  # Wait for debounced search
     
-    # Verify filtered results
-    print("[E2E] Verifying search results...")
-    table = page.locator('.table-container table')
-    tbody = table.locator('tbody')
-    stock_rows = tbody.locator('tr.stock-row')
+    # Verify dropdown appears with results
+    print("[E2E] Verifying search dropdown...")
+    dropdown = page.locator('.search-popover-dropdown')
+    expect(dropdown).to_be_visible(timeout=5000)
     
-    # Should have exactly 1 result
-    assert stock_rows.count() == 1, f"Expected 1 AAPL result, got {stock_rows.count()}"
+    # Verify AAPL is in the results
+    aapl_item = dropdown.locator('.search-popover-item').filter(has_text='AAPL').first
+    expect(aapl_item).to_be_visible()
     
-    # Verify it's AAPL
-    first_row = stock_rows.first
-    symbol_cell = first_row.locator('td').nth(1)
-    expect(symbol_cell).to_contain_text('AAPL')
-    
-    # Verify company name contains Apple
-    company_cell = first_row.locator('td').nth(2)
-    expect(company_cell).to_contain_text('Apple', ignore_case=True)
-    
-    # Click on the stock
-    print("[E2E] Clicking on AAPL...")
-    first_row.click()
+    # Click on AAPL in the dropdown
+    print("[E2E] Clicking on AAPL in dropdown...")
+    aapl_item.click()
     page.wait_for_timeout(2000)
     
     # Verify we navigated to stock detail page
