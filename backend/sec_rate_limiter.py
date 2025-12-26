@@ -56,9 +56,7 @@ class SECRateLimiter:
             self.last_request_time = time.time()
             self.request_count += 1
             
-            # Log every 100 requests
-            if self.request_count % 100 == 0:
-                logger.info(f"[SEC Rate Limiter] {self.request_count} requests made so far")
+
             
             return wait_time
     
