@@ -60,19 +60,63 @@ export default function InsiderTradesTable({ trades }) {
 
     // Filter trades based on showAllTypes toggle
     // Default: only show Open Market (P/S) transactions - the real signal
+    // Filter out legacy data (missing transaction_code) which causes duplicates/aggregates
+    const cleanTrades = trades.filter(t => t.transaction_code)
+
+    // Filter trades based on showAllTypes toggle
+    // Default: only show Open Market (P/S) transactions - the real signal
     const filteredTrades = showAllTypes
-        ? trades
-        : trades.filter(t => t.transaction_code === 'P' || t.transaction_code === 'S' ||
+        ? cleanTrades
+        : cleanTrades.filter(t => t.transaction_code === 'P' || t.transaction_code === 'S' ||
             t.transaction_type === 'Buy' || t.transaction_type === 'Sell')
 
     // Count how many "other" transactions we're hiding
-    const hiddenCount = trades.length - filteredTrades.length
+    const hiddenCount = cleanTrades.length - filteredTrades.length
     const hasOtherTypes = hiddenCount > 0
+    // 4. De-dupe transactions
+    // We might have duplicates if names vary in casing (e.g. "McKnight" vs "MCKNIGHT") since they are unique in DB
+    const uniqueTradesMap = new Map()
+    filteredTrades.forEach(trade => {
+        // Normalize name for de-duping
+        let normalizedNameKey = trade.name.toLowerCase().replace(/[.,]/g, ' ').trim().replace(/\s+/g, ' ')
+        const parts = normalizedNameKey.split(' ')
+        if (parts.length >= 2) {
+            normalizedNameKey = `${parts[0]} ${parts[1]}`
+        }
 
-    // Group trades by person (using filtered trades for summary)
+        // Create a unique key for the transaction event
+        // value + date + code + shares should be unique enough
+        const dedupKey = `${trade.transaction_date}|${normalizedNameKey}|${trade.transaction_code}|${trade.shares}|${trade.price_per_share}`
+
+        if (uniqueTradesMap.has(dedupKey)) {
+            const existing = uniqueTradesMap.get(dedupKey)
+            // If current trade has ownership data and existing doesn't, swap it!
+            // Or if existing has no footnotes and current does, swap it.
+            // Prefer the "richer" data.
+            const currentScore = (trade.ownership_change_pct ? 2 : 0) + ((trade.footnotes || []).length > 0 ? 1 : 0)
+            const existingScore = (existing.ownership_change_pct ? 2 : 0) + ((existing.footnotes || []).length > 0 ? 1 : 0)
+
+            if (currentScore > existingScore) {
+                uniqueTradesMap.set(dedupKey, trade)
+            }
+        } else {
+            uniqueTradesMap.set(dedupKey, trade)
+        }
+    })
+
+    // Use de-duped trades for everything downstream
+    const uniqueTrades = Array.from(uniqueTradesMap.values())
+
+    // Check if we have hidden types (non-open market)
+    // Note: This logic might need to rely on the ORIGINAL full list for "hasOtherTypes"
+    // But since we are only filtering visible ones here, let's just use uniqueTrades length vs total?
+    // Actually, hiddenCount was calculated from trades vs filteredTrades.
+    // Let's re-calculate hiddenCount based on unique trades if needed, but for now filtering is fine.
+
+    // Group trades by person (using unique filtered trades for summary)
     // Normalize names to handle case differences in Form 4 filings
     const groupedByPerson = {}
-    filteredTrades.forEach(trade => {
+    uniqueTrades.forEach(trade => {
         // Normalize key: lowercase, remove periods/commas, trim
         // Use first two words to handle middle initials (e.g. "Hession David" vs "Hession David M.")
         let normalizedKey = trade.name.toLowerCase().replace(/[.,]/g, ' ').trim().replace(/\s+/g, ' ')
@@ -92,8 +136,9 @@ export default function InsiderTradesTable({ trades }) {
                 has10b51: false,
                 // Track transaction types for summary display
                 typeBreakdown: {},
-                // Track max ownership percentage for any transaction
-                maxOwnershipPct: null
+                // Track total ownership percentage sold/bought
+                totalPctSold: 0,
+                totalPctBought: 0
             }
         } else {
             // Prefer Title Case name over ALL CAPS (Title Case usually has mixed case)
@@ -121,11 +166,12 @@ export default function InsiderTradesTable({ trades }) {
         if (trade.is_10b51_plan) {
             groupedByPerson[normalizedKey].has10b51 = true
         }
-        // Track max ownership percentage
+        // Track accumulated ownership percentage
         if (trade.ownership_change_pct != null) {
-            const current = groupedByPerson[normalizedKey].maxOwnershipPct
-            if (current == null || trade.ownership_change_pct > current) {
-                groupedByPerson[normalizedKey].maxOwnershipPct = trade.ownership_change_pct
+            if (trade.transaction_type === 'Sell' || trade.transaction_code === 'S') {
+                groupedByPerson[normalizedKey].totalPctSold += trade.ownership_change_pct
+            } else if (trade.transaction_type === 'Buy' || trade.transaction_code === 'P') {
+                groupedByPerson[normalizedKey].totalPctBought += trade.ownership_change_pct
             }
         }
     })
@@ -200,7 +246,7 @@ export default function InsiderTradesTable({ trades }) {
                             <th style={{ ...thStyle, position: 'static' }}>Types</th>
                             <th style={{ ...thStyle, position: 'static', textAlign: 'right', color: '#4ade80' }}>Bought</th>
                             <th style={{ ...thStyle, position: 'static', textAlign: 'right', color: '#f87171' }}>Sold</th>
-                            <th style={{ ...thStyle, position: 'static', textAlign: 'right' }}>Max %</th>
+                            <th style={{ ...thStyle, position: 'static', textAlign: 'right' }}>Total %</th>
                             <th style={{ ...thStyle, position: 'static', textAlign: 'right' }}>Net</th>
                         </tr>
                     </thead>
@@ -267,13 +313,24 @@ export default function InsiderTradesTable({ trades }) {
                                     </td>
                                     <td style={{
                                         padding: '10px 8px',
-                                        textAlign: 'right',
-                                        color: person.maxOwnershipPct > 50 ? '#f87171' : person.maxOwnershipPct > 20 ? '#fbbf24' : '#94a3b8',
-                                        fontWeight: person.maxOwnershipPct > 20 ? 'bold' : 'normal'
+                                        textAlign: 'right'
                                     }}>
-                                        {person.maxOwnershipPct != null ? (
-                                            <span title={`Max single transaction was ${person.maxOwnershipPct.toFixed(1)}% of holdings`}>
-                                                {person.maxOwnershipPct.toFixed(1)}%
+                                        {person.totalPctSold > 0 ? (
+                                            <span
+                                                style={{
+                                                    color: '#f87171',
+                                                    fontWeight: person.totalPctSold > 20 ? 'bold' : 'normal'
+                                                }}
+                                                title={`Sold ${person.totalPctSold.toFixed(1)}% of holdings cumulative`}
+                                            >
+                                                -{person.totalPctSold.toFixed(1)}%
+                                            </span>
+                                        ) : person.totalPctBought > 0 ? (
+                                            <span
+                                                style={{ color: '#4ade80' }}
+                                                title={`Bought equivalent of ${person.totalPctBought.toFixed(1)}% of current holdings`}
+                                            >
+                                                +{person.totalPctBought.toFixed(1)}%
                                             </span>
                                         ) : '-'}
                                     </td>
@@ -319,7 +376,7 @@ export default function InsiderTradesTable({ trades }) {
                             </tr>
                         </thead>
                         <tbody>
-                            {filteredTrades.map((trade, idx) => {
+                            {uniqueTrades.map((trade, idx) => {
                                 const typeLabel = trade.transaction_type_label ||
                                     codeToLabel[trade.transaction_code] ||
                                     trade.transaction_type
@@ -335,13 +392,21 @@ export default function InsiderTradesTable({ trades }) {
                                 const ownershipPct = trade.ownership_change_pct
                                 const isSale = trade.transaction_code === 'S' || trade.transaction_code === 'F' || trade.transaction_code === 'D'
 
+                                // Get canonical name from grouping map
+                                let normalizedKey = trade.name.toLowerCase().replace(/[.,]/g, ' ').trim().replace(/\s+/g, ' ')
+                                const parts = normalizedKey.split(' ')
+                                if (parts.length >= 2) {
+                                    normalizedKey = `${parts[0]} ${parts[1]}`
+                                }
+                                const displayName = groupedByPerson[normalizedKey] ? groupedByPerson[normalizedKey].name : trade.name
+
                                 return (
                                     <tr key={idx} style={{ borderBottom: '1px solid #334155' }}>
                                         <td style={{ padding: '8px', whiteSpace: 'nowrap' }}>
                                             {formatDate(trade.transaction_date)}
                                         </td>
                                         <td style={{ padding: '8px' }}>
-                                            {trade.name}
+                                            {displayName}
                                             {trade.is_10b51_plan && <PlanBadge />}
                                         </td>
                                         <td style={{ padding: '8px', color: typeColor, fontWeight: 'bold' }}>
