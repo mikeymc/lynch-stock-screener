@@ -1959,3 +1959,498 @@ class EdgarFetcher:
         
         logger.info(f"Successfully parsed {len(dividends)} dividend entries from EDGAR")
         return dividends
+
+    def fetch_form4_filings(self, ticker: str, since_date: str = None) -> List[Dict[str, Any]]:
+        """
+        Fetch Form 4 insider transaction filings and parse transaction details.
+        
+        Form 4 filings contain detailed insider transaction information including:
+        - Transaction codes (P=Purchase, S=Sale, M=Exercise, A=Award, F=Tax, G=Gift)
+        - 10b5-1 plan indicators
+        - Direct vs indirect ownership
+        - Owner relationship (Officer, Director, 10% owner)
+        
+        Args:
+            ticker: Stock ticker symbol
+            since_date: Optional date string (YYYY-MM-DD) to filter filings newer than this date
+                       Defaults to 1 year ago if not specified
+        
+        Returns:
+            List of transaction dicts with enriched insider data
+        """
+        from datetime import datetime, timedelta
+        import xml.etree.ElementTree as ET
+        
+        cik = self.get_cik_for_ticker(ticker)
+        if not cik:
+            logger.warning(f"[{ticker}] Could not find CIK for Form 4 fetch")
+            return []
+        
+        # Default to 1 year back if no since_date specified
+        if not since_date:
+            one_year_ago = datetime.now() - timedelta(days=365)
+            since_date = one_year_ago.strftime('%Y-%m-%d')
+        
+        padded_cik = cik.zfill(10)
+        
+        try:
+            self._rate_limit(caller=f"form4-submissions-{ticker}")
+            submissions_url = f"https://data.sec.gov/submissions/CIK{padded_cik}.json"
+            response = requests.get(submissions_url, headers=self.headers, timeout=15)
+            response.raise_for_status()
+            
+            data = response.json()
+            recent_filings = data.get('filings', {}).get('recent', {})
+            
+            if not recent_filings:
+                logger.debug(f"[{ticker}] No recent filings found for Form 4")
+                return []
+            
+            forms = recent_filings.get('form', [])
+            filing_dates = recent_filings.get('filingDate', [])
+            accession_numbers = recent_filings.get('accessionNumber', [])
+            primary_documents = recent_filings.get('primaryDocument', [])
+            
+            # Collect Form 4 filing URLs
+            form4_filings = []
+            for i, form in enumerate(forms):
+                if form == '4':
+                    filing_date = filing_dates[i]
+                    
+                    # Skip filings older than since_date
+                    if since_date and filing_date < since_date:
+                        continue
+                    
+                    acc_num = accession_numbers[i]
+                    acc_num_no_dashes = acc_num.replace('-', '')
+                    primary_doc = primary_documents[i] if i < len(primary_documents) else None
+                    
+                    if primary_doc and primary_doc.endswith('.xml'):
+                        # Important: primary_doc often includes xsl directory (e.g. xslF345X03/doc.xml)
+                        # The raw XML is always in the root (e.g. doc.xml)
+                        # The xsl path returns the rendered HTML!
+                        primary_doc_basename = primary_doc.split('/')[-1]
+                        doc_url = f"https://www.sec.gov/Archives/edgar/data/{cik}/{acc_num_no_dashes}/{primary_doc_basename}"
+                    else:
+                        # Fallback for non-xml primary docs (unlikely for Form 4)
+                        doc_url = f"https://www.sec.gov/Archives/edgar/data/{cik}/{acc_num_no_dashes}/{primary_doc}"
+                    
+                    form4_filings.append({
+                        'filing_date': filing_date,
+                        'accession_number': acc_num,
+                        'url': doc_url
+                    })
+            
+            logger.info(f"[{ticker}] Found {len(form4_filings)} Form 4 filings since {since_date}")
+            
+            # Parse each Form 4 XML for transaction details
+            all_transactions = []
+            for filing in form4_filings:
+                try:
+                    transactions = self._parse_form4_filing(ticker, filing, cik)
+                    all_transactions.extend(transactions)
+                except Exception as e:
+                    logger.debug(f"[{ticker}] Error parsing Form 4 {filing['accession_number']}: {e}")
+            
+            logger.info(f"[{ticker}] Extracted {len(all_transactions)} transactions from Form 4 filings")
+            return all_transactions
+            
+        except Exception as e:
+            logger.error(f"[{ticker}] Error fetching Form 4 filings: {e}")
+            return []
+    
+    def _parse_form4_filing(self, ticker: str, filing: Dict[str, Any], cik: str) -> List[Dict[str, Any]]:
+        """
+        Parse a single Form 4 XML filing to extract transaction details.
+        
+        Form 4 XML structure (simplified):
+        <ownershipDocument>
+            <reportingOwner>
+                <reportingOwnerId>
+                    <rptOwnerName>John Smith</rptOwnerName>
+                </reportingOwnerId>
+                <reportingOwnerRelationship>
+                    <isDirector>true</isDirector>
+                    <isOfficer>true</isOfficer>
+                    <officerTitle>CEO</officerTitle>
+                </reportingOwnerRelationship>
+            </reportingOwner>
+            <nonDerivativeTable>
+                <nonDerivativeTransaction>
+                    <transactionDate><value>2024-01-15</value></transactionDate>
+                    <transactionCoding>
+                        <transactionCode>P</transactionCode>  <!-- P=Purchase, S=Sale, M=Exercise, A=Award, F=Tax, G=Gift -->
+                    </transactionCoding>
+                    <transactionAmounts>
+                        <transactionShares><value>1000</value></transactionShares>
+                        <transactionPricePerShare><value>50.00</value></transactionPricePerShare>
+                    </transactionAmounts>
+                    <ownershipNature>
+                        <directOrIndirectOwnership><value>D</value></directOrIndirectOwnership>
+                    </ownershipNature>
+                </nonDerivativeTransaction>
+            </nonDerivativeTable>
+        </ownershipDocument>
+        
+        Args:
+            ticker: Stock ticker symbol
+            filing: Filing dict with url, filing_date, accession_number
+            cik: Company CIK
+            
+        Returns:
+            List of transaction dicts
+        """
+        import xml.etree.ElementTree as ET
+        
+        self._rate_limit(caller=f"form4-xml-{ticker}")
+        
+        # Try to fetch the XML
+        url = filing['url']
+        try:
+            response = requests.get(url, headers=self.headers, timeout=10)
+            response.raise_for_status()
+        except Exception as e:
+            # If primary doc fails, try common Form 4 XML patterns
+            acc_num_no_dashes = filing['accession_number'].replace('-', '')
+            alt_urls = [
+                f"https://www.sec.gov/Archives/edgar/data/{cik}/{acc_num_no_dashes}/form4.xml",
+                f"https://www.sec.gov/Archives/edgar/data/{cik}/{acc_num_no_dashes}/primary_doc.xml",
+            ]
+            
+            response = None
+            for alt_url in alt_urls:
+                try:
+                    self._rate_limit(caller=f"form4-xml-alt-{ticker}")
+                    response = requests.get(alt_url, headers=self.headers, timeout=10)
+                    if response.status_code == 200:
+                        break
+                except Exception:
+                    continue
+            
+            if not response or response.status_code != 200:
+                logger.debug(f"[{ticker}] Could not fetch Form 4 XML: {filing['accession_number']}")
+                return []
+        
+        # Parse XML
+        try:
+            root = ET.fromstring(response.content)
+        except ET.ParseError as e:
+            logger.debug(f"[{ticker}] XML parse error: {e}. URL: {url}")
+            return []
+        
+        # Define namespace (Form 4 XML may use namespaces)
+        # Try with and without namespace
+        ns = {}
+        
+        # Extract owner information
+        owner_name = "Unknown"
+        owner_relationship = "Other"
+        officer_title = ""
+        
+        # Try to find reporting owner
+        owner_elem = root.find('.//reportingOwner') or root.find('.//{*}reportingOwner')
+        if owner_elem is not None:
+            name_elem = owner_elem.find('.//rptOwnerName') or owner_elem.find('.//{*}rptOwnerName')
+            if name_elem is not None and name_elem.text:
+                owner_name = name_elem.text.strip()
+            
+            # Determine relationship
+            rel_elem = owner_elem.find('.//reportingOwnerRelationship') or owner_elem.find('.//{*}reportingOwnerRelationship')
+            if rel_elem is not None:
+                is_director = (rel_elem.find('.//isDirector') or rel_elem.find('.//{*}isDirector'))
+                is_officer = (rel_elem.find('.//isOfficer') or rel_elem.find('.//{*}isOfficer'))
+                is_ten_percent = (rel_elem.find('.//isTenPercentOwner') or rel_elem.find('.//{*}isTenPercentOwner'))
+                title_elem = (rel_elem.find('.//officerTitle') or rel_elem.find('.//{*}officerTitle'))
+                
+                relationships = []
+                if is_director is not None and is_director.text and is_director.text.lower() in ['true', '1']:
+                    relationships.append('Director')
+                if is_officer is not None and is_officer.text and is_officer.text.lower() in ['true', '1']:
+                    relationships.append('Officer')
+                if is_ten_percent is not None and is_ten_percent.text and is_ten_percent.text.lower() in ['true', '1']:
+                    relationships.append('10% Owner')
+                
+                if relationships:
+                    owner_relationship = ', '.join(relationships)
+                
+                if title_elem is not None and title_elem.text:
+                    officer_title = title_elem.text.strip()
+        
+        transactions = []
+        
+        # Extract all footnotes from the filing
+        # Footnotes are typically in <footnotes><footnote id="F1">text</footnote></footnotes>
+        footnotes_dict = {}
+        footnotes_elem = root.find('.//footnotes') or root.find('.//{*}footnotes')
+        if footnotes_elem is not None:
+            for footnote in footnotes_elem.findall('.//footnote') + footnotes_elem.findall('.//{*}footnote'):
+                fn_id = footnote.get('id', '')
+                fn_text = footnote.text.strip() if footnote.text else ''
+                if fn_id and fn_text:
+                    footnotes_dict[fn_id] = fn_text
+        
+        # Parse non-derivative transactions (common stock)
+        nd_table = root.find('.//nonDerivativeTable') or root.find('.//{*}nonDerivativeTable')
+        if nd_table is not None:
+            for tx in nd_table.findall('.//nonDerivativeTransaction') + nd_table.findall('.//{*}nonDerivativeTransaction'):
+                tx_data = self._extract_transaction_data(tx, owner_name, owner_relationship, officer_title, filing, footnotes_dict=footnotes_dict)
+                if tx_data:
+                    transactions.append(tx_data)
+        
+        # Parse derivative transactions (options, warrants)
+        d_table = root.find('.//derivativeTable') or root.find('.//{*}derivativeTable')
+        if d_table is not None:
+             for tx in d_table.findall('.//derivativeTransaction') + d_table.findall('.//{*}derivativeTransaction'):
+                tx_data = self._extract_transaction_data(tx, owner_name, owner_relationship, officer_title, filing, is_derivative=True, footnotes_dict=footnotes_dict)
+                if tx_data:
+                    transactions.append(tx_data)
+        
+        return transactions
+    
+    def _extract_transaction_data(self, tx_elem, owner_name: str, owner_relationship: str, 
+                                   officer_title: str, filing: Dict[str, Any], 
+                                   is_derivative: bool = False, footnotes_dict: Dict[str, str] = None) -> Optional[Dict[str, Any]]:
+        """
+        Extract transaction data from a Form 4 transaction XML element.
+        
+        Transaction codes:
+            P - Open market or private purchase
+            S - Open market or private sale
+            M - Exercise of derivative security (option exercise)
+            A - Grant, award, or other acquisition
+            F - Payment of exercise price or tax liability by delivering or withholding securities
+            G - Gift of securities
+            D - Disposition to the issuer
+            J - Other acquisition or disposition
+        
+        Args:
+            tx_elem: XML element for transaction
+            owner_name: Name of the insider
+            owner_relationship: Relationship to company
+            officer_title: Title if officer
+            filing: Filing metadata dict
+            is_derivative: Whether this is a derivative transaction
+            
+        Returns:
+            Transaction dict or None if extraction fails
+        """
+        def get_value(elem, *paths):
+            """Helper to extract value from nested XML paths.
+            
+            SEC Form 4 XML typically has structure like:
+            <transactionDate>
+                <value>2025-01-15</value>
+            </transactionDate>
+            """
+            for path in paths:
+                # Try direct child first, then descendant
+                found = elem.find(path)
+                if found is None:
+                    found = elem.find(f'.//{path}')
+                if found is None:
+                    found = elem.find(f'{{*}}{path}')  # With any namespace
+                if found is None:
+                    found = elem.find(f'.//{{*}}{path}')
+                
+                if found is not None:
+                    # Try to find <value> child element (SEC standard structure)
+                    val_elem = found.find('value')
+                    if val_elem is None:
+                        val_elem = found.find('{*}value')
+                    if val_elem is None:
+                        val_elem = found.find('.//value')
+                    if val_elem is None:
+                        val_elem = found.find('.//{*}value')
+                    
+                    # If no value child, use the element itself
+                    if val_elem is None:
+                        val_elem = found
+                    
+                    # Extract text
+                    if val_elem is not None:
+                        text = val_elem.text
+                        if text and text.strip():
+                            return text.strip()
+            return None
+        
+        # Get transaction date
+        tx_date = get_value(tx_elem, 'transactionDate')
+        if not tx_date:
+            return None
+        
+        # Get transaction code
+        tx_code = get_value(tx_elem, 'transactionCode')
+        if not tx_code:
+            # Check transactionCoding element
+            coding_elem = tx_elem.find('.//transactionCoding') or tx_elem.find('.//{*}transactionCoding')
+            if coding_elem is not None:
+                code_elem = coding_elem.find('.//transactionCode') or coding_elem.find('.//{*}transactionCode')
+                if code_elem is not None and code_elem.text:
+                    tx_code = code_elem.text.strip()
+        
+        if not tx_code:
+            tx_code = 'M' if is_derivative else 'P'  # Default based on transaction type
+        
+        # Get shares
+        shares_str = get_value(tx_elem, 'transactionShares', 'shares')
+        shares = float(shares_str) if shares_str else 0
+        
+        # Get price per share
+        price_str = get_value(tx_elem, 'transactionPricePerShare', 'pricePerShare')
+        price = float(price_str) if price_str else 0
+        
+        # Calculate value
+        value = shares * price if shares and price else 0
+        
+        # Get acquisition/disposition flag
+        acq_disp = get_value(tx_elem, 'acquisitionDispositionCode', 'transactionAcquiredDisposedCode')
+        
+        # Get direct/indirect ownership
+        direct_indirect = get_value(tx_elem, 'directOrIndirectOwnership')
+        if not direct_indirect:
+            nature_elem = tx_elem.find('.//ownershipNature') or tx_elem.find('.//{*}ownershipNature')
+            if nature_elem is not None:
+                di_elem = nature_elem.find('.//directOrIndirectOwnership') or nature_elem.find('.//{*}directOrIndirectOwnership')
+                if di_elem is not None:
+                    val_elem = di_elem.find('.//value') or di_elem.find('.//{*}value') or di_elem
+                    if val_elem is not None and val_elem.text:
+                        direct_indirect = val_elem.text.strip()
+        
+        direct_indirect = direct_indirect or 'D'  # Default to direct
+        
+        # Get post-transaction shares owned
+        # This tells us how many shares the insider owns AFTER this transaction
+        shares_owned_after = None
+        post_amounts = tx_elem.find('.//postTransactionAmounts')
+        if post_amounts is None:
+            post_amounts = tx_elem.find('.//{*}postTransactionAmounts')
+        if post_amounts is not None:
+            shares_after_elem = post_amounts.find('.//sharesOwnedFollowingTransaction')
+            if shares_after_elem is None:
+                shares_after_elem = post_amounts.find('.//{*}sharesOwnedFollowingTransaction')
+            if shares_after_elem is not None:
+                # Find the value child element
+                # NOTE: Can't use 'or' operator because empty elements evaluate to False
+                val_elem = shares_after_elem.find('value')
+                if val_elem is None:
+                    val_elem = shares_after_elem.find('{*}value')
+                if val_elem is None:
+                    val_elem = shares_after_elem.find('.//value')
+                if val_elem is None:
+                    val_elem = shares_after_elem.find('.//{*}value')
+                
+                # Get text from value element, or from parent as fallback
+                text = None
+                if val_elem is not None and val_elem.text:
+                    text = val_elem.text.strip()
+                elif shares_after_elem.text and shares_after_elem.text.strip():
+                    text = shares_after_elem.text.strip()
+                
+                if text:
+                    try:
+                        shares_owned_after = float(text)
+                    except (ValueError, TypeError):
+                        pass
+        
+        # Calculate ownership percentage change
+        # For sales: % sold = shares / (shares_after + shares) * 100
+        # For purchases: % increase = shares / shares_after * 100 (if shares_after > 0)
+        ownership_change_pct = None
+        if shares_owned_after is not None and shares > 0:
+            if acq_disp == 'D':  # Disposition (sale)
+                # shares_before = shares_owned_after + shares
+                shares_before = shares_owned_after + shares
+                if shares_before > 0:
+                    ownership_change_pct = round((shares / shares_before) * 100, 1)
+            else:  # Acquisition (purchase)
+                # After purchase, they own shares_owned_after, so before they had shares_owned_after - shares
+                # But for purchases, we show what % of current holdings this represents
+                if shares_owned_after > 0:
+                    ownership_change_pct = round((shares / shares_owned_after) * 100, 1)
+        
+        # Check for 10b5-1 plan indicator
+        # This can appear in footnotes or as a specific element
+        is_10b51 = False
+        
+        # Check footnotes for 10b5-1 mentions
+        for footnote in tx_elem.findall('.//footnoteId') + tx_elem.findall('.//{*}footnoteId'):
+            footnote_id = footnote.get('id', '')
+            # 10b5-1 is often in footnote references
+            if '10b5' in footnote_id.lower() or 'rule' in footnote_id.lower():
+                is_10b51 = True
+                break
+        
+        # Also check for transactionTimeliness element (indicates pre-planned)
+        timeliness = get_value(tx_elem, 'transactionTimeliness')
+        if timeliness and timeliness.upper() == 'E':  # E = Early (pre-planned under 10b5-1)
+            is_10b51 = True
+        
+        # Collect footnote texts for this transaction
+        footnote_texts = []
+        if footnotes_dict:
+            for fn_ref in tx_elem.findall('.//footnoteId') + tx_elem.findall('.//{*}footnoteId'):
+                fn_id = fn_ref.get('id', '')
+                if fn_id and fn_id in footnotes_dict:
+                    fn_text = footnotes_dict[fn_id]
+                    if fn_text and fn_text not in footnote_texts:
+                        footnote_texts.append(fn_text)
+                        # Also check footnote text for 10b5-1 mentions
+                        if '10b5-1' in fn_text.lower() or '10b-5' in fn_text.lower():
+                            is_10b51 = True
+        
+        # Map transaction code to human-readable type
+        code_to_type = {
+            'P': 'Open Market Purchase',
+            'S': 'Open Market Sale', 
+            'M': 'Option Exercise',
+            'A': 'Award/Grant',
+            'F': 'Tax Withholding',
+            'G': 'Gift',
+            'D': 'Disposition',
+            'J': 'Other',
+            'C': 'Conversion',
+            'E': 'Expiration',
+            'H': 'Expiration (short)',
+            'I': 'Discretionary',
+            'L': 'Small Acquisition',
+            'O': 'Exercise OTC',
+            'U': 'Tender',
+            'W': 'Acquisition/Disposition by Will',
+            'X': 'Exercise In-the-Money',
+            'Z': 'Deposit',
+        }
+        
+        transaction_type_label = code_to_type.get(tx_code.upper(), 'Other')
+        
+        # Determine simplified buy/sell classification for aggregation
+        # P = Buy, S/F = Sell, M/A/G/etc. = Other
+        if tx_code.upper() == 'P':
+            simple_type = 'Buy'
+        elif tx_code.upper() in ['S', 'F', 'D']:
+            simple_type = 'Sell'
+        else:
+            simple_type = 'Other'
+        
+        position = officer_title if officer_title else owner_relationship
+        
+        return {
+            'name': owner_name,
+            'position': position,
+            'transaction_date': tx_date,
+            'transaction_type': simple_type,  # Buy/Sell/Other for compatibility
+            'transaction_code': tx_code.upper(),  # P/S/M/A/F/G etc.
+            'transaction_type_label': transaction_type_label,  # Human-readable
+            'shares': shares,
+            'value': value,
+            'price_per_share': price,
+            'direct_indirect': direct_indirect,  # D=Direct, I=Indirect
+            'acquisition_disposition': acq_disp,  # A=Acquisition, D=Disposition
+            'shares_owned_after': shares_owned_after,  # Shares owned after transaction
+            'ownership_change_pct': ownership_change_pct,  # % of holdings this represents
+            'is_10b51_plan': is_10b51,
+            'is_derivative': is_derivative,
+            'footnotes': footnote_texts,  # List of footnote texts for this transaction
+            'filing_url': f"https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK={filing['accession_number'].split('-')[0]}&type=4",
+            'filing_date': filing['filing_date'],
+            'accession_number': filing['accession_number']
+        }

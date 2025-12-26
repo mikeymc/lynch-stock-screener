@@ -508,10 +508,83 @@ class Database:
                 shares REAL,
                 value REAL,
                 filing_url TEXT,
+                transaction_code TEXT,
+                is_10b51_plan BOOLEAN DEFAULT FALSE,
+                direct_indirect TEXT DEFAULT 'D',
+                transaction_type_label TEXT,
+                price_per_share REAL,
+                is_derivative BOOLEAN DEFAULT FALSE,
+                accession_number TEXT,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 FOREIGN KEY (symbol) REFERENCES stocks(symbol),
                 UNIQUE(symbol, name, transaction_date, transaction_type, shares)
             )
+        """)
+
+        # Migration: Add Form 4 enrichment columns to insider_trades
+        cursor.execute("""
+            DO $$
+            BEGIN
+                -- transaction_code (P/S/M/A/F/G etc.)
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                               WHERE table_name = 'insider_trades' AND column_name = 'transaction_code') THEN
+                    ALTER TABLE insider_trades ADD COLUMN transaction_code TEXT;
+                END IF;
+                
+                -- is_10b51_plan
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                               WHERE table_name = 'insider_trades' AND column_name = 'is_10b51_plan') THEN
+                    ALTER TABLE insider_trades ADD COLUMN is_10b51_plan BOOLEAN DEFAULT FALSE;
+                END IF;
+                
+                -- direct_indirect (D or I)
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                               WHERE table_name = 'insider_trades' AND column_name = 'direct_indirect') THEN
+                    ALTER TABLE insider_trades ADD COLUMN direct_indirect TEXT DEFAULT 'D';
+                END IF;
+                
+                -- transaction_type_label (human-readable)
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                               WHERE table_name = 'insider_trades' AND column_name = 'transaction_type_label') THEN
+                    ALTER TABLE insider_trades ADD COLUMN transaction_type_label TEXT;
+                END IF;
+                
+                -- price_per_share
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                               WHERE table_name = 'insider_trades' AND column_name = 'price_per_share') THEN
+                    ALTER TABLE insider_trades ADD COLUMN price_per_share REAL;
+                END IF;
+                
+                -- is_derivative
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                               WHERE table_name = 'insider_trades' AND column_name = 'is_derivative') THEN
+                    ALTER TABLE insider_trades ADD COLUMN is_derivative BOOLEAN DEFAULT FALSE;
+                END IF;
+                
+                -- accession_number
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                               WHERE table_name = 'insider_trades' AND column_name = 'accession_number') THEN
+                    ALTER TABLE insider_trades ADD COLUMN accession_number TEXT;
+                END IF;
+                
+                -- footnotes (array of footnote texts)
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                               WHERE table_name = 'insider_trades' AND column_name = 'footnotes') THEN
+                    ALTER TABLE insider_trades ADD COLUMN footnotes TEXT[];
+                END IF;
+                
+                -- shares_owned_after (post-transaction shares owned)
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                               WHERE table_name = 'insider_trades' AND column_name = 'shares_owned_after') THEN
+                    ALTER TABLE insider_trades ADD COLUMN shares_owned_after REAL;
+                END IF;
+                
+                -- ownership_change_pct (% of holdings this transaction represents)
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                               WHERE table_name = 'insider_trades' AND column_name = 'ownership_change_pct') THEN
+                    ALTER TABLE insider_trades ADD COLUMN ownership_change_pct REAL;
+                END IF;
+            END $$;
         """)
 
         cursor.execute("""
@@ -1157,20 +1230,37 @@ class Database:
 
     def save_insider_trades(self, symbol: str, trades: List[Dict[str, Any]]):
         """
-        Batch save insider trades.
-        Expects keys: name, position, transaction_date, transaction_type, shares, value, filing_url (optional)
+        Batch save insider trades with Form 4 enrichment data.
+        Supports both legacy fields and new Form 4 fields.
         """
         if not trades:
             return
 
         sql = """
             INSERT INTO insider_trades
-            (symbol, name, position, transaction_date, transaction_type, shares, value, filing_url)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
-            ON CONFLICT (symbol, name, transaction_date, transaction_type, shares) DO NOTHING
+            (symbol, name, position, transaction_date, transaction_type, shares, value, filing_url,
+             transaction_code, is_10b51_plan, direct_indirect, transaction_type_label, price_per_share, 
+             is_derivative, accession_number, footnotes, shares_owned_after, ownership_change_pct)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            ON CONFLICT (symbol, name, transaction_date, transaction_type, shares) 
+            DO UPDATE SET
+                transaction_code = EXCLUDED.transaction_code,
+                is_10b51_plan = EXCLUDED.is_10b51_plan,
+                direct_indirect = EXCLUDED.direct_indirect,
+                transaction_type_label = EXCLUDED.transaction_type_label,
+                price_per_share = EXCLUDED.price_per_share,
+                is_derivative = EXCLUDED.is_derivative,
+                accession_number = EXCLUDED.accession_number,
+                footnotes = EXCLUDED.footnotes,
+                shares_owned_after = EXCLUDED.shares_owned_after,
+                ownership_change_pct = EXCLUDED.ownership_change_pct
         """
         
         for trade in trades:
+            # Convert footnotes list to PostgreSQL array format
+            footnotes = trade.get('footnotes', [])
+            pg_footnotes = footnotes if footnotes else None
+            
             args = (
                 symbol,
                 trade.get('name'),
@@ -1179,7 +1269,17 @@ class Database:
                 trade.get('transaction_type'),
                 trade.get('shares'),
                 trade.get('value'),
-                trade.get('filing_url')
+                trade.get('filing_url'),
+                trade.get('transaction_code'),
+                trade.get('is_10b51_plan', False),
+                trade.get('direct_indirect', 'D'),
+                trade.get('transaction_type_label'),
+                trade.get('price_per_share'),
+                trade.get('is_derivative', False),
+                trade.get('accession_number'),
+                pg_footnotes,
+                trade.get('shares_owned_after'),
+                trade.get('ownership_change_pct')
             )
             self.write_queue.put((sql, args))
 
@@ -1188,7 +1288,10 @@ class Database:
         try:
             cursor = conn.cursor()
             cursor.execute("""
-                SELECT name, position, transaction_date, transaction_type, shares, value, filing_url
+                SELECT name, position, transaction_date, transaction_type, shares, value, filing_url,
+                       transaction_code, is_10b51_plan, direct_indirect, transaction_type_label, 
+                       price_per_share, is_derivative, accession_number, footnotes,
+                       shares_owned_after, ownership_change_pct
                 FROM insider_trades
                 WHERE symbol = %s
                 ORDER BY transaction_date DESC
@@ -1203,7 +1306,17 @@ class Database:
                 'transaction_type': row[3],
                 'shares': row[4],
                 'value': row[5],
-                'filing_url': row[6]
+                'filing_url': row[6],
+                'transaction_code': row[7],
+                'is_10b51_plan': row[8] if row[8] is not None else False,
+                'direct_indirect': row[9] or 'D',
+                'transaction_type_label': row[10],
+                'price_per_share': row[11],
+                'is_derivative': row[12] if row[12] is not None else False,
+                'accession_number': row[13],
+                'footnotes': list(row[14]) if row[14] else [],
+                'shares_owned_after': row[15],
+                'ownership_change_pct': row[16]
             } for row in rows]
         finally:
             self.return_connection(conn)

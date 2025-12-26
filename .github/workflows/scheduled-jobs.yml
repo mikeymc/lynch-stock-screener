@@ -13,6 +13,8 @@ on:
     - cron: '20 3 * * *'
     # 8K cache at 10:30 PM ET (3:30 AM UTC) daily
     - cron: '30 3 * * *'
+    # Form 4 cache at 10:40 PM ET (3:40 AM UTC) daily
+    - cron: '40 3 * * *'
     # Price history cache at 11:00 PM ET (4:00 AM UTC) daily
     - cron: '0 4 * * *'
     # Outlook cache at 12:00 AM ET (5:00 AM UTC) daily - runs last
@@ -30,6 +32,7 @@ on:
           - news_cache
           - 10k_cache
           - 8k_cache
+          - form4_cache
           - outlook_cache
 
 jobs:
@@ -52,8 +55,10 @@ jobs:
               echo "type=news_cache" >> $GITHUB_OUTPUT
             elif [ "$HOUR" = "03" ] && [ "$MINUTE" -ge "15" ] && [ "$MINUTE" -lt "25" ]; then
               echo "type=10k_cache" >> $GITHUB_OUTPUT
-            elif [ "$HOUR" = "03" ] && [ "$MINUTE" -ge "25" ]; then
+            elif [ "$HOUR" = "03" ] && [ "$MINUTE" -ge "25" ] && [ "$MINUTE" -lt "35" ]; then
               echo "type=8k_cache" >> $GITHUB_OUTPUT
+            elif [ "$HOUR" = "03" ] && [ "$MINUTE" -ge "35" ]; then
+              echo "type=form4_cache" >> $GITHUB_OUTPUT
             elif [ "$HOUR" = "04" ]; then
               echo "type=price_history_cache" >> $GITHUB_OUTPUT
             elif [ "$HOUR" = "05" ]; then
@@ -69,7 +74,7 @@ jobs:
           echo "Triggering job: $JOB_TYPE"
 
           # Set params based on job type (all default to US region)
-          if [ "$JOB_TYPE" = "outlook_cache" ]; then
+          if [ "$JOB_TYPE" = "outlook_cache" ] || [ "$JOB_TYPE" = "form4_cache" ]; then
             PARAMS='{"region": "us"}'
           else
             PARAMS='{}'

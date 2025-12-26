@@ -201,6 +201,8 @@ class BackgroundWorker:
             self._run_10k_cache(job_id, params)
         elif job_type == '8k_cache':
             self._run_8k_cache(job_id, params)
+        elif job_type == 'form4_cache':
+            self._run_form4_cache(job_id, params)
         elif job_type == 'outlook_cache':
             self._run_outlook_cache(job_id, params)
         else:
@@ -984,6 +986,153 @@ class BackgroundWorker:
         }
         self.db.complete_job(job_id, result)
         logger.info(f"8-K cache complete: {result}")
+
+    def _run_form4_cache(self, job_id: int, params: Dict[str, Any]):
+        """
+        Cache SEC Form 4 insider transaction filings for all stocks.
+        
+        Fetches Form 4 filings from SEC EDGAR and parses XML to extract:
+        - Transaction codes (P=Purchase, S=Sale, M=Exercise, A=Award, etc.)
+        - 10b5-1 plan indicators
+        - Direct/indirect ownership
+        - Detailed transaction data
+        
+        Uses TradingView to get stock list with region filtering.
+        Symbols are sorted by score (STRONG_BUY first) when available.
+        
+        Params:
+            limit: Optional max number of stocks to process
+            region: Region filter (us, north-america, europe, asia, all)
+        """
+        limit = params.get('limit')
+        region = params.get('region', 'us')
+        
+        logger.info(f"Starting Form 4 cache job {job_id} (region={region})")
+        
+        from edgar_fetcher import EdgarFetcher
+        from tradingview_fetcher import TradingViewFetcher
+        
+        # Disable edgartools disk caching for batch jobs
+        try:
+            from edgar import httpclient
+            httpclient.CACHE_DIRECTORY = None
+            logger.info("Disabled edgartools HTTP disk cache for batch job")
+        except Exception as e:
+            logger.warning(f"Could not disable edgartools cache: {e}")
+        
+        # Map CLI region to TradingView regions
+        region_mapping = {
+            'us': ['us'],
+            'north-america': ['north_america'],
+            'south-america': ['south_america'],
+            'europe': ['europe'],
+            'asia': ['asia'],
+            'all': None  # All regions
+        }
+        tv_regions = region_mapping.get(region, ['us'])
+        
+        # Get stock list from TradingView
+        self.db.update_job_progress(job_id, progress_pct=5, progress_message=f'Fetching stock list from TradingView ({region})...')
+        tv_fetcher = TradingViewFetcher()
+        market_data_cache = tv_fetcher.fetch_all_stocks(limit=20000, regions=tv_regions)
+        
+        # Ensure all stocks exist in DB before caching (prevents FK violations)
+        self.db.update_job_progress(job_id, progress_pct=8, progress_message='Ensuring stocks exist in database...')
+        self.db.ensure_stocks_exist_batch(market_data_cache)
+        
+        all_symbols = list(market_data_cache.keys())
+        
+        # Sort by screening score if available (prioritize STRONG_BUY stocks)
+        scored_symbols = self.db.get_stocks_ordered_by_score(limit=None)
+        scored_set = set(scored_symbols)
+        
+        sorted_symbols = [s for s in scored_symbols if s in set(all_symbols)]
+        remaining = [s for s in all_symbols if s not in scored_set]
+        all_symbols = sorted_symbols + remaining
+        
+        # Apply limit if specified
+        if limit and limit < len(all_symbols):
+            all_symbols = all_symbols[:limit]
+        
+        total = len(all_symbols)
+        logger.info(f"Caching Form 4 filings for {total} stocks (region={region}, sorted by score)")
+        
+        # Initialize SEC fetcher with CIK cache
+        sec_user_agent = os.environ.get('SEC_USER_AGENT', 'Lynch Stock Screener mikey@example.com')
+        logger.info("Pre-fetching SEC CIK mappings...")
+        cik_cache = EdgarFetcher.prefetch_cik_cache(sec_user_agent)
+        
+        edgar_fetcher = EdgarFetcher(
+            user_agent=sec_user_agent,
+            db=self.db,
+            cik_cache=cik_cache
+        )
+        
+        self.db.update_job_progress(job_id, progress_pct=10,
+                                    progress_message=f'Caching Form 4 for {total} stocks...',
+                                    total_count=total)
+        
+        processed = 0
+        cached = 0
+        errors = 0
+        total_transactions = 0
+        
+        for symbol in all_symbols:
+            if self.shutdown_requested:
+                logger.info("Shutdown requested, stopping Form 4 cache job")
+                break
+            
+            # Check if job was cancelled
+            job_status = self.db.get_background_job(job_id)
+            if job_status and job_status.get('status') == 'cancelled':
+                logger.info(f"Job {job_id} was cancelled, stopping")
+                return
+            
+            try:
+                # Fetch and parse Form 4 filings
+                transactions = edgar_fetcher.fetch_form4_filings(symbol)
+                
+                if transactions:
+                    # Save to database with enriched data
+                    self.db.save_insider_trades(symbol, transactions)
+                    total_transactions += len(transactions)
+                    cached += 1
+                else:
+                    # No transactions found (not an error, just no Form 4s)
+                    cached += 1
+                    
+            except Exception as e:
+                logger.debug(f"[{symbol}] Form 4 cache error: {e}")
+                errors += 1
+            
+            processed += 1
+            
+            # Update progress every 25 stocks
+            if processed % 25 == 0:
+                pct = 10 + int((processed / total) * 85)
+                self.db.update_job_progress(
+                    job_id,
+                    progress_pct=pct,
+                    progress_message=f'Cached {processed}/{total} stocks ({total_transactions} transactions, {errors} errors)',
+                    processed_count=processed,
+                    total_count=total
+                )
+                self._send_heartbeat(job_id)
+            
+            if processed % 10 == 0:
+                logger.info(f"Form 4 cache progress: {processed}/{total} (transactions: {total_transactions}, errors: {errors}) | MEMORY: {get_memory_mb():.0f}MB")
+                check_memory_warning(f"[form4 {processed}/{total}]")
+        
+        # Complete job
+        result = {
+            'total_stocks': total,
+            'processed': processed,
+            'cached': cached,
+            'total_transactions': total_transactions,
+            'errors': errors
+        }
+        self.db.complete_job(job_id, result)
+        logger.info(f"Form 4 cache complete: {result}")
 
     def _run_outlook_cache(self, job_id: int, params: Dict[str, Any]):
         """
