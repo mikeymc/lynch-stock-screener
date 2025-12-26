@@ -37,7 +37,7 @@ const AlgorithmSelector = ({ selectedAlgorithm, onAlgorithmChange }) => {
     <>
       <div className="algorithm-selector">
         <label htmlFor="algorithm-select">
-          Scoring Algo <sup onClick={() => setShowHelp(true)} style={{ cursor: 'pointer' }} title="Learn about scoring algorithms">i</sup>:
+          Scoring:
         </label>
         <select
           id="algorithm-select"
@@ -51,7 +51,7 @@ const AlgorithmSelector = ({ selectedAlgorithm, onAlgorithmChange }) => {
               value={key}
               title={algo.short_desc}
             >
-              {algo.name} {algo.recommended ? '⭐' : ''}
+              {algo.name}
             </option>
           ))}
         </select>

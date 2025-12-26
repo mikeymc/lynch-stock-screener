@@ -12,7 +12,7 @@ logger = logging.getLogger(__name__)
 # Algorithm metadata for UI display
 ALGORITHM_METADATA = {
     'weighted': {
-        'name': 'Weighted Scoring',
+        'name': 'Weighted',
         'short_desc': 'Balanced approach weighting PEG ratio most heavily with earnings quality',
         'description': '''Assigns weighted importance to each metric based on Lynch's priorities:
         • PEG Ratio: 50% (Lynch's primary valuation metric)

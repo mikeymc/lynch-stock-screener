@@ -14,12 +14,12 @@
 .algorithm-dropdown {
   flex: 1;
   min-width: 200px;
-  padding: 8px 12px;
-  background: #334155;
+  padding: 0.35rem 0.75rem;
+  background: #1e293b;
   color: #e2e8f0;
   border: 1px solid #475569;
-  border-radius: 6px;
-  font-size: 14px;
+  border-radius: 0.5rem;
+  font-size: 0.95rem;
   cursor: pointer;
   transition: all 0.2s;
 }
