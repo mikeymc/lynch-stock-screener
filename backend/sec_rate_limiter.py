@@ -70,7 +70,7 @@ class SECRateLimiter:
 
 
 # Global singleton instance - import this in other modules
-SEC_RATE_LIMITER = SECRateLimiter(requests_per_second=8.0)
+SEC_RATE_LIMITER = SECRateLimiter(requests_per_second=5.0)
 
 
 def configure_edgartools_rate_limit():
