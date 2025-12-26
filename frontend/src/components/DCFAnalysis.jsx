@@ -379,30 +379,29 @@ const DCFAnalysis = ({ stockData, earningsHistory }) => {
       {/* Left Column - DCF Content (2/3) */}
       <div className="reports-main-column">
         <div className="dcf-container">
-          {/* Historical FCF Chart */}
+          {/* Historical FCF Chart with AI Button Overlay */}
           {historicalMetrics && getChartData() && (
-            <div className="dcf-panel dcf-historical-chart">
+            <div className="dcf-panel dcf-historical-chart" style={{ position: 'relative' }}>
+              <DCFAIRecommendations
+                symbol={stockData.symbol}
+                renderInsideChart={true}
+                onApplyScenario={(scenario) => {
+                  setAssumptions(prev => ({
+                    ...prev,
+                    growthRate: scenario.growthRate,
+                    terminalGrowthRate: scenario.terminalGrowthRate,
+                    discountRate: scenario.discountRate
+                  }));
+                  if (scenario.baseYearMethod) {
+                    setBaseYearMethod(scenario.baseYearMethod);
+                  }
+                }}
+              />
               <div style={{ height: '250px' }}>
                 <Line data={getChartData()} options={chartOptions} />
               </div>
             </div>
           )}
-
-          {/* AI Recommendations */}
-          <DCFAIRecommendations
-            symbol={stockData.symbol}
-            onApplyScenario={(scenario) => {
-              setAssumptions(prev => ({
-                ...prev,
-                growthRate: scenario.growthRate,
-                terminalGrowthRate: scenario.terminalGrowthRate,
-                discountRate: scenario.discountRate
-              }));
-              if (scenario.baseYearMethod) {
-                setBaseYearMethod(scenario.baseYearMethod);
-              }
-            }}
-          />
 
           <div className="dcf-grid">
             {/* Assumptions Panel */}

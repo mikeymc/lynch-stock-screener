@@ -4,7 +4,7 @@
 import { useState, useEffect } from 'react'
 import ReactMarkdown from 'react-markdown'
 
-export default function DCFAIRecommendations({ symbol, onApplyScenario }) {
+export default function DCFAIRecommendations({ symbol, onApplyScenario, renderInsideChart = false }) {
     const [recommendations, setRecommendations] = useState(null)
     const [loading, setLoading] = useState(false)
     const [error, setError] = useState(null)
@@ -93,6 +93,69 @@ export default function DCFAIRecommendations({ symbol, onApplyScenario }) {
 
     const hasRecommendations = recommendations?.scenarios
 
+    // Button styling for overlay mode
+    const buttonStyle = renderInsideChart ? {
+        position: 'absolute',
+        top: '5px',
+        left: '10px',
+        padding: '0.5rem 1rem',
+        backgroundColor: '#8b5cf6',
+        color: 'white',
+        border: 'none',
+        borderRadius: '0.375rem',
+        cursor: 'pointer',
+        fontSize: '1rem',
+        fontWeight: '500',
+        display: 'flex',
+        alignItems: 'center',
+        gap: '0.5rem',
+        zIndex: 10
+    } : {
+        padding: '0.5rem 1rem',
+        backgroundColor: '#8b5cf6',
+        color: 'white',
+        border: 'none',
+        borderRadius: '0.375rem',
+        cursor: 'pointer',
+        fontSize: '1rem',
+        fontWeight: '500',
+        display: 'flex',
+        alignItems: 'center',
+        gap: '0.5rem'
+    }
+
+    // When renderInsideChart is true, only render the button overlay
+    if (renderInsideChart) {
+        return (
+            <>
+                {!loading && (
+                    <button
+                        onClick={() => generateRecommendations(hasRecommendations)}
+                        style={buttonStyle}
+                    >
+                        {hasRecommendations ? '🔄 Optimize' : '✨ Optimize'}
+                    </button>
+                )}
+                {loading && (
+                    <div style={{
+                        position: 'absolute',
+                        top: '5px',
+                        left: '10px',
+                        padding: '0.5rem 1rem',
+                        backgroundColor: '#1e293b',
+                        borderRadius: '0.375rem',
+                        border: '1px solid #334155',
+                        color: '#94a3b8',
+                        fontSize: '1rem',
+                        zIndex: 10
+                    }}>
+                        Optimizing...
+                    </div>
+                )}
+            </>
+        )
+    }
+
     return (
         <div style={{ marginBottom: '1.5rem' }}>
             {/* Generate Button */}
@@ -100,21 +163,9 @@ export default function DCFAIRecommendations({ symbol, onApplyScenario }) {
                 {!loading && (
                     <button
                         onClick={() => generateRecommendations(hasRecommendations)}
-                        style={{
-                            padding: '0.5rem 1rem',
-                            backgroundColor: '#8b5cf6',
-                            color: 'white',
-                            border: 'none',
-                            borderRadius: '0.375rem',
-                            cursor: 'pointer',
-                            fontSize: '1rem',
-                            fontWeight: '500',
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '0.5rem'
-                        }}
+                        style={buttonStyle}
                     >
-                        {hasRecommendations ? '🔄 Regenerate AI Settings' : '✨ AI Optimize Settings'}
+                        {hasRecommendations ? '🔄 Optimize' : '✨ Optimize'}
                     </button>
                 )}
             </div>
