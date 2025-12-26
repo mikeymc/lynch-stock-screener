@@ -19,12 +19,30 @@ export default function MaterialEvents({ eventsData, loading, symbol }) {
 
     if (events.length === 0) {
         return (
-            <div style={{ padding: '40px', textAlign: 'center', color: '#888' }}>
-                <p>No material events (SEC 8-K filings) available for this stock.</p>
-                <p style={{ fontSize: '13px', marginTop: '10px' }}>
-                    Material events include significant corporate announcements like earnings releases,
-                    acquisitions, leadership changes, and other important disclosures.
-                </p>
+            <div className="reports-layout">
+                <div className="reports-main-column">
+                    <div className="section-item">
+                        <div className="section-header-simple">
+                            <span className="section-title">Material Event Filings</span>
+                        </div>
+                        <div className="section-content">
+                            <div className="section-summary">
+                                <p style={{ textAlign: 'center', color: '#94a3b8', margin: '2rem 0' }}>
+                                    No material events (SEC 8-K filings) available for this stock.
+                                </p>
+                                <p style={{ fontSize: '13px', textAlign: 'center', color: '#64748b' }}>
+                                    Material events include significant corporate announcements like earnings releases,
+                                    acquisitions, leadership changes, and other important disclosures.
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div className="reports-chat-sidebar">
+                    <div className="chat-sidebar-content">
+                        <AnalysisChat ref={chatRef} symbol={symbol} chatOnly={true} />
+                    </div>
+                </div>
             </div>
         )
     }
