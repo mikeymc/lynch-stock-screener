@@ -529,8 +529,9 @@ class BackgroundWorker:
         errors = 0
         
         # Process in batches with threading for performance
-        BATCH_SIZE = 50
-        MAX_WORKERS = 12
+        # Reduced from 50/12 to 25/6 to prevent OOM on 2GB workers (yfinance DataFrames accumulate)
+        BATCH_SIZE = 25
+        MAX_WORKERS = 6
         
         for batch_start in range(0, total, BATCH_SIZE):
             if self.shutdown_requested:
