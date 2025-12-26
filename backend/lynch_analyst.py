@@ -289,6 +289,57 @@ class LynchAnalyst:
 
         return response.text
 
+    def generate_analysis_stream(self, stock_data: Dict[str, Any], history: List[Dict[str, Any]], sections: Optional[Dict[str, Any]] = None, news: Optional[List[Dict[str, Any]]] = None, material_events: Optional[List[Dict[str, Any]]] = None, model_version: str = DEFAULT_MODEL):
+        """
+        Stream a new Peter Lynch-style analysis using Gemini AI
+
+        Args:
+            stock_data: Dict containing current stock metrics
+            history: List of dicts containing historical earnings/revenue data
+            sections: Optional dict of filing sections
+            news: Optional list of news articles
+            material_events: Optional list of material events (8-K filings)
+            model_version: Gemini model to use for generation
+
+        Yields:
+            Chunks of generated text
+        """
+        if model_version not in AVAILABLE_MODELS:
+            raise ValueError(f"Invalid model: {model_version}. Must be one of {AVAILABLE_MODELS}")
+
+        import time
+        t0 = time.time()
+        
+        prompt = self.format_prompt(stock_data, history, sections, news, material_events)
+        t1 = time.time()
+        prompt_len = len(prompt)
+
+        # Yield a timing marker
+        yield f"[Prompt: {t1-t0:.2f}s, {prompt_len:,} chars] "
+        
+        t2 = time.time()
+        response = self.client.models.generate_content_stream(
+            model=model_version,
+            contents=prompt
+        )
+        t3 = time.time()
+        
+        first_chunk = True
+        for i, chunk in enumerate(response):
+            if first_chunk:
+                t4 = time.time()
+                first_chunk = False
+            
+            text_content = None
+            try:
+                if chunk.text:
+                    text_content = chunk.text
+            except Exception:
+                pass
+            
+            if text_content:
+                yield text_content
+
     def generate_unified_chart_analysis(
         self,
         stock_data: Dict[str, Any],
@@ -487,10 +538,11 @@ class LynchAnalyst:
         news: Optional[List[Dict[str, Any]]] = None,
         material_events: Optional[List[Dict[str, Any]]] = None,
         use_cache: bool = True,
-        model_version: str = DEFAULT_MODEL
-    ) -> str:
+        model_version: str = DEFAULT_MODEL,
+        stream: bool = False
+    ) -> Any:
         """
-        Get cached analysis or generate a new one
+        Get cached analysis or generate a new one (optionally streaming)
 
         Args:
             user_id: User ID for scoping the analysis
@@ -502,12 +554,10 @@ class LynchAnalyst:
             material_events: Optional list of material events (8-K filings)
             use_cache: Whether to use cached analysis if available
             model_version: Gemini model to use for generation
+            stream: Whether to return a generator of text chunks instead of full string
 
         Returns:
-            Analysis text (from cache or freshly generated)
-
-        Raises:
-            ValueError: If model_version is not in AVAILABLE_MODELS
+            Analysis text (str) or generator if stream=True
         """
         if model_version not in AVAILABLE_MODELS:
             raise ValueError(f"Invalid model: {model_version}. Must be one of {AVAILABLE_MODELS}")
@@ -516,15 +566,32 @@ class LynchAnalyst:
         if use_cache:
             cached = self.db.get_lynch_analysis(user_id, symbol)
             if cached:
-                return cached['analysis_text']
+                if stream:
+                    # Yield single chunk for consistency
+                    yield cached['analysis_text']
+                    return
+                else:
+                    return cached['analysis_text']
 
         # Generate new analysis
-        analysis_text = self.generate_analysis(stock_data, history, sections, news, material_events, model_version)
-
-        # Save to cache for this user
-        self.db.save_lynch_analysis(user_id, symbol, analysis_text, model_version)
-
-        return analysis_text
+        if stream:
+            # Define a generator that saves to DB on completion
+            def _stream_and_save():
+                full_text_parts = []
+                for chunk in self.generate_analysis_stream(stock_data, history, sections, news, material_events, model_version):
+                    full_text_parts.append(chunk)
+                    yield chunk
+                
+                # Save complete text to cache
+                final_text = "".join(full_text_parts)
+                if final_text:
+                    self.db.save_lynch_analysis(user_id, symbol, final_text, model_version)
+            
+            yield from _stream_and_save()
+        else:
+            analysis_text = self.generate_analysis(stock_data, history, sections, news, material_events, model_version)
+            self.db.save_lynch_analysis(user_id, symbol, analysis_text, model_version)
+            return analysis_text
 
     def generate_filing_section_summary(
         self,

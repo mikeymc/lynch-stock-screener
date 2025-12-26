@@ -1531,6 +1531,8 @@ def get_lynch_analysis(symbol, user_id):
 
     # If only_cached is requested, return what we have (or None)
     only_cached = request.args.get('only_cached', 'false').lower() == 'true'
+    should_stream = request.args.get('stream', 'false').lower() == 'true'
+
     if only_cached:
         if was_cached:
             return jsonify({
@@ -1551,6 +1553,31 @@ def get_lynch_analysis(symbol, user_id):
         material_events = db.get_material_events(symbol, limit=10)
         news_articles = db.get_news_articles(symbol, limit=20)
 
+        if should_stream:
+            def generate():
+                try:
+                    # Send metadata first
+                    gen_at = cached_analysis['generated_at'] if was_cached else datetime.now().isoformat()
+                    yield f"data: {json.dumps({'type': 'metadata', 'cached': was_cached, 'generated_at': gen_at})}\n\n"
+
+                    # Get iterator
+                    iterator = lynch_analyst.get_or_generate_analysis(
+                        user_id, symbol, stock_data, history,
+                        sections=sections, news=news_articles, material_events=material_events,
+                        use_cache=True, model_version=model, stream=True
+                    )
+                    
+                    for chunk in iterator:
+                        yield f"data: {json.dumps({'type': 'chunk', 'content': chunk})}\n\n"
+                    
+                    yield f"data: {json.dumps({'type': 'done'})}\n\n"
+                except Exception as e:
+                    logger.error(f"Streaming error for {symbol}: {e}")
+                    yield f"data: {json.dumps({'type': 'error', 'message': str(e)})}\n\n"
+
+            return Response(stream_with_context(generate()), mimetype='text/event-stream')
+
+        # Normal synchronous response
         analysis_text = lynch_analyst.get_or_generate_analysis(
             user_id,
             symbol,
@@ -1614,6 +1641,8 @@ def refresh_lynch_analysis(symbol, user_id):
     # Get model from request body and validate
     data = request.get_json() or {}
     model = data.get('model', DEFAULT_AI_MODEL)
+    should_stream = data.get('stream', False)
+    
     if model not in AVAILABLE_AI_MODELS:
         return jsonify({'error': f'Invalid model: {model}. Must be one of {AVAILABLE_AI_MODELS}'}), 400
 
@@ -1622,6 +1651,29 @@ def refresh_lynch_analysis(symbol, user_id):
         # Fetch material events and news articles for context
         material_events = db.get_material_events(symbol, limit=10)
         news_articles = db.get_news_articles(symbol, limit=20)
+
+        if should_stream:
+            def generate():
+                try:
+                    # Send metadata first (cached=False since we are forcing refresh)
+                    yield f"data: {json.dumps({'type': 'metadata', 'cached': False, 'generated_at': datetime.now().isoformat()})}\n\n"
+
+                    # Get iterator
+                    iterator = lynch_analyst.get_or_generate_analysis(
+                        user_id, symbol, stock_data, history,
+                        sections=sections, news=news_articles, material_events=material_events,
+                        use_cache=False, model_version=model, stream=True
+                    )
+                    
+                    for chunk in iterator:
+                        yield f"data: {json.dumps({'type': 'chunk', 'content': chunk})}\n\n"
+                    
+                    yield f"data: {json.dumps({'type': 'done'})}\n\n"
+                except Exception as e:
+                    logger.error(f"Streaming refresh error for {symbol}: {e}")
+                    yield f"data: {json.dumps({'type': 'error', 'message': str(e)})}\n\n"
+
+            return Response(stream_with_context(generate()), mimetype='text/event-stream')
 
         analysis_text = lynch_analyst.get_or_generate_analysis(
             user_id,

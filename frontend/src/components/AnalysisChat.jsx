@@ -104,22 +104,34 @@ const AnalysisChat = forwardRef(function AnalysisChat({ symbol, stockName, chatO
       }
       setAnalysisError(null)
 
-      let url = forceRefresh
+      let baseUrl = forceRefresh
         ? `${API_BASE}/stock/${symbol}/lynch-analysis/refresh`
         : `${API_BASE}/stock/${symbol}/lynch-analysis`
 
+      // Handle simple check for cached data (no streaming)
       if (onlyCached && !forceRefresh) {
-        url += `?only_cached=true&model=${selectedModel}`
-      } else if (!forceRefresh) {
-        url += `?model=${selectedModel}`
+        const url = `${baseUrl}?only_cached=true&model=${selectedModel}`
+        const response = await fetch(url, { signal })
+        if (!response.ok) throw new Error(response.statusText)
+        const data = await response.json()
+        setAnalysis(data.analysis)
+        setGeneratedAt(data.generated_at)
+        setCached(data.cached)
+        return
       }
 
-      const method = forceRefresh ? 'POST' : 'GET'
+      // Prepare request for streaming
+      let url = baseUrl
+      const options = {
+        method: forceRefresh ? 'POST' : 'GET',
+        signal
+      }
 
-      const options = { method, signal }
       if (forceRefresh) {
         options.headers = { 'Content-Type': 'application/json' }
-        options.body = JSON.stringify({ model: selectedModel })
+        options.body = JSON.stringify({ model: selectedModel, stream: true })
+      } else {
+        url += `?model=${selectedModel}&stream=true`
       }
 
       const response = await fetch(url, options)
@@ -128,10 +140,42 @@ const AnalysisChat = forwardRef(function AnalysisChat({ symbol, stockName, chatO
         throw new Error(`Failed to fetch analysis: ${response.statusText}`)
       }
 
-      const data = await response.json()
-      setAnalysis(data.analysis)
-      setGeneratedAt(data.generated_at)
-      setCached(data.cached)
+      // Handle streaming response
+      const reader = response.body.getReader()
+      const decoder = new TextDecoder()
+      let buffer = ''
+
+      // Start with empty string if not using cached data effectively (or if we want to show it building up)
+      // If we are refreshing, definitely clear. If loading fresh, clear.
+      setAnalysis('')
+
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+
+        buffer += decoder.decode(value, { stream: true })
+        const lines = buffer.split('\n')
+        buffer = lines.pop() || ''
+
+        for (const line of lines) {
+          if (line.startsWith('data: ')) {
+            try {
+              const data = JSON.parse(line.slice(6))
+
+              if (data.type === 'metadata') {
+                setCached(data.cached)
+                setGeneratedAt(data.generated_at)
+              } else if (data.type === 'chunk') {
+                setAnalysis(prev => (prev || '') + data.content)
+              } else if (data.type === 'error') {
+                throw new Error(data.message)
+              }
+            } catch (e) {
+              console.error('Error parsing stream:', e)
+            }
+          }
+        }
+      }
     } catch (err) {
       if (err.name === 'AbortError') {
         console.log('Fetch aborted')
@@ -347,7 +391,7 @@ const AnalysisChat = forwardRef(function AnalysisChat({ symbol, stockName, chatO
     <div className="brief-analysis-container">
       <div className="section-item">
         <div className="section-content">
-          {analysisLoading ? (
+          {analysisLoading && !analysis ? (
             <div className="section-summary">
               <div className="summary-loading">
                 <span className="loading-spinner"></span>
