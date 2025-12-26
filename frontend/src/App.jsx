@@ -19,6 +19,7 @@ import AlgorithmTuning from './pages/AlgorithmTuning'
 import AlgorithmSelector from './components/AlgorithmSelector'
 import StatusBar from './components/StatusBar'
 import AdvancedFilter from './components/AdvancedFilter'
+import SearchPopover from './components/SearchPopover'
 import { useAuth } from './context/AuthContext'
 import LoginModal from './components/LoginModal'
 import UserAvatar from './components/UserAvatar'
@@ -873,28 +874,7 @@ function StockListView({
             </div>
           )}
 
-          <div className="filter-controls">
-            <label>Search: </label>
-            <div className="search-container">
-              <span className="search-icon">{searchLoading ? '⏳' : '🔍'}</span>
-              <input
-                type="text"
-                className="search-input"
-                value={searchQuery}
-                onChange={(e) => handleSearchChange(e.target.value)}
-                placeholder="Search by symbol or company name..."
-              />
-              {searchQuery && (
-                <button
-                  className="clear-button"
-                  onClick={() => handleSearchChange('')}
-                  aria-label="Clear search"
-                >
-                  ×
-                </button>
-              )}
-            </div>
-          </div>
+          <SearchPopover onSelect={(sym) => navigate(`/stock/${sym}`)} />
 
           <div className="filter-controls">
             <label>Filter: </label>

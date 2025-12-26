@@ -386,8 +386,8 @@ const AnalysisChat = forwardRef(function AnalysisChat({ symbol, stockName, chatO
     }
   }
 
-  // Analysis content component (for left column in two-column mode)
-  const AnalysisContent = () => (
+  // Analysis content (for left column in two-column mode)
+  const analysisContent = (
     <div className="brief-analysis-container">
       <div className="section-item">
         <div className="section-content">
@@ -450,8 +450,8 @@ const AnalysisChat = forwardRef(function AnalysisChat({ symbol, stockName, chatO
     </div>
   )
 
-  // Chat component (for right column or standalone)
-  const ChatSection = () => (
+  // Chat content (for right column or standalone)
+  const chatContent = (
     <div className="unified-chat-container">
       <div
         className="unified-chat-messages"
@@ -537,7 +537,7 @@ const AnalysisChat = forwardRef(function AnalysisChat({ symbol, stockName, chatO
 
   // In chatOnly mode, just render the chat
   if (chatOnly) {
-    return <ChatSection />
+    return chatContent
   }
 
   // In full mode, use two-column layout
@@ -545,13 +545,13 @@ const AnalysisChat = forwardRef(function AnalysisChat({ symbol, stockName, chatO
     <div className="reports-layout">
       {/* Left Column - Analysis Content (2/3) */}
       <div className="reports-main-column">
-        <AnalysisContent />
+        {analysisContent}
       </div>
 
       {/* Right Column - Chat Sidebar (1/3) */}
       <div className="reports-chat-sidebar">
         <div className="chat-sidebar-content">
-          <ChatSection />
+          {chatContent}
         </div>
       </div>
     </div>

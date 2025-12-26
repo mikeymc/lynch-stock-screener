@@ -954,6 +954,25 @@ td strong {
   /* Chrome/Safari/Opera */
 }
 
+/* Brief Analysis Container - match chat sidebar height */
+.brief-analysis-container {
+  min-height: calc(100vh - 200px);
+  display: flex;
+  flex-direction: column;
+}
+
+.brief-analysis-container > .section-item {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+
+.brief-analysis-container > .section-item > .section-content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+
 /* Right Column - Chat Sidebar (1/3) - fixed */
 .reports-chat-sidebar {
   flex: 1;
@@ -1026,6 +1045,10 @@ td strong {
 @media (max-width: 1200px) {
   .reports-layout {
     flex-direction: column;
+  }
+
+  .brief-analysis-container {
+    min-height: auto;
   }
 
   .reports-chat-sidebar {
