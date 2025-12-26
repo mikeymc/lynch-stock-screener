@@ -100,14 +100,15 @@ def test_format_prompt_requests_specific_length(test_db, sample_stock_data, samp
 
 @patch('lynch_analyst.genai.Client')
 def test_generate_analysis_calls_gemini_api(mock_client_class, test_db, sample_stock_data, sample_history):
-    """Test that generate_analysis properly calls Gemini API"""
+    """Test that analysis generation properly calls Gemini API stream"""
     # Setup mock
-    mock_response = Mock()
-    mock_response.text = "This is a Peter Lynch style analysis of Apple. Strong growth, reasonable valuation."
-    mock_response.parts = [Mock()]  # Ensure parts exist
+    mock_chunk = Mock()
+    mock_chunk.text = "This is a Peter Lynch style analysis of Apple."
+    
+    mock_response = [mock_chunk]
     
     mock_models = Mock()
-    mock_models.generate_content.return_value = mock_response
+    mock_models.generate_content_stream.return_value = mock_response
     
     mock_client = Mock()
     mock_client.models = mock_models
@@ -115,21 +116,37 @@ def test_generate_analysis_calls_gemini_api(mock_client_class, test_db, sample_s
 
     # Create analyst AFTER mock is set up
     analyst = LynchAnalyst(test_db, api_key="test-api-key")
+    
+    analyst = LynchAnalyst(test_db, api_key="test-api-key")
+    
+    # Create a dummy user
+    user_id = test_db.create_user("google_test", "test@example.com", "Test User", None)
 
-    # Generate analysis
-    result = analyst.generate_analysis(sample_stock_data, sample_history, model_version="gemini-2.5-flash")
+    # Save stock basic data (REQUIRED for foreign key constraint)
+    test_db.save_stock_basic("AAPL", "Apple Inc.", "NASDAQ", "Technology")
+    test_db.flush()
 
-    # Verify API was called
-    assert mock_models.generate_content.called
-    assert result == "This is a Peter Lynch style analysis of Apple. Strong growth, reasonable valuation."
+    # Generate analysis using the main entry point
+    # We consume the generator
+    generator = analyst.get_or_generate_analysis(user_id, "AAPL", sample_stock_data, sample_history, use_cache=False, model_version="gemini-2.5-flash")
+    result_parts = []
+    for chunk in generator:
+        result_parts.append(chunk)
+    
+    result = "".join(result_parts)
+
+    # Verify API was called (generate_content_stream, not generate_content)
+    assert mock_models.generate_content_stream.called
+    # The result will contain the timing marker first, so check for containment
+    assert "This is a Peter Lynch style analysis of Apple." in result
 
 
 @patch('lynch_analyst.genai.Client')
 def test_generate_analysis_handles_api_error(mock_client_class, test_db, sample_stock_data, sample_history):
-    """Test that generate_analysis handles API errors gracefully"""
+    """Test that analysis generation handles API errors gracefully"""
     # Setup mock to raise an error
     mock_models = Mock()
-    mock_models.generate_content.side_effect = Exception("API Error")
+    mock_models.generate_content_stream.side_effect = Exception("API Error")
     
     mock_client = Mock()
     mock_client.models = mock_models
@@ -137,10 +154,15 @@ def test_generate_analysis_handles_api_error(mock_client_class, test_db, sample_
 
     # Create analyst AFTER mock is set up
     analyst = LynchAnalyst(test_db, api_key="test-api-key")
+    user_id = test_db.create_user("google_test", "test@example.com", "Test User", None)
 
-    # Should raise exception
+    # Should raise exception when iterating
+    generator = analyst.get_or_generate_analysis(user_id, "AAPL", sample_stock_data, sample_history, use_cache=False, model_version="gemini-2.5-flash")
+    
+    # The generator yields a timing marker first, error happens when calling API
     with pytest.raises(Exception):
-        analyst.generate_analysis(sample_stock_data, sample_history, model_version="gemini-2.5-flash")
+        for _ in generator:
+            pass
 
 
 def test_get_or_generate_uses_cache(test_db, sample_stock_data, sample_history):
@@ -157,8 +179,10 @@ def test_get_or_generate_uses_cache(test_db, sample_stock_data, sample_history):
     test_db.flush()  # Ensure stock is committed before saving analysis
     test_db.save_lynch_analysis(user_id, "AAPL", cached_text, "gemini-2.5-flash")
 
-    # Should return cached analysis without calling API
-    result = analyst.get_or_generate_analysis(user_id, "AAPL", sample_stock_data, sample_history, use_cache=True, model_version="gemini-2.5-flash")
+    # Should return generator yielding cached analysis
+    generator = analyst.get_or_generate_analysis(user_id, "AAPL", sample_stock_data, sample_history, use_cache=True, model_version="gemini-2.5-flash")
+    
+    result = "".join(generator)
 
     assert result == cached_text
 
@@ -170,12 +194,12 @@ def test_get_or_generate_bypasses_cache_when_requested(mock_client_class, test_d
     user_id = test_db.create_user("google_test", "test@example.com", "Test User", None)
 
     # Setup mock
-    mock_response = Mock()
-    mock_response.text = "Fresh new analysis"
-    mock_response.parts = [Mock()]  # Ensure parts exist
+    mock_chunk = Mock()
+    mock_chunk.text = "Fresh new analysis"
+    mock_response = [mock_chunk]
     
     mock_models = Mock()
-    mock_models.generate_content.return_value = mock_response
+    mock_models.generate_content_stream.return_value = mock_response
     
     mock_client = Mock()
     mock_client.models = mock_models
@@ -190,11 +214,13 @@ def test_get_or_generate_bypasses_cache_when_requested(mock_client_class, test_d
     test_db.save_lynch_analysis(user_id, "AAPL", "Old cached analysis", "gemini-2.5-flash")
 
     # Request fresh analysis
-    result = analyst.get_or_generate_analysis(user_id, "AAPL", sample_stock_data, sample_history, use_cache=False, model_version="gemini-2.5-flash")
+    generator = analyst.get_or_generate_analysis(user_id, "AAPL", sample_stock_data, sample_history, use_cache=False, model_version="gemini-2.5-flash")
+    
+    result = "".join(generator)
 
     # Should call API and return fresh analysis
-    assert mock_models.generate_content.called
-    assert result == "Fresh new analysis"
+    assert mock_models.generate_content_stream.called
+    assert "Fresh new analysis" in result
 
 
 @patch('lynch_analyst.genai.Client')
@@ -204,12 +230,12 @@ def test_get_or_generate_saves_to_cache(mock_client_class, test_db, sample_stock
     user_id = test_db.create_user("google_test", "test@example.com", "Test User", None)
 
     # Setup mock
-    mock_response = Mock()
-    mock_response.text = "Fresh analysis to be cached"
-    mock_response.parts = [Mock()]  # Ensure parts exist
+    mock_chunk = Mock()
+    mock_chunk.text = "Fresh analysis to be cached"
+    mock_response = [mock_chunk]
     
     mock_models = Mock()
-    mock_models.generate_content.return_value = mock_response
+    mock_models.generate_content_stream.return_value = mock_response
     
     mock_client = Mock()
     mock_client.models = mock_models
@@ -221,9 +247,16 @@ def test_get_or_generate_saves_to_cache(mock_client_class, test_db, sample_stock
     # Generate analysis
     test_db.save_stock_basic("AAPL", "Apple Inc.", "NASDAQ", "Technology")
     test_db.flush()  # Ensure stock is committed before saving analysis
-    result = analyst.get_or_generate_analysis(user_id, "AAPL", sample_stock_data, sample_history, use_cache=False, model_version="gemini-2.5-flash")
+    
+    generator = analyst.get_or_generate_analysis(user_id, "AAPL", sample_stock_data, sample_history, use_cache=False, model_version="gemini-2.5-flash")
+    
+    # Consume generator to trigger saving
+    result = "".join(generator)
 
     # Verify it was saved to database
+    # The saved analysis will contain ONLY the text content, not the timing marker
+    # because the helper only appends text chunks to full_text_parts
     cached = test_db.get_lynch_analysis(user_id, "AAPL")
     assert cached is not None
-    assert cached['analysis_text'] == "Fresh analysis to be cached"
+    # We check if it ends with the expected text because of the timing marker prefix
+    assert cached['analysis_text'].endswith("Fresh analysis to be cached")

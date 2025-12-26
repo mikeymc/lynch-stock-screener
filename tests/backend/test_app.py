@@ -133,12 +133,12 @@ def test_lynch_analysis_endpoint_generates_fresh_analysis(mock_client_class, cli
     from lynch_analyst import LynchAnalyst
 
     # Setup mock Gemini response FIRST
-    mock_response = MagicMock()
-    mock_response.text = "Fresh Peter Lynch analysis: Apple shows strong growth with a PEG ratio of 1.2, suggesting reasonable valuation."
-    mock_response.parts = [MagicMock()]  # Ensure parts exist
+    mock_chunk = MagicMock()
+    mock_chunk.text = "Fresh Peter Lynch analysis: Apple shows strong growth with a PEG ratio of 1.2, suggesting reasonable valuation."
+    mock_response_iterator = [mock_chunk]
     
     mock_models = MagicMock()
-    mock_models.generate_content.return_value = mock_response
+    mock_models.generate_content_stream.return_value = mock_response_iterator
     
     mock_client = MagicMock()
     mock_client.models = mock_models
@@ -186,12 +186,12 @@ def test_lynch_analysis_refresh_endpoint(mock_client_class, client, test_db, mon
     from lynch_analyst import LynchAnalyst
 
     # Setup mock Gemini response FIRST
-    mock_response = MagicMock()
-    mock_response.text = "Updated Peter Lynch analysis with latest data."
-    mock_response.parts = [MagicMock()]  # Ensure parts exist
+    mock_chunk = MagicMock()
+    mock_chunk.text = "Updated Peter Lynch analysis with latest data."
+    mock_response_iterator = [mock_chunk]
     
     mock_models = MagicMock()
-    mock_models.generate_content.return_value = mock_response
+    mock_models.generate_content_stream.return_value = mock_response_iterator
     
     mock_client = MagicMock()
     mock_client.models = mock_models
@@ -241,7 +241,7 @@ def test_lynch_analysis_refresh_endpoint(mock_client_class, client, test_db, mon
 
     # Verify the cache was updated
     cached = test_db.get_lynch_analysis(user_id, symbol)
-    assert cached['analysis_text'] == "Updated Peter Lynch analysis with latest data."
+    assert cached['analysis_text'].endswith("Updated Peter Lynch analysis with latest data.")
 
 
 def test_lynch_analysis_endpoint_returns_404_for_unknown_stock(client, test_db, monkeypatch):

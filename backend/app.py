@@ -1564,7 +1564,7 @@ def get_lynch_analysis(symbol, user_id):
                     iterator = lynch_analyst.get_or_generate_analysis(
                         user_id, symbol, stock_data, history,
                         sections=sections, news=news_articles, material_events=material_events,
-                        use_cache=True, model_version=model, stream=True
+                        use_cache=True, model_version=model
                     )
                     
                     for chunk in iterator:
@@ -1578,7 +1578,8 @@ def get_lynch_analysis(symbol, user_id):
             return Response(stream_with_context(generate()), mimetype='text/event-stream')
 
         # Normal synchronous response
-        analysis_text = lynch_analyst.get_or_generate_analysis(
+        # Normal synchronous response
+        analysis_generator = lynch_analyst.get_or_generate_analysis(
             user_id,
             symbol,
             stock_data,
@@ -1589,6 +1590,7 @@ def get_lynch_analysis(symbol, user_id):
             use_cache=True,
             model_version=model
         )
+        analysis_text = "".join(analysis_generator)
 
         # Get timestamp (fetch again if it was just generated)
         if not was_cached:
@@ -1662,7 +1664,7 @@ def refresh_lynch_analysis(symbol, user_id):
                     iterator = lynch_analyst.get_or_generate_analysis(
                         user_id, symbol, stock_data, history,
                         sections=sections, news=news_articles, material_events=material_events,
-                        use_cache=False, model_version=model, stream=True
+                        use_cache=False, model_version=model
                     )
                     
                     for chunk in iterator:
@@ -1675,7 +1677,7 @@ def refresh_lynch_analysis(symbol, user_id):
 
             return Response(stream_with_context(generate()), mimetype='text/event-stream')
 
-        analysis_text = lynch_analyst.get_or_generate_analysis(
+        analysis_generator = lynch_analyst.get_or_generate_analysis(
             user_id,
             symbol,
             stock_data,
@@ -1686,6 +1688,7 @@ def refresh_lynch_analysis(symbol, user_id):
             use_cache=False,
             model_version=model
         )
+        analysis_text = "".join(analysis_generator)
 
         cached_analysis = db.get_lynch_analysis(user_id, symbol)
 

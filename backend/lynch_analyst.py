@@ -239,55 +239,7 @@ class LynchAnalyst:
 
         return formatted_prompt
 
-    def generate_analysis(self, stock_data: Dict[str, Any], history: List[Dict[str, Any]], sections: Optional[Dict[str, Any]] = None, news: Optional[List[Dict[str, Any]]] = None, material_events: Optional[List[Dict[str, Any]]] = None, model_version: str = DEFAULT_MODEL) -> str:
-        """
-        Generate a new Peter Lynch-style analysis using Gemini AI
 
-        Args:
-            stock_data: Dict containing current stock metrics
-            history: List of dicts containing historical earnings/revenue data
-            sections: Optional dict of filing sections
-            news: Optional list of news articles
-            material_events: Optional list of material events (8-K filings)
-            model_version: Gemini model to use for generation
-
-        Returns:
-            Generated analysis text
-
-        Raises:
-            Exception: If API call fails
-            ValueError: If model_version is not in AVAILABLE_MODELS
-        """
-        if model_version not in AVAILABLE_MODELS:
-            raise ValueError(f"Invalid model: {model_version}. Must be one of {AVAILABLE_MODELS}")
-
-        prompt = self.format_prompt(stock_data, history, sections, news, material_events)
-
-        response = self.client.models.generate_content(
-            model=model_version,
-            contents=prompt
-        )
-
-        # Check if response was blocked or has no content
-        if not response.parts:
-            error_msg = "Gemini API returned no content. "
-
-            # Check prompt feedback for blocking
-            if hasattr(response, 'prompt_feedback'):
-                feedback = response.prompt_feedback
-                error_msg += f"Prompt feedback: {feedback}"
-
-            # Check finish reason
-            if hasattr(response, 'candidates') and response.candidates:
-                candidate = response.candidates[0]
-                if hasattr(candidate, 'finish_reason'):
-                    error_msg += f" Finish reason: {candidate.finish_reason}"
-                if hasattr(candidate, 'safety_ratings'):
-                    error_msg += f" Safety ratings: {candidate.safety_ratings}"
-
-            raise Exception(error_msg)
-
-        return response.text
 
     def generate_analysis_stream(self, stock_data: Dict[str, Any], history: List[Dict[str, Any]], sections: Optional[Dict[str, Any]] = None, news: Optional[List[Dict[str, Any]]] = None, material_events: Optional[List[Dict[str, Any]]] = None, model_version: str = DEFAULT_MODEL):
         """
@@ -538,11 +490,11 @@ class LynchAnalyst:
         news: Optional[List[Dict[str, Any]]] = None,
         material_events: Optional[List[Dict[str, Any]]] = None,
         use_cache: bool = True,
-        model_version: str = DEFAULT_MODEL,
-        stream: bool = False
-    ) -> Any:
+        model_version: str = DEFAULT_MODEL
+    ):
         """
-        Get cached analysis or generate a new one (optionally streaming)
+        Get cached analysis or stream a new one.
+        ALWAYS returns a generator.
 
         Args:
             user_id: User ID for scoping the analysis
@@ -554,10 +506,9 @@ class LynchAnalyst:
             material_events: Optional list of material events (8-K filings)
             use_cache: Whether to use cached analysis if available
             model_version: Gemini model to use for generation
-            stream: Whether to return a generator of text chunks instead of full string
 
-        Returns:
-            Analysis text (str) or generator if stream=True
+        Yields:
+            Chunks of analysis text
         """
         if model_version not in AVAILABLE_MODELS:
             raise ValueError(f"Invalid model: {model_version}. Must be one of {AVAILABLE_MODELS}")
@@ -566,32 +517,21 @@ class LynchAnalyst:
         if use_cache:
             cached = self.db.get_lynch_analysis(user_id, symbol)
             if cached:
-                if stream:
-                    # Yield single chunk for consistency
-                    yield cached['analysis_text']
-                    return
-                else:
-                    return cached['analysis_text']
+                # Yield single chunk for consistency
+                yield cached['analysis_text']
+                return
 
-        # Generate new analysis
-        if stream:
-            # Define a generator that saves to DB on completion
-            def _stream_and_save():
-                full_text_parts = []
-                for chunk in self.generate_analysis_stream(stock_data, history, sections, news, material_events, model_version):
-                    full_text_parts.append(chunk)
-                    yield chunk
-                
-                # Save complete text to cache
-                final_text = "".join(full_text_parts)
-                if final_text:
-                    self.db.save_lynch_analysis(user_id, symbol, final_text, model_version)
-            
-            yield from _stream_and_save()
-        else:
-            analysis_text = self.generate_analysis(stock_data, history, sections, news, material_events, model_version)
-            self.db.save_lynch_analysis(user_id, symbol, analysis_text, model_version)
-            return analysis_text
+        # Generate new analysis with streaming
+        # Define a generator that saves to DB on completion
+        full_text_parts = []
+        for chunk in self.generate_analysis_stream(stock_data, history, sections, news, material_events, model_version):
+            full_text_parts.append(chunk)
+            yield chunk
+        
+        # Save complete text to cache
+        final_text = "".join(full_text_parts)
+        if final_text:
+            self.db.save_lynch_analysis(user_id, symbol, final_text, model_version)
 
     def generate_filing_section_summary(
         self,
