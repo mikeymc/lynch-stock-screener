@@ -14,6 +14,7 @@ import DCFAnalysis from '../components/DCFAnalysis'
 import StockNews from '../components/StockNews'
 import MaterialEvents from '../components/MaterialEvents'
 import FutureOutlook from '../components/FutureOutlook'
+import SearchPopover from '../components/SearchPopover'
 
 const API_BASE = '/api'
 
@@ -291,6 +292,9 @@ export default function StockDetail({ watchlist, toggleWatchlist }) {
           <button className="tab-button nav-button" onClick={() => navigate('/')}>
             All Stocks
           </button>
+
+          {/* Search popover for quick stock navigation */}
+          <SearchPopover onSelect={(sym) => navigate(`/stock/${sym}`)} />
 
           {/* Center: Tab buttons */}
           <div className="tab-button-group"><button
