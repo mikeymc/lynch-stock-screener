@@ -1896,7 +1896,19 @@ class Database:
         self.write_queue.put((sql_insert, args_insert))
 
     def get_latest_session(self, search: str = None, page: int = 1, limit: int = 100, 
-                           sort_by: str = 'overall_status', sort_dir: str = 'asc') -> Optional[Dict[str, Any]]:
+                           sort_by: str = 'overall_status', sort_dir: str = 'asc',
+                           country_filter: str = None) -> Optional[Dict[str, Any]]:
+        """
+        Get the most recent screening session with paginated, sorted results.
+        
+        Args:
+            search: Optional search filter for symbol/company name
+            page: Page number for pagination (1-indexed)
+            limit: Results per page
+            sort_by: Column to sort by
+            sort_dir: Sort direction ('asc' or 'desc')
+            country_filter: Optional country code to filter by (e.g., 'US')
+        """
         conn = self.get_connection()
         try:
             cursor = conn.cursor()
@@ -1940,6 +1952,11 @@ class Database:
                 WHERE session_id = %s
             """
             params = [session_id]
+            
+            # Apply country filter if provided
+            if country_filter:
+                base_query += " AND country = %s"
+                params.append(country_filter)
             
             if search:
                 base_query += " AND (symbol ILIKE %s OR company_name ILIKE %s)"
@@ -2014,13 +2031,21 @@ class Database:
                     'overall_score': row[22]
                 })
 
-            # Get status counts for full session (not affected by search/pagination)
-            cursor.execute("""
+            # Get status counts for full session (respects country filter, not search/pagination)
+            status_count_query = """
                 SELECT overall_status, COUNT(*) as count
                 FROM screening_results
                 WHERE session_id = %s
-                GROUP BY overall_status
-            """, (session_id,))
+            """
+            status_count_params = [session_id]
+            
+            if country_filter:
+                status_count_query += " AND country = %s"
+                status_count_params.append(country_filter)
+            
+            status_count_query += " GROUP BY overall_status"
+            
+            cursor.execute(status_count_query, status_count_params)
             status_rows = cursor.fetchall()
             status_counts = {row[0]: row[1] for row in status_rows if row[0]}
 

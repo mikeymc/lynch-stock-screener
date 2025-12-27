@@ -953,12 +953,17 @@ def get_latest_session():
     sort_by = request.args.get('sort_by', 'overall_status')
     sort_dir = request.args.get('sort_dir', 'asc')
     
+    # Check if US-only filter is enabled (default: True for production)
+    us_stocks_only = db.get_setting('us_stocks_only', True)
+    country_filter = 'US' if us_stocks_only else None
+    
     session_data = db.get_latest_session(
         search=search, 
         page=page, 
         limit=limit, 
         sort_by=sort_by, 
-        sort_dir=sort_dir
+        sort_dir=sort_dir,
+        country_filter=country_filter
     )
 
     if not session_data:
