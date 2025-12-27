@@ -64,7 +64,7 @@ export default function StockReports({
       {/* Right Column - Chat Sidebar (1/3) */}
       <div className="reports-chat-sidebar">
         <div className="chat-sidebar-content">
-          <AnalysisChat ref={chatRef} symbol={symbol} chatOnly={true} />
+          <AnalysisChat ref={chatRef} symbol={symbol} chatOnly={true} contextType="filings" />
         </div>
       </div>
     </div>

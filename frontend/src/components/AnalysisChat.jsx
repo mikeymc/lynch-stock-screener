@@ -38,7 +38,7 @@ function SourceCitation({ sources }) {
   )
 }
 
-const AnalysisChat = forwardRef(function AnalysisChat({ symbol, stockName, chatOnly = false }, ref) {
+const AnalysisChat = forwardRef(function AnalysisChat({ symbol, stockName, chatOnly = false, contextType = 'brief' }, ref) {
   // Analysis state
   const [analysis, setAnalysis] = useState(null)
   const [analysisLoading, setAnalysisLoading] = useState(true)
@@ -169,8 +169,10 @@ const AnalysisChat = forwardRef(function AnalysisChat({ symbol, stockName, chatO
                 setGeneratedAt(data.generated_at)
               } else if (data.type === 'chunk') {
                 // Filter out debug metadata lines like [Prompt: 0.00s, 17,448 chars]
-                const content = data.content
-                if (!content.startsWith('[Prompt:')) {
+                let content = data.content
+                // Robust regex replacement instead of startswith check
+                content = content.replace(/\[Prompt:[^\]]*\]/g, '')
+                if (content) {
                   setAnalysis(prev => (prev || '') + content)
                 }
               } else if (data.type === 'error') {
@@ -279,7 +281,8 @@ const AnalysisChat = forwardRef(function AnalysisChat({ symbol, stockName, chatO
         body: JSON.stringify({
           message: userMessage,
           conversation_id: conversationId,
-          lynch_analysis: analysis || null
+          lynch_analysis: analysis || null,
+          context_type: contextType
         })
       })
 
@@ -348,7 +351,10 @@ const AnalysisChat = forwardRef(function AnalysisChat({ symbol, stockName, chatO
               sources = data.data
               setStreamingSources(data.data)
             } else if (data.type === 'token') {
-              fullMessage += data.data
+              let content = data.data
+              // Filter out debug metadata lines if they slip through
+              content = content.replace(/\[Prompt:[^\]]*\]/g, '')
+              fullMessage += content
               setStreamingMessage(fullMessage)
             } else if (data.type === 'done') {
               setMessages(prev => [...prev, {

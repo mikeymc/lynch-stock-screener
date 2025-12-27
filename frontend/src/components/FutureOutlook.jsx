@@ -207,266 +207,266 @@ export default function FutureOutlook({ symbol }) {
             <div className="reports-main-column">
                 <div className="future-outlook-container" style={{ padding: '0 1rem 1rem 1rem' }}>
 
-            {/* ROW 1: Wall Street Consensus */}
-            {(analyst_consensus?.rating || short_interest?.short_percent_float) && (
-                <div style={cardStyle}>
-                    <h3 style={sectionTitleStyle}>Wall Street Consensus</h3>
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '2rem' }}>
+                    {/* ROW 1: Wall Street Consensus */}
+                    {(analyst_consensus?.rating || short_interest?.short_percent_float) && (
+                        <div style={cardStyle}>
+                            <h3 style={sectionTitleStyle}>Wall Street Consensus</h3>
+                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '2rem' }}>
 
-                        {/* Analyst Rating */}
-                        {analyst_consensus?.rating && (
-                            <div>
-                                <div style={{ fontSize: '0.9rem', color: '#94a3b8', marginBottom: '0.75rem' }}>
-                                    Analyst Rating ({analystCount} analysts)
-                                </div>
-                                <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginBottom: '0.5rem' }}>
-                                    <div style={{
-                                        flex: 1,
-                                        height: '12px',
-                                        backgroundColor: '#334155',
-                                        borderRadius: '6px',
-                                        overflow: 'hidden',
-                                        position: 'relative'
-                                    }}>
-                                        <div style={{
-                                            width: `${ratingPercent}%`,
-                                            height: '100%',
-                                            background: `linear-gradient(90deg, ${ratingColor} 0%, ${ratingColor}88 100%)`,
-                                            borderRadius: '6px',
-                                            transition: 'width 0.3s ease'
-                                        }} />
-                                    </div>
-                                    <div style={{ fontWeight: 'bold', color: ratingColor, minWidth: '80px' }}>
-                                        {ratingText}
-                                    </div>
-                                </div>
-                                {ratingScore && (
-                                    <div style={{ fontSize: '0.85rem', color: '#64748b' }}>
-                                        Score: {formatNumber(ratingScore)} (1 = Strong Buy, 5 = Sell)
-                                    </div>
-                                )}
-                            </div>
-                        )}
-
-                        {/* Price Target */}
-                        {targetLow && targetHigh && (
-                            <div>
-                                <div style={{ fontSize: '0.9rem', color: '#94a3b8', marginBottom: '0.75rem' }}>
-                                    Price Target Range
-                                </div>
-                                <div style={{ position: 'relative', marginBottom: '1rem' }}>
-                                    <div style={{
-                                        display: 'flex',
-                                        justifyContent: 'space-between',
-                                        fontSize: '0.85rem',
-                                        marginBottom: '0.25rem'
-                                    }}>
-                                        <span style={{ color: '#94a3b8' }}>{formatCurrencyDecimal(targetLow)}</span>
-                                        <span style={{ color: '#94a3b8' }}>{formatCurrencyDecimal(targetHigh)}</span>
-                                    </div>
-                                    <div style={{
-                                        height: '8px',
-                                        backgroundColor: '#334155',
-                                        borderRadius: '4px',
-                                        position: 'relative'
-                                    }}>
-                                        {/* Mean target marker */}
-                                        {targetMean && (
-                                            <div style={{
-                                                position: 'absolute',
-                                                left: `${((targetMean - targetLow) / (targetHigh - targetLow)) * 100}%`,
-                                                top: '-2px',
-                                                width: '4px',
-                                                height: '12px',
-                                                backgroundColor: '#3b82f6',
-                                                borderRadius: '2px',
-                                                transform: 'translateX(-50%)'
-                                            }} />
-                                        )}
-                                        {/* Current price marker */}
-                                        <div style={{
-                                            position: 'absolute',
-                                            left: `${pricePosition}%`,
-                                            top: '-6px',
-                                            width: '12px',
-                                            height: '20px',
-                                            backgroundColor: '#22c55e',
-                                            borderRadius: '4px',
-                                            transform: 'translateX(-50%)',
-                                            border: '2px solid #0f172a'
-                                        }} />
-                                    </div>
-                                    <div style={{
-                                        display: 'flex',
-                                        justifyContent: 'center',
-                                        marginTop: '0.75rem',
-                                        gap: '2rem'
-                                    }}>
-                                        <div style={{ textAlign: 'center' }}>
-                                            <div style={{ fontSize: '0.75rem', color: '#64748b' }}>Current</div>
-                                            <div style={{ fontWeight: 'bold', color: '#22c55e' }}>{formatCurrencyDecimal(priceNow)}</div>
+                                {/* Analyst Rating */}
+                                {analyst_consensus?.rating && (
+                                    <div>
+                                        <div style={{ fontSize: '0.9rem', color: '#94a3b8', marginBottom: '0.75rem' }}>
+                                            Analyst Rating ({analystCount} analysts)
                                         </div>
-                                        {targetMean && (
-                                            <div style={{ textAlign: 'center' }}>
-                                                <div style={{ fontSize: '0.75rem', color: '#64748b' }}>Mean Target</div>
-                                                <div style={{ fontWeight: 'bold', color: '#3b82f6' }}>
-                                                    {formatCurrencyDecimal(targetMean)}
-                                                    {upside !== null && (
-                                                        <span style={{
-                                                            color: upside >= 0 ? '#4ade80' : '#f87171',
-                                                            marginLeft: '0.5rem',
-                                                            fontSize: '0.9rem'
-                                                        }}>
-                                                            ({upside >= 0 ? '+' : ''}{formatPercent(upside)})
-                                                        </span>
-                                                    )}
-                                                </div>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginBottom: '0.5rem' }}>
+                                            <div style={{
+                                                flex: 1,
+                                                height: '12px',
+                                                backgroundColor: '#334155',
+                                                borderRadius: '6px',
+                                                overflow: 'hidden',
+                                                position: 'relative'
+                                            }}>
+                                                <div style={{
+                                                    width: `${ratingPercent}%`,
+                                                    height: '100%',
+                                                    background: `linear-gradient(90deg, ${ratingColor} 0%, ${ratingColor}88 100%)`,
+                                                    borderRadius: '6px',
+                                                    transition: 'width 0.3s ease'
+                                                }} />
+                                            </div>
+                                            <div style={{ fontWeight: 'bold', color: ratingColor, minWidth: '80px' }}>
+                                                {ratingText}
+                                            </div>
+                                        </div>
+                                        {ratingScore && (
+                                            <div style={{ fontSize: '0.85rem', color: '#64748b' }}>
+                                                Score: {formatNumber(ratingScore)} (1 = Strong Buy, 5 = Sell)
                                             </div>
                                         )}
                                     </div>
-                                </div>
-                            </div>
-                        )}
+                                )}
 
-                        {/* Short Interest */}
-                        {shortPercentFloat && (
-                            <div>
-                                <div style={{ fontSize: '0.9rem', color: '#94a3b8', marginBottom: '0.75rem' }}>
-                                    Short Interest
-                                </div>
-                                <div style={{ display: 'flex', alignItems: 'baseline', gap: '0.5rem', marginBottom: '0.25rem' }}>
-                                    <span style={{ fontSize: '1.75rem', fontWeight: 'bold', color: shortColor }}>
-                                        {formatPercent(shortPercentFloat)}
-                                    </span>
-                                    <span style={{ color: '#94a3b8' }}>of float</span>
-                                </div>
-                                <div style={{ fontSize: '0.85rem', color: shortColor, marginBottom: '0.5rem' }}>
-                                    {shortStatus}
-                                </div>
-                                {shortRatio && (
-                                    <div style={{ fontSize: '0.85rem', color: '#64748b' }}>
-                                        Days to cover: {formatNumber(shortRatio)}
+                                {/* Price Target */}
+                                {targetLow && targetHigh && (
+                                    <div>
+                                        <div style={{ fontSize: '0.9rem', color: '#94a3b8', marginBottom: '0.75rem' }}>
+                                            Price Target Range
+                                        </div>
+                                        <div style={{ position: 'relative', marginBottom: '1rem' }}>
+                                            <div style={{
+                                                display: 'flex',
+                                                justifyContent: 'space-between',
+                                                fontSize: '0.85rem',
+                                                marginBottom: '0.25rem'
+                                            }}>
+                                                <span style={{ color: '#94a3b8' }}>{formatCurrencyDecimal(targetLow)}</span>
+                                                <span style={{ color: '#94a3b8' }}>{formatCurrencyDecimal(targetHigh)}</span>
+                                            </div>
+                                            <div style={{
+                                                height: '8px',
+                                                backgroundColor: '#334155',
+                                                borderRadius: '4px',
+                                                position: 'relative'
+                                            }}>
+                                                {/* Mean target marker */}
+                                                {targetMean && (
+                                                    <div style={{
+                                                        position: 'absolute',
+                                                        left: `${((targetMean - targetLow) / (targetHigh - targetLow)) * 100}%`,
+                                                        top: '-2px',
+                                                        width: '4px',
+                                                        height: '12px',
+                                                        backgroundColor: '#3b82f6',
+                                                        borderRadius: '2px',
+                                                        transform: 'translateX(-50%)'
+                                                    }} />
+                                                )}
+                                                {/* Current price marker */}
+                                                <div style={{
+                                                    position: 'absolute',
+                                                    left: `${pricePosition}%`,
+                                                    top: '-6px',
+                                                    width: '12px',
+                                                    height: '20px',
+                                                    backgroundColor: '#22c55e',
+                                                    borderRadius: '4px',
+                                                    transform: 'translateX(-50%)',
+                                                    border: '2px solid #0f172a'
+                                                }} />
+                                            </div>
+                                            <div style={{
+                                                display: 'flex',
+                                                justifyContent: 'center',
+                                                marginTop: '0.75rem',
+                                                gap: '2rem'
+                                            }}>
+                                                <div style={{ textAlign: 'center' }}>
+                                                    <div style={{ fontSize: '0.75rem', color: '#64748b' }}>Current</div>
+                                                    <div style={{ fontWeight: 'bold', color: '#22c55e' }}>{formatCurrencyDecimal(priceNow)}</div>
+                                                </div>
+                                                {targetMean && (
+                                                    <div style={{ textAlign: 'center' }}>
+                                                        <div style={{ fontSize: '0.75rem', color: '#64748b' }}>Mean Target</div>
+                                                        <div style={{ fontWeight: 'bold', color: '#3b82f6' }}>
+                                                            {formatCurrencyDecimal(targetMean)}
+                                                            {upside !== null && (
+                                                                <span style={{
+                                                                    color: upside >= 0 ? '#4ade80' : '#f87171',
+                                                                    marginLeft: '0.5rem',
+                                                                    fontSize: '0.9rem'
+                                                                }}>
+                                                                    ({upside >= 0 ? '+' : ''}{formatPercent(upside)})
+                                                                </span>
+                                                            )}
+                                                        </div>
+                                                    </div>
+                                                )}
+                                            </div>
+                                        </div>
                                     </div>
                                 )}
+
+                                {/* Short Interest */}
+                                {shortPercentFloat && (
+                                    <div>
+                                        <div style={{ fontSize: '0.9rem', color: '#94a3b8', marginBottom: '0.75rem' }}>
+                                            Short Interest
+                                        </div>
+                                        <div style={{ display: 'flex', alignItems: 'baseline', gap: '0.5rem', marginBottom: '0.25rem' }}>
+                                            <span style={{ fontSize: '1.75rem', fontWeight: 'bold', color: shortColor }}>
+                                                {formatPercent(shortPercentFloat)}
+                                            </span>
+                                            <span style={{ color: '#94a3b8' }}>of float</span>
+                                        </div>
+                                        <div style={{ fontSize: '0.85rem', color: shortColor, marginBottom: '0.5rem' }}>
+                                            {shortStatus}
+                                        </div>
+                                        {shortRatio && (
+                                            <div style={{ fontSize: '0.85rem', color: '#64748b' }}>
+                                                Days to cover: {formatNumber(shortRatio)}
+                                            </div>
+                                        )}
+                                    </div>
+                                )}
+
                             </div>
-                        )}
-
-                    </div>
-                </div>
-            )}
-
-            {/* ROW 2: Insider Signals */}
-            <div style={cardStyle}>
-                <h3 style={sectionTitleStyle}>Insider Trading</h3>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginBottom: '0.5rem' }}>
-                    <div style={{ fontSize: '2.5rem', fontWeight: 'bold', color: netBuyingColor }}>
-                        {netBuying > 0 ? '+' : ''}{formatCurrency(netBuying)}
-                    </div>
-                    <div style={{ fontSize: '1.2rem', color: '#cbd5e1' }}>
-                        ({netBuyingText})
-                    </div>
-                </div>
-                <div>
-                    <InsiderTradesTable trades={insider_trades} />
-                </div>
-            </div>
-
-            {/* ROW 3: Business Health Checks */}
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(400px, 1fr))', gap: '1.5rem' }}>
-
-                {/* Inventory Check */}
-                <div style={cardStyle}>
-                    <h3 style={sectionTitleStyle}>Inventory vs Revenue Trends</h3>
-                    <p style={{ fontSize: '0.9rem', color: '#94a3b8', marginBottom: '1rem' }}>
-                        Warning Sign: If Inventory (Orange) is growing faster than Revenue (Blue).
-                    </p>
-                    <div style={{ height: '250px' }}>
-                        {inventory_vs_revenue && inventory_vs_revenue.length > 0 ? (
-                            <Line data={inventoryChartData} options={inventoryChartOptions} />
-                        ) : (
-                            <div className="no-data">Insufficient data for Inventory check.</div>
-                        )}
-                    </div>
-                </div>
-
-                {/* Moat Stability */}
-                <div style={cardStyle}>
-                    <h3 style={sectionTitleStyle}>Gross Margin Trend</h3>
-                    <p style={{ fontSize: '0.9rem', color: '#94a3b8', marginBottom: '1rem' }}>
-                        Stable or expanding gross margins indicate pricing power and a durable moat.
-                    </p>
-                    <div style={{ height: '250px' }}>
-                        {gross_margin_history && gross_margin_history.length > 0 ? (
-                            <Line
-                                data={{
-                                    labels: gross_margin_history.map(d => d.year),
-                                    datasets: [{
-                                        label: 'Gross Margin (%)',
-                                        data: gross_margin_history.map(d => d.value),
-                                        borderColor: '#22c55e',
-                                        backgroundColor: 'rgba(34, 197, 94, 0.2)',
-                                        fill: true,
-                                        tension: 0.2
-                                    }]
-                                }}
-                                options={{
-                                    responsive: true,
-                                    maintainAspectRatio: false,
-                                    interaction: { mode: 'index', intersect: false },
-                                    plugins: {
-                                        legend: { display: false },
-                                        title: { display: false }
-                                    },
-                                    scales: {
-                                        y: {
-                                            grid: { color: 'rgba(255,255,255,0.1)' },
-                                            title: { display: true, text: 'Margin (%)' }
-                                        },
-                                        x: {
-                                            grid: { display: false }
-                                        }
-                                    }
-                                }}
-                            />
-                        ) : (
-                            <div className="no-data">No Gross Margin history available.</div>
-                        )}
-                    </div>
-                </div>
-            </div>
-
-            {/* ROW 4: Valuation Reality */}
-            <div style={cardStyle}>
-                <h3 style={sectionTitleStyle}>Forward Indicators</h3>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '2rem' }}>
-
-                    {/* PEG Box */}
-                    <div style={{ textAlign: 'center', padding: '1rem', backgroundColor: 'rgba(0,0,0,0.2)', borderRadius: '0.5rem' }}>
-                        <div style={{ fontSize: '0.9rem', color: '#94a3b8', marginBottom: '0.5rem' }}>Forward PEG Ratio</div>
-                        <div style={{ fontSize: '2rem', fontWeight: 'bold', color: pegColor }}>
-                            {peg ? formatNumber(peg) : 'N/A'}
                         </div>
-                        <div style={{ color: pegColor, marginTop: '0.2rem' }}>{pegStatus}</div>
-                    </div>
+                    )}
 
-                    {/* Forward PE Box */}
-                    <div style={{ textAlign: 'center', padding: '1rem', backgroundColor: 'rgba(0,0,0,0.2)', borderRadius: '0.5rem' }}>
-                        <div style={{ fontSize: '0.9rem', color: '#94a3b8', marginBottom: '0.5rem' }}>Forward P/E</div>
-                        <div style={{ fontSize: '2rem', fontWeight: 'bold', color: '#e2e8f0' }}>
-                            {metrics?.forward_pe ? formatNumber(metrics.forward_pe) : 'N/A'}
+                    {/* ROW 2: Insider Signals */}
+                    <div style={cardStyle}>
+                        <h3 style={sectionTitleStyle}>Insider Trading</h3>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginBottom: '0.5rem' }}>
+                            <div style={{ fontSize: '2.5rem', fontWeight: 'bold', color: netBuyingColor }}>
+                                {netBuying > 0 ? '+' : ''}{formatCurrency(netBuying)}
+                            </div>
+                            <div style={{ fontSize: '1.2rem', color: '#cbd5e1' }}>
+                                ({netBuyingText})
+                            </div>
+                        </div>
+                        <div>
+                            <InsiderTradesTable trades={insider_trades} />
                         </div>
                     </div>
 
-                    {/* Forward EPS Box */}
-                    <div style={{ textAlign: 'center', padding: '1rem', backgroundColor: 'rgba(0,0,0,0.2)', borderRadius: '0.5rem' }}>
-                        <div style={{ fontSize: '0.9rem', color: '#94a3b8', marginBottom: '0.5rem' }}>Forward EPS</div>
-                        <div style={{ fontSize: '2rem', fontWeight: 'bold', color: '#e2e8f0' }}>
-                            {metrics?.forward_eps ? formatCurrency(metrics.forward_eps) : 'N/A'}
+                    {/* ROW 3: Business Health Checks */}
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(400px, 1fr))', gap: '1.5rem' }}>
+
+                        {/* Inventory Check */}
+                        <div style={cardStyle}>
+                            <h3 style={sectionTitleStyle}>Inventory vs Revenue Trends</h3>
+                            <p style={{ fontSize: '0.9rem', color: '#94a3b8', marginBottom: '1rem' }}>
+                                Warning Sign: If Inventory (Orange) is growing faster than Revenue (Blue).
+                            </p>
+                            <div style={{ height: '250px' }}>
+                                {inventory_vs_revenue && inventory_vs_revenue.length > 0 ? (
+                                    <Line data={inventoryChartData} options={inventoryChartOptions} />
+                                ) : (
+                                    <div className="no-data">Insufficient data for Inventory check.</div>
+                                )}
+                            </div>
+                        </div>
+
+                        {/* Moat Stability */}
+                        <div style={cardStyle}>
+                            <h3 style={sectionTitleStyle}>Gross Margin Trend</h3>
+                            <p style={{ fontSize: '0.9rem', color: '#94a3b8', marginBottom: '1rem' }}>
+                                Stable or expanding gross margins indicate pricing power and a durable moat.
+                            </p>
+                            <div style={{ height: '250px' }}>
+                                {gross_margin_history && gross_margin_history.length > 0 ? (
+                                    <Line
+                                        data={{
+                                            labels: gross_margin_history.map(d => d.year),
+                                            datasets: [{
+                                                label: 'Gross Margin (%)',
+                                                data: gross_margin_history.map(d => d.value),
+                                                borderColor: '#22c55e',
+                                                backgroundColor: 'rgba(34, 197, 94, 0.2)',
+                                                fill: true,
+                                                tension: 0.2
+                                            }]
+                                        }}
+                                        options={{
+                                            responsive: true,
+                                            maintainAspectRatio: false,
+                                            interaction: { mode: 'index', intersect: false },
+                                            plugins: {
+                                                legend: { display: false },
+                                                title: { display: false }
+                                            },
+                                            scales: {
+                                                y: {
+                                                    grid: { color: 'rgba(255,255,255,0.1)' },
+                                                    title: { display: true, text: 'Margin (%)' }
+                                                },
+                                                x: {
+                                                    grid: { display: false }
+                                                }
+                                            }
+                                        }}
+                                    />
+                                ) : (
+                                    <div className="no-data">No Gross Margin history available.</div>
+                                )}
+                            </div>
                         </div>
                     </div>
 
-                </div>
-            </div>
+                    {/* ROW 4: Valuation Reality */}
+                    <div style={cardStyle}>
+                        <h3 style={sectionTitleStyle}>Forward Indicators</h3>
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '2rem' }}>
+
+                            {/* PEG Box */}
+                            <div style={{ textAlign: 'center', padding: '1rem', backgroundColor: 'rgba(0,0,0,0.2)', borderRadius: '0.5rem' }}>
+                                <div style={{ fontSize: '0.9rem', color: '#94a3b8', marginBottom: '0.5rem' }}>Forward PEG Ratio</div>
+                                <div style={{ fontSize: '2rem', fontWeight: 'bold', color: pegColor }}>
+                                    {peg ? formatNumber(peg) : 'N/A'}
+                                </div>
+                                <div style={{ color: pegColor, marginTop: '0.2rem' }}>{pegStatus}</div>
+                            </div>
+
+                            {/* Forward PE Box */}
+                            <div style={{ textAlign: 'center', padding: '1rem', backgroundColor: 'rgba(0,0,0,0.2)', borderRadius: '0.5rem' }}>
+                                <div style={{ fontSize: '0.9rem', color: '#94a3b8', marginBottom: '0.5rem' }}>Forward P/E</div>
+                                <div style={{ fontSize: '2rem', fontWeight: 'bold', color: '#e2e8f0' }}>
+                                    {metrics?.forward_pe ? formatNumber(metrics.forward_pe) : 'N/A'}
+                                </div>
+                            </div>
+
+                            {/* Forward EPS Box */}
+                            <div style={{ textAlign: 'center', padding: '1rem', backgroundColor: 'rgba(0,0,0,0.2)', borderRadius: '0.5rem' }}>
+                                <div style={{ fontSize: '0.9rem', color: '#94a3b8', marginBottom: '0.5rem' }}>Forward EPS</div>
+                                <div style={{ fontSize: '2rem', fontWeight: 'bold', color: '#e2e8f0' }}>
+                                    {metrics?.forward_eps ? formatCurrency(metrics.forward_eps) : 'N/A'}
+                                </div>
+                            </div>
+
+                        </div>
+                    </div>
 
                 </div>
             </div>
@@ -474,7 +474,7 @@ export default function FutureOutlook({ symbol }) {
             {/* Right Column - Chat Sidebar (1/3) */}
             <div className="reports-chat-sidebar">
                 <div className="chat-sidebar-content">
-                    <AnalysisChat ref={chatRef} symbol={symbol} chatOnly={true} />
+                    <AnalysisChat ref={chatRef} symbol={symbol} chatOnly={true} contextType="outlook" />
                 </div>
             </div>
         </div>

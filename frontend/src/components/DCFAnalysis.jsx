@@ -666,7 +666,7 @@ const DCFAnalysis = ({ stockData, earningsHistory }) => {
       {/* Right Column - Chat Sidebar (1/3) */}
       <div className="reports-chat-sidebar">
         <div className="chat-sidebar-content">
-          <AnalysisChat ref={chatRef} symbol={stockData.symbol} chatOnly={true} />
+          <AnalysisChat ref={chatRef} symbol={stockData.symbol} chatOnly={true} contextType="dcf" />
         </div>
       </div>
     </div>

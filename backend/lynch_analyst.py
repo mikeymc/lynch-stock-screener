@@ -259,27 +259,16 @@ class LynchAnalyst:
         if model_version not in AVAILABLE_MODELS:
             raise ValueError(f"Invalid model: {model_version}. Must be one of {AVAILABLE_MODELS}")
 
-        import time
-        t0 = time.time()
-        
         prompt = self.format_prompt(stock_data, history, sections, news, material_events)
-        t1 = time.time()
-        prompt_len = len(prompt)
-
-        # Yield a timing marker
-        yield f"[Prompt: {t1-t0:.2f}s, {prompt_len:,} chars] "
         
-        t2 = time.time()
         response = self.client.models.generate_content_stream(
             model=model_version,
             contents=prompt
         )
-        t3 = time.time()
         
         first_chunk = True
         for i, chunk in enumerate(response):
             if first_chunk:
-                t4 = time.time()
                 first_chunk = False
             
             text_content = None

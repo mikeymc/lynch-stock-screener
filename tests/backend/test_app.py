@@ -270,7 +270,7 @@ def test_get_latest_session_returns_most_recent_screening(client, test_db, monke
     session_id = test_db.create_session("test_algo", 100, total_analyzed=2, pass_count=1, close_count=0, fail_count=1)
 
     result1 = {
-        'symbol': 'AAPL', 'company_name': 'Apple Inc.', 'country': 'United States',
+        'symbol': 'AAPL', 'company_name': 'Apple Inc.', 'country': 'US',
         'market_cap': 2500000000000, 'sector': 'Technology', 'ipo_year': 1980,
         'price': 150.25, 'pe_ratio': 25.5, 'peg_ratio': 1.2, 'debt_to_equity': 0.35,
         'institutional_ownership': 0.45, 'earnings_cagr': 15.5, 'revenue_cagr': 12.3,
@@ -280,7 +280,7 @@ def test_get_latest_session_returns_most_recent_screening(client, test_db, monke
     test_db.save_screening_result(session_id, result1)
 
     result2 = {
-        'symbol': 'MSFT', 'company_name': 'Microsoft Corp.', 'country': 'United States',
+        'symbol': 'MSFT', 'company_name': 'Microsoft Corp.', 'country': 'US',
         'market_cap': 2000000000000, 'sector': 'Technology', 'ipo_year': 1986,
         'price': 300.00, 'pe_ratio': 30.0, 'peg_ratio': 2.5, 'debt_to_equity': 0.40,
         'institutional_ownership': 0.70, 'earnings_cagr': 10.0, 'revenue_cagr': 8.0,

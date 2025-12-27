@@ -4,10 +4,22 @@
 from typing import Dict, Any, List, Optional, Tuple
 from database import Database
 import re
+import json
 
 
 class RAGContext:
     """Assembles and formats stock context for conversational RAG"""
+
+    # Context types corresponding to frontend pages
+    CONTEXT_TYPES = {
+        'brief': 'brief',      # AnalysisChat full mode (default)
+        'filings': 'filings',  # StockReports page
+        'news': 'news',        # StockNews page
+        'events': 'events',    # MaterialEvents page
+        'dcf': 'dcf',          # DCFAnalysis page
+        'charts': 'charts',    # StockCharts page
+        'outlook': 'outlook',  # FutureOutlook page
+    }
 
     # Keywords for smart section selection
     SECTION_KEYWORDS = {
@@ -26,43 +38,76 @@ class RAGContext:
         """
         self.db = db
 
-    def get_stock_context(self, symbol: str, user_query: Optional[str] = None, max_sections: int = 3) -> Dict[str, Any]:
+    def get_stock_context(self, symbol: str, user_query: Optional[str] = None, context_type: str = 'brief') -> Dict[str, Any]:
         """
         Assemble complete stock context for RAG
 
         Args:
             symbol: Stock ticker symbol
             user_query: Optional user question to guide section selection
-            max_sections: Maximum number of filing sections to include
+            context_type: Type of page context ('brief', 'news', 'events', 'filings', 'dcf', etc.)
 
         Returns:
-            Dict containing:
-                - stock_data: Current metrics
-                - earnings_history: Historical performance
-                - filing_sections: Relevant SEC filing sections
-                - selected_sections: List of section names that were selected
+            Dict containing context data specific to the requested type
         """
-        # Get stock data
-        stock_data = self._get_stock_data(symbol)
-        if not stock_data:
+        # Base context always included
+        context = {
+            'stock_data': self._get_stock_data(symbol),
+            'earnings_history': self._get_earnings_history(symbol),
+        }
+        
+        if not context['stock_data']:
             return None
 
-        # Get earnings history
-        earnings_history = self._get_earnings_history(symbol)
+        # Primary context based on page
+        if context_type == 'news':
+            context['news_articles'] = self._get_news_articles(symbol, limit=10)
+            context['events_summary'] = self._get_events_summary(symbol, limit=3)
+            context['filings_summary'] = self._get_filings_summary(symbol)
+            context['insider_summary'] = self._get_insider_summary(symbol)
+            context['outlook_summary'] = self._get_outlook_summary(symbol)
+            
+        elif context_type == 'events':
+            context['material_events'] = self._get_material_events(symbol, limit=10)
+            context['news_summary'] = self._get_news_summary(symbol, limit=3)
+            context['filings_summary'] = self._get_filings_summary(symbol)
+            context['insider_summary'] = self._get_insider_summary(symbol)
+            context['outlook_summary'] = self._get_outlook_summary(symbol)
+            
+        elif context_type == 'filings':
+            filing_sections, selected = self._get_filing_sections(symbol, user_query, 3)
+            context['filing_sections'] = filing_sections
+            context['selected_sections'] = selected
+            context['news_summary'] = self._get_news_summary(symbol, limit=3)
+            context['events_summary'] = self._get_events_summary(symbol, limit=3)
+            context['insider_summary'] = self._get_insider_summary(symbol)
+            context['outlook_summary'] = self._get_outlook_summary(symbol)
+            
+        elif context_type == 'dcf':
+            context['dcf_data'] = self._get_dcf_data(symbol)
+            filing_sections, selected = self._get_filing_sections(symbol, user_query, 2)
+            context['filing_sections'] = filing_sections
+            context['selected_sections'] = selected
+            context['news_summary'] = self._get_news_summary(symbol, limit=3)
+            context['outlook_summary'] = self._get_outlook_summary(symbol)
+            
+        elif context_type == 'charts' or context_type == 'outlook':
+            filing_sections, selected = self._get_filing_sections(symbol, user_query, 2)
+            context['filing_sections'] = filing_sections
+            context['selected_sections'] = selected
+            context['news_summary'] = self._get_news_summary(symbol, limit=3)
+            context['outlook_data'] = self._get_outlook_data(symbol)
+            context['insider_summary'] = self._get_insider_summary(symbol)
+            
+        else:  # 'brief' or default
+            filing_sections, selected = self._get_filing_sections(symbol, user_query, 3)
+            context['filing_sections'] = filing_sections
+            context['selected_sections'] = selected
+            context['news_articles'] = self._get_news_articles(symbol, limit=5)
+            context['insider_summary'] = self._get_insider_summary(symbol)
+            context['outlook_summary'] = self._get_outlook_summary(symbol)
 
-        # Get filing sections (smart selection based on query)
-        filing_sections, selected_section_names = self._get_filing_sections(
-            symbol,
-            user_query,
-            max_sections
-        )
-
-        return {
-            'stock_data': stock_data,
-            'earnings_history': earnings_history,
-            'filing_sections': filing_sections,
-            'selected_sections': selected_section_names
-        }
+        return context
 
     def _get_stock_data(self, symbol: str) -> Optional[Dict[str, Any]]:
         """Get current stock metrics from database"""
@@ -124,6 +169,188 @@ class RAGContext:
             'debt_to_equity': row[3],
             'fiscal_end': row[4]
         } for row in rows]
+
+    def _get_news_articles(self, symbol: str, limit: int = 10) -> List[Dict[str, Any]]:
+        """Get recent news articles for the stock"""
+        conn = self.db.get_connection()
+        cursor = conn.cursor()
+
+        cursor.execute("""
+            SELECT headline, summary, source, url, published_date
+            FROM news_articles
+            WHERE symbol = %s
+            ORDER BY published_date DESC
+            LIMIT %s
+        """, (symbol, limit))
+
+        rows = cursor.fetchall()
+        self.db.return_connection(conn)
+
+        return [{
+            'headline': row[0],
+            'summary': row[1],
+            'source': row[2],
+            'url': row[3],
+            'published_date': row[4]
+        } for row in rows]
+
+    # --- New Data Fetchers for Dynamic Context ---
+
+    def _get_news_summary(self, symbol: str, limit: int = 3) -> List[Dict[str, Any]]:
+        """Get just headlines and dates for news (lightweight)"""
+        return self._get_news_articles(symbol, limit=limit)
+
+    def _get_material_events(self, symbol: str, limit: int = 10) -> List[Dict[str, Any]]:
+        """Get material events (8-Ks) with full details"""
+        conn = self.db.get_connection()
+        cursor = conn.cursor()
+        
+        cursor.execute("""
+            SELECT event_type, headline, description, filing_date, url
+            FROM material_events
+            WHERE symbol = %s
+            ORDER BY filing_date DESC
+            LIMIT %s
+        """, (symbol, limit))
+        
+        rows = cursor.fetchall()
+        self.db.return_connection(conn)
+        
+        return [{
+            'event_type': row[0],
+            'headline': row[1],
+            'description': row[2],
+            'filing_date': row[3],
+            'url': row[4]
+        } for row in rows]
+
+    def _get_events_summary(self, symbol: str, limit: int = 3) -> List[Dict[str, Any]]:
+        """Get just headlines/types for events (lightweight)"""
+        return self._get_material_events(symbol, limit=limit)
+
+    def _get_filings_summary(self, symbol: str) -> List[Dict[str, Any]]:
+        """Get list of available filing sections (names/dates only)"""
+        conn = self.db.get_connection()
+        cursor = conn.cursor()
+        
+        cursor.execute("""
+            SELECT section_name, filing_type, filing_date
+            FROM filing_sections
+            WHERE symbol = %s
+            GROUP BY section_name, filing_type, filing_date
+            ORDER BY filing_date DESC
+            LIMIT 10
+        """, (symbol,))
+        
+        rows = cursor.fetchall()
+        self.db.return_connection(conn)
+        
+        return [{
+            'section_name': row[0],
+            'filing_type': row[1],
+            'filing_date': row[2]
+        } for row in rows]
+
+    def _get_dcf_data(self, symbol: str) -> Dict[str, Any]:
+        """Get DCF-related data (FCF history, WACC, recommendations)"""
+        # Get FCF history
+        earnings = self._get_earnings_history(symbol)
+        fcf_history = [{'year': e['year'], 'free_cash_flow': e.get('free_cash_flow')} 
+                      for e in earnings if e.get('free_cash_flow') is not None]
+        
+        # Get cached recommendations
+        conn = self.db.get_connection()
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT recommendations_json, generated_at 
+            FROM dcf_recommendations 
+            WHERE symbol = %s
+        """, (symbol,))
+        row = cursor.fetchone()
+        self.db.return_connection(conn)
+        
+        recs = None
+        if row and row[0]:
+            try:
+                recs = json.loads(row[0])
+            except:
+                pass
+                
+        return {
+            'fcf_history': fcf_history,
+            'recommendations': recs,
+            'rec_date': row[1] if row else None
+        }
+
+    def _get_insider_trades(self, symbol: str, limit: int = 20) -> List[Dict[str, Any]]:
+        """Get insider trades, filtered to open market interactions"""
+        conn = self.db.get_connection()
+        cursor = conn.cursor()
+        
+        # Filter for P (Purchase) or S (Sale) transaction codes
+        cursor.execute("""
+            SELECT name, position, transaction_date, transaction_type, shares, value, 
+                   price_per_share, transaction_code
+            FROM insider_trades
+            WHERE symbol = %s 
+            AND transaction_code IN ('P', 'S')
+            ORDER BY transaction_date DESC
+            LIMIT %s
+        """, (symbol, limit))
+        
+        rows = cursor.fetchall()
+        self.db.return_connection(conn)
+        
+        return [{
+            'name': row[0],
+            'position': row[1],
+            'transaction_date': row[2],
+            'transaction_type': row[3],
+            'shares': row[4],
+            'value': row[5],
+            'price': row[6],
+            'code': row[7]
+        } for row in rows]
+
+    def _get_insider_summary(self, symbol: str) -> Dict[str, Any]:
+        """Get summary of insider activity (counts/totals)"""
+        trades = self._get_insider_trades(symbol, limit=50)
+        
+        buys = [t for t in trades if t['code'] == 'P']
+        sells = [t for t in trades if t['code'] == 'S']
+        
+        return {
+            'recent_buy_count': len(buys),
+            'recent_sell_count': len(sells),
+            'last_trade_date': trades[0]['transaction_date'] if trades else None
+        }
+
+    def _get_outlook_data(self, symbol: str) -> Dict[str, Any]:
+        """Get forward-looking metrics"""
+        conn = self.db.get_connection()
+        cursor = conn.cursor()
+        
+        cursor.execute("""
+            SELECT forward_pe, forward_peg_ratio, forward_eps
+            FROM stock_metrics
+            WHERE symbol = %s
+        """, (symbol,))
+        
+        row = cursor.fetchone()
+        self.db.return_connection(conn)
+        
+        if not row:
+            return {}
+            
+        return {
+            'forward_pe': row[0],
+            'forward_peg': row[1],
+            'forward_eps': row[2]
+        }
+
+    def _get_outlook_summary(self, symbol: str) -> Dict[str, Any]:
+        """Same as data for now, lightweight enough"""
+        return self._get_outlook_data(symbol)
 
     def _get_filing_sections(self, symbol: str, user_query: Optional[str], max_sections: int) -> Tuple[Dict[str, Any], List[str]]:
         """
@@ -234,7 +461,15 @@ class RAGContext:
         """
         stock_data = context['stock_data']
         earnings_history = context['earnings_history']
-        filing_sections = context['filing_sections']
+        filing_sections = context.get('filing_sections', {})
+        
+        # New context items
+        news_items = context.get('news_articles') or context.get('news_summary', [])
+        event_items = context.get('material_events') or context.get('events_summary', [])
+        dcf_data = context.get('dcf_data')
+        insider_summary = context.get('insider_summary')
+        outlook_data = context.get('outlook_data') or context.get('outlook_summary')
+        filings_summary = context.get('filings_summary')
 
         # Build the prompt
         prompt_parts = []
@@ -267,6 +502,16 @@ class RAGContext:
             prompt_parts.append(f"- **Institutional Ownership:** {stock_data['institutional_ownership']*100:.1f}%\n")
         if stock_data['dividend_yield']:
             prompt_parts.append(f"- **Dividend Yield:** {stock_data['dividend_yield']*100:.2f}%\n")
+            
+        # Add Outlook Metrics if available
+        if outlook_data:
+            if outlook_data.get('forward_pe'):
+                 prompt_parts.append(f"- **Forward P/E:** {outlook_data['forward_pe']:.2f}\n")
+            if outlook_data.get('forward_peg'):
+                 prompt_parts.append(f"- **Forward PEG:** {outlook_data['forward_peg']:.2f}\n")
+            if outlook_data.get('forward_eps'):
+                 prompt_parts.append(f"- **Forward EPS:** ${outlook_data['forward_eps']:.2f}\n")
+
         prompt_parts.append("\n")
 
         # Historical performance
@@ -282,6 +527,53 @@ class RAGContext:
                 if de:
                     line += f", D/E={de:.2f}"
                 prompt_parts.append(line + "\n")
+            prompt_parts.append("\n")
+
+        # DCF Data (if available)
+        if dcf_data:
+            prompt_parts.append("### DCF Analysis Data\n\n")
+            if dcf_data.get('recommendations'):
+                prompt_parts.append("**DCF Scenarios:**\n")
+                recs = dcf_data['recommendations'].get('scenarios', {})
+                for case, val in recs.items():
+                    prompt_parts.append(f"- {case.title()}: ${val}\n")
+                prompt_parts.append("\n")
+            
+            if dcf_data.get('fcf_history'):
+                prompt_parts.append("**Free Cash Flow History:**\n")
+                for item in dcf_data['fcf_history']:
+                    if item.get('free_cash_flow'):
+                        prompt_parts.append(f"- {item['year']}: ${item['free_cash_flow']/1e6:.1f}M\n")
+                prompt_parts.append("\n")
+
+        # Material Events (if available)
+        if event_items:
+            prompt_parts.append("### Material Events (8-K)\n\n")
+            for event in event_items:
+                headline = event.get('headline', 'Untitled')
+                date_val = event.get('filing_date')
+                desc = event.get('description')
+                url = event.get('url')
+                
+                if url:
+                    prompt_parts.append(f"- [{headline}]({url}) ({date_val})\n")
+                else:
+                    prompt_parts.append(f"- **{headline}** ({date_val})\n")
+                    
+                if desc:
+                    # Truncate description slightly for context saving if it's super long
+                    if len(desc) > 500:
+                        desc = desc[:500] + "..."
+                    prompt_parts.append(f"  {desc}\n")
+            prompt_parts.append("\n")
+            
+        # Insider Trading Summary
+        if insider_summary:
+            prompt_parts.append("### Insider Trading (Last 6 Months)\n\n")
+            prompt_parts.append(f"- **Recent Buys (Open Market):** {insider_summary.get('recent_buy_count', 0)}\n")
+            prompt_parts.append(f"- **Recent Sells (Open Market):** {insider_summary.get('recent_sell_count', 0)}\n")
+            if insider_summary.get('last_trade_date'):
+                 prompt_parts.append(f"- **Last Trade Date:** {insider_summary['last_trade_date']}\n")
             prompt_parts.append("\n")
 
         # SEC Filing sections
@@ -303,6 +595,46 @@ class RAGContext:
 
                 prompt_parts.append(f"#### {label} ({filing_type}, filed {filing_date})\n\n")
                 prompt_parts.append(f"{content}\n\n")
+
+        # Recent news articles
+        if news_items:
+            prompt_parts.append("### Recent News\n\n")
+            for article in news_items:
+                headline = article.get('headline', 'No headline')
+                summary = article.get('summary', '')
+                source = article.get('source', 'Unknown')
+                url = article.get('url', '')
+                pub_date = article.get('published_date')
+                
+                # Format date
+                date_str = ''
+                if pub_date:
+                    try:
+                        if hasattr(pub_date, 'strftime'):
+                            date_str = pub_date.strftime('%b %d, %Y')
+                        else:
+                            from datetime import datetime
+                            dt = datetime.fromisoformat(str(pub_date).replace('Z', '+00:00'))
+                            date_str = dt.strftime('%b %d, %Y')
+                    except:
+                        date_str = str(pub_date)[:10]
+                
+                # Format with deep link
+                if url:
+                    prompt_parts.append(f"- [{headline}]({url}) ({source}, {date_str})\n")
+                else:
+                    prompt_parts.append(f"- **{headline}** ({source}, {date_str})\n")
+                
+                if summary:
+                    prompt_parts.append(f"  {summary}\n")
+            prompt_parts.append("\n")
+            
+        # Filings Summary (Fallback)
+        if filings_summary:
+             prompt_parts.append("### Available Filings (Summary)\n\n")
+             for f in filings_summary:
+                 prompt_parts.append(f"- {f['section_name']} ({f['filing_type']}, {f['filing_date']})\n")
+             prompt_parts.append("\n")
 
         # Lynch-Style Analysis (if provided)
         if lynch_analysis:

@@ -220,7 +220,7 @@ class ConversationManager:
         conversation_history = [{'role': msg['role'], 'content': msg['content']} for msg in history]
 
         # Get stock context with smart section selection
-        context = self.rag_context.get_stock_context(symbol, user_query=user_message)
+        context = self.rag_context.get_stock_context(symbol, user_query=user_message, context_type='brief')
         if not context:
             raise ValueError(f"Could not load context for {symbol}")
 
@@ -258,7 +258,7 @@ class ConversationManager:
         self.add_message(conversation_id, 'user', user_message)
 
         # Save assistant message with sources
-        sources = context['selected_sections']
+        sources = context.get('selected_sections', [])
         assistant_msg_id = self.add_message(conversation_id, 'assistant', assistant_message, sources)
 
         return {
@@ -267,7 +267,7 @@ class ConversationManager:
             'message_id': assistant_msg_id
         }
 
-    def send_message_stream(self, conversation_id: int, user_message: str, lynch_analysis: Optional[str] = None):
+    def send_message_stream(self, conversation_id: int, user_message: str, lynch_analysis: Optional[str] = None, context_type: str = 'brief'):
         """
         Send a message and stream AI response
 
@@ -293,13 +293,13 @@ class ConversationManager:
             conversation_history = [{'role': msg['role'], 'content': msg['content']} for msg in history]
 
             # Get stock context with smart section selection
-            context = self.rag_context.get_stock_context(symbol, user_query=user_message)
+            context = self.rag_context.get_stock_context(symbol, user_query=user_message, context_type=context_type)
             if not context:
                 yield {'type': 'error', 'data': f"Could not load context for {symbol}"}
                 return
 
             # Send sources first
-            sources = context['selected_sections']
+            sources = context.get('selected_sections', [])
             yield {'type': 'sources', 'data': sources}
 
             # Format prompt for LLM
