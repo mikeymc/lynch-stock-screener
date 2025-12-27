@@ -1233,10 +1233,14 @@ def get_stock_history(symbol):
                 # Use dividend from the current year, or fall back to previous year
                 dividend = dividend_by_year.get(year) or dividend_by_year.get(year - 1)
                 
+                # Always add the date to keep x-axis aligned with other charts
+                weekly_div_dates.append(date_str)
+                
                 if dividend and dividend > 0 and price and price > 0:
                     div_yield = (dividend / price) * 100
-                    weekly_div_dates.append(date_str)
                     weekly_div_values.append(round(div_yield, 2))
+                else:
+                    weekly_div_values.append(None)
             
             weekly_dividend_yields = {
                 'dates': weekly_div_dates,
