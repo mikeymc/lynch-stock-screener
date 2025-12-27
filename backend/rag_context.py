@@ -239,10 +239,11 @@ class RAGContext:
         # Build the prompt
         prompt_parts = []
 
-        # System context
         prompt_parts.append("You are a stock analyst applying Peter Lynch's investment methodology from 'One Up on Wall Street'. ")
         prompt_parts.append("Answer questions about stocks using this methodology. ")
-        prompt_parts.append("Be clear, direct, and professional.\n\n")
+        prompt_parts.append("Be clear, direct, and professional. ")
+        prompt_parts.append("Do not explicitly reference Peter Lynch or other investors by name unless the user asks. ")
+        prompt_parts.append("Keep responses concise (250-500 words) unless the user explicitly asks for more detail.\n\n")
 
         # Stock overview
         prompt_parts.append(f"## Stock: {stock_data['company_name']} ({stock_data['symbol']})\n\n")

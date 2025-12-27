@@ -27,7 +27,7 @@ class ConversationManager:
         self._api_key = gemini_api_key or os.getenv('GEMINI_API_KEY')
         self._client = None
         
-        self.model_name = "gemini-3-pro-preview"
+        self.model_name = "gemini-2.5-flash"
 
     @property
     def client(self):
@@ -40,8 +40,6 @@ class ConversationManager:
                 # but only when the client is actually used (not at import time)
                 self._client = genai.Client()
         return self._client
-        
-        self.model_name = "gemini-3-pro-preview"
 
     def create_conversation(self, user_id: int, symbol: str, title: Optional[str] = None) -> int:
         """
