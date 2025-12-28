@@ -157,15 +157,80 @@ class SEC8KClient:
             logger.error(f"[MaterialEventsFetcher] Error fetching 8-Ks for {symbol}: {e}")
             return []
 
-    def extract_filing_text(self, filing, max_chars: int = 10000) -> Optional[str]:
+    def extract_exhibit_text(self, filing, max_chars: int = 500000) -> Optional[str]:
         """
-        Extract plain text from 8-K filing with intelligent content extraction
+        Extract text from the best exhibit attachment (EX-99.1 preferred).
+        
+        EX-99.1 typically contains press releases and announcements - the most
+        valuable content for analysis. Falls back to EX-99.2 or other EX-99.x
+        if EX-99.1 is not available.
+
+        Args:
+            filing: Filing object from edgartools
+            max_chars: Maximum characters to extract (default: 500000 as safety cap)
+
+        Returns:
+            Extracted exhibit content or None if no suitable exhibit found
+        """
+        try:
+            if not hasattr(filing, 'attachments'):
+                return None
+            
+            attachments = filing.attachments
+            if not attachments:
+                return None
+            
+            # Priority order: EX-99.1 first, then other EX-99.x
+            ex991_attachment = None
+            other_ex99_attachment = None
+            
+            for att in attachments:
+                doc_name = att.document.lower() if hasattr(att, 'document') else ''
+                desc = att.description.lower() if hasattr(att, 'description') else ''
+                
+                # Match EX-99.1 specifically (various naming conventions)
+                if 'ex99' in doc_name or 'ex-99' in doc_name or 'ex99' in desc or 'ex-99' in desc:
+                    # Check for .1 specifically
+                    if '99_1' in doc_name or '99-1' in doc_name or '991' in doc_name or 'ex-99.1' in desc:
+                        ex991_attachment = att
+                        break
+                    elif other_ex99_attachment is None:
+                        other_ex99_attachment = att
+            
+            # Use EX-99.1 if found, otherwise fall back to other EX-99.x
+            target_attachment = ex991_attachment or other_ex99_attachment
+            
+            if not target_attachment:
+                return None
+            
+            # Extract text content
+            try:
+                content = target_attachment.text()
+                if content and len(content) > max_chars:
+                    # Truncate at sentence boundary
+                    content = content[:max_chars]
+                    last_sentence = content.rfind('. ')
+                    if last_sentence > len(content) * 0.8:
+                        content = content[:last_sentence + 1]
+                    content += "\n\n[Content truncated for length]"
+                return content
+            except Exception as e:
+                logger.warning(f"[MaterialEventsFetcher] Error extracting exhibit text: {e}")
+                return None
+                
+        except Exception as e:
+            logger.error(f"[MaterialEventsFetcher] Error in extract_exhibit_text: {e}")
+            return None
+
+    def extract_filing_text(self, filing, max_chars: int = 500000) -> Optional[str]:
+        """
+        Extract plain text from 8-K filing body (fallback when no exhibit found).
 
         Strategy: Skip header boilerplate, extract the meaty material event content
 
         Args:
             filing: Filing object from edgartools
-            max_chars: Maximum characters to extract (default: 10000)
+            max_chars: Maximum characters to extract (default: 500000)
 
         Returns:
             Extracted content or None if extraction fails
@@ -265,8 +330,10 @@ class SEC8KClient:
         else:
             published_iso = str(filing_date)
 
-        # Extract filing text content
-        content_text = self.extract_filing_text(filing)
+        # Extract content: try EX-99.1 exhibit first, fall back to 8-K body
+        content_text = self.extract_exhibit_text(filing)
+        if not content_text:
+            content_text = self.extract_filing_text(filing)
 
         return {
             'event_type': '8k',

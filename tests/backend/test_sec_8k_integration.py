@@ -68,8 +68,9 @@ def test_sec_8k_integration():
             content_len = len(filing['content_text'])
             print(f"✓ Content text extracted: {content_len} characters")
             assert content_len > 100, "Content text too short - extraction may have failed"
-            assert content_len <= 10100, "Content text too long - truncation may have failed"
-            assert "Item" in filing['content_text'] or content_len > 1000, "Content may not have skipped boilerplate"
+            assert content_len <= 505000, "Content text too long - truncation may have failed"
+            # Check for exhibit content (press release) or item markers (8-K body fallback)
+            assert "Exhibit" in filing['content_text'] or "Item" in filing['content_text'] or content_len > 1000, "Content may not have extracted properly"
         else:
             print("⚠ Content text extraction returned None")
         print()
