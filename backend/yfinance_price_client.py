@@ -88,8 +88,9 @@ class YFinancePriceClient:
         yf_symbol = self._normalize_symbol(symbol)
         
         # Fetch all available historical data
+        # Note: auto_adjust=True (default) returns split-adjusted prices
         ticker = yf.Ticker(yf_symbol)
-        df = ticker.history(period="max", auto_adjust=False)
+        df = ticker.history(period="max", auto_adjust=True)
         
         if df is None or df.empty:
             logger.warning(f"[PriceHistoryFetcher] No price data found for {symbol}")
@@ -164,7 +165,9 @@ class YFinancePriceClient:
             
             # Get the closest date (most recent on or before target)
             closest_date = valid_dates.max()
-            price = float(df.loc[closest_date, 'close'])
+            # Use 'Close' (capitalized) when auto_adjust=True
+            price_col = 'Close' if 'Close' in df.columns else 'close'
+            price = float(df.loc[closest_date, price_col])
             
             # Cache the individual price result
             self._price_cache[cache_key] = {
@@ -198,7 +201,9 @@ class YFinancePriceClient:
         
         try:
             # Resample to weekly (Friday close)
-            weekly_df = df['close'].resample('W-FRI').last().dropna()
+            # Use 'Close' (capitalized) when auto_adjust=True
+            price_col = 'Close' if 'Close' in df.columns else 'close'
+            weekly_df = df[price_col].resample('W-FRI').last().dropna()
             
             # Filter by start year if specified
             if start_year:

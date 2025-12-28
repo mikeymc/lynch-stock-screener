@@ -1187,29 +1187,126 @@ def get_stock_history(symbol):
         # Get weekly prices from cached weekly_prices table
         weekly_prices = db.get_weekly_prices(symbol.upper(), start_year)
         
-        # Calculate weekly P/E ratios using EPS from earnings history
-        # For each week, use the EPS from the corresponding fiscal year
+        # Calculate weekly P/E ratios using TTM EPS (Trailing Twelve Months)
+        # TTM EPS = Rolling sum of last 4 quarters of net income / shares outstanding
+        # This ensures the P/E chart matches the current P/E shown on the stock list
         if weekly_prices.get('dates') and weekly_prices.get('prices'):
-            # Build a mapping of year -> EPS from earnings history
-            eps_by_year = {}
-            for entry in earnings_history:
-                if entry.get('eps') and entry.get('eps') > 0:
-                    eps_by_year[entry['year']] = entry['eps']
+            # Get quarterly net income data for TTM calculation
+            quarterly_history = db.get_earnings_history(symbol.upper(), period_type='quarterly')
+            
+            # Build list of (fiscal_end_date, net_income) sorted by date
+            quarterly_ni = []
+            for entry in quarterly_history:
+                ni = entry.get('net_income')
+                fiscal_end = entry.get('fiscal_end')
+                year = entry.get('year')
+                period = entry.get('period', '')
+                
+                if ni is not None and year and period:
+                    # If fiscal_end is missing, estimate from year and quarter
+                    if not fiscal_end:
+                        quarter_month_map = {'Q1': 3, 'Q2': 6, 'Q3': 9, 'Q4': 12}
+                        month = quarter_month_map.get(period, 12)
+                        fiscal_end = f"{year}-{month:02d}-28"  # Approximate
+                    
+                    quarterly_ni.append({
+                        'date': fiscal_end,
+                        'net_income': ni,
+                        'year': year,
+                        'period': period
+                    })
+            
+            # Sort by date ascending
+            quarterly_ni.sort(key=lambda x: x['date'])
+            
+            # Get current shares outstanding from market cap / price
+            shares_outstanding = None
+            if stock_metrics:
+                price = stock_metrics.get('price')
+                market_cap = stock_metrics.get('market_cap')
+                if price and price > 0 and market_cap and market_cap > 0:
+                    shares_outstanding = market_cap / price
+            
+            # Get the current trailing P/E and EPS from stock metrics
+            # This comes from real-time market data (yfinance) and is more accurate than EDGAR
+            current_pe = stock_metrics.get('pe_ratio') if stock_metrics else None
+            current_price = stock_metrics.get('price') if stock_metrics else None
+            current_eps = None
+            if current_pe and current_pe > 0 and current_price and current_price > 0:
+                current_eps = current_price / current_pe
             
             # Calculate P/E for each week
             weekly_pe_dates = []
             weekly_pe_values = []
-            for i, date_str in enumerate(weekly_prices['dates']):
-                year = int(date_str[:4])
-                price = weekly_prices['prices'][i]
-                
-                # Use EPS from the current year, or fall back to previous year
-                eps = eps_by_year.get(year) or eps_by_year.get(year - 1)
-                
-                if eps and eps > 0 and price:
-                    pe = price / eps
+            
+            # Fallback to annual EPS if we don't have quarterly data
+            if len(quarterly_ni) >= 4 and shares_outstanding:
+                # Use TTM approach for historical data
+                for i, date_str in enumerate(weekly_prices['dates']):
+                    price = weekly_prices['prices'][i]
+                    
+                    # Always add the date to keep x-axis aligned with price chart
                     weekly_pe_dates.append(date_str)
-                    weekly_pe_values.append(round(pe, 2))
+                    
+                    if not price or price <= 0:
+                        weekly_pe_values.append(None)
+                        continue
+                    
+                    # For dates in the current or previous year, use real-time EPS
+                    # This handles cases where EDGAR quarterly data lags behind actual results
+                    from datetime import datetime
+                    week_year = int(date_str[:4])
+                    current_year = datetime.now().year
+                    is_recent = week_year >= current_year - 1
+                    
+                    if is_recent and current_eps and current_eps > 0:
+                        # Use real-time EPS for recent weeks
+                        pe = price / current_eps
+                        weekly_pe_values.append(round(pe, 2))
+                    else:
+                        # Use TTM calculation for historical weeks
+                        # Find the 4 most recent quarters on or before this date
+                        relevant_quarters = [q for q in quarterly_ni if q['date'] <= date_str]
+                        
+                        if len(relevant_quarters) >= 4:
+                            # Sum the last 4 quarters
+                            last_4q = relevant_quarters[-4:]
+                            ttm_net_income = sum(q['net_income'] for q in last_4q)
+                            
+                            # Calculate TTM EPS
+                            ttm_eps = ttm_net_income / shares_outstanding
+                            
+                            if ttm_eps > 0:
+                                pe = price / ttm_eps
+                                weekly_pe_values.append(round(pe, 2))
+                            else:
+                                # Negative EPS - P/E not meaningful
+                                weekly_pe_values.append(None)
+                        else:
+                            # Not enough quarters for TTM calculation
+                            weekly_pe_values.append(None)
+            else:
+                # Fallback: Use annual EPS (original approach)
+                eps_by_year = {}
+                for entry in earnings_history:
+                    if entry.get('eps') and entry.get('eps') > 0:
+                        eps_by_year[entry['year']] = entry['eps']
+                
+                for i, date_str in enumerate(weekly_prices['dates']):
+                    year = int(date_str[:4])
+                    price = weekly_prices['prices'][i]
+                    
+                    # Always add the date
+                    weekly_pe_dates.append(date_str)
+                    
+                    # Use EPS from the current year, or fall back to previous year
+                    eps = eps_by_year.get(year) or eps_by_year.get(year - 1)
+                    
+                    if eps and eps > 0 and price:
+                        pe = price / eps
+                        weekly_pe_values.append(round(pe, 2))
+                    else:
+                        weekly_pe_values.append(None)
             
             weekly_pe_ratios = {
                 'dates': weekly_pe_dates,

@@ -62,14 +62,30 @@ class EarningsAnalyzer:
         }
 
     def calculate_cagr(self, start_value: float, end_value: float, years: int) -> Optional[float]:
-        # Check for None values before comparison
+        """
+        Calculate average annual growth rate.
+        
+        Formula: ((end - start) / |start|) / years × 100
+        
+        This handles all cases:
+        - Positive to positive growth
+        - Negative to positive (turnaround)
+        - Positive to negative (decline)
+        - Returns positive growth when earnings increase
+        - Returns negative growth when earnings decrease
+        """
         if start_value is None or end_value is None or years is None:
             return None
-        if start_value <= 0 or end_value <= 0 or years <= 0:
+        if years <= 0:
             return None
-
-        cagr = (math.pow(end_value / start_value, 1 / years) - 1) * 100
-        return cagr
+        if start_value == 0:
+            return None  # Can't calculate growth rate with zero base
+        
+        # Simple linear average annual growth rate
+        # Works for all cases including negative starting values
+        annual_growth_rate = ((end_value - start_value) / abs(start_value)) / years * 100
+        
+        return annual_growth_rate
 
     def calculate_growth_consistency(self, values: List[float]) -> Optional[float]:
         if len(values) < 2:
