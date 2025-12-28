@@ -685,9 +685,8 @@ class LynchCriteria:
             return None
         if isinstance(pe_ratio, str) or isinstance(earnings_growth, str):
             return None
-        if earnings_growth == 0:
-            return None  # Can't divide by zero
-        # Note: Negative growth rates will produce negative PEG (indicates declining earnings)
+        if earnings_growth <= 0:
+            return None  # Can't calculate meaningful PEG for zero or negative growth
         return pe_ratio / earnings_growth
 
     def evaluate_peg(self, value: float) -> str:

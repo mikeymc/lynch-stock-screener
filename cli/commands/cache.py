@@ -198,6 +198,68 @@ def prices(
         raise typer.Exit(1)
 
 
+# Clear Price Cache
+@app.command("clear-prices")
+def clear_prices(
+    symbol: str = typer.Argument(None, help="Symbol to clear, or omit for ALL symbols"),
+    prod: bool = typer.Option(False, "--prod", help="Use production database"),
+    confirm: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation prompt"),
+):
+    """Clear weekly price cache (use after fixing split adjustment)"""
+    if symbol:
+        console.print(f"[yellow]⚠ This will delete all cached weekly prices for {symbol}[/yellow]")
+    else:
+        console.print("[bold red]⚠ This will delete ALL cached weekly prices for ALL symbols![/bold red]")
+    
+    if not confirm:
+        confirmed = typer.confirm("Are you sure you want to continue?")
+        if not confirmed:
+            console.print("[dim]Cancelled.[/dim]")
+            raise typer.Exit(0)
+    
+    # Determine API URL
+    api_url = API_URL if prod else "http://localhost:5001"
+    
+    # Get token if prod
+    if prod:
+        token = get_api_token()
+        headers = {
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {token}"
+        }
+    else:
+        headers = {"Content-Type": "application/json"}
+    
+    console.print(f"[bold blue]🗑️ Clearing price cache on {'production' if prod else 'local'}...[/bold blue]")
+    
+    try:
+        payload = {"symbol": symbol} if symbol else {}
+        
+        response = httpx.post(
+            f"{api_url}/api/admin/clear-weekly-prices",
+            json=payload,
+            headers=headers,
+            timeout=60.0
+        )
+        response.raise_for_status()
+        
+        data = response.json()
+        rows_deleted = data.get("rows_deleted", 0)
+        
+        if symbol:
+            console.print(f"[bold green]✓ Deleted {rows_deleted} weekly price records for {symbol}[/bold green]")
+        else:
+            console.print(f"[bold green]✓ Cleared all weekly prices ({rows_deleted} affected)[/bold green]")
+        
+        console.print("[dim]Run 'bag cache prices start --prod' to re-fetch split-adjusted prices[/dim]")
+        
+    except httpx.HTTPError as e:
+        console.print(f"[bold red]✗ Failed to clear prices:[/bold red] {e}")
+        if not prod:
+            console.print("[yellow]Make sure local server is running[/yellow]")
+        raise typer.Exit(1)
+
+
 # News Cache
 @app.command("news")
 def news(

@@ -1529,6 +1529,37 @@ class Database:
         finally:
             self.return_connection(conn)
     
+    def clear_weekly_prices(self, symbol: str = None) -> int:
+        """
+        Clear weekly price data for a symbol or all symbols.
+        
+        Use this when cached prices need to be refreshed (e.g., after fixing
+        split adjustment issues).
+        
+        Args:
+            symbol: Stock symbol to clear, or None to clear ALL weekly prices
+            
+        Returns:
+            Number of rows deleted
+        """
+        conn = self.get_connection()
+        try:
+            cursor = conn.cursor()
+            
+            if symbol:
+                cursor.execute("DELETE FROM weekly_prices WHERE symbol = %s", (symbol,))
+                rows_deleted = cursor.rowcount
+            else:
+                # TRUNCATE doesn't return rowcount, so query count first
+                cursor.execute("SELECT COUNT(*) FROM weekly_prices")
+                rows_deleted = cursor.fetchone()[0]
+                cursor.execute("TRUNCATE TABLE weekly_prices")
+            
+            conn.commit()
+            return rows_deleted
+        finally:
+            self.return_connection(conn)
+    
     # DEPRECATED: Use save_weekly_prices() instead
     # def save_price_point(self, symbol: str, date: str, price: float):
     #     """
