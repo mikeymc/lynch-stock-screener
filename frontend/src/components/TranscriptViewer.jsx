@@ -155,14 +155,13 @@ export default function TranscriptViewer({ symbol }) {
                 <div className="transcript-meta">
                     <span><strong>Period:</strong> {transcript.quarter} {transcript.fiscal_year}</span>
                     <span><strong>Date:</strong> {transcript.earnings_date}</span>
-                    {transcript.has_qa && <span className="tag-qa">Includes Q&A</span>}
                 </div>
             </div>
 
-            {/* View Mode Toggle */}
-            <div className="transcript-controls">
+            {/* View Mode Toggle - Segmented Control */}
+            <div className="transcript-toggle">
                 <button
-                    className={`tab-button ${viewMode === 'summary' ? 'active' : ''}`}
+                    className={`toggle-segment ${viewMode === 'summary' ? 'active' : ''}`}
                     onClick={() => {
                         if (summary) {
                             setViewMode('summary')
@@ -172,12 +171,14 @@ export default function TranscriptViewer({ symbol }) {
                     }}
                     disabled={summaryLoading}
                 >
-                    {summaryLoading ? 'Generating...' : (summary ? 'AI Summary' : '✨ Generate Summary')}
+                    <span className="toggle-icon">✨</span>
+                    {summaryLoading ? 'Generating...' : 'AI Summary'}
                 </button>
                 <button
-                    className={`tab-button ${viewMode === 'full' ? 'active' : ''}`}
+                    className={`toggle-segment ${viewMode === 'full' ? 'active' : ''}`}
                     onClick={() => setViewMode('full')}
                 >
+                    <span className="toggle-icon">📜</span>
                     Full Transcript
                 </button>
             </div>
@@ -189,17 +190,25 @@ export default function TranscriptViewer({ symbol }) {
             )}
 
             {/* Content */}
-            <div className="transcript-content">
-                {viewMode === 'summary' && summary ? (
-                    <div className="transcript-summary">
-                        <ReactMarkdown>{summary}</ReactMarkdown>
+            {viewMode === 'summary' && summary ? (
+                <div className="brief-analysis-container">
+                    <div className="section-item">
+                        <div className="section-content">
+                            {/* Hidden spacer to prevent :only-child centering rule */}
+                            <div style={{ display: 'none' }} />
+                            <div className="section-summary">
+                                <div className="summary-content">
+                                    <ReactMarkdown>{summary}</ReactMarkdown>
+                                </div>
+                            </div>
+                        </div>
                     </div>
-                ) : (
-                    <div className="transcript-text">
-                        {renderTranscript(transcript.transcript_text)}
-                    </div>
-                )}
-            </div>
+                </div>
+            ) : (
+                <div className="transcript-text">
+                    {renderTranscript(transcript.transcript_text)}
+                </div>
+            )}
         </div>
     )
 }
