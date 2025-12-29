@@ -315,13 +315,37 @@ class BackgroundWorker:
                 logger.error(f"Error processing {symbol}: {e}")
                 return None
 
-        results = []
+        # Initialize counters
+        pass_count = 0
+        close_count = 0
+        fail_count = 0
+        total_analyzed = 0
         processed_count = 0
         failed_symbols = []
 
         BATCH_SIZE = 10
         MAX_WORKERS = 40
         BATCH_DELAY = 0.5
+
+        def update_counters(evaluation):
+            nonlocal pass_count, close_count, fail_count, total_analyzed
+            total_analyzed += 1
+            status = evaluation.get('overall_status')
+            
+            if algorithm == 'classic':
+                if status == 'PASS':
+                    pass_count += 1
+                elif status == 'CLOSE':
+                    close_count += 1
+                elif status == 'FAIL':
+                    fail_count += 1
+            else:
+                if status in ['STRONG_BUY', 'BUY']:
+                    pass_count += 1
+                elif status == 'HOLD':
+                    close_count += 1
+                elif status in ['CAUTION', 'AVOID']:
+                    fail_count += 1
 
         with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
             for batch_start in range(0, total, BATCH_SIZE):
@@ -348,9 +372,17 @@ class BackgroundWorker:
                     try:
                         evaluation = future.result()
                         if evaluation:
-                            results.append(evaluation)
+                            update_counters(evaluation)
                         else:
                             failed_symbols.append(symbol)
+                        
+                        # AGGRESSIVE CACHE CLEARING to prevent OOM
+                        # Immediately remove large data objects for this symbol
+                        if symbol in market_data_cache:
+                            del market_data_cache[symbol]
+                        if symbol in finviz_cache:
+                            del finviz_cache[symbol]
+
                     except Exception as e:
                         logger.error(f"Error getting result for {symbol}: {e}")
                         failed_symbols.append(symbol)
@@ -388,26 +420,17 @@ class BackgroundWorker:
                 try:
                     evaluation = process_stock(symbol)
                     if evaluation:
-                        results.append(evaluation)
+                        update_counters(evaluation)
+                        
+                    # Also clear cache for retries
+                    if symbol in market_data_cache:
+                        del market_data_cache[symbol]
+                    if symbol in finviz_cache:
+                        del finviz_cache[symbol]
+                        
                     time.sleep(2)
                 except Exception as e:
                     logger.error(f"Retry error for {symbol}: {e}")
-
-        # Calculate final counts
-        if algorithm == 'classic':
-            pass_count = len([r for r in results if r['overall_status'] == 'PASS'])
-            close_count = len([r for r in results if r['overall_status'] == 'CLOSE'])
-            fail_count = len([r for r in results if r['overall_status'] == 'FAIL'])
-        else:
-            pass_count = len([r for r in results if r['overall_status'] in ['STRONG_BUY', 'BUY']])
-            close_count = len([r for r in results if r['overall_status'] == 'HOLD'])
-            fail_count = len([r for r in results if r['overall_status'] in ['CAUTION', 'AVOID']])
-
-        total_analyzed = len(results)
-
-        # Complete session if we have one
-        if session_id:
-            self.db.complete_session(session_id, total_analyzed, pass_count, close_count, fail_count)
 
         # Complete job
         result = {

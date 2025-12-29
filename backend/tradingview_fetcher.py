@@ -284,7 +284,4 @@ class TradingViewFetcher:
             'exchange': row.get('exchange'),
             'country': row.get('country'),  # May be None, will be filled by yfinance
             'currency': row.get('currency'),
-            
-            # Keep raw data for debugging
-            '_raw': row.to_dict()
         }
