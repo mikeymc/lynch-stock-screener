@@ -794,3 +794,95 @@ Do NOT include a header - just the bullet points.
                 raise Exception(f"Response missing '{scenario}' scenario: {result}")
 
         return result
+
+    def generate_transcript_summary(
+        self,
+        transcript_text: str,
+        company_name: str,
+        quarter: str,
+        fiscal_year: int,
+        model_version: str = "gemini-2.5-flash"
+    ) -> str:
+        """
+        Generate an AI summary of an earnings call transcript.
+        Returns a 1000-1500 word structured summary with key investor takeaways.
+
+        Args:
+            transcript_text: Full transcript text
+            company_name: Name of the company
+            quarter: Quarter (e.g., "Q4")
+            fiscal_year: Fiscal year
+            model_version: Gemini model to use for generation
+
+        Returns:
+            Markdown-formatted summary
+
+        Raises:
+            ValueError: If model_version is not in AVAILABLE_MODELS
+        """
+        if model_version not in AVAILABLE_MODELS:
+            raise ValueError(f"Invalid model: {model_version}. Must be one of {AVAILABLE_MODELS}")
+
+        # Craft a comprehensive prompt for transcript summarization
+        prompt = f"""You are an expert financial analyst summarizing an earnings call transcript for investors.
+
+**Company**: {company_name}
+**Period**: {quarter} Fiscal Year {fiscal_year}
+
+**Instructions**:
+Create a comprehensive summary (1000-1500 words) of this earnings call transcript.
+Structure your summary with the following sections:
+
+## Key Financial Highlights
+- Revenue, EPS, margins, and other key metrics mentioned
+- Year-over-year and quarter-over-quarter comparisons
+- Any beats or misses vs. expectations
+
+## Business Performance
+- Segment performance highlights
+- Geographic trends
+- Product/service updates
+- Market share or competitive positioning
+
+## Forward Guidance
+- Revenue and earnings guidance for next quarter/year
+- Any raised, lowered, or maintained guidance
+- Key assumptions underlying guidance
+
+## Strategic Initiatives
+- Major announcements (products, partnerships, M&A, restructuring)
+- Capital allocation priorities (buybacks, dividends, investments)
+- Long-term strategic direction
+
+## Management Tone & Analyst Concerns
+- Overall tone of management (confident, cautious, defensive)
+- Key questions raised by analysts
+- Any areas where management seemed evasive or defensive
+- Notable surprises or revelations from Q&A
+
+## Key Risks & Watchpoints
+- Challenges or headwinds mentioned
+- Items to monitor going forward
+
+Be specific and quantitative where possible. Include direct quotes for particularly notable statements.
+Focus on actionable insights for investors making buy/hold/sell decisions.
+
+**Transcript**:
+{transcript_text}
+"""
+
+        # Generate summary
+        response = self.client.models.generate_content(
+            model=model_version,
+            contents=prompt
+        )
+
+        # Check if response was blocked or has no content
+        if not response.parts:
+            error_msg = "Gemini API returned no content for transcript summary."
+            if hasattr(response, 'prompt_feedback'):
+                error_msg += f" Prompt feedback: {response.prompt_feedback}"
+            raise Exception(error_msg)
+
+        return response.text.strip()
+

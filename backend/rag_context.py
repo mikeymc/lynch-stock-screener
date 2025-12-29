@@ -59,6 +59,9 @@ class RAGContext:
         if not context['stock_data']:
             return None
 
+        # Add earnings transcript to all contexts where deeper analysis might be needed
+        context['earnings_transcript'] = self._get_earnings_transcript(symbol)
+        
         # Primary context based on page
         if context_type == 'news':
             context['news_articles'] = self._get_news_articles(symbol, limit=10)
@@ -223,6 +226,10 @@ class RAGContext:
             'filing_date': row[3],
             'url': row[4]
         } for row in rows]
+
+    def _get_earnings_transcript(self, symbol: str) -> Optional[Dict[str, Any]]:
+        """Get latest earnings call transcript"""
+        return self.db.get_latest_earnings_transcript(symbol)
 
     def _get_events_summary(self, symbol: str, limit: int = 3) -> List[Dict[str, Any]]:
         """Get just headlines/types for events (lightweight)"""
@@ -469,7 +476,9 @@ class RAGContext:
         dcf_data = context.get('dcf_data')
         insider_summary = context.get('insider_summary')
         outlook_data = context.get('outlook_data') or context.get('outlook_summary')
+        outlook_data = context.get('outlook_data') or context.get('outlook_summary')
         filings_summary = context.get('filings_summary')
+        earnings_transcript = context.get('earnings_transcript')
 
         # Build the prompt
         prompt_parts = []
@@ -552,6 +561,7 @@ class RAGContext:
             for event in event_items:
                 headline = event.get('headline', 'Untitled')
                 date_val = event.get('filing_date')
+                summary = event.get('summary')  # AI-generated summary
                 desc = event.get('description')
                 url = event.get('url')
                 
@@ -559,8 +569,11 @@ class RAGContext:
                     prompt_parts.append(f"- [{headline}]({url}) ({date_val})\n")
                 else:
                     prompt_parts.append(f"- **{headline}** ({date_val})\n")
-                    
-                if desc:
+                
+                # Prefer AI summary over raw description
+                if summary:
+                    prompt_parts.append(f"  **AI Summary:** {summary}\n")
+                elif desc:
                     # Truncate description slightly for context saving if it's super long
                     if len(desc) > 500:
                         desc = desc[:500] + "..."
@@ -575,6 +588,30 @@ class RAGContext:
             if insider_summary.get('last_trade_date'):
                  prompt_parts.append(f"- **Last Trade Date:** {insider_summary['last_trade_date']}\n")
             prompt_parts.append("\n")
+
+        # Earnings Call Transcript (High Priority)
+        if earnings_transcript:
+            prompt_parts.append("### Latest Earnings Call Transcript (VERBATIM)\n\n")
+            
+            # Add metadata
+            meta = []
+            if earnings_transcript.get('quarter'):
+                meta.append(f"**Period:** {earnings_transcript['quarter']} {earnings_transcript.get('fiscal_year', '')}")
+            if earnings_transcript.get('earnings_date'):
+                meta.append(f"**Date:** {earnings_transcript['earnings_date']}")
+            prompt_parts.append(" | ".join(meta) + "\n\n")
+            
+            # Add transcript content (truncated if too long to fit context window safely)
+            # Assuming we have large context window, but being safe
+            text = earnings_transcript.get('transcript_text', '')
+            if len(text) > 100000:
+                text = text[:100000] + "... [TRUNCATED]"
+            
+            prompt_parts.append(f"{text}\n\n")
+            
+            # Check for Q&A
+            if earnings_transcript.get('has_qa'):
+                prompt_parts.append("**Note:** This transcript includes the full Question & Answer session with analysts.\n\n")
 
         # SEC Filing sections
         if filing_sections:

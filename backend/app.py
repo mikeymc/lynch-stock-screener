@@ -33,6 +33,7 @@ from algorithm_optimizer import AlgorithmOptimizer
 from finnhub_news import FinnhubNewsClient
 from stock_rescorer import StockRescorer
 from sec_8k_client import SEC8KClient
+from material_event_summarizer import MaterialEventSummarizer, SUMMARIZABLE_ITEM_CODES
 from fly_machines import get_fly_manager
 from auth import init_oauth_client, require_user_auth
 
@@ -118,6 +119,7 @@ backtester = Backtester(db)
 validator = AlgorithmValidator(db)
 analyzer_corr = CorrelationAnalyzer(db)
 optimizer = AlgorithmOptimizer(db)
+event_summarizer = MaterialEventSummarizer()
 
 # Initialize Finnhub client for news
 finnhub_api_key = os.environ.get('FINNHUB_API_KEY')
@@ -665,6 +667,73 @@ def get_stock_outlook(symbol):
         'inventory_vs_revenue': clean_nan_values(inventory_chart_clean),
         'gross_margin_history': clean_nan_values(margin_data_clean)
     })
+
+
+@app.route('/api/stock/<symbol>/transcript', methods=['GET'])
+def get_stock_transcript(symbol):
+    """
+    Get the latest earnings call transcript.
+    """
+    transcript = db.get_latest_earnings_transcript(symbol)
+    
+    if not transcript:
+        return jsonify({'error': 'No transcript found'}), 404
+        
+    return jsonify(clean_nan_values(transcript))
+
+
+@app.route('/api/stock/<symbol>/transcript/summary', methods=['POST'])
+def generate_transcript_summary(symbol):
+    """
+    Generate or retrieve AI summary for the latest earnings transcript.
+    Returns cached summary if available, otherwise generates and caches new one.
+    """
+    try:
+        # Get the transcript
+        transcript = db.get_latest_earnings_transcript(symbol)
+        
+        if not transcript:
+            return jsonify({'error': 'No transcript found'}), 404
+        
+        # Check if we already have a cached summary
+        if transcript.get('summary'):
+            return jsonify({
+                'summary': transcript['summary'],
+                'cached': True,
+                'quarter': transcript['quarter'],
+                'fiscal_year': transcript['fiscal_year']
+            })
+        
+        # Generate new summary
+        stock = db.get_stock_metrics(symbol)
+        company_name = stock.get('company_name', symbol) if stock else symbol
+        
+        summary = lynch_analyst.generate_transcript_summary(
+            transcript_text=transcript['transcript_text'],
+            company_name=company_name,
+            quarter=transcript['quarter'],
+            fiscal_year=transcript['fiscal_year']
+        )
+        
+        # Save to database
+        db.save_transcript_summary(
+            symbol=symbol,
+            quarter=transcript['quarter'],
+            fiscal_year=transcript['fiscal_year'],
+            summary=summary
+        )
+        db.flush()
+        
+        return jsonify({
+            'summary': summary,
+            'cached': False,
+            'quarter': transcript['quarter'],
+            'fiscal_year': transcript['fiscal_year']
+        })
+        
+    except Exception as e:
+        logger.error(f"Error generating transcript summary for {symbol}: {e}")
+        return jsonify({'error': str(e)}), 500
 
 
 @app.route('/api/screen/progress/<int:session_id>', methods=['GET'])
@@ -1641,6 +1710,125 @@ def get_material_events(symbol):
         return jsonify({'error': f'Failed to fetch material events: {str(e)}'}), 500
 
 
+@app.route('/api/stock/<symbol>/material-event-summaries', methods=['POST'])
+def get_material_event_summaries(symbol):
+    """
+    Get or generate AI summaries for summarizable material events.
+    
+    Summarizable item types: 2.02 (earnings), 2.01 (M&A), 1.01 (agreements),
+    1.05 (cybersecurity), 2.06 (impairments), 4.02 (accounting issues).
+    
+    Request body (optional):
+        event_ids: List of specific event IDs to summarize
+        model: AI model to use (default: gemini-2.5-flash)
+    
+    Returns:
+        summaries: Dict mapping event_id to {summary, cached} objects
+        generated_count: Number of newly generated summaries
+        cached_count: Number of cached summaries returned
+    """
+    symbol = symbol.upper()
+    data = request.get_json() or {}
+    
+    try:
+        # Get stock info for company name
+        stock_metrics = db.get_stock_metrics(symbol)
+        if not stock_metrics:
+            return jsonify({'error': f'Stock {symbol} not found'}), 404
+        
+        company_name = stock_metrics.get('company_name', symbol)
+        
+        # Get all material events for the symbol
+        all_events = db.get_material_events(symbol)
+        if not all_events:
+            return jsonify({
+                'summaries': {},
+                'generated_count': 0,
+                'cached_count': 0,
+                'message': 'No material events found'
+            })
+        
+        # Filter to summarizable events
+        requested_ids = data.get('event_ids')
+        model = data.get('model', 'gemini-2.5-flash')
+        
+        summarizable_events = []
+        for event in all_events:
+            item_codes = event.get('sec_item_codes', [])
+            if event_summarizer.should_summarize(item_codes):
+                # If specific IDs requested, filter to those
+                if requested_ids is None or event['id'] in requested_ids:
+                    summarizable_events.append(event)
+        
+        if not summarizable_events:
+            return jsonify({
+                'summaries': {},
+                'generated_count': 0,
+                'cached_count': 0,
+                'message': 'No summarizable events found'
+            })
+        
+        # Get cached summaries
+        event_ids = [e['id'] for e in summarizable_events]
+        cached_summaries = db.get_material_event_summaries_batch(event_ids)
+        
+        # Build response, generating missing summaries
+        summaries = {}
+        generated_count = 0
+        cached_count = 0
+        
+        for event in summarizable_events:
+            event_id = event['id']
+            
+            if event_id in cached_summaries:
+                # Use cached summary
+                summaries[event_id] = {
+                    'summary': cached_summaries[event_id],
+                    'cached': True
+                }
+                cached_count += 1
+            else:
+                # Generate new summary
+                try:
+                    # Check if event has content to summarize
+                    if not event.get('content_text'):
+                        logger.warning(f"Event {event_id} has no content_text, skipping")
+                        continue
+                    
+                    summary = event_summarizer.generate_summary(
+                        event_data=event,
+                        company_name=company_name,
+                        model_version=model
+                    )
+                    
+                    # Cache the summary
+                    db.save_material_event_summary(event_id, summary, model)
+                    db.flush()  # Ensure it's written immediately
+                    
+                    summaries[event_id] = {
+                        'summary': summary,
+                        'cached': False
+                    }
+                    generated_count += 1
+                    
+                    logger.info(f"Generated summary for event {event_id} ({symbol})")
+                    
+                except Exception as e:
+                    logger.error(f"Error generating summary for event {event_id}: {e}")
+                    # Continue with other events
+                    continue
+        
+        return jsonify({
+            'summaries': summaries,
+            'generated_count': generated_count,
+            'cached_count': cached_count
+        })
+        
+    except Exception as e:
+        logger.error(f"Error generating material event summaries for {symbol}: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': f'Failed to generate summaries: {str(e)}'}), 500
 
 
 

@@ -1135,6 +1135,36 @@ class Database:
             )
         """)
 
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS earnings_transcripts (
+                id SERIAL PRIMARY KEY,
+                symbol TEXT NOT NULL,
+                quarter TEXT NOT NULL,
+                fiscal_year INTEGER,
+                earnings_date DATE,
+                transcript_text TEXT,
+                summary TEXT,
+                has_qa BOOLEAN DEFAULT false,
+                participants TEXT[],
+                source_url TEXT,
+                last_updated TIMESTAMP,
+                FOREIGN KEY (symbol) REFERENCES stocks(symbol),
+                UNIQUE(symbol, quarter, fiscal_year)
+            )
+        """)
+
+        # Material event summaries (AI-generated summaries for 8-K filings)
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS material_event_summaries (
+                id SERIAL PRIMARY KEY,
+                event_id INTEGER NOT NULL REFERENCES material_events(id) ON DELETE CASCADE,
+                summary TEXT NOT NULL,
+                model_version TEXT,
+                generated_at TIMESTAMP DEFAULT NOW(),
+                UNIQUE(event_id)
+            )
+        """)
+
         conn.commit()
 
     def save_stock_basic(self, symbol: str, company_name: str, exchange: str, sector: str = None,
@@ -2765,18 +2795,19 @@ class Database:
             limit: Optional limit on number of events to return
 
         Returns:
-            List of event dicts
+            List of event dicts (includes AI summary if available)
         """
         conn = self.get_connection()
         cursor = conn.cursor()
 
         query = """
-            SELECT id, symbol, event_type, headline, description, source, url,
-                   filing_date, datetime, published_date, sec_accession_number,
-                   sec_item_codes, content_text, last_updated
-            FROM material_events
-            WHERE symbol = %s
-            ORDER BY datetime DESC
+            SELECT e.id, e.symbol, e.event_type, e.headline, e.description, e.source, e.url,
+                   e.filing_date, e.datetime, e.published_date, e.sec_accession_number,
+                   e.sec_item_codes, e.content_text, e.last_updated, s.summary
+            FROM material_events e
+            LEFT JOIN material_event_summaries s ON e.id = s.event_id
+            WHERE e.symbol = %s
+            ORDER BY e.datetime DESC
         """
 
         if limit:
@@ -2801,7 +2832,8 @@ class Database:
                 'sec_accession_number': row[10],
                 'sec_item_codes': row[11] or [],
                 'content_text': row[12],
-                'last_updated': row[13].isoformat() if row[13] else None
+                'last_updated': row[13].isoformat() if row[13] else None,
+                'summary': row[14]
             }
             for row in rows
         ]
@@ -2895,6 +2927,208 @@ class Database:
             return rows_deleted
         finally:
             self.return_connection(conn)
+
+    def save_material_event_summary(self, event_id: int, summary: str, model_version: str = None):
+        """
+        Save an AI-generated summary for a material event.
+        
+        Args:
+            event_id: ID of the material event
+            summary: Generated summary text
+            model_version: Optional model version used for generation
+        """
+        sql = """
+            INSERT INTO material_event_summaries (event_id, summary, model_version, generated_at)
+            VALUES (%s, %s, %s, NOW())
+            ON CONFLICT (event_id) DO UPDATE SET
+                summary = EXCLUDED.summary,
+                model_version = EXCLUDED.model_version,
+                generated_at = NOW()
+        """
+        self.write_queue.put((sql, (event_id, summary, model_version)))
+
+    def get_material_event_summary(self, event_id: int) -> Optional[str]:
+        """
+        Get the cached summary for a material event.
+        
+        Args:
+            event_id: ID of the material event
+            
+        Returns:
+            Summary text or None if not cached
+        """
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT summary FROM material_event_summaries WHERE event_id = %s
+        """, (event_id,))
+        row = cursor.fetchone()
+        self.return_connection(conn)
+        return row[0] if row else None
+
+    def get_material_event_summaries_batch(self, event_ids: List[int]) -> Dict[int, str]:
+        """
+        Get cached summaries for multiple material events.
+        
+        Args:
+            event_ids: List of material event IDs
+            
+        Returns:
+            Dict mapping event_id to summary text (only includes cached events)
+        """
+        if not event_ids:
+            return {}
+        
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT event_id, summary FROM material_event_summaries
+            WHERE event_id = ANY(%s)
+        """, (event_ids,))
+        rows = cursor.fetchall()
+        self.return_connection(conn)
+        return {row[0]: row[1] for row in rows}
+
+    def save_earnings_transcript(self, symbol: str, transcript_data: Dict[str, Any]):
+        """
+        Save an earnings call transcript.
+        
+        Args:
+            symbol: Stock symbol
+            transcript_data: Dict containing quarter, fiscal_year, earnings_date, 
+                           transcript_text, has_qa, participants, source_url
+        """
+        sql = """
+            INSERT INTO earnings_transcripts 
+            (symbol, quarter, fiscal_year, earnings_date, transcript_text, has_qa, 
+             participants, source_url, last_updated)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, NOW())
+            ON CONFLICT (symbol, quarter, fiscal_year) DO UPDATE SET
+                earnings_date = EXCLUDED.earnings_date,
+                transcript_text = EXCLUDED.transcript_text,
+                has_qa = EXCLUDED.has_qa,
+                participants = EXCLUDED.participants,
+                source_url = EXCLUDED.source_url,
+                last_updated = NOW()
+        """
+        
+        params = (
+            symbol.upper(),
+            transcript_data.get('quarter'),
+            transcript_data.get('fiscal_year'),
+            transcript_data.get('earnings_date'),
+            transcript_data.get('transcript_text'),
+            transcript_data.get('has_qa', False),
+            transcript_data.get('participants', []),
+            transcript_data.get('source_url'),
+        )
+        
+        self.write_queue.put((sql, params))
+        logger.info(f"Saved transcript for {symbol} {transcript_data.get('quarter')} {transcript_data.get('fiscal_year')}")
+
+    def get_latest_earnings_transcript(self, symbol: str) -> Optional[Dict[str, Any]]:
+        """
+        Get the most recent earnings transcript for a symbol.
+        
+        Args:
+            symbol: Stock symbol
+            
+        Returns:
+            Transcript dict or None if not found
+        """
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        
+        cursor.execute("""
+            SELECT id, symbol, quarter, fiscal_year, earnings_date, transcript_text,
+                   summary, has_qa, participants, source_url, last_updated
+            FROM earnings_transcripts
+            WHERE symbol = %s
+            ORDER BY fiscal_year DESC, quarter DESC
+            LIMIT 1
+        """, (symbol.upper(),))
+        
+        row = cursor.fetchone()
+        self.return_connection(conn)
+        
+        if not row:
+            return None
+        
+        return {
+            'id': row[0],
+            'symbol': row[1],
+            'quarter': row[2],
+            'fiscal_year': row[3],
+            'earnings_date': row[4].isoformat() if row[4] else None,
+            'transcript_text': row[5],
+            'summary': row[6],
+            'has_qa': row[7],
+            'participants': row[8] or [],
+            'source_url': row[9],
+            'last_updated': row[10].isoformat() if row[10] else None
+        }
+
+    def save_transcript_summary(self, symbol: str, quarter: str, fiscal_year: int, summary: str):
+        """
+        Save an AI-generated summary for an earnings transcript.
+        
+        Args:
+            symbol: Stock symbol
+            quarter: Quarter (e.g., "Q4")
+            fiscal_year: Fiscal year
+            summary: AI-generated summary text
+        """
+        sql = """
+            UPDATE earnings_transcripts 
+            SET summary = %s, last_updated = NOW()
+            WHERE symbol = %s AND quarter = %s AND fiscal_year = %s
+        """
+        params = (summary, symbol.upper(), quarter, fiscal_year)
+        
+        self.write_queue.put((sql, params))
+        logger.info(f"Saved transcript summary for {symbol} {quarter} {fiscal_year}")
+
+    def get_earnings_transcripts(self, symbol: str, limit: int = 4) -> List[Dict[str, Any]]:
+        """
+        Get recent earnings transcripts for a symbol.
+        
+        Args:
+            symbol: Stock symbol
+            limit: Maximum number of transcripts to return (default 4 = 1 year)
+            
+        Returns:
+            List of transcript dicts
+        """
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        
+        cursor.execute("""
+            SELECT id, symbol, quarter, fiscal_year, earnings_date, transcript_text,
+                   has_qa, participants, source_url, last_updated
+            FROM earnings_transcripts
+            WHERE symbol = %s
+            ORDER BY fiscal_year DESC, quarter DESC
+            LIMIT %s
+        """, (symbol.upper(), limit))
+        
+        rows = cursor.fetchall()
+        self.return_connection(conn)
+        
+        return [
+            {
+                'id': row[0],
+                'symbol': row[1],
+                'quarter': row[2],
+                'fiscal_year': row[3],
+                'earnings_date': row[4].isoformat() if row[4] else None,
+                'transcript_text': row[5],
+                'has_qa': row[6],
+                'participants': row[7] or [],
+                'source_url': row[8],
+                'last_updated': row[9].isoformat() if row[9] else None
+            }
+            for row in rows
+        ]
 
     def set_setting(self, key: str, value: Any, description: str = None):
         logger.info(f"Setting configuration: key='{key}', value={value}")

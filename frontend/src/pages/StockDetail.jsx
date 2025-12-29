@@ -16,6 +16,7 @@ import MaterialEvents from '../components/MaterialEvents'
 import FutureOutlook from '../components/FutureOutlook'
 import SearchPopover from '../components/SearchPopover'
 import UserAvatar from '../components/UserAvatar'
+import TranscriptViewer from '../components/TranscriptViewer'
 
 const API_BASE = '/api'
 
@@ -340,6 +341,12 @@ export default function StockDetail({ watchlist, toggleWatchlist }) {
             >
               Material Event Filings
             </button>
+            <button
+              className={`tab-button ${activeTab === 'transcript' ? 'active' : ''}`}
+              onClick={() => setActiveTab('transcript')}
+            >
+              Earnings Transcript
+            </button>
           </div>
 
           <UserAvatar />
@@ -406,6 +413,10 @@ export default function StockDetail({ watchlist, toggleWatchlist }) {
 
           {activeTab === 'events' && (
             <MaterialEvents eventsData={materialEventsData} loading={loadingMaterialEvents} symbol={stock.symbol} />
+          )}
+
+          {activeTab === 'transcript' && (
+            <TranscriptViewer symbol={symbol} />
           )}
         </div>
       </ErrorBoundary>
