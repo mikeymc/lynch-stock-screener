@@ -25,13 +25,35 @@ FROM python:3.12-slim
 WORKDIR /app
 
 # Install git (required for tvDatafeed which installs from GitHub)
-RUN apt-get update && apt-get install -y git && rm -rf /var/lib/apt/lists/*
+# Also install dependencies for Playwright/Chromium
+RUN apt-get update && apt-get install -y \
+    git \
+    # Playwright/Chromium dependencies
+    libnss3 \
+    libnspr4 \
+    libatk1.0-0 \
+    libatk-bridge2.0-0 \
+    libcups2 \
+    libdrm2 \
+    libxkbcommon0 \
+    libxcomposite1 \
+    libxdamage1 \
+    libxfixes3 \
+    libxrandr2 \
+    libgbm1 \
+    libasound2 \
+    libpango-1.0-0 \
+    libcairo2 \
+    && rm -rf /var/lib/apt/lists/*
 
 # Copy backend requirements
 COPY backend/requirements.txt ./
 
 # Install Python dependencies
 RUN pip install --no-cache-dir -r requirements.txt
+
+# Install Playwright browsers (chromium only to save space)
+RUN playwright install chromium
 
 # Copy backend code (includes worker.py for background job processing)
 COPY backend/ ./
