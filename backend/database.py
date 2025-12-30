@@ -1153,6 +1153,17 @@ class Database:
             )
         """)
 
+        # Migration: add summary column to earnings_transcripts if missing
+        cursor.execute("""
+            DO $$
+            BEGIN
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                               WHERE table_name = 'earnings_transcripts' AND column_name = 'summary') THEN
+                    ALTER TABLE earnings_transcripts ADD COLUMN summary TEXT;
+                END IF;
+            END $$;
+        """)
+
         # Material event summaries (AI-generated summaries for 8-K filings)
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS material_event_summaries (
