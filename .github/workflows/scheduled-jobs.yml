@@ -48,29 +48,21 @@ jobs:
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             echo "type=${{ inputs.job_type }}" >> $GITHUB_OUTPUT
           else
-            # Determine job type based on cron schedule (hour at 3, 4, or 5 AM UTC)
-            HOUR=$(date -u +%H)
-            MINUTE=$(date -u +%M)
+            # Match on the ACTUAL cron expression that triggered this run
+            # This is reliable even if the job is delayed by hours
+            SCHEDULE="${{ github.event.schedule }}"
             
-            if [ "$HOUR" = "03" ] && [ "$MINUTE" -lt "5" ]; then
-              echo "type=full_screening" >> $GITHUB_OUTPUT
-            elif [ "$HOUR" = "03" ] && [ "$MINUTE" -ge "5" ] && [ "$MINUTE" -lt "15" ]; then
-              echo "type=news_cache" >> $GITHUB_OUTPUT
-            elif [ "$HOUR" = "03" ] && [ "$MINUTE" -ge "15" ] && [ "$MINUTE" -lt "25" ]; then
-              echo "type=10k_cache" >> $GITHUB_OUTPUT
-            elif [ "$HOUR" = "03" ] && [ "$MINUTE" -ge "25" ] && [ "$MINUTE" -lt "35" ]; then
-              echo "type=8k_cache" >> $GITHUB_OUTPUT
-            elif [ "$HOUR" = "03" ] && [ "$MINUTE" -ge "35" ]; then
-              echo "type=form4_cache" >> $GITHUB_OUTPUT
-            elif [ "$HOUR" = "04" ]; then
-              echo "type=price_history_cache" >> $GITHUB_OUTPUT
-            elif [ "$HOUR" = "05" ] && [ "$MINUTE" -lt "25" ]; then
-              echo "type=outlook_cache" >> $GITHUB_OUTPUT
-            elif [ "$HOUR" = "05" ] && [ "$MINUTE" -ge "25" ]; then
-              echo "type=transcript_cache" >> $GITHUB_OUTPUT
-            else
-              echo "type=full_screening" >> $GITHUB_OUTPUT
-            fi
+            case "$SCHEDULE" in
+              "0 3 * * *")   echo "type=full_screening" >> $GITHUB_OUTPUT ;;
+              "10 3 * * *")  echo "type=news_cache" >> $GITHUB_OUTPUT ;;
+              "20 3 * * *")  echo "type=10k_cache" >> $GITHUB_OUTPUT ;;
+              "30 3 * * *")  echo "type=8k_cache" >> $GITHUB_OUTPUT ;;
+              "40 3 * * *")  echo "type=form4_cache" >> $GITHUB_OUTPUT ;;
+              "0 4 * * *")   echo "type=price_history_cache" >> $GITHUB_OUTPUT ;;
+              "0 5 * * *")   echo "type=outlook_cache" >> $GITHUB_OUTPUT ;;
+              "30 5 * * *")  echo "type=transcript_cache" >> $GITHUB_OUTPUT ;;
+              *)             echo "Unknown schedule: $SCHEDULE" && exit 1 ;;
+            esac
           fi
 
       - name: Trigger background job
