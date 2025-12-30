@@ -266,32 +266,79 @@ class TranscriptScraper:
     async def _extract_transcript_text(self, page: Page) -> str:
         """Extract the main transcript text content using targeted selectors."""
         try:
-            # Use JavaScript to extract transcript content more precisely
-            # MarketBeat/Quartr embeds transcripts in specific div structures
+            # Use JavaScript to extract transcript content using verified DOM structure
+            # MarketBeat structure: div#transcriptPresentation > section.transcript-line-* > speaker/content
             transcript = await page.evaluate('''() => {
-                // Strategy 1: Find Quartr transcript sections
-                // They typically have speech/speaker containers
-                const speechDivs = document.querySelectorAll('[class*="speech"], [class*="Speaker"], [class*="transcript"]');
+                // Strategy 1: Use precise MarketBeat selectors (verified working)
+                const container = document.querySelector('div#transcriptPresentation');
                 
-                if (speechDivs.length > 0) {
-                    let text = [];
-                    speechDivs.forEach(div => {
-                        const innerText = div.innerText.trim();
-                        if (innerText.length > 100) {
-                            text.push(innerText);
+                if (container) {
+                    const sections = container.querySelectorAll('section.transcript-line-left, section.transcript-line-right');
+                    
+                    if (sections.length > 0) {
+                        const turns = [];
+                        
+                        sections.forEach(section => {
+                            const speakerDiv = section.querySelector('div.transcript-line-speaker');
+                            let name = '';
+                            let title = '';
+                            let timestamp = '';
+                            
+                            if (speakerDiv) {
+                                // Get speaker name (exclude nested title element)
+                                const nameEl = speakerDiv.querySelector('div.font-weight-bold');
+                                if (nameEl) {
+                                    const clone = nameEl.cloneNode(true);
+                                    const secondary = clone.querySelector('.secondary-title');
+                                    if (secondary) secondary.remove();
+                                    name = clone.innerText.trim();
+                                }
+                                
+                                // Get title if present
+                                const titleEl = speakerDiv.querySelector('div.secondary-title');
+                                if (titleEl) title = titleEl.innerText.trim();
+                                
+                                // Get timestamp
+                                const timeEl = speakerDiv.querySelector('time');
+                                if (timeEl) timestamp = timeEl.innerText.trim();
+                            }
+                            
+                            // Get content
+                            const contentEl = section.querySelector('p');
+                            const content = contentEl ? contentEl.innerText.trim() : '';
+                            
+                            if (name && content) {
+                                // Format: [timestamp] Speaker Name (Title)\\nContent
+                                let header = `[${timestamp}] ${name}`;
+                                if (title) header += ` (${title})`;
+                                turns.push(header + '\\n' + content);
+                            }
+                        });
+                        
+                        if (turns.length > 0) {
+                            // Join with double newlines for clear separation
+                            return turns.join('\\n\\n');
                         }
-                    });
-                    if (text.join('\\n').length > 1000) {
-                        return text.join('\\n\\n');
                     }
                 }
                 
-                // Strategy 2: Look for the main content area
-                // Find sections after "Presentation" or "Participants" headers
-                const body = document.body.innerText;
+                // Strategy 2: Fallback - look for common transcript class patterns
+                const fallbackSelectors = [
+                    '[class*="transcript-content"]',
+                    '[class*="TranscriptContent"]',
+                    'main article'
+                ];
                 
-                // Try to find the start of actual transcript content
-                const markers = ['Presentation', 'Opening Remarks', 'Conference Call', 'Good morning', 'Good afternoon'];
+                for (const selector of fallbackSelectors) {
+                    const el = document.querySelector(selector);
+                    if (el && el.innerText.length > 1000) {
+                        return el.innerText;
+                    }
+                }
+                
+                // Strategy 3: Body text between markers
+                const body = document.body.innerText;
+                const markers = ['Presentation', 'Opening Remarks', 'Conference Call'];
                 let startPos = -1;
                 
                 for (const marker of markers) {
@@ -301,8 +348,7 @@ class TranscriptScraper:
                     }
                 }
                 
-                // Try to find end of transcript (before footer content)
-                const endMarkers = ['Related Articles', 'More Earnings', 'Popular Articles', 'About MarketBeat'];
+                const endMarkers = ['Related Articles', 'More Earnings', 'About MarketBeat'];
                 let endPos = body.length;
                 
                 for (const marker of endMarkers) {
@@ -314,12 +360,6 @@ class TranscriptScraper:
                 
                 if (startPos > 0) {
                     return body.substring(startPos, endPos);
-                }
-                
-                // Strategy 3: Just return main content area
-                const main = document.querySelector('main, article, .content-wrapper, [role="main"]');
-                if (main) {
-                    return main.innerText;
                 }
                 
                 return body;

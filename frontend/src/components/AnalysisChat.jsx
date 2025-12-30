@@ -61,6 +61,7 @@ const AnalysisChat = forwardRef(function AnalysisChat({ symbol, stockName, chatO
 
   const messagesEndRef = useRef(null)
   const messagesContainerRef = useRef(null)
+  const inputRef = useRef(null)
 
   // Expose sendMessage to parent via ref for batch review
   useImperativeHandle(ref, () => ({
@@ -94,6 +95,13 @@ const AnalysisChat = forwardRef(function AnalysisChat({ symbol, stockName, chatO
       }
     }
   }, [messages, streamingMessage])
+
+  // Restore focus to input after chat response completes
+  useEffect(() => {
+    if (!chatLoading && inputRef.current) {
+      inputRef.current.focus()
+    }
+  }, [chatLoading])
 
   // Fetch analysis
   const fetchAnalysis = async (forceRefresh = false, signal = null, onlyCached = false) => {
@@ -538,6 +546,7 @@ const AnalysisChat = forwardRef(function AnalysisChat({ symbol, stockName, chatO
       <div className="unified-chat-input-container">
         <div className="chat-input-wrapper">
           <textarea
+            ref={inputRef}
             className="chat-input"
             value={inputMessage}
             onChange={(e) => setInputMessage(e.target.value)}

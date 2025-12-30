@@ -17,8 +17,10 @@ on:
     - cron: '40 3 * * *'
     # Price history cache at 11:00 PM ET (4:00 AM UTC) daily
     - cron: '0 4 * * *'
-    # Outlook cache at 12:00 AM ET (5:00 AM UTC) daily - runs last
+    # Outlook cache at 12:00 AM ET (5:00 AM UTC) daily
     - cron: '0 5 * * *'
+    # Transcript cache at 12:30 AM ET (5:30 AM UTC) daily - runs last
+    - cron: '30 5 * * *'
   workflow_dispatch:
     inputs:
       job_type:
@@ -34,6 +36,7 @@ on:
           - 8k_cache
           - form4_cache
           - outlook_cache
+          - transcript_cache
 
 jobs:
   trigger-job:
@@ -61,8 +64,10 @@ jobs:
               echo "type=form4_cache" >> $GITHUB_OUTPUT
             elif [ "$HOUR" = "04" ]; then
               echo "type=price_history_cache" >> $GITHUB_OUTPUT
-            elif [ "$HOUR" = "05" ]; then
+            elif [ "$HOUR" = "05" ] && [ "$MINUTE" -lt "25" ]; then
               echo "type=outlook_cache" >> $GITHUB_OUTPUT
+            elif [ "$HOUR" = "05" ] && [ "$MINUTE" -ge "25" ]; then
+              echo "type=transcript_cache" >> $GITHUB_OUTPUT
             else
               echo "type=full_screening" >> $GITHUB_OUTPUT
             fi

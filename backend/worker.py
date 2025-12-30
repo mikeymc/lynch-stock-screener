@@ -205,6 +205,8 @@ class BackgroundWorker:
             self._run_form4_cache(job_id, params)
         elif job_type == 'outlook_cache':
             self._run_outlook_cache(job_id, params)
+        elif job_type == 'transcript_cache':
+            self._run_transcript_cache(job_id, params)
         else:
             raise ValueError(f"Unknown job type: {job_type}")
 
@@ -1421,6 +1423,158 @@ class BackgroundWorker:
         }
         self.db.complete_job(job_id, result)
         logger.info(f"Outlook cache complete: {result}")
+
+    def _run_transcript_cache(self, job_id: int, params: Dict[str, Any]):
+        """
+        Cache earnings call transcripts for all stocks via MarketBeat scraping.
+        
+        Uses TradingView to get stock list (same as screening/prices) with region filtering.
+        Symbols are sorted by score (STRONG_BUY first) when available.
+        Skips stocks that already have transcripts cached (unless force_refresh is True).
+        
+        Params:
+            limit: Optional max number of stocks to process
+            symbols: Optional list of specific symbols to process (overrides limit)
+            region: Region filter (us, north-america, europe, asia, all)
+            force_refresh: If True, bypass cache and fetch fresh data
+        """
+        limit = params.get('limit')
+        symbols_list = params.get('symbols')  # For testing specific stocks
+        region = params.get('region', 'us')
+        force_refresh = params.get('force_refresh', False)
+        
+        logger.info(f"Starting transcript cache job {job_id} (region={region}, force={force_refresh})")
+        
+        from transcript_scraper import TranscriptScraper
+        from tradingview_fetcher import TradingViewFetcher
+        
+        # If specific symbols provided, use those directly
+        if symbols_list:
+            all_symbols = symbols_list if isinstance(symbols_list, list) else [symbols_list]
+            logger.info(f"Processing specific symbols: {all_symbols}")
+        else:
+            # Map CLI region to TradingView regions (same as other cache jobs)
+            region_mapping = {
+                'us': ['us'],
+                'north-america': ['north_america'],
+                'south-america': ['south_america'],
+                'europe': ['europe'],
+                'asia': ['asia'],
+                'all': None  # All regions
+            }
+            tv_regions = region_mapping.get(region, ['us'])
+            
+            # Get stock list from TradingView (same as prices/news does)
+            self.db.update_job_progress(job_id, progress_pct=5, progress_message=f'Fetching stock list from TradingView ({region})...')
+            tv_fetcher = TradingViewFetcher()
+            market_data_cache = tv_fetcher.fetch_all_stocks(limit=20000, regions=tv_regions)
+            
+            # Ensure all stocks exist in DB before caching (prevents FK violations)
+            self.db.update_job_progress(job_id, progress_pct=8, progress_message='Ensuring stocks exist in database...')
+            self.db.ensure_stocks_exist_batch(market_data_cache)
+            
+            # TradingView already filters via _should_skip_ticker (OTC, warrants, etc.)
+            all_symbols = list(market_data_cache.keys())
+            
+            # Sort by screening score if available (prioritize STRONG_BUY stocks)
+            scored_symbols = self.db.get_stocks_ordered_by_score(limit=None)
+            scored_set = set(scored_symbols)
+            
+            # Put scored symbols first (in score order), then remaining unscored symbols
+            sorted_symbols = [s for s in scored_symbols if s in set(all_symbols)]
+            remaining = [s for s in all_symbols if s not in scored_set]
+            all_symbols = sorted_symbols + remaining
+            
+            # Apply limit if specified
+            if limit and limit < len(all_symbols):
+                all_symbols = all_symbols[:limit]
+        
+        total = len(all_symbols)
+        logger.info(f"Caching transcripts for {total} stocks (region={region}, sorted by score)")
+        
+        self.db.update_job_progress(job_id, progress_pct=10,
+                                    progress_message=f'Caching transcripts for {total} stocks...',
+                                    processed_count=0,
+                                    total_count=total)
+        
+        # Initialize scraper (Playwright session) - runs async
+        processed = 0
+        cached = 0
+        skipped = 0
+        errors = 0
+        
+        async def run_transcript_caching():
+            nonlocal processed, cached, skipped, errors
+            
+            async with TranscriptScraper() as scraper:
+                for symbol in all_symbols:
+                    # Check for shutdown/cancellation
+                    if self.shutdown_requested:
+                        logger.info("Shutdown requested, stopping transcript cache job")
+                        break
+                    
+                    # Check if job was cancelled
+                    job_status = self.db.get_background_job(job_id)
+                    if job_status and job_status.get('status') == 'cancelled':
+                        logger.info(f"Job {job_id} was cancelled, stopping")
+                        break
+                    
+                    # Skip if already cached (unless force_refresh)
+                    if not force_refresh:
+                        existing = self.db.get_latest_earnings_transcript(symbol)
+                        if existing and existing.get('transcript_text'):
+                            skipped += 1
+                            processed += 1
+                            if processed % 50 == 0:
+                                logger.info(f"Transcript cache progress: {processed}/{total} (cached: {cached}, skipped: {skipped}, errors: {errors})")
+                            continue
+                    
+                    try:
+                        result = await scraper.fetch_latest_transcript(symbol)
+                        if result:
+                            # Save to database - pass result dict directly
+                            self.db.save_earnings_transcript(symbol, result)
+                            cached += 1
+                            logger.info(f"[{symbol}] Cached transcript: {len(result.get('transcript_text', ''))} chars")
+                        else:
+                            # No transcript available for this stock (not an error)
+                            skipped += 1
+                    except Exception as e:
+                        logger.debug(f"[{symbol}] Transcript cache error: {e}")
+                        errors += 1
+                    
+                    processed += 1
+                    
+                    # Update progress every 25 stocks
+                    if processed % 25 == 0 or processed == total:
+                        pct = 10 + int((processed / total) * 85)
+                        self.db.update_job_progress(
+                            job_id,
+                            progress_pct=pct,
+                            progress_message=f'Cached {processed}/{total} stocks ({cached} new, {skipped} skipped, {errors} errors)',
+                            processed_count=processed,
+                            total_count=total
+                        )
+                        self._send_heartbeat(job_id)
+                    
+                    if processed % 50 == 0:
+                        logger.info(f"Transcript cache progress: {processed}/{total} (cached: {cached}, skipped: {skipped}, errors: {errors}) | MEMORY: {get_memory_mb():.0f}MB")
+                        check_memory_warning(f"[transcript {processed}/{total}]")
+        
+        # Run the async caching function
+        import asyncio
+        asyncio.run(run_transcript_caching())
+        
+        # Complete job
+        result = {
+            'total_stocks': total,
+            'processed': processed,
+            'cached': cached,
+            'skipped': skipped,
+            'errors': errors
+        }
+        self.db.complete_job(job_id, result)
+        logger.info(f"Transcript cache complete: {result}")
 
 
 def main():

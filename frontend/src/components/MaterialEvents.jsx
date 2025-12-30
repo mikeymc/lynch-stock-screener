@@ -1,11 +1,72 @@
 // ABOUTME: Material events component for displaying SEC 8-K filings
 // ABOUTME: Two-column layout: filings list left (2/3), chat sidebar right (1/3)
+// ABOUTME: Displays AI-generated summaries for high-value events (earnings, M&A, etc.)
 
-import { useRef } from 'react'
+import { useRef, useState, useEffect } from 'react'
 import AnalysisChat from './AnalysisChat'
+
+// Item codes that get AI summaries
+const SUMMARIZABLE_CODES = ['2.02', '2.01', '1.01', '1.05', '2.06', '4.02']
+
+// Check if an event should have a summary
+const isSummarizable = (itemCodes) => {
+    if (!itemCodes || itemCodes.length === 0) return false
+    return itemCodes.some(code => SUMMARIZABLE_CODES.includes(code))
+}
 
 export default function MaterialEvents({ eventsData, loading, symbol }) {
     const chatRef = useRef(null)
+    const [summaries, setSummaries] = useState({})
+    const [loadingSummaries, setLoadingSummaries] = useState(false)
+    const [summaryError, setSummaryError] = useState(null)
+
+    // Fetch summaries when events data changes
+    useEffect(() => {
+        const fetchSummaries = async () => {
+            if (!eventsData?.events || eventsData.events.length === 0) return
+
+            // Find events that should have summaries
+            const summarizableEvents = eventsData.events.filter(e =>
+                isSummarizable(e.sec_item_codes)
+            )
+
+            if (summarizableEvents.length === 0) return
+
+            setLoadingSummaries(true)
+            setSummaryError(null)
+
+            try {
+                const response = await fetch(`/api/stock/${symbol}/material-event-summaries`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({})
+                })
+
+                if (!response.ok) {
+                    throw new Error(`Failed to fetch summaries: ${response.status}`)
+                }
+
+                const data = await response.json()
+
+                // Convert string keys to numbers for easier lookup
+                const summaryMap = {}
+                if (data.summaries) {
+                    for (const [id, value] of Object.entries(data.summaries)) {
+                        summaryMap[parseInt(id)] = value.summary
+                    }
+                }
+
+                setSummaries(summaryMap)
+            } catch (err) {
+                console.error('Error fetching event summaries:', err)
+                setSummaryError(err.message)
+            } finally {
+                setLoadingSummaries(false)
+            }
+        }
+
+        fetchSummaries()
+    }, [eventsData, symbol])
 
     if (loading) {
         return (
@@ -79,6 +140,9 @@ export default function MaterialEvents({ eventsData, loading, symbol }) {
                                         })
                                         : 'Unknown date'
 
+                                    const hasSummary = isSummarizable(event.sec_item_codes)
+                                    const summary = summaries[event.id]
+
                                     return (
                                         <div key={event.id || index} className="material-event" style={{
                                             borderBottom: '1px solid rgba(71, 85, 105, 0.5)',
@@ -119,11 +183,21 @@ export default function MaterialEvents({ eventsData, loading, symbol }) {
                                                 )}
                                             </h3>
 
-                                            {/* Description */}
-                                            {event.description && (
-                                                <p style={{ margin: '0 0 8px 0', lineHeight: '1.5', color: '#e2e8f0', fontSize: '14px' }}>
-                                                    {event.description}
-                                                </p>
+                                            {/* AI Summary - always visible for summarizable events */}
+                                            {hasSummary && (
+                                                <div className="event-summary">
+                                                    {loadingSummaries && !summary ? (
+                                                        <div className="summary-loading">
+                                                            <span className="loading-dot">●</span> Generating AI summary...
+                                                        </div>
+                                                    ) : summary ? (
+                                                        <p className="summary-text">{summary}</p>
+                                                    ) : summaryError ? (
+                                                        <div className="summary-error">
+                                                            Unable to generate summary
+                                                        </div>
+                                                    ) : null}
+                                                </div>
                                             )}
 
                                             {/* Item codes as badges */}
@@ -131,8 +205,8 @@ export default function MaterialEvents({ eventsData, loading, symbol }) {
                                                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginTop: '8px' }}>
                                                     {event.sec_item_codes.map((code, idx) => (
                                                         <span key={idx} style={{
-                                                            backgroundColor: '#374151',
-                                                            color: '#d1d5db',
+                                                            backgroundColor: SUMMARIZABLE_CODES.includes(code) ? '#1e3a5f' : '#374151',
+                                                            color: SUMMARIZABLE_CODES.includes(code) ? '#93c5fd' : '#d1d5db',
                                                             padding: '2px 8px',
                                                             borderRadius: '4px',
                                                             fontSize: '11px',

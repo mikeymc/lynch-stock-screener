@@ -1,11 +1,13 @@
-// ABOUTME: Displays earnings call transcripts as inline page content (not modal)
-// ABOUTME: Includes AI summary generation with toggle between summary and full transcript
+// ABOUTME: Displays earnings call transcripts with two-column layout and RAG chat
+// ABOUTME: Left column has AI summary/full transcript toggle, right column has contextual chat
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import ReactMarkdown from 'react-markdown'
+import AnalysisChat from './AnalysisChat'
 import '../App.css'
 
 export default function TranscriptViewer({ symbol }) {
+    const chatRef = useRef(null)
     const [transcript, setTranscript] = useState(null)
     const [loading, setLoading] = useState(true)
     const [error, setError] = useState(null)
@@ -64,36 +66,39 @@ export default function TranscriptViewer({ symbol }) {
     }
 
     // Parse transcript into speaker turns for chat-like display
+    // Format: [00:00:00] Speaker Name (Title)\nContent\n[00:00:31] Next Speaker...
     const parseTranscript = (text) => {
         if (!text) return []
 
-        const speakerPattern = /([A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)\s+([A-Za-z\s]+?)\s+at\s+([A-Za-z\s]+?)\s+(\d{2}:\d{2}:\d{2})/g
-
         const turns = []
-        let lastIndex = 0
-        let match
 
-        while ((match = speakerPattern.exec(text)) !== null) {
-            if (match.index > lastIndex && turns.length > 0) {
-                const prevContent = text.substring(lastIndex, match.index).trim()
-                if (prevContent && turns.length > 0) {
-                    turns[turns.length - 1].content += ' ' + prevContent
+        // Split by the [timestamp] pattern at the start of each turn
+        // Use lookahead to split while keeping the delimiter
+        const parts = text.split(/(?=\[\d{2}:\d{2}:\d{2}\])/)
+
+        for (const part of parts) {
+            const trimmed = part.trim()
+            if (!trimmed) continue
+
+            // Find first newline to separate header from content
+            const newlineIndex = trimmed.indexOf('\n')
+            if (newlineIndex === -1) continue // No content
+
+            const headerLine = trimmed.substring(0, newlineIndex)
+            const content = trimmed.substring(newlineIndex + 1).trim()
+
+            // Parse header: [00:00:00] Speaker Name (Title)
+            const headerMatch = headerLine.match(/^\[(\d{2}:\d{2}:\d{2})\]\s+(.+?)(?:\s+\((.+?)\))?$/)
+
+            if (headerMatch) {
+                const timestamp = headerMatch[1]
+                const name = headerMatch[2].trim()
+                const title = headerMatch[3] ? headerMatch[3].trim() : ''
+
+                if (name && content) {
+                    turns.push({ name, title, timestamp, content })
                 }
             }
-
-            turns.push({
-                name: match[1],
-                title: match[2].trim(),
-                company: match[3].trim(),
-                timestamp: match[4],
-                content: ''
-            })
-
-            lastIndex = match.index + match[0].length
-        }
-
-        if (lastIndex < text.length && turns.length > 0) {
-            turns[turns.length - 1].content = text.substring(lastIndex).trim()
         }
 
         return turns
@@ -116,10 +121,8 @@ export default function TranscriptViewer({ symbol }) {
                 colorIndex++
             }
 
-            const isQA = turn.content.includes('?') || turn.title.toLowerCase().includes('analyst')
-
             return (
-                <div key={i} className={`transcript-turn ${isQA ? 'qa-turn' : ''}`}>
+                <div key={i} className="transcript-turn">
                     <div className="turn-header">
                         <span className="speaker-name" style={{ color: speakerColors[turn.name] }}>
                             {turn.name}
@@ -136,79 +139,104 @@ export default function TranscriptViewer({ symbol }) {
     }
 
     if (loading) {
-        return <div className="loading">Loading transcript...</div>
-    }
-
-    if (error) {
-        return <div className="error-message">{error}</div>
-    }
-
-    if (!transcript) {
-        return <div className="empty-state">No transcript available</div>
-    }
-
-    return (
-        <div className="transcript-page">
-            {/* Header with metadata */}
-            <div className="transcript-header">
-                <h2>Earnings Call Transcript</h2>
-                <div className="transcript-meta">
-                    <span><strong>Period:</strong> {transcript.quarter} {transcript.fiscal_year}</span>
-                    <span><strong>Date:</strong> {transcript.earnings_date}</span>
-                </div>
+        return (
+            <div className="loading" style={{ padding: '40px', textAlign: 'center' }}>
+                Loading transcript...
             </div>
+        )
+    }
 
-            {/* View Mode Toggle - Segmented Control */}
-            <div className="transcript-toggle">
-                <button
-                    className={`toggle-segment ${viewMode === 'summary' ? 'active' : ''}`}
-                    onClick={() => {
-                        if (summary) {
-                            setViewMode('summary')
-                        } else {
-                            generateSummary()
-                        }
-                    }}
-                    disabled={summaryLoading}
-                >
-                    <span className="toggle-icon">✨</span>
-                    {summaryLoading ? 'Generating...' : 'AI Summary'}
-                </button>
-                <button
-                    className={`toggle-segment ${viewMode === 'full' ? 'active' : ''}`}
-                    onClick={() => setViewMode('full')}
-                >
-                    <span className="toggle-icon">📜</span>
-                    Full Transcript
-                </button>
-            </div>
-
-            {summaryError && (
-                <div className="error-message" style={{ margin: '1rem 0' }}>
-                    {summaryError}
-                </div>
-            )}
-
-            {/* Content */}
-            {viewMode === 'summary' && summary ? (
-                <div className="brief-analysis-container">
+    if (error || !transcript) {
+        return (
+            <div className="reports-layout">
+                <div className="reports-main-column">
                     <div className="section-item">
+                        <div className="section-header-simple">
+                            <span className="section-title">Earnings Call Transcript</span>
+                        </div>
                         <div className="section-content">
-                            {/* Hidden spacer to prevent :only-child centering rule */}
-                            <div style={{ display: 'none' }} />
                             <div className="section-summary">
-                                <div className="summary-content">
-                                    <ReactMarkdown>{summary}</ReactMarkdown>
-                                </div>
+                                <p style={{ textAlign: 'center', color: '#94a3b8', margin: '2rem 0' }}>
+                                    {error || 'No transcript available for this stock.'}
+                                </p>
                             </div>
                         </div>
                     </div>
                 </div>
-            ) : (
-                <div className="transcript-text">
-                    {renderTranscript(transcript.transcript_text)}
+                <div className="reports-chat-sidebar">
+                    <div className="chat-sidebar-content">
+                        <AnalysisChat ref={chatRef} symbol={symbol} chatOnly={true} contextType="transcript" />
+                    </div>
                 </div>
-            )}
+            </div>
+        )
+    }
+
+    return (
+        <div className="reports-layout">
+            {/* Left Column - Transcript Content (2/3) */}
+            <div className="reports-main-column">
+                <div className="section-item">
+                    <div className="section-header-simple">
+                        <span className="section-title">Earnings Call Transcript</span>
+                        <span className="section-metadata">
+                            {transcript.quarter} {transcript.fiscal_year} • {transcript.earnings_date}
+                        </span>
+                    </div>
+                    <div className="section-content">
+                        {/* View Mode Toggle - Segmented Control */}
+                        <div className="transcript-toggle">
+                            <button
+                                className={`toggle-segment ${viewMode === 'summary' ? 'active' : ''}`}
+                                onClick={() => {
+                                    if (summary) {
+                                        setViewMode('summary')
+                                    } else {
+                                        generateSummary()
+                                    }
+                                }}
+                                disabled={summaryLoading}
+                            >
+                                <span className="toggle-icon">✨</span>
+                                {summaryLoading ? 'Generating...' : 'AI Summary'}
+                            </button>
+                            <button
+                                className={`toggle-segment ${viewMode === 'full' ? 'active' : ''}`}
+                                onClick={() => setViewMode('full')}
+                            >
+                                <span className="toggle-icon">📜</span>
+                                Full Transcript
+                            </button>
+                        </div>
+
+                        {summaryError && (
+                            <div className="error-message" style={{ margin: '1rem 0' }}>
+                                {summaryError}
+                            </div>
+                        )}
+
+                        {/* Content */}
+                        <div className="section-summary">
+                            {viewMode === 'summary' && summary ? (
+                                <div className="summary-content">
+                                    <ReactMarkdown>{summary}</ReactMarkdown>
+                                </div>
+                            ) : (
+                                <div className="transcript-text">
+                                    {renderTranscript(transcript.transcript_text)}
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            {/* Right Column - Chat Sidebar (1/3) */}
+            <div className="reports-chat-sidebar">
+                <div className="chat-sidebar-content">
+                    <AnalysisChat ref={chatRef} symbol={symbol} chatOnly={true} contextType="transcript" />
+                </div>
+            </div>
         </div>
     )
 }

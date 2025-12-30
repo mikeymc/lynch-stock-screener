@@ -12,13 +12,14 @@ class RAGContext:
 
     # Context types corresponding to frontend pages
     CONTEXT_TYPES = {
-        'brief': 'brief',      # AnalysisChat full mode (default)
-        'filings': 'filings',  # StockReports page
-        'news': 'news',        # StockNews page
-        'events': 'events',    # MaterialEvents page
-        'dcf': 'dcf',          # DCFAnalysis page
-        'charts': 'charts',    # StockCharts page
-        'outlook': 'outlook',  # FutureOutlook page
+        'brief': 'brief',          # AnalysisChat full mode (default)
+        'filings': 'filings',      # StockReports page
+        'news': 'news',            # StockNews page
+        'events': 'events',        # MaterialEvents page
+        'dcf': 'dcf',              # DCFAnalysis page
+        'charts': 'charts',        # StockCharts page
+        'outlook': 'outlook',      # FutureOutlook page
+        'transcript': 'transcript', # TranscriptViewer page
     }
 
     # Keywords for smart section selection
@@ -101,7 +102,14 @@ class RAGContext:
             context['news_summary'] = self._get_news_summary(symbol, limit=3)
             context['outlook_data'] = self._get_outlook_data(symbol)
             context['insider_summary'] = self._get_insider_summary(symbol)
-            
+
+        elif context_type == 'transcript':
+            # Transcript page: full transcript is already in base context, add supporting data
+            context['news_summary'] = self._get_news_summary(symbol, limit=3)
+            context['events_summary'] = self._get_events_summary(symbol, limit=3)
+            context['filings_summary'] = self._get_filings_summary(symbol)
+            context['outlook_summary'] = self._get_outlook_summary(symbol)
+
         else:  # 'brief' or default
             filing_sections, selected = self._get_filing_sections(symbol, user_query, 3)
             context['filing_sections'] = filing_sections
