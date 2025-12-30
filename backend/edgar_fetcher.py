@@ -729,22 +729,38 @@ class EdgarFetcher:
                     seen_quarters.add((year, quarter))
 
         # Get annual data to calculate Q4
-        annual_net_income = []
-        seen_annual_years = set()
+        # EDGAR has multiple entries per fiscal year with different 'end' dates
+        # We need to select the entry where 'end' date's year matches the fiscal year
+        # to get the correct fiscal_end for Q4
+        annual_net_income_by_year = {}
 
         for entry in net_income_data_list:
             if entry.get('form') in ['10-K', '20-F']:
-                year = entry.get('fy')
+                fy = entry.get('fy')
                 net_income = entry.get('val')
                 fiscal_end = entry.get('end')
 
-                if year and net_income is not None and year not in seen_annual_years:
-                    annual_net_income.append({
-                        'year': year,
-                        'net_income': net_income,
-                        'fiscal_end': fiscal_end
-                    })
-                    seen_annual_years.add(year)
+                if fy and net_income is not None and fiscal_end:
+                    # Extract year from fiscal_end
+                    end_year = int(fiscal_end[:4])
+                    
+                    # Prefer the entry where fiscal_end year matches the fiscal year
+                    # This ensures Q4's fiscal_end is correct (e.g., FY2024 -> end=2024-06-30)
+                    if fy not in annual_net_income_by_year:
+                        annual_net_income_by_year[fy] = {
+                            'year': fy,
+                            'net_income': net_income,
+                            'fiscal_end': fiscal_end
+                        }
+                    elif end_year == fy:
+                        # This entry's end date matches the fiscal year - prefer it
+                        annual_net_income_by_year[fy] = {
+                            'year': fy,
+                            'net_income': net_income,
+                            'fiscal_end': fiscal_end
+                        }
+        
+        annual_net_income = list(annual_net_income_by_year.values())
 
         # EDGAR reports cumulative (year-to-date) Net Income for quarterly filings
         # Q1 = Q1, Q2 = Q1+Q2 cumulative, Q3 = Q1+Q2+Q3 cumulative
