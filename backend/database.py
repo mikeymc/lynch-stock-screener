@@ -415,6 +415,7 @@ class Database:
                 price_target_mean REAL,
                 short_ratio REAL,
                 short_percent_float REAL,
+                next_earnings_date DATE,
                 FOREIGN KEY (symbol) REFERENCES stocks(symbol)
             )
         """)
@@ -493,6 +494,12 @@ class Database:
                 IF NOT EXISTS (SELECT 1 FROM information_schema.columns 
                                WHERE table_name = 'stock_metrics' AND column_name = 'short_percent_float') THEN
                     ALTER TABLE stock_metrics ADD COLUMN short_percent_float REAL;
+                END IF;
+                
+                -- next_earnings_date
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns 
+                               WHERE table_name = 'stock_metrics' AND column_name = 'next_earnings_date') THEN
+                    ALTER TABLE stock_metrics ADD COLUMN next_earnings_date DATE;
                 END IF;
             END $$;
         """)
@@ -1239,7 +1246,10 @@ class Database:
             'institutional_ownership', 'revenue', 'dividend_yield', 
             'beta', 'total_debt', 'interest_expense', 'effective_tax_rate',
             'forward_pe', 'forward_peg_ratio', 'forward_eps',
-            'insider_net_buying_6m', 'last_updated'
+            'insider_net_buying_6m', 'last_updated',
+            'analyst_rating', 'analyst_rating_score', 'analyst_count',
+            'price_target_high', 'price_target_low', 'price_target_mean',
+            'short_ratio', 'short_percent_float', 'next_earnings_date'
         }
         
         # Filter metrics to only valid columns

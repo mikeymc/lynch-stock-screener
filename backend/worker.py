@@ -1334,6 +1334,17 @@ class BackgroundWorker:
                 short_ratio = info.get('shortRatio')  # Days to cover
                 short_percent_float = info.get('shortPercentOfFloat')
                 
+                # Extract next earnings date from calendar
+                next_earnings_date = None
+                try:
+                    calendar = ticker.calendar
+                    if calendar and 'Earnings Date' in calendar:
+                        earnings_dates = calendar['Earnings Date']
+                        if earnings_dates and len(earnings_dates) > 0:
+                            next_earnings_date = earnings_dates[0]  # First date is next earnings
+                except Exception:
+                    pass  # Calendar not available for all stocks
+                
                 # Save to database
                 # Update metrics with forward indicators + analyst data
                 metrics = {
@@ -1348,7 +1359,8 @@ class BackgroundWorker:
                     'price_target_low': price_target_low,
                     'price_target_mean': price_target_mean,
                     'short_ratio': short_ratio,
-                    'short_percent_float': short_percent_float
+                    'short_percent_float': short_percent_float,
+                    'next_earnings_date': next_earnings_date
                 }
                 
                 # Get existing metrics and merge
@@ -1519,15 +1531,51 @@ class BackgroundWorker:
                         logger.info(f"Job {job_id} was cancelled, stopping")
                         break
                     
-                    # Skip if already cached (unless force_refresh)
+                    # Smart refresh: skip if we already have a transcript AND no new earnings has occurred
+                    # A new earnings call is likely if:
+                    # 1. We have next_earnings_date in stock_metrics
+                    # 2. That date has passed (is in the past)
+                    # 3. Our cached transcript's earnings_date is older than next_earnings_date
                     if not force_refresh:
                         existing = self.db.get_latest_earnings_transcript(symbol)
                         if existing and existing.get('transcript_text'):
-                            skipped += 1
-                            processed += 1
-                            if processed % 50 == 0:
-                                logger.info(f"Transcript cache progress: {processed}/{total} (cached: {cached}, skipped: {skipped}, errors: {errors})")
-                            continue
+                            cached_date = existing.get('earnings_date')
+                            
+                            # Check if a new earnings call may have occurred
+                            metrics = self.db.get_stock_metrics(symbol)
+                            next_earnings = None
+                            if metrics:
+                                # Get next_earnings_date directly from DB (workaround for incomplete get_stock_metrics)
+                                conn = self.db.get_connection()
+                                try:
+                                    cursor = conn.cursor()
+                                    cursor.execute("SELECT next_earnings_date FROM stock_metrics WHERE symbol = %s", (symbol,))
+                                    row = cursor.fetchone()
+                                    if row and row[0]:
+                                        next_earnings = row[0]
+                                finally:
+                                    self.db.return_connection(conn)
+                            
+                            should_skip = True
+                            if next_earnings and cached_date:
+                                # Convert string date to date object if needed
+                                if isinstance(cached_date, str):
+                                    from datetime import datetime
+                                    cached_date = datetime.strptime(cached_date, '%Y-%m-%d').date()
+                                
+                                # If next_earnings is in the past and after our cached transcript, fetch new one
+                                from datetime import date
+                                today = date.today()
+                                if next_earnings < today and next_earnings > cached_date:
+                                    should_skip = False
+                                    logger.info(f"[{symbol}] New earnings call detected (next: {next_earnings}, cached: {cached_date})")
+                            
+                            if should_skip:
+                                skipped += 1
+                                processed += 1
+                                if processed % 50 == 0:
+                                    logger.info(f"Transcript cache progress: {processed}/{total} (cached: {cached}, skipped: {skipped}, errors: {errors})")
+                                continue
                     
                     try:
                         result = await scraper.fetch_latest_transcript(symbol)
