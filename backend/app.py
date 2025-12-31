@@ -2108,6 +2108,7 @@ def get_unified_chart_analysis(symbol, user_id):
     if only_cached:
         return jsonify({})
 
+
     try:
         # Get filing sections if available (for US stocks only)
         sections_data = None
@@ -2118,6 +2119,13 @@ def get_unified_chart_analysis(symbol, user_id):
         # Fetch material events and news articles for context
         material_events = db.get_material_events(symbol, limit=10)
         news_articles = db.get_news_articles(symbol, limit=20)
+        
+        # Fetch earnings transcripts (last 2 quarters)
+        transcripts = db.get_earnings_transcripts(symbol, limit=2)
+        
+        # Fetch Lynch brief if it exists
+        lynch_brief = db.get_lynch_analysis(user_id, symbol)
+        lynch_brief_text = lynch_brief['analysis_text'] if lynch_brief else None
 
         # Generate unified analysis with full context
         sections = lynch_analyst.generate_unified_chart_analysis(
@@ -2126,8 +2134,11 @@ def get_unified_chart_analysis(symbol, user_id):
             sections=sections_data,
             news=news_articles,
             material_events=material_events,
+            transcripts=transcripts,
+            lynch_brief=lynch_brief_text,
             model_version=model
         )
+
 
         # Save each section to cache for this user
         for section_name, analysis_text in sections.items():

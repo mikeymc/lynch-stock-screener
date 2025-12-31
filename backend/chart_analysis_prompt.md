@@ -33,19 +33,32 @@ Here is the 5-year historical data:
 
 ## Output Format
 
-Provide your analysis in three sections with clear headers. Use markdown formatting. Each section should be 2-4 concise paragraphs. Connect your observations across sections (e.g., "The revenue volatility I mentioned earlier is reflected in the cash flow numbers...").
+Provide your analysis in three sections with clear headers. Use markdown formatting. Each section should be 2-4 concise paragraphs. Connect your observations across sections (e.g., "The strong earnings growth translates directly to shareholder returns through dividend increases...").
 
 ### Growth & Profitability
 
-[Your analysis of revenue, net income, and EPS trends. Focus on consistency, growth rates, and any red flags.]
+[Analyze these charts: Revenue, Net Income, EPS, and Dividend Yield. Focus on:
+- Revenue and Net Income trends: consistency, growth rates, margin trajectory
+- How company-level profits translate to shareholder returns (EPS and dividends)
+- Any disconnect between company growth and per-share returns (share dilution, repurchases)
+- Red flags in any of these metrics]
 
 ### Cash Flow
 
-[Your analysis of operating and free cash flow. Reference growth trends from the previous section. Discuss the company's ability to generate cash.]
+[Analyze these charts: Operating Cash Flow, Free Cash Flow, Capital Expenditures, and Debt-to-Equity. Focus on:
+- Quality of earnings: OCF vs Net Income relationship
+- Free Cash Flow generation and its sustainability
+- Capital intensity: CapEx relative to cash flow (heavy reinvestment vs cash cow)
+- Leverage trends: is debt increasing to fund growth or cover shortfalls?
+- Connection to the profitability story from the previous section]
 
 ### Valuation
 
-[Your analysis of P/E ratio trends and PEG ratio. Tie this back to the growth and cash flow observations. Is the stock fairly valued given what you've seen?]
+[Analyze these charts: Stock Price and P/E Ratio. Focus on:
+- How current valuation compares to historical norms for this stock
+- Whether P/E expansion/contraction aligns with the growth story
+- Tie back to the fundamentals: is the market pricing in realistic expectations?
+- Clear takeaway on value vs. price given what you've observed]
 
 ## Style Guidelines
 
@@ -59,29 +72,29 @@ Provide your analysis in three sections with clear headers. Use markdown formatt
 
 ## Integration Guidelines for Additional Context
 
-When news articles, material events (8-K filings), and SEC filing sections are provided below, integrate them thoughtfully into your analysis:
+When news articles, material events (8-K filings), SEC filing sections, earnings transcripts, and prior analysis are provided below, integrate them thoughtfully:
 
 **For Growth & Profitability:**
 - Cite major acquisitions or divestitures from 8-Ks explicitly (with dates)
 - Use business description from 10-K to explain revenue drivers and competitive position
-- Reference product launches, market expansion news for growth catalysts
-- Maintain neutral tone while discussing sentiment trends observed in news coverage
+- Reference earnings call commentary on guidance and growth expectations
+- Note how dividend policy aligns with the company's stated capital allocation priorities
 
 **For Cash Flow:**
 - Cite dividend announcements or debt activity from 8-Ks explicitly
 - Use MD&A to understand CapEx plans and capital allocation strategy
-- Reference liquidity discussions from risk factors when relevant
+- Reference management commentary on leverage targets and FCF priorities
 - Note any major financing events or cash deployment strategies
 
 **For Valuation:**
 - Cite material events that affect the investment thesis (restructurings, strategic changes)
 - Use risk factors to discuss valuation concerns objectively
 - Reference market sentiment from news as a factor in current pricing
-- Consider how material events might impact long-term value
+- Consider how management earnings guidance relates to current P/E levels
 
 **Citation Style:**
-- **Explicit citations**: Major material events deserve explicit mention with dates (e.g., "The acquisition announced in their June 2024 8-K...")
-- **Implicit use**: Other context should inform your observations naturally without overwhelming the analysis with citations
-- **Neutral analytical tone**: You may reference or discuss sentiment observed in news, but maintain an objective stance (e.g., "Recent news coverage suggests growing investor optimism about..." rather than adopting that optimism yourself)
+- **Explicit citations**: Major material events deserve explicit mention with dates
+- **Implicit use**: Other context should inform your observations naturally
+- **Neutral analytical tone**: Reference observed sentiment objectively
 
 **Balance**: Don't let the additional context overshadow the financial data. The charts tell the story; the context explains it.

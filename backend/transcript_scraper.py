@@ -90,7 +90,10 @@ class TranscriptScraper:
         Returns:
             Dict with transcript data or None if not found
         """
+        logger.info(f"[TranscriptScraper] [{symbol}] Step 1: Ensuring browser is started...")
         await self._start_browser()
+        
+        logger.info(f"[TranscriptScraper] [{symbol}] Step 2: Rate limiting...")
         await self._rate_limit()
         
         exchange = self._get_exchange(symbol)
@@ -100,8 +103,7 @@ class TranscriptScraper:
             symbol=symbol.upper()
         )
         
-        logger.info(f"[TranscriptScraper] Fetching transcript for {symbol}")
-        
+        logger.info(f"[TranscriptScraper] [{symbol}] Step 3: Opening new page...")
         page = await self._browser.new_page()
         
         try:
@@ -112,64 +114,75 @@ class TranscriptScraper:
             })
             
             # Navigate to earnings page
+            logger.info(f"[TranscriptScraper] [{symbol}] Step 4: Navigating to earnings page: {earnings_url}")
             await page.goto(earnings_url, wait_until='domcontentloaded', timeout=self.PAGE_TIMEOUT)
-            await page.wait_for_timeout(3000)  # Wait for dynamic content
+            
+            logger.info(f"[TranscriptScraper] [{symbol}] Step 5: Waiting 3s for dynamic content...")
+            await page.wait_for_timeout(3000)
             
             # Find transcript link
+            logger.info(f"[TranscriptScraper] [{symbol}] Step 6: Searching for transcript link...")
             transcript_link = await self._find_transcript_link(page)
             
             if not transcript_link:
-                logger.warning(f"[TranscriptScraper] No transcript link found for {symbol}")
+                logger.warning(f"[TranscriptScraper] [{symbol}] No transcript link found")
                 return None
             
-            # Navigate to transcript page
+            logger.info(f"[TranscriptScraper] [{symbol}] Step 7: Found link, navigating to: {transcript_link}")
             await page.goto(transcript_link, wait_until='domcontentloaded', timeout=self.PAGE_TIMEOUT)
-            await page.wait_for_timeout(4000)  # Wait for transcript to load
             
-            # Close any modals that may appear
+            logger.info(f"[TranscriptScraper] [{symbol}] Step 8: Waiting 4s for transcript to load...")
+            await page.wait_for_timeout(4000)
+            
+            # Close any modals
+            logger.info(f"[TranscriptScraper] [{symbol}] Step 9: Closing modals...")
             await self._close_modals(page)
             
             # Extract transcript content
+            logger.info(f"[TranscriptScraper] [{symbol}] Step 10: Extracting transcript text...")
             transcript_data = await self._extract_transcript(page, symbol)
             transcript_data['source_url'] = transcript_link
             
-            logger.info(f"[TranscriptScraper] Successfully extracted transcript for {symbol}: {len(transcript_data.get('transcript_text', ''))} chars")
+            logger.info(f"[TranscriptScraper] [{symbol}] DONE: Extracted {len(transcript_data.get('transcript_text', ''))} chars")
             
             return transcript_data
             
         except PlaywrightTimeout as e:
-            logger.error(f"[TranscriptScraper] Timeout fetching transcript for {symbol}: {e}")
+            logger.error(f"[TranscriptScraper] [{symbol}] TIMEOUT: {e}")
             return None
         except Exception as e:
-            logger.error(f"[TranscriptScraper] Error fetching transcript for {symbol}: {e}")
+            logger.error(f"[TranscriptScraper] [{symbol}] ERROR: {e}")
             return None
         finally:
+            logger.info(f"[TranscriptScraper] [{symbol}] Closing page...")
             await page.close()
     
     async def _find_transcript_link(self, page: Page) -> Optional[str]:
-        """Find the transcript link on the earnings page."""
+        """Find the transcript link on the earnings page using fast JS evaluation."""
         try:
-            # Look for links containing "transcript" text
-            links = await page.query_selector_all('a')
+            # Use JavaScript to find link in a single call instead of slow Python loop
+            transcript_link = await page.evaluate('''() => {
+                // Look for links containing "conference call transcript" text
+                const links = Array.from(document.querySelectorAll('a'));
+                
+                for (const link of links) {
+                    const text = (link.innerText || '').toLowerCase();
+                    if (text.includes('conference call transcript')) {
+                        return link.href;
+                    }
+                }
+                
+                // Fallback: Look for links with #transcript in href
+                for (const link of links) {
+                    if (link.href && link.href.includes('#transcript')) {
+                        return link.href;
+                    }
+                }
+                
+                return null;
+            }''')
             
-            for link in links:
-                text = await link.inner_text()
-                if 'conference call transcript' in text.lower():
-                    href = await link.get_attribute('href')
-                    if href:
-                        if not href.startswith('http'):
-                            href = self.BASE_URL + href
-                        return href
-            
-            # Fallback: Look for links with transcript in href
-            for link in links:
-                href = await link.get_attribute('href')
-                if href and '#transcript' in href:
-                    if not href.startswith('http'):
-                        href = self.BASE_URL + href
-                    return href
-            
-            return None
+            return transcript_link
             
         except Exception as e:
             logger.error(f"[TranscriptScraper] Error finding transcript link: {e}")

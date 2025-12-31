@@ -1,4 +1,4 @@
-// ABOUTME: Stock charts component displaying 10 financial metrics in 5 rows of 2
+// ABOUTME: Stock charts component displaying 10 financial metrics in 3 thematic sections
 // ABOUTME: Two-column layout: charts left (2/3), chat sidebar right (1/3)
 
 import { useState, useCallback, useRef } from 'react'
@@ -177,6 +177,15 @@ export default function StockCharts({ historyData, loading, symbol }) {
     }
   })
 
+  // Styled analysis box component
+  const AnalysisBox = ({ content }) => (
+    <div style={{ marginTop: '1rem', padding: '1rem', backgroundColor: '#1e293b', borderRadius: '0.5rem', border: '1px solid #334155' }}>
+      <div className="markdown-content">
+        <ReactMarkdown>{content}</ReactMarkdown>
+      </div>
+    </div>
+  )
+
   return (
     <div className="reports-layout">
       {/* Left Column - Charts Content (2/3) */}
@@ -198,9 +207,11 @@ export default function StockCharts({ historyData, loading, symbol }) {
                 <div className="no-data">No historical data available</div>
               ) : (
                 <>
-                  {/* SECTION 1: Income Statement */}
+                  {/* SECTION 1: Profitability & Growth */}
                   <div className="chart-section">
-                    <h3 className="section-title">Income Statement</h3>
+                    <h3 className="section-title">Profitability & Growth</h3>
+
+                    {/* Row 1: Revenue + Net Income */}
                     <div className="charts-row">
                       {/* Revenue */}
                       <div className="chart-container">
@@ -242,18 +253,77 @@ export default function StockCharts({ historyData, loading, symbol }) {
                         />
                       </div>
                     </div>
-                    {analyses.growth && (
-                      <div style={{ marginTop: '1rem', padding: '1rem', backgroundColor: '#1e293b', borderRadius: '0.5rem', border: '1px solid #334155' }}>
-                        <div className="markdown-content">
-                          <ReactMarkdown>{analyses.growth}</ReactMarkdown>
-                        </div>
+
+                    {/* Row 2: EPS + Dividend Yield */}
+                    <div className="charts-row">
+                      {/* EPS */}
+                      <div className="chart-container">
+                        <Line plugins={[zeroLinePlugin, crosshairPlugin]}
+                          data={{
+                            labels: labels,
+                            datasets: [
+                              {
+                                label: 'EPS ($)',
+                                data: historyData.eps || [],
+                                borderColor: 'rgb(6, 182, 212)',
+                                backgroundColor: 'rgba(6, 182, 212, 0.2)',
+                                pointRadius: activeIndex !== null ? 3 : 0,
+                                pointHoverRadius: 5
+                              }
+                            ]
+                          }}
+                          options={createChartOptions('Earnings Per Share', 'EPS ($)')}
+                        />
                       </div>
-                    )}
+
+                      {/* Dividend Yield - Uses weekly data for granular display */}
+                      <div className="chart-container">
+                        <Line plugins={[zeroLinePlugin, crosshairPlugin]}
+                          data={{
+                            labels: historyData.weekly_dividend_yields?.dates || [],
+                            datasets: [
+                              {
+                                label: 'Dividend Yield (%)',
+                                data: historyData.weekly_dividend_yields?.values || [],
+                                borderColor: 'rgb(255, 205, 86)',
+                                backgroundColor: 'rgba(255, 205, 86, 0.2)',
+                                pointRadius: 0,
+                                pointHoverRadius: 3,
+                                borderWidth: 1.5,
+                                tension: 0.1
+                              }
+                            ]
+                          }}
+                          options={{
+                            ...createChartOptions('Dividend Yield', 'Yield (%)'),
+                            scales: {
+                              ...createChartOptions('Dividend Yield', 'Yield (%)').scales,
+                              x: {
+                                type: 'category',
+                                grid: {
+                                  display: false
+                                },
+                                ticks: {
+                                  callback: yearTickCallback,
+                                  maxRotation: 45,
+                                  minRotation: 45,
+                                  autoSkip: false
+                                }
+                              }
+                            }
+                          }}
+                        />
+                      </div>
+                    </div>
+
+                    {analyses.growth && <AnalysisBox content={analyses.growth} />}
                   </div>
 
-                  {/* SECTION 2: Cash Flow */}
+                  {/* SECTION 2: Cash & Capital Efficiency */}
                   <div className="chart-section">
-                    <h3 className="section-title">Cash Flow</h3>
+                    <h3 className="section-title">Cash & Capital Efficiency</h3>
+
+                    {/* Row 1: Operating Cash Flow + Free Cash Flow */}
                     <div className="charts-row">
                       {/* Operating Cash Flow */}
                       <div className="chart-container">
@@ -295,18 +365,8 @@ export default function StockCharts({ historyData, loading, symbol }) {
                         />
                       </div>
                     </div>
-                    {analyses.cash && (
-                      <div style={{ marginTop: '1rem', padding: '1rem', backgroundColor: '#1e293b', borderRadius: '0.5rem', border: '1px solid #334155' }}>
-                        <div className="markdown-content">
-                          <ReactMarkdown>{analyses.cash}</ReactMarkdown>
-                        </div>
-                      </div>
-                    )}
-                  </div>
 
-                  {/* SECTION 3: Capital & Leverage */}
-                  <div className="chart-section">
-                    <h3 className="section-title">Capital & Leverage</h3>
+                    {/* Row 2: Capital Expenditures + Debt-to-Equity */}
                     <div className="charts-row">
                       {/* Capital Expenditures */}
                       <div className="chart-container">
@@ -348,9 +408,11 @@ export default function StockCharts({ historyData, loading, symbol }) {
                         />
                       </div>
                     </div>
+
+                    {analyses.cash && <AnalysisBox content={analyses.cash} />}
                   </div>
 
-                  {/* SECTION 4: Market Valuation */}
+                  {/* SECTION 3: Market Valuation */}
                   <div className="chart-section">
                     <h3 className="section-title">Market Valuation</h3>
                     <div className="charts-row">
@@ -440,78 +502,8 @@ export default function StockCharts({ historyData, loading, symbol }) {
                         />
                       </div>
                     </div>
-                    {analyses.valuation && (
-                      <div style={{ marginTop: '1rem', padding: '1rem', backgroundColor: '#1e293b', borderRadius: '0.5rem', border: '1px solid #334155' }}>
-                        <div className="markdown-content">
-                          <ReactMarkdown>{analyses.valuation}</ReactMarkdown>
-                        </div>
-                      </div>
-                    )}
-                  </div>
 
-                  {/* SECTION 5: Per-Share Returns */}
-                  <div className="chart-section">
-                    <h3 className="section-title">Per-Share Returns</h3>
-                    <div className="charts-row">
-                      {/* EPS */}
-                      <div className="chart-container">
-                        <Line plugins={[zeroLinePlugin, crosshairPlugin]}
-                          data={{
-                            labels: labels,
-                            datasets: [
-                              {
-                                label: 'EPS ($)',
-                                data: historyData.eps || [],
-                                borderColor: 'rgb(6, 182, 212)',
-                                backgroundColor: 'rgba(6, 182, 212, 0.2)',
-                                pointRadius: activeIndex !== null ? 3 : 0,
-                                pointHoverRadius: 5
-                              }
-                            ]
-                          }}
-                          options={createChartOptions('Earnings Per Share', 'EPS ($)')}
-                        />
-                      </div>
-
-                      {/* Dividend Yield - Uses weekly data for granular display */}
-                      <div className="chart-container">
-                        <Line plugins={[zeroLinePlugin, crosshairPlugin]}
-                          data={{
-                            labels: historyData.weekly_dividend_yields?.dates || [],
-                            datasets: [
-                              {
-                                label: 'Dividend Yield (%)',
-                                data: historyData.weekly_dividend_yields?.values || [],
-                                borderColor: 'rgb(255, 205, 86)',
-                                backgroundColor: 'rgba(255, 205, 86, 0.2)',
-                                pointRadius: 0,
-                                pointHoverRadius: 3,
-                                borderWidth: 1.5,
-                                tension: 0.1
-                              }
-                            ]
-                          }}
-                          options={{
-                            ...createChartOptions('Dividend Yield', 'Yield (%)'),
-                            scales: {
-                              ...createChartOptions('Dividend Yield', 'Yield (%)').scales,
-                              x: {
-                                type: 'category',
-                                grid: {
-                                  display: false
-                                },
-                                ticks: {
-                                  callback: yearTickCallback,
-                                  maxRotation: 45,
-                                  minRotation: 45,
-                                  autoSkip: false
-                                }
-                              }
-                            }
-                          }}
-                        />
-                      </div>
-                    </div>
+                    {analyses.valuation && <AnalysisBox content={analyses.valuation} />}
                   </div>
                 </>
               )}

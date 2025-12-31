@@ -288,6 +288,8 @@ class LynchAnalyst:
         sections: Optional[Dict[str, Any]] = None,
         news: Optional[List[Dict[str, Any]]] = None,
         material_events: Optional[List[Dict[str, Any]]] = None,
+        transcripts: Optional[List[Dict[str, Any]]] = None,
+        lynch_brief: Optional[str] = None,
         model_version: str = DEFAULT_MODEL
     ) -> Dict[str, str]:
         """
@@ -300,6 +302,8 @@ class LynchAnalyst:
             sections: Optional dict of filing sections
             news: Optional list of news articles
             material_events: Optional list of material events (8-K filings)
+            transcripts: Optional list of earnings call transcripts
+            lynch_brief: Optional Lynch analysis brief text
             model_version: Gemini model to use for generation
 
         Returns:
@@ -310,6 +314,7 @@ class LynchAnalyst:
         """
         if model_version not in AVAILABLE_MODELS:
             raise ValueError(f"Invalid model: {model_version}. Must be one of {AVAILABLE_MODELS}")
+
         # Load the unified prompt template
         script_dir = os.path.dirname(os.path.abspath(__file__))
         prompt_path = os.path.join(script_dir, "chart_analysis_prompt.md")
@@ -423,11 +428,43 @@ class LynchAnalyst:
 
             final_prompt += sections_text
 
+        # Append earnings transcripts if available
+        if transcripts and len(transcripts) > 0:
+            transcript_text = "\n\n---\n\n## Recent Earnings Call Transcripts\n\n"
+            transcript_text += "Key insights from management's earnings calls. Pay attention to guidance, strategic priorities, and tone.\n\n"
+            
+            for i, transcript in enumerate(transcripts[:2], 1):
+                quarter = transcript.get('quarter', 'Q?')
+                fiscal_year = transcript.get('fiscal_year', 'N/A')
+                earnings_date = transcript.get('earnings_date', 'Unknown date')
+                
+                # Use summary if available, otherwise use truncated transcript
+                summary = transcript.get('summary')
+                if summary:
+                    content = summary
+                else:
+                    full_text = transcript.get('transcript_text', '')
+                    # Truncate to avoid token limits
+                    content = full_text[:5000] + "..." if len(full_text) > 5000 else full_text
+                
+                transcript_text += f"### {quarter} {fiscal_year} Earnings Call ({earnings_date})\n\n"
+                transcript_text += f"{content}\n\n"
+            
+            final_prompt += transcript_text
+
+        # Append Lynch brief if available
+        if lynch_brief:
+            brief_text = "\n\n---\n\n## Prior Investment Analysis (Lynch Brief)\n\n"
+            brief_text += "This is a previously generated Peter Lynch-style analysis for this company. Use it as context but don't simply repeat it - your chart analysis should complement and extend these insights with specific observations from the charts.\n\n"
+            brief_text += f"{lynch_brief}\n\n"
+            final_prompt += brief_text
+
         # Generate unified analysis
         response = self.client.models.generate_content(
             model=model_version,
             contents=final_prompt
         )
+
 
         # Check if response was blocked or has no content
         if not response.parts:
