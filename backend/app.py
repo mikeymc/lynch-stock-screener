@@ -1547,6 +1547,7 @@ def get_stock_history(symbol):
         pt_mean = stock_metrics.get('price_target_mean')
         pt_high = stock_metrics.get('price_target_high')
         pt_low = stock_metrics.get('price_target_low')
+        logger.info(f"[{symbol}] Price targets from stock_metrics: mean={pt_mean}, high={pt_high}, low={pt_low}")
         if pt_mean or pt_high or pt_low:
             price_targets = {
                 'current': stock_metrics.get('price'),
@@ -1554,6 +1555,8 @@ def get_stock_history(symbol):
                 'high': pt_high,
                 'low': pt_low,
             }
+    else:
+        logger.info(f"[{symbol}] stock_metrics is None")
 
     response_data = {
         'labels': labels,

@@ -361,6 +361,7 @@ def ten_k(
     job_id: int = typer.Argument(None, help="Job ID (required for stop)"),
     prod: bool = typer.Option(False, "--prod", help="Trigger production API instead of local"),
     limit: int = typer.Option(None, "--limit", "-l", help="Limit number of stocks"),
+    symbols: str = typer.Option(None, "--symbols", "-s", help="Comma-separated symbols to process (for testing)"),
     region: str = typer.Option("us", "--region", "-r",
                                help="Region to cache: us, north-america, south-america, europe, asia, all"),
     force: bool = typer.Option(False, "--force", "-f", help="Force refresh cache"),
@@ -378,6 +379,10 @@ def ten_k(
         params = {"region": region}
         if limit:
             params["limit"] = limit
+        if symbols:
+            # Convert comma-separated string to list
+            params["symbols"] = [s.strip().upper() for s in symbols.split(",")]
+            console.print(f"[dim]Processing specific symbols: {params['symbols']}[/dim]")
         if force:
             params["force_refresh"] = True
         
@@ -635,10 +640,11 @@ def outlook(
     job_id: int = typer.Argument(None, help="Job ID (required for stop)"),
     prod: bool = typer.Option(False, "--prod", help="Trigger production API instead of local"),
     limit: int = typer.Option(None, "--limit", "-l", help="Limit number of stocks"),
+    symbols: str = typer.Option(None, "--symbols", "-s", help="Comma-separated symbols to process (for testing)"),
     region: str = typer.Option("us", "--region", "-r",
                                help="Region to cache: us, north-america, south-america, europe, asia, all"),
 ):
-    """Cache future outlook data: forward P/E, PEG, EPS, and insider trades (yfinance)"""
+    """Cache future outlook data: forward P/E, PEG, EPS, analyst targets, and insider trades (yfinance)"""
     if action == "start":
         # Validate region
         valid_regions = ['us', 'north-america', 'south-america', 'europe', 'asia', 'all']
@@ -651,6 +657,10 @@ def outlook(
         params = {"region": region}
         if limit:
             params["limit"] = limit
+        if symbols:
+            # Convert comma-separated string to list
+            params["symbols"] = [s.strip().upper() for s in symbols.split(",")]
+            console.print(f"[dim]Processing specific symbols: {params['symbols']}[/dim]")
         
         # Determine API URL
         api_url = API_URL if prod else "http://localhost:5001"

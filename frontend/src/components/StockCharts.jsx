@@ -15,6 +15,7 @@ import {
   Title,
   Tooltip,
   Legend,
+  Filler,
 } from 'chart.js'
 
 // Register ChartJS components
@@ -25,7 +26,8 @@ ChartJS.register(
   LineElement,
   Title,
   Tooltip,
-  Legend
+  Legend,
+  Filler
 )
 
 // Plugin to draw a dashed zero line
@@ -522,10 +524,53 @@ export default function StockCharts({ historyData, loading, symbol }) {
                                 borderWidth: 1.5,
                                 tension: 0.1
                               },
+                              // Price target mean line
+                              ...(historyData.price_targets?.mean ? [{
+                                label: 'Target (Mean)',
+                                data: (historyData.weekly_prices?.dates || labels).map(() => historyData.price_targets.mean),
+                                borderColor: 'rgba(16, 185, 129, 0.7)',
+                                backgroundColor: 'transparent',
+                                borderDash: [8, 4],
+                                borderWidth: 2,
+                                pointRadius: 0,
+                                fill: false,
+                              }] : []),
+                              // Price target high line (upper bound)
+                              ...(historyData.price_targets?.high ? [{
+                                label: 'Target High',
+                                data: (historyData.weekly_prices?.dates || labels).map(() => historyData.price_targets.high),
+                                borderColor: 'rgba(16, 185, 129, 0.3)',
+                                backgroundColor: 'rgba(16, 185, 129, 0.08)',
+                                borderWidth: 1,
+                                pointRadius: 0,
+                                fill: {
+                                  target: '+1',  // Fill to the next dataset (low)
+                                  above: 'rgba(16, 185, 129, 0.08)',
+                                },
+                              }] : []),
+                              // Price target low line (lower bound)
+                              ...(historyData.price_targets?.low ? [{
+                                label: 'Target Low',
+                                data: (historyData.weekly_prices?.dates || labels).map(() => historyData.price_targets.low),
+                                borderColor: 'rgba(16, 185, 129, 0.3)',
+                                backgroundColor: 'transparent',
+                                borderWidth: 1,
+                                pointRadius: 0,
+                                fill: false,
+                              }] : []),
                             ],
                           }}
                           options={{
                             ...createChartOptions('Stock Price', 'Price ($)'),
+                            plugins: {
+                              ...createChartOptions('Stock Price', 'Price ($)').plugins,
+                              legend: {
+                                display: historyData.price_targets?.mean ? true : false,
+                                labels: {
+                                  filter: (item) => item.text === 'Stock Price ($)' || item.text === 'Target (Mean)'
+                                }
+                              }
+                            },
                             scales: {
                               ...createChartOptions('Stock Price', 'Price ($)').scales,
                               x: {

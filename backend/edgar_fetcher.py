@@ -2294,6 +2294,11 @@ class EdgarFetcher:
         if not tx_date:
             return None
         
+        # Normalize date format - SEC XML sometimes includes timezone offset (e.g., "2025-01-13-05:00")
+        # Strip anything after the YYYY-MM-DD to get a clean date for PostgreSQL
+        if len(tx_date) > 10 and tx_date[10] in ['-', '+', 'T']:
+            tx_date = tx_date[:10]
+        
         # Get transaction code
         tx_code = get_value(tx_elem, 'transactionCode')
         if not tx_code:
