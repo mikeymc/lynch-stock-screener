@@ -293,7 +293,7 @@ export default function StockCharts({ historyData, loading, symbol }) {
                               },
                               // Analyst estimate projection
                               ...(hasEstimates ? [{
-                                label: 'Estimate',
+                                label: 'Analyst Est.',
                                 data: buildEstimateData(historyData.revenue, 'revenue', 1e9),
                                 borderColor: 'rgba(20, 184, 166, 0.8)',
                                 backgroundColor: 'transparent',
@@ -305,7 +305,15 @@ export default function StockCharts({ historyData, loading, symbol }) {
                               }] : [])
                             ]
                           }}
-                          options={createChartOptions('Revenue', 'Billions ($)')}
+                          options={{
+                            ...createChartOptions('Revenue', 'Billions ($)'),
+                            plugins: {
+                              ...createChartOptions('Revenue', 'Billions ($)').plugins,
+                              legend: {
+                                display: hasEstimates,
+                              }
+                            }
+                          }}
                         />
                       </div>
 
@@ -348,7 +356,7 @@ export default function StockCharts({ historyData, loading, symbol }) {
                               },
                               // Analyst estimate projection
                               ...(hasEstimates ? [{
-                                label: 'Estimate',
+                                label: 'Analyst Est.',
                                 data: buildEstimateData(historyData.eps || [], 'eps', 1),
                                 borderColor: 'rgba(20, 184, 166, 0.8)',
                                 backgroundColor: 'transparent',
@@ -360,7 +368,15 @@ export default function StockCharts({ historyData, loading, symbol }) {
                               }] : [])
                             ]
                           }}
-                          options={createChartOptions('Earnings Per Share', 'EPS ($)')}
+                          options={{
+                            ...createChartOptions('Earnings Per Share', 'EPS ($)'),
+                            plugins: {
+                              ...createChartOptions('Earnings Per Share', 'EPS ($)').plugins,
+                              legend: {
+                                display: hasEstimates,
+                              }
+                            }
+                          }}
                         />
                       </div>
 
@@ -526,7 +542,7 @@ export default function StockCharts({ historyData, loading, symbol }) {
                               },
                               // Price target mean line
                               ...(historyData.price_targets?.mean ? [{
-                                label: 'Target (Mean)',
+                                label: 'Analyst Target (Mean)',
                                 data: (historyData.weekly_prices?.dates || labels).map(() => historyData.price_targets.mean),
                                 borderColor: 'rgba(16, 185, 129, 0.7)',
                                 backgroundColor: 'transparent',
@@ -537,15 +553,15 @@ export default function StockCharts({ historyData, loading, symbol }) {
                               }] : []),
                               // Price target high line (upper bound)
                               ...(historyData.price_targets?.high ? [{
-                                label: 'Target High',
+                                label: 'Target Range',
                                 data: (historyData.weekly_prices?.dates || labels).map(() => historyData.price_targets.high),
                                 borderColor: 'rgba(16, 185, 129, 0.3)',
-                                backgroundColor: 'rgba(16, 185, 129, 0.08)',
+                                backgroundColor: 'rgba(16, 185, 129, 0.15)',
                                 borderWidth: 1,
                                 pointRadius: 0,
                                 fill: {
                                   target: '+1',  // Fill to the next dataset (low)
-                                  above: 'rgba(16, 185, 129, 0.08)',
+                                  above: 'rgba(16, 185, 129, 0.15)',
                                 },
                               }] : []),
                               // Price target low line (lower bound)
@@ -567,7 +583,7 @@ export default function StockCharts({ historyData, loading, symbol }) {
                               legend: {
                                 display: historyData.price_targets?.mean ? true : false,
                                 labels: {
-                                  filter: (item) => item.text === 'Stock Price ($)' || item.text === 'Target (Mean)'
+                                  filter: (item) => item.text === 'Stock Price ($)' || item.text === 'Analyst Target (Mean)' || item.text === 'Target Range'
                                 }
                               }
                             },
