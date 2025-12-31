@@ -85,6 +85,37 @@ class LynchAnalyst:
         institutional_ownership = stock_data.get('institutional_ownership') or 0
         market_cap = stock_data.get('market_cap') or 0
         
+        # Format analyst estimates text (from stock_data if available)
+        analyst_estimates = stock_data.get('analyst_estimates', {})
+        analyst_estimates_text = "Not available"
+        if analyst_estimates:
+            estimates_lines = []
+            for period, data in analyst_estimates.items():
+                eps_avg = data.get('eps_avg')
+                revenue_avg = data.get('revenue_avg')
+                if eps_avg or revenue_avg:
+                    eps_str = f"EPS ${eps_avg:.2f}" if eps_avg else ""
+                    rev_str = f"Revenue ${revenue_avg/1e9:.2f}B" if revenue_avg else ""
+                    line_parts = [p for p in [eps_str, rev_str] if p]
+                    if line_parts:
+                        estimates_lines.append(f"- **{period}**: {', '.join(line_parts)}")
+            if estimates_lines:
+                analyst_estimates_text = "\n".join(estimates_lines)
+        
+        # Format price targets text (from stock_data if available)
+        price_targets = stock_data.get('price_targets', {})
+        price_targets_text = "Not available"
+        if price_targets and (price_targets.get('mean') or price_targets.get('high') or price_targets.get('low')):
+            pt_lines = []
+            if price_targets.get('mean'):
+                pt_lines.append(f"- **Mean Target**: ${price_targets['mean']:.2f}")
+            if price_targets.get('high'):
+                pt_lines.append(f"- **High Target**: ${price_targets['high']:.2f}")
+            if price_targets.get('low'):
+                pt_lines.append(f"- **Low Target**: ${price_targets['low']:.2f}")
+            if pt_lines:
+                price_targets_text = "\n".join(pt_lines)
+        
         template_vars = {
             'current_date': datetime.now().strftime('%B %d, %Y'),
             'current_year': datetime.now().year,
@@ -100,7 +131,9 @@ class LynchAnalyst:
             'market_cap_billions': market_cap / 1e9,
             'earnings_cagr': stock_data.get('earnings_cagr', 'N/A'),
             'revenue_cagr': stock_data.get('revenue_cagr', 'N/A'),
-            'history_text': history_text
+            'history_text': history_text,
+            'analyst_estimates_text': analyst_estimates_text,
+            'price_targets_text': price_targets_text
         }
 
         # Format any 'N/A' values for cleaner output

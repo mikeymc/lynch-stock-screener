@@ -30,6 +30,12 @@ Here is the 5-year historical data:
 - **Debt-to-Equity**: {debt_to_equity}
 - **Institutional Ownership**: {institutional_ownership:.1f}%
 
+**Analyst Estimates (Forward-Looking):**
+{analyst_estimates_text}
+
+**Analyst Price Targets:**
+{price_targets_text}
+
 
 ## Output Format
 
@@ -41,6 +47,7 @@ Provide your analysis in three sections with clear headers. Use markdown formatt
 - Revenue and Net Income trends: consistency, growth rates, margin trajectory
 - How company-level profits translate to shareholder returns (EPS and dividends)
 - Any disconnect between company growth and per-share returns (share dilution, repurchases)
+- **If analyst estimates are available**: Compare historical growth trajectory to forward EPS/revenue estimates. Do analysts expect acceleration or deceleration?
 - Red flags in any of these metrics]
 
 ### Cash Flow
@@ -57,6 +64,7 @@ Provide your analysis in three sections with clear headers. Use markdown formatt
 [Analyze these charts: Stock Price and P/E Ratio. Focus on:
 - How current valuation compares to historical norms for this stock
 - Whether P/E expansion/contraction aligns with the growth story
+- **If price targets are available**: Compare current price to analyst mean/high/low targets. Where is the stock relative to consensus?
 - Tie back to the fundamentals: is the market pricing in realistic expectations?
 - Clear takeaway on value vs. price given what you've observed]
 
