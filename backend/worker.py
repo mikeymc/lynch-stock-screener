@@ -1345,6 +1345,43 @@ class BackgroundWorker:
                 except Exception:
                     pass  # Calendar not available for all stocks
                 
+                # Extract analyst estimates (EPS and Revenue forecasts)
+                estimates_data = {}
+                try:
+                    # EPS estimates (period: 0q, +1q, 0y, +1y)
+                    eps_df = ticker.earnings_estimate
+                    if eps_df is not None and not eps_df.empty:
+                        for period in eps_df.index:
+                            row = eps_df.loc[period]
+                            if period not in estimates_data:
+                                estimates_data[period] = {}
+                            estimates_data[period].update({
+                                'eps_avg': float(row.get('avg')) if pd.notna(row.get('avg')) else None,
+                                'eps_low': float(row.get('low')) if pd.notna(row.get('low')) else None,
+                                'eps_high': float(row.get('high')) if pd.notna(row.get('high')) else None,
+                                'eps_growth': float(row.get('growth')) if pd.notna(row.get('growth')) else None,
+                                'eps_year_ago': float(row.get('yearAgoEps')) if pd.notna(row.get('yearAgoEps')) else None,
+                                'eps_num_analysts': int(row.get('numberOfAnalysts')) if pd.notna(row.get('numberOfAnalysts')) else None,
+                            })
+                    
+                    # Revenue estimates
+                    rev_df = ticker.revenue_estimate
+                    if rev_df is not None and not rev_df.empty:
+                        for period in rev_df.index:
+                            row = rev_df.loc[period]
+                            if period not in estimates_data:
+                                estimates_data[period] = {}
+                            estimates_data[period].update({
+                                'revenue_avg': float(row.get('avg')) if pd.notna(row.get('avg')) else None,
+                                'revenue_low': float(row.get('low')) if pd.notna(row.get('low')) else None,
+                                'revenue_high': float(row.get('high')) if pd.notna(row.get('high')) else None,
+                                'revenue_growth': float(row.get('growth')) if pd.notna(row.get('growth')) else None,
+                                'revenue_year_ago': float(row.get('yearAgoRevenue')) if pd.notna(row.get('yearAgoRevenue')) else None,
+                                'revenue_num_analysts': int(row.get('numberOfAnalysts')) if pd.notna(row.get('numberOfAnalysts')) else None,
+                            })
+                except Exception as e:
+                    logger.debug(f"[{symbol}] Error extracting analyst estimates: {e}")
+                
                 # Save to database
                 # Update metrics with forward indicators + analyst data
                 metrics = {
@@ -1372,6 +1409,10 @@ class BackgroundWorker:
                 # Save insider trades
                 if trades_to_save:
                     self.db.save_insider_trades(symbol, trades_to_save)
+                
+                # Save analyst estimates to the new table
+                if estimates_data:
+                    self.db.save_analyst_estimates(symbol, estimates_data)
                 
                 return True
                 

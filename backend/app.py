@@ -1467,6 +1467,94 @@ def get_stock_history(symbol):
     except Exception as e:
         logger.debug(f"Error fetching weekly prices for {symbol}: {e}")
 
+    # Get analyst estimates for forward projections
+    analyst_estimates = {}
+    try:
+        estimates = db.get_analyst_estimates(symbol.upper())
+        if estimates:
+            # Extract current year and next year estimates for chart projections
+            current_year_est = estimates.get('0y', {})
+            next_year_est = estimates.get('+1y', {})
+            
+            analyst_estimates = {
+                'current_year': {
+                    'eps_avg': current_year_est.get('eps_avg'),
+                    'eps_low': current_year_est.get('eps_low'),
+                    'eps_high': current_year_est.get('eps_high'),
+                    'eps_growth': current_year_est.get('eps_growth'),
+                    'revenue_avg': current_year_est.get('revenue_avg'),
+                    'revenue_low': current_year_est.get('revenue_low'),
+                    'revenue_high': current_year_est.get('revenue_high'),
+                    'revenue_growth': current_year_est.get('revenue_growth'),
+                    'num_analysts': current_year_est.get('eps_num_analysts'),
+                } if current_year_est else None,
+                'next_year': {
+                    'eps_avg': next_year_est.get('eps_avg'),
+                    'eps_low': next_year_est.get('eps_low'),
+                    'eps_high': next_year_est.get('eps_high'),
+                    'eps_growth': next_year_est.get('eps_growth'),
+                    'revenue_avg': next_year_est.get('revenue_avg'),
+                    'revenue_low': next_year_est.get('revenue_low'),
+                    'revenue_high': next_year_est.get('revenue_high'),
+                    'revenue_growth': next_year_est.get('revenue_growth'),
+                    'num_analysts': next_year_est.get('eps_num_analysts'),
+                } if next_year_est else None,
+                # Include quarterly estimates for more granular projections
+                'current_quarter': estimates.get('0q'),
+                'next_quarter': estimates.get('+1q'),
+            }
+    except Exception as e:
+        logger.debug(f"Error fetching analyst estimates for {symbol}: {e}")
+
+    # Build current year quarterly breakdown from quarterly earnings history
+    current_year_quarterly = None
+    try:
+        quarterly_history = db.get_earnings_history(symbol.upper(), period_type='quarterly')
+        if quarterly_history:
+            from datetime import datetime
+            current_year = datetime.now().year
+            
+            # Get all quarters for the current year
+            current_year_quarters = [
+                q for q in quarterly_history 
+                if q['year'] == current_year
+            ]
+            
+            if current_year_quarters:
+                # Sort by quarter (Q1, Q2, Q3, Q4)
+                current_year_quarters.sort(key=lambda x: x.get('period', 'Q0'))
+                
+                current_year_quarterly = {
+                    'year': current_year,
+                    'quarters': [
+                        {
+                            'q': int(q['period'][1]) if q.get('period') and q['period'].startswith('Q') else 0,
+                            'period': q.get('period'),
+                            'eps': q.get('eps'),
+                            'revenue': q.get('revenue'),
+                            'net_income': q.get('net_income'),
+                            'fiscal_end': q.get('fiscal_end'),
+                        }
+                        for q in current_year_quarters
+                    ]
+                }
+    except Exception as e:
+        logger.debug(f"Error building current year quarterly for {symbol}: {e}")
+
+    # Get price targets from stock metrics
+    price_targets = None
+    if stock_metrics:
+        pt_mean = stock_metrics.get('price_target_mean')
+        pt_high = stock_metrics.get('price_target_high')
+        pt_low = stock_metrics.get('price_target_low')
+        if pt_mean or pt_high or pt_low:
+            price_targets = {
+                'current': stock_metrics.get('price'),
+                'mean': pt_mean,
+                'high': pt_high,
+                'low': pt_low,
+            }
+
     response_data = {
         'labels': labels,
         'eps': eps_values,
@@ -1483,7 +1571,11 @@ def get_stock_history(symbol):
         'wacc': wacc_data,
         'weekly_prices': weekly_prices,
         'weekly_pe_ratios': weekly_pe_ratios,
-        'weekly_dividend_yields': weekly_dividend_yields
+        'weekly_dividend_yields': weekly_dividend_yields,
+        # NEW: Forward-looking data
+        'analyst_estimates': analyst_estimates,
+        'current_year_quarterly': current_year_quarterly,
+        'price_targets': price_targets,
     }
 
     # Clean NaN values before returning

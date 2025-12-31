@@ -130,6 +130,67 @@ export default function StockCharts({ historyData, loading, symbol }) {
 
   const labels = historyData?.labels || historyData?.years || []
 
+  // Find the last year in historical data (extract year from label like "2024" or "2024 Q4")
+  const getYearFromLabel = (label) => {
+    if (!label) return null
+    const match = String(label).match(/^(\d{4})/)
+    return match ? parseInt(match[1]) : null
+  }
+
+  const lastHistoricalYear = labels.length > 0
+    ? Math.max(...labels.map(getYearFromLabel).filter(y => y !== null))
+    : new Date().getFullYear() - 1
+
+  const hasEstimates = historyData?.analyst_estimates?.next_year  // Only show next year estimate
+
+  // Build labels with ONE future estimate year appended (year after last historical)
+  const getExtendedLabels = () => {
+    if (!hasEstimates) return labels
+
+    const baseLabels = [...labels]
+    const estimateYear = lastHistoricalYear + 1
+
+    // Only add if this year isn't already in the data
+    const yearExists = labels.some(l => getYearFromLabel(l) === estimateYear)
+    if (!yearExists) {
+      baseLabels.push(`${estimateYear}E`)
+    }
+
+    return baseLabels
+  }
+
+  // Build estimate data array - only for the year AFTER historical data
+  const buildEstimateData = (historicalData, estimateType, scaleFactor = 1) => {
+    if (!hasEstimates) return historicalData.map(() => null)
+
+    const estimates = historyData?.analyst_estimates
+    const extLabels = getExtendedLabels()
+
+    // Start with nulls for all positions
+    const estimateData = new Array(extLabels.length).fill(null)
+
+    // Find the estimate year position
+    const estimateYear = lastHistoricalYear + 1
+    const estimateYearIdx = extLabels.findIndex(l => l === `${estimateYear}E`)
+
+    if (estimateYearIdx >= 0 && estimates?.next_year) {
+      const estValue = estimates.next_year[`${estimateType}_avg`]
+      if (estValue != null) {
+        estimateData[estimateYearIdx] = estValue / scaleFactor
+
+        // Connect from the last historical point for line continuity
+        if (historicalData.length > 0 && estimateYearIdx > 0) {
+          const lastHistorical = historicalData[historicalData.length - 1]
+          if (lastHistorical != null) {
+            estimateData[estimateYearIdx - 1] = lastHistorical / scaleFactor
+          }
+        }
+      }
+    }
+
+    return estimateData
+  }
+
   // Helper function to create chart options
   const createChartOptions = (title, yAxisLabel) => ({
     responsive: true,
@@ -155,6 +216,7 @@ export default function StockCharts({ historyData, loading, symbol }) {
     scales: {
       x: {
         ticks: {
+          autoSkip: false,
           maxRotation: 45,
           minRotation: 45
         }
@@ -217,7 +279,7 @@ export default function StockCharts({ historyData, loading, symbol }) {
                       <div className="chart-container">
                         <Line plugins={[zeroLinePlugin, crosshairPlugin]}
                           data={{
-                            labels: labels,
+                            labels: getExtendedLabels(),
                             datasets: [
                               {
                                 label: 'Revenue (Billions)',
@@ -226,7 +288,19 @@ export default function StockCharts({ historyData, loading, symbol }) {
                                 backgroundColor: 'rgba(75, 192, 192, 0.2)',
                                 pointRadius: activeIndex !== null ? 3 : 0,
                                 pointHoverRadius: 5
-                              }
+                              },
+                              // Analyst estimate projection
+                              ...(hasEstimates ? [{
+                                label: 'Estimate',
+                                data: buildEstimateData(historyData.revenue, 'revenue', 1e9),
+                                borderColor: 'rgba(20, 184, 166, 0.8)',
+                                backgroundColor: 'transparent',
+                                borderDash: [5, 5],
+                                pointRadius: 4,
+                                pointStyle: 'triangle',
+                                pointHoverRadius: 6,
+                                spanGaps: true,
+                              }] : [])
                             ]
                           }}
                           options={createChartOptions('Revenue', 'Billions ($)')}
@@ -260,7 +334,7 @@ export default function StockCharts({ historyData, loading, symbol }) {
                       <div className="chart-container">
                         <Line plugins={[zeroLinePlugin, crosshairPlugin]}
                           data={{
-                            labels: labels,
+                            labels: getExtendedLabels(),
                             datasets: [
                               {
                                 label: 'EPS ($)',
@@ -269,7 +343,19 @@ export default function StockCharts({ historyData, loading, symbol }) {
                                 backgroundColor: 'rgba(6, 182, 212, 0.2)',
                                 pointRadius: activeIndex !== null ? 3 : 0,
                                 pointHoverRadius: 5
-                              }
+                              },
+                              // Analyst estimate projection
+                              ...(hasEstimates ? [{
+                                label: 'Estimate',
+                                data: buildEstimateData(historyData.eps || [], 'eps', 1),
+                                borderColor: 'rgba(20, 184, 166, 0.8)',
+                                backgroundColor: 'transparent',
+                                borderDash: [5, 5],
+                                pointRadius: 4,
+                                pointStyle: 'triangle',
+                                pointHoverRadius: 6,
+                                spanGaps: true,
+                              }] : [])
                             ]
                           }}
                           options={createChartOptions('Earnings Per Share', 'EPS ($)')}

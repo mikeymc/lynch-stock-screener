@@ -1183,6 +1183,30 @@ class Database:
             )
         """)
 
+        # Analyst estimates (EPS and revenue forecasts from yfinance)
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS analyst_estimates (
+                id SERIAL PRIMARY KEY,
+                symbol TEXT NOT NULL,
+                period TEXT NOT NULL,
+                eps_avg REAL,
+                eps_low REAL,
+                eps_high REAL,
+                eps_growth REAL,
+                eps_year_ago REAL,
+                eps_num_analysts INTEGER,
+                revenue_avg REAL,
+                revenue_low REAL,
+                revenue_high REAL,
+                revenue_growth REAL,
+                revenue_year_ago REAL,
+                revenue_num_analysts INTEGER,
+                last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (symbol) REFERENCES stocks(symbol),
+                UNIQUE(symbol, period)
+            )
+        """)
+
         conn.commit()
 
     def save_stock_basic(self, symbol: str, company_name: str, exchange: str, sector: str = None,
@@ -3088,6 +3112,107 @@ class Database:
             'source_url': row[9],
             'last_updated': row[10].isoformat() if row[10] else None
         }
+
+    def save_analyst_estimates(self, symbol: str, estimates_data: Dict[str, Any]):
+        """
+        Save analyst estimates for EPS and revenue.
+        
+        Args:
+            symbol: Stock symbol
+            estimates_data: Dict with period keys ('0q', '+1q', '0y', '+1y') containing:
+                - eps_avg, eps_low, eps_high, eps_growth, eps_year_ago, eps_num_analysts
+                - revenue_avg, revenue_low, revenue_high, revenue_growth, revenue_year_ago, revenue_num_analysts
+        """
+        for period, data in estimates_data.items():
+            if not data:
+                continue
+                
+            sql = """
+                INSERT INTO analyst_estimates 
+                (symbol, period, eps_avg, eps_low, eps_high, eps_growth, eps_year_ago, eps_num_analysts,
+                 revenue_avg, revenue_low, revenue_high, revenue_growth, revenue_year_ago, revenue_num_analysts,
+                 last_updated)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, NOW())
+                ON CONFLICT (symbol, period) DO UPDATE SET
+                    eps_avg = EXCLUDED.eps_avg,
+                    eps_low = EXCLUDED.eps_low,
+                    eps_high = EXCLUDED.eps_high,
+                    eps_growth = EXCLUDED.eps_growth,
+                    eps_year_ago = EXCLUDED.eps_year_ago,
+                    eps_num_analysts = EXCLUDED.eps_num_analysts,
+                    revenue_avg = EXCLUDED.revenue_avg,
+                    revenue_low = EXCLUDED.revenue_low,
+                    revenue_high = EXCLUDED.revenue_high,
+                    revenue_growth = EXCLUDED.revenue_growth,
+                    revenue_year_ago = EXCLUDED.revenue_year_ago,
+                    revenue_num_analysts = EXCLUDED.revenue_num_analysts,
+                    last_updated = NOW()
+            """
+            
+            params = (
+                symbol.upper(),
+                period,
+                data.get('eps_avg'),
+                data.get('eps_low'),
+                data.get('eps_high'),
+                data.get('eps_growth'),
+                data.get('eps_year_ago'),
+                data.get('eps_num_analysts'),
+                data.get('revenue_avg'),
+                data.get('revenue_low'),
+                data.get('revenue_high'),
+                data.get('revenue_growth'),
+                data.get('revenue_year_ago'),
+                data.get('revenue_num_analysts'),
+            )
+            
+            self.write_queue.put((sql, params))
+
+    def get_analyst_estimates(self, symbol: str) -> Dict[str, Dict[str, Any]]:
+        """
+        Get all analyst estimates for a symbol.
+        
+        Args:
+            symbol: Stock symbol
+            
+        Returns:
+            Dict keyed by period ('0q', '+1q', '0y', '+1y') with estimate data
+        """
+        conn = self.get_connection()
+        try:
+            cursor = conn.cursor()
+            
+            cursor.execute("""
+                SELECT period, eps_avg, eps_low, eps_high, eps_growth, eps_year_ago, eps_num_analysts,
+                       revenue_avg, revenue_low, revenue_high, revenue_growth, revenue_year_ago, 
+                       revenue_num_analysts, last_updated
+                FROM analyst_estimates
+                WHERE symbol = %s
+            """, (symbol.upper(),))
+            
+            rows = cursor.fetchall()
+            
+            result = {}
+            for row in rows:
+                result[row[0]] = {
+                    'eps_avg': row[1],
+                    'eps_low': row[2],
+                    'eps_high': row[3],
+                    'eps_growth': row[4],
+                    'eps_year_ago': row[5],
+                    'eps_num_analysts': row[6],
+                    'revenue_avg': row[7],
+                    'revenue_low': row[8],
+                    'revenue_high': row[9],
+                    'revenue_growth': row[10],
+                    'revenue_year_ago': row[11],
+                    'revenue_num_analysts': row[12],
+                    'last_updated': row[13].isoformat() if row[13] else None
+                }
+            
+            return result
+        finally:
+            self.return_connection(conn)
 
     def save_transcript_summary(self, symbol: str, quarter: str, fiscal_year: int, summary: str):
         """
