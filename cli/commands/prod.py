@@ -3,7 +3,7 @@ Production environment commands for bag CLI
 """
 import typer
 from rich.console import Console
-from cli.utils.fly import run_fly_command, get_machines, filter_machines, select_machine_interactive
+from cli.utils.fly import run_fly_command, get_machines, filter_machines, select_machine_interactive, get_running_jobs_from_prod_db
 
 console = Console()
 app = typer.Typer(help="Production environment operations")
@@ -63,26 +63,54 @@ def restart(
 
 @app.command()
 def logs(
-    tail: bool = typer.Option(False, "--tail", "-t", help="Stream logs (tail)"),
+    worker: bool = typer.Option(False, "--worker", "-w", help="Show logs from worker machine only"),
+    web: bool = typer.Option(False, "--web", help="Show logs from web machine only"),
     hours: int = typer.Option(None, "--hours", "-h", help="Show logs from last N hours"),
 ):
-    """View Fly.io logs"""
-    if tail:
-        console.print("[bold blue]📋 Streaming logs (Ctrl+C to stop)...[/bold blue]")
-        try:
-            run_fly_command(["logs"])
-        except KeyboardInterrupt:
-            console.print("\n[yellow]Stopped streaming logs[/yellow]")
-    elif hours is not None:
-        console.print(f"[bold blue]📋 Showing logs from last {hours} hours...[/bold blue]")
-        run_fly_command(["logs", "--hours", str(hours)])
+    """View Fly.io logs (streams by default, optionally filter by machine type)"""
+    # Build base command args
+    cmd_args = ["logs"]
+    
+    # Add machine filter if specified
+    if worker or web:
+        machines_list = get_machines()
+        if not machines_list:
+            console.print("[red]No machines found[/red]")
+            raise typer.Exit(1)
+        
+        machine_type = "worker" if worker else "web"
+        targets = filter_machines(machines_list, machine_type)
+        
+        if not targets:
+            console.print(f"[yellow]No {machine_type} machines found[/yellow]")
+            raise typer.Exit(1)
+        
+        # If multiple machines of the type, let user select
+        if len(targets) > 1:
+            # Fetch running jobs for worker selection
+            job_info = get_running_jobs_from_prod_db() if worker else None
+            machine_id = select_machine_interactive(targets, job_info=job_info)
+        else:
+            machine_id = targets[0]["id"]
+        
+        if not machine_id:
+            raise typer.Exit(1)
+        
+        machine_name = next((m.get("name", "unknown") for m in targets if m["id"] == machine_id), "unknown")
+        console.print(f"[bold blue]📋 Streaming logs from {machine_name} ({machine_id[:12]}...)...[/bold blue]")
+        cmd_args.extend(["--instance", machine_id])
     else:
-        # Default: tail
         console.print("[bold blue]📋 Streaming logs (Ctrl+C to stop)...[/bold blue]")
-        try:
-            run_fly_command(["logs"])
-        except KeyboardInterrupt:
-            console.print("\n[yellow]Stopped streaming logs[/yellow]")
+    
+    # Add hours filter if specified
+    if hours is not None:
+        cmd_args.extend(["--hours", str(hours)])
+    
+    # Run the logs command
+    try:
+        run_fly_command(cmd_args)
+    except KeyboardInterrupt:
+        console.print("\n[yellow]Stopped streaming logs[/yellow]")
 
 
 @app.command()
