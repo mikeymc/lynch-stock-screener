@@ -453,48 +453,46 @@ class EdgarFetcher:
             return []
 
         # Filter for annual reports (10-K for US, 20-F for foreign)
-        # EDGAR has multiple entries per fiscal year:
-        # - Annual values with ~365 day duration (start to end)
-        # - Quarterly values with ~90 day duration
-        # We filter by duration >= 360 days to ensure we get the annual value.
-        # This was validated against SEC filings for AAPL, MSFT, Loews, PG.
+        # Use dict to keep only the highest net_income for each fiscal year
         annual_net_income_by_year = {}
 
         for entry in net_income_data_list:
             if entry.get('form') in ['10-K', '20-F']:
                 fiscal_end = entry.get('end')
+                frame = entry.get('frame', '')
                 net_income = entry.get('val')
-                start = entry.get('start')
 
-                if net_income is not None and fiscal_end and start:
-                    # Calculate period duration - only accept annual periods (≥360 days)
-                    try:
-                        from datetime import datetime
-                        d1 = datetime.strptime(start, '%Y-%m-%d')
-                        d2 = datetime.strptime(fiscal_end, '%Y-%m-%d')
-                        duration = (d2 - d1).days
-                        if duration < 360:
-                            continue  # Skip quarterly values
-                    except (ValueError, TypeError):
-                        continue  # Skip if dates can't be parsed
+                # Skip quarterly entries (frames ending in Q1, Q2, Q3, Q4)
+                if frame and frame.endswith(('Q1', 'Q2', 'Q3', 'Q4')):
+                    continue
 
+                if net_income is not None and fiscal_end:
                     # Use fiscal_end year as the key (this is the actual fiscal year)
                     year = int(fiscal_end[:4])
 
-                    # Keep entry for each unique fiscal_end, preferring later entries 
-                    # (which may be restated/corrected values)
+                    # Group by unique fiscal_end dates, keep highest absolute value
                     if fiscal_end not in annual_net_income_by_year:
                         annual_net_income_by_year[fiscal_end] = {
                             'year': year,
                             'net_income': net_income,
                             'fiscal_end': fiscal_end
                         }
+                    elif abs(net_income) > abs(annual_net_income_by_year[fiscal_end]['net_income']):
+                        # Keep highest absolute value (in case of duplicates)
+                        annual_net_income_by_year[fiscal_end] = {
+                            'year': year,
+                            'net_income': net_income,
+                            'fiscal_end': fiscal_end
+                        }
 
-        # Group by year (e.g., if fiscal_end is 2024-06-30, that's FY2024)
+        # Group by year, keeping highest absolute value per year
+        # (This handles cases where multiple fiscal_end dates map to same year)
         by_year = {}
         for fiscal_end, entry in annual_net_income_by_year.items():
             year = entry['year']
             if year not in by_year:
+                by_year[year] = entry
+            elif abs(entry['net_income']) > abs(by_year[year]['net_income']):
                 by_year[year] = entry
 
         # Convert dict to list and sort by year descending
@@ -731,11 +729,9 @@ class EdgarFetcher:
                     seen_quarters.add((year, quarter))
 
         # Get annual data to calculate Q4
-        # EDGAR has multiple entries per fiscal year:
-        # - Annual values with ~365 day duration (start to end)
-        # - Quarterly values with ~90 day duration
-        # We filter by duration >= 360 days to ensure we get the annual value.
-        # This was validated against SEC filings for AAPL, MSFT, Loews, PG.
+        # EDGAR has multiple entries per fiscal year with different 'end' dates
+        # We need to select the entry where 'end' date's year matches the fiscal year
+        # to get the correct fiscal_end for Q4
         annual_net_income_by_year = {}
 
         for entry in net_income_data_list:
@@ -743,20 +739,8 @@ class EdgarFetcher:
                 fy = entry.get('fy')
                 net_income = entry.get('val')
                 fiscal_end = entry.get('end')
-                start = entry.get('start')
 
-                if fy and net_income is not None and fiscal_end and start:
-                    # Calculate period duration - only accept annual periods (≥360 days)
-                    try:
-                        from datetime import datetime
-                        d1 = datetime.strptime(start, '%Y-%m-%d')
-                        d2 = datetime.strptime(fiscal_end, '%Y-%m-%d')
-                        duration = (d2 - d1).days
-                        if duration < 360:
-                            continue  # Skip quarterly values
-                    except (ValueError, TypeError):
-                        continue  # Skip if dates can't be parsed
-
+                if fy and net_income is not None and fiscal_end:
                     # Extract year from fiscal_end
                     end_year = int(fiscal_end[:4])
                     
