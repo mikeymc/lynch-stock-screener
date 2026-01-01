@@ -540,9 +540,36 @@ class BackgroundWorker:
         total = len(all_symbols)
         logger.info(f"Caching price history for {total} stocks (ordered by score)")
         
+        # Get force_refresh param
+        force_refresh = params.get('force_refresh', False)
+        
+        # Calculate week start (most recent Saturday) for cache checking
+        # This ensures we only re-fetch once per fiscal week
+        from datetime import datetime, timedelta
+        today = datetime.now()
+        days_since_saturday = (today.weekday() + 2) % 7  # Saturday = 0 days back on Saturday
+        week_start = (today - timedelta(days=days_since_saturday)).strftime('%Y-%m-%d')
+        
+        # Filter out symbols already checked this week (unless force_refresh)
+        skipped = 0
+        if not force_refresh:
+            symbols_to_process = []
+            for symbol in all_symbols:
+                if self.db.was_cache_checked_since(symbol, 'prices', week_start):
+                    skipped += 1
+                else:
+                    symbols_to_process.append(symbol)
+            
+            if skipped > 0:
+                logger.info(f"Price history cache: skipped {skipped} symbols already checked since {week_start}")
+            all_symbols = symbols_to_process
+        
+        total_to_process = len(all_symbols)
+        logger.info(f"Processing {total_to_process} stocks for price history (skipped {skipped})")
+        
         self.db.update_job_progress(job_id, progress_pct=10, 
-                                    progress_message=f'Caching price history for {total} stocks...',
-                                    total_count=total)
+                                    progress_message=f'Caching price history for {total_to_process} stocks (skipped {skipped})...',
+                                    total_count=total_to_process)
         
         # Initialize fetchers
         price_client = YFinancePriceClient()
@@ -552,13 +579,14 @@ class BackgroundWorker:
         processed = 0
         cached = 0
         errors = 0
+
         
         # Process in batches with threading for performance
         # Reduced from 50/12 to 25/6 to prevent OOM on 2GB workers (yfinance DataFrames accumulate)
         BATCH_SIZE = 25
         MAX_WORKERS = 6
         
-        for batch_start in range(0, total, BATCH_SIZE):
+        for batch_start in range(0, total_to_process, BATCH_SIZE):
             if self.shutdown_requested:
                 logger.info("Shutdown requested, stopping price history cache job")
                 break
@@ -569,7 +597,7 @@ class BackgroundWorker:
                 logger.info(f"Job {job_id} was cancelled, stopping")
                 return
             
-            batch_end = min(batch_start + BATCH_SIZE, total)
+            batch_end = min(batch_start + BATCH_SIZE, total_to_process)
             batch = all_symbols[batch_start:batch_end]
             
             with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
@@ -580,30 +608,33 @@ class BackgroundWorker:
                     try:
                         future.result()
                         cached += 1
+                        # Record successful cache check with today's date as last_data_date
+                        self.db.record_cache_check(symbol, 'prices', today.strftime('%Y-%m-%d'))
                     except Exception as e:
                         logger.debug(f"[{symbol}] Price history cache error: {e}")
                         errors += 1
                     processed += 1
             
             # Update progress
-            if processed % 100 == 0 or batch_end == total:
-                pct = 10 + int((processed / total) * 85)
+            if processed % 100 == 0 or batch_end == total_to_process:
+                pct = 10 + int((processed / total_to_process) * 85)
                 self.db.update_job_progress(
                     job_id, 
                     progress_pct=pct,
-                    progress_message=f'Cached {processed}/{total} stocks ({cached} successful, {errors} errors)',
+                    progress_message=f'Cached {processed}/{total_to_process} stocks ({cached} successful, {errors} errors, {skipped} skipped)',
                     processed_count=processed,
-                    total_count=total
+                    total_count=total_to_process
                 )
                 self._send_heartbeat(job_id)
-                logger.info(f"Price history cache progress: {processed}/{total} (cached: {cached}, errors: {errors}) | MEMORY: {get_memory_mb():.0f}MB")
-                check_memory_warning(f"[price_history {processed}/{total}]")
+                logger.info(f"Price history cache progress: {processed}/{total_to_process} (cached: {cached}, errors: {errors}) | MEMORY: {get_memory_mb():.0f}MB")
+                check_memory_warning(f"[price_history {processed}/{total_to_process}]")
         
         # Complete job
         result = {
-            'total_stocks': total,
+            'total_stocks': total,  # Original total before skipping
             'processed': processed,
             'cached': cached,
+            'skipped': skipped,
             'errors': errors
         }
         self.db.complete_job(job_id, result)
