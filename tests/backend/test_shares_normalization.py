@@ -75,7 +75,7 @@ def test_eps_calculation_with_normalized_shares():
                 "NetIncomeLoss": {
                     "units": {
                         "USD": [
-                            {"form": "10-K", "val": 8223000000, "end": "2024-12-31"},  # $8.223B net income
+                            {"form": "10-K", "val": 8223000000, "start": "2024-01-01", "end": "2024-12-31"},  # $8.223B net income
                         ]
                     }
                 }
