@@ -748,13 +748,15 @@ class BackgroundWorker:
             region: Region filter (us, north-america, europe, asia, all)
             force_refresh: If True, bypass cache and fetch fresh data
             symbols: Optional list of specific symbols to process (for testing)
+            use_rss: If True, use RSS feed to pre-filter to only stocks with new filings
         """
         limit = params.get('limit')
         region = params.get('region', 'us')
         force_refresh = params.get('force_refresh', False)
         specific_symbols = params.get('symbols')  # Optional list of specific symbols
+        use_rss = params.get('use_rss', False)
         
-        logger.info(f"Starting 10-K/10-Q cache job {job_id} (region={region})")
+        logger.info(f"Starting 10-K/10-Q cache job {job_id} (region={region}, use_rss={use_rss})")
         
         from edgar_fetcher import EdgarFetcher
         from tradingview_fetcher import TradingViewFetcher
@@ -810,6 +812,29 @@ class BackgroundWorker:
         # Apply limit if specified
         if limit and limit < len(all_symbols):
             all_symbols = all_symbols[:limit]
+        
+        # RSS-based optimization: only process stocks with new filings
+        if use_rss and not force_refresh and not specific_symbols:
+            from sec_rss_client import SECRSSClient
+            self.db.update_job_progress(job_id, progress_pct=9, progress_message='Checking RSS feed for new 10-K/10-Q filings...')
+            
+            sec_user_agent = os.environ.get('SEC_USER_AGENT', 'Lynch Stock Screener mikey@example.com')
+            rss_client = SECRSSClient(sec_user_agent)
+            
+            # Get tickers with new 10-K OR 10-Q filings from RSS
+            known_tickers = set(all_symbols)
+            tickers_10k = rss_client.get_tickers_with_new_filings('10-K', known_tickers=known_tickers)
+            tickers_10q = rss_client.get_tickers_with_new_filings('10-Q', known_tickers=known_tickers)
+            tickers_with_filings = tickers_10k | tickers_10q
+            
+            if tickers_with_filings:
+                # Filter to only stocks with new filings, preserving order
+                all_symbols = [s for s in all_symbols if s in tickers_with_filings]
+                logger.info(f"RSS optimization: reduced from {len(known_tickers)} to {len(all_symbols)} stocks with new 10-K/10-Q filings")
+            else:
+                logger.info("RSS optimization: no new 10-K/10-Q filings found, skipping cache job")
+                self.db.complete_job(job_id, {'total_stocks': 0, 'processed': 0, 'cached': 0, 'errors': 0, 'rss_optimized': True})
+                return
         
         total = len(all_symbols)
         logger.info(f"Caching 10-K/10-Q for {total} stocks (region={region}, sorted by score)")
@@ -893,12 +918,14 @@ class BackgroundWorker:
             limit: Optional max number of stocks to process
             region: Region filter (us, north-america, europe, asia, all)
             force_refresh: If True, bypass cache and fetch fresh data
+            use_rss: If True, use RSS feed to pre-filter to only stocks with new filings
         """
         limit = params.get('limit')
         region = params.get('region', 'us')
         force_refresh = params.get('force_refresh', False)
+        use_rss = params.get('use_rss', False)
         
-        logger.info(f"Starting 8-K cache job {job_id} (region={region})")
+        logger.info(f"Starting 8-K cache job {job_id} (region={region}, use_rss={use_rss})")
         
         from edgar_fetcher import EdgarFetcher
         from sec_8k_client import SEC8KClient
@@ -948,6 +975,27 @@ class BackgroundWorker:
         # Apply limit if specified
         if limit and limit < len(all_symbols):
             all_symbols = all_symbols[:limit]
+        
+        # RSS-based optimization: only process stocks with new filings
+        if use_rss and not force_refresh:
+            from sec_rss_client import SECRSSClient
+            self.db.update_job_progress(job_id, progress_pct=9, progress_message='Checking RSS feed for new 8-K filings...')
+            
+            sec_user_agent = os.environ.get('SEC_USER_AGENT', 'Lynch Stock Screener mikey@example.com')
+            rss_client = SECRSSClient(sec_user_agent)
+            
+            # Get tickers with new 8-K filings from RSS
+            known_tickers = set(all_symbols)
+            tickers_with_filings = rss_client.get_tickers_with_new_filings('8-K', known_tickers=known_tickers)
+            
+            if tickers_with_filings:
+                # Filter to only stocks with new filings, preserving order
+                all_symbols = [s for s in all_symbols if s in tickers_with_filings]
+                logger.info(f"RSS optimization: reduced from {len(known_tickers)} to {len(all_symbols)} stocks with new 8-K filings")
+            else:
+                logger.info("RSS optimization: no new 8-K filings found, skipping cache job")
+                self.db.complete_job(job_id, {'total_stocks': 0, 'processed': 0, 'cached': 0, 'errors': 0, 'rss_optimized': True})
+                return
         
         total = len(all_symbols)
         logger.info(f"Caching 8-K events for {total} stocks (region={region}, sorted by score)")
@@ -1038,11 +1086,13 @@ class BackgroundWorker:
         Params:
             limit: Optional max number of stocks to process
             region: Region filter (us, north-america, europe, asia, all)
+            use_rss: If True, use RSS feed to pre-filter to only stocks with new filings
         """
         limit = params.get('limit')
         region = params.get('region', 'us')
+        use_rss = params.get('use_rss', False)
         
-        logger.info(f"Starting Form 4 cache job {job_id} (region={region})")
+        logger.info(f"Starting Form 4 cache job {job_id} (region={region}, use_rss={use_rss})")
         
         from edgar_fetcher import EdgarFetcher
         from tradingview_fetcher import TradingViewFetcher
@@ -1089,6 +1139,27 @@ class BackgroundWorker:
         if limit and limit < len(all_symbols):
             all_symbols = all_symbols[:limit]
         
+        # RSS-based optimization: only process stocks with new filings
+        if use_rss:
+            from sec_rss_client import SECRSSClient
+            self.db.update_job_progress(job_id, progress_pct=9, progress_message='Checking RSS feed for new Form 4 filings...')
+            
+            sec_user_agent = os.environ.get('SEC_USER_AGENT', 'Lynch Stock Screener mikey@example.com')
+            rss_client = SECRSSClient(sec_user_agent)
+            
+            # Get tickers with new Form 4 filings from RSS
+            known_tickers = set(all_symbols)
+            tickers_with_filings = rss_client.get_tickers_with_new_filings('FORM4', known_tickers=known_tickers)
+            
+            if tickers_with_filings:
+                # Filter to only stocks with new filings, preserving order
+                all_symbols = [s for s in all_symbols if s in tickers_with_filings]
+                logger.info(f"RSS optimization: reduced from {len(known_tickers)} to {len(all_symbols)} stocks with new Form 4 filings")
+            else:
+                logger.info("RSS optimization: no new Form 4 filings found, skipping cache job")
+                self.db.complete_job(job_id, {'total_stocks': 0, 'processed': 0, 'cached': 0, 'errors': 0, 'rss_optimized': True})
+                return
+        
         total = len(all_symbols)
         logger.info(f"Caching Form 4 filings for {total} stocks (region={region}, sorted by score)")
         
@@ -1109,8 +1180,17 @@ class BackgroundWorker:
         
         processed = 0
         cached = 0
+        skipped = 0
         errors = 0
         total_transactions = 0
+        
+        # Calculate since_date for cache checking (same as fetch_form4_filings default)
+        from datetime import datetime, timedelta
+        one_year_ago = datetime.now() - timedelta(days=365)
+        since_date = one_year_ago.strftime('%Y-%m-%d')
+        
+        # Get force_refresh param (default False)
+        force_refresh = params.get('force_refresh', False)
         
         for symbol in all_symbols:
             if self.shutdown_requested:
@@ -1122,6 +1202,16 @@ class BackgroundWorker:
             if job_status and job_status.get('status') == 'cancelled':
                 logger.info(f"Job {job_id} was cancelled, stopping")
                 return
+            
+            # Skip if we already have recent Form 4 data for this symbol (unless force_refresh)
+            if not force_refresh and self.db.has_recent_insider_trades(symbol, since_date):
+                skipped += 1
+                processed += 1
+                
+                # Log skip progress periodically
+                if skipped % 100 == 0:
+                    logger.info(f"Form 4 cache: skipped {skipped} already-cached symbols")
+                continue
             
             try:
                 # Fetch and parse Form 4 filings
@@ -1172,14 +1262,14 @@ class BackgroundWorker:
                 self.db.update_job_progress(
                     job_id,
                     progress_pct=pct,
-                    progress_message=f'Cached {processed}/{total} stocks ({total_transactions} transactions, {errors} errors)',
+                    progress_message=f'Processed {processed}/{total} stocks (cached: {cached}, skipped: {skipped}, errors: {errors})',
                     processed_count=processed,
                     total_count=total
                 )
                 self._send_heartbeat(job_id)
             
             if processed % 10 == 0:
-                logger.info(f"Form 4 cache progress: {processed}/{total} (transactions: {total_transactions}, errors: {errors}) | MEMORY: {get_memory_mb():.0f}MB")
+                logger.info(f"Form 4 cache progress: {processed}/{total} (cached: {cached}, skipped: {skipped}, transactions: {total_transactions}, errors: {errors}) | MEMORY: {get_memory_mb():.0f}MB")
                 check_memory_warning(f"[form4 {processed}/{total}]")
         
         # Complete job
@@ -1187,6 +1277,7 @@ class BackgroundWorker:
             'total_stocks': total,
             'processed': processed,
             'cached': cached,
+            'skipped': skipped,
             'total_transactions': total_transactions,
             'errors': errors
         }
@@ -1618,7 +1709,12 @@ class BackgroundWorker:
                     
                     try:
                         logger.info(f"[{symbol}] Fetching transcript from MarketBeat...")
-                        result = await scraper.fetch_latest_transcript(symbol)
+                        # Add 90 second timeout per stock to prevent infinite hangs
+                        import asyncio
+                        result = await asyncio.wait_for(
+                            scraper.fetch_latest_transcript(symbol),
+                            timeout=90.0
+                        )
                         if result:
                             logger.info(f"[{symbol}] Saving transcript ({len(result.get('transcript_text', ''))} chars)...")
                             self.db.save_earnings_transcript(symbol, result)
@@ -1636,6 +1732,9 @@ class BackgroundWorker:
                                 'source_url': ''
                             })
                             skipped += 1
+                    except asyncio.TimeoutError:
+                        logger.warning(f"[{symbol}] Transcript fetch TIMED OUT after 90s - skipping")
+                        errors += 1
                     except Exception as e:
                         logger.warning(f"[{symbol}] Transcript cache error: {e}")
                         errors += 1

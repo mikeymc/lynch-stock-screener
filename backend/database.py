@@ -1396,6 +1396,31 @@ class Database:
         finally:
             self.return_connection(conn)
 
+    def has_recent_insider_trades(self, symbol: str, since_date: str) -> bool:
+        """
+        Check if we have insider trades (Form 4 data) for a symbol since a given date.
+        
+        Used by Form 4 cache job to skip already-processed symbols.
+        
+        Args:
+            symbol: Stock symbol
+            since_date: Date string (YYYY-MM-DD) - returns True if we have trades on or after this date
+            
+        Returns:
+            True if we have at least one insider trade since since_date
+        """
+        conn = self.get_connection()
+        try:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT 1 FROM insider_trades
+                WHERE symbol = %s AND transaction_date >= %s
+                LIMIT 1
+            """, (symbol, since_date))
+            return cursor.fetchone() is not None
+        finally:
+            self.return_connection(conn)
+
     def save_earnings_history(self, symbol: str, year: int, eps: float, revenue: float, fiscal_end: Optional[str] = None, debt_to_equity: Optional[float] = None, period: str = 'annual', net_income: Optional[float] = None, dividend_amount: Optional[float] = None, operating_cash_flow: Optional[float] = None, capital_expenditures: Optional[float] = None, free_cash_flow: Optional[float] = None):
         sql = """
             INSERT INTO earnings_history
