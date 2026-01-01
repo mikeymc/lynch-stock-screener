@@ -81,9 +81,9 @@ def get_memory_mb() -> float:
     return usage.ru_maxrss / 1024
 
 
-# Memory alerting thresholds (based on 2GB worker allocation)
-MEMORY_WARNING_MB = 1600   # 80% of 2GB - log warning
-MEMORY_CRITICAL_MB = 1900  # 95% of 2GB - log critical
+# Memory alerting thresholds (based on 4GB worker allocation)
+MEMORY_WARNING_MB = 3200   # 80% of 4GB - log warning
+MEMORY_CRITICAL_MB = 3800  # 95% of 4GB - log critical
 
 
 def check_memory_warning(context: str = "") -> None:
@@ -95,7 +95,7 @@ def check_memory_warning(context: str = "") -> None:
     
     if used_mb >= MEMORY_CRITICAL_MB:
         logger.critical(
-            f"🚨 CRITICAL MEMORY: {used_mb:.0f}MB used (limit ~2048MB) - OOM risk! {context}"
+            f"🚨 CRITICAL MEMORY: {used_mb:.0f}MB used (limit ~4096MB) - OOM risk! {context}"
         )
     elif used_mb >= MEMORY_WARNING_MB:
         logger.warning(
