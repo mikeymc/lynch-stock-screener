@@ -179,8 +179,10 @@ class TestWorkerIntegration:
         # Check for force_refresh handling
         assert "force_refresh = params.get('force_refresh'" in content, \
             "Worker should get force_refresh from params"
-        assert "not force_refresh and self.db.has_recent_insider_trades" in content, \
-            "Skip logic should respect force_refresh flag"
+        assert "if not force_refresh:" in content, \
+            "Skip logic should be wrapped in force_refresh check"
+        assert "has_recent_insider_trades" in content, \
+            "Skip logic should check for existing trades"
 
 
 if __name__ == '__main__':

@@ -1203,25 +1203,42 @@ class BackgroundWorker:
                 logger.info(f"Job {job_id} was cancelled, stopping")
                 return
             
-            # Skip if we already have recent Form 4 data for this symbol (unless force_refresh)
-            if not force_refresh and self.db.has_recent_insider_trades(symbol, since_date):
-                skipped += 1
-                processed += 1
+            # Skip if we already checked this symbol recently (unless force_refresh)
+            # This prevents redundant API calls even for symbols with no transactions
+            if not force_refresh:
+                # Check 1: Do we have actual transaction data since since_date?
+                if self.db.has_recent_insider_trades(symbol, since_date):
+                    skipped += 1
+                    processed += 1
+                    if skipped % 100 == 0:
+                        logger.info(f"Form 4 cache: skipped {skipped} already-cached symbols")
+                    continue
                 
-                # Log skip progress periodically
-                if skipped % 100 == 0:
-                    logger.info(f"Form 4 cache: skipped {skipped} already-cached symbols")
-                continue
+                # Check 2: Did we already check this symbol today (even if no data was found)?
+                today = datetime.now().strftime('%Y-%m-%d')
+                if self.db.was_cache_checked_since(symbol, 'form4', today):
+                    skipped += 1
+                    processed += 1
+                    if skipped % 100 == 0:
+                        logger.info(f"Form 4 cache: skipped {skipped} already-cached symbols")
+                    continue
             
             try:
                 # Fetch and parse Form 4 filings
                 transactions = edgar_fetcher.fetch_form4_filings(symbol)
                 
+                # Find most recent transaction date for cache tracking
+                last_data_date = None
                 if transactions:
                     # Save to database with enriched data
                     self.db.save_insider_trades(symbol, transactions)
                     total_transactions += len(transactions)
                     cached += 1
+                    
+                    # Get the most recent transaction date
+                    dates = [t.get('transaction_date') for t in transactions if t.get('transaction_date')]
+                    if dates:
+                        last_data_date = max(dates)
                     
                     # Calculate Insider Net Buying (Last 6 Months)
                     # Use accurate Form 4 data (Buy = P, Sell = S/F/D)
@@ -1249,6 +1266,9 @@ class BackgroundWorker:
                 else:
                     # No transactions found (not an error, just no Form 4s)
                     cached += 1
+                
+                # Record that we checked this symbol (even if no data found)
+                self.db.record_cache_check(symbol, 'form4', last_data_date)
                     
             except Exception as e:
                 logger.debug(f"[{symbol}] Form 4 cache error: {e}")

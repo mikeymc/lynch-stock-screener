@@ -594,6 +594,24 @@ class Database:
             END $$;
         """)
 
+        # Cache checks table - tracks when symbols were last checked for each cache type
+        # Used to skip redundant API calls for symbols that have already been processed
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS cache_checks (
+                symbol TEXT NOT NULL,
+                cache_type TEXT NOT NULL,
+                last_checked DATE NOT NULL,
+                last_data_date DATE,
+                PRIMARY KEY (symbol, cache_type)
+            )
+        """)
+        
+        # Index for efficient lookups by cache_type (for bulk operations)
+        cursor.execute("""
+            CREATE INDEX IF NOT EXISTS idx_cache_checks_type 
+            ON cache_checks(cache_type, last_checked)
+        """)
+
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS earnings_history (
                 id SERIAL PRIMARY KEY,
@@ -1418,6 +1436,123 @@ class Database:
                 LIMIT 1
             """, (symbol, since_date))
             return cursor.fetchone() is not None
+        finally:
+            self.return_connection(conn)
+
+    # ==================== Cache Check Methods ====================
+    
+    def record_cache_check(self, symbol: str, cache_type: str, 
+                           last_data_date: Optional[str] = None) -> None:
+        """
+        Record that a symbol was checked for a specific cache type.
+        
+        Call this after processing a symbol, even if no data was found.
+        This prevents redundant API calls on subsequent cache runs.
+        
+        Args:
+            symbol: Stock symbol
+            cache_type: Type of cache ('form4', '10k', '8k', 'prices', 'transcripts', 'news')
+            last_data_date: Optional date of most recent data found (for incremental fetches)
+        """
+        conn = self.get_connection()
+        try:
+            cursor = conn.cursor()
+            cursor.execute("""
+                INSERT INTO cache_checks (symbol, cache_type, last_checked, last_data_date)
+                VALUES (%s, %s, CURRENT_DATE, %s)
+                ON CONFLICT (symbol, cache_type) DO UPDATE SET
+                    last_checked = CURRENT_DATE,
+                    last_data_date = COALESCE(EXCLUDED.last_data_date, cache_checks.last_data_date)
+            """, (symbol, cache_type, last_data_date))
+            conn.commit()
+        finally:
+            self.return_connection(conn)
+    
+    def was_cache_checked_since(self, symbol: str, cache_type: str, since_date: str) -> bool:
+        """
+        Check if a symbol was already checked for a cache type since a given date.
+        
+        Used by cache jobs to skip symbols that have already been processed.
+        
+        Args:
+            symbol: Stock symbol
+            cache_type: Type of cache ('form4', '10k', '8k', 'prices', 'transcripts', 'news')
+            since_date: Date string (YYYY-MM-DD) - returns True if checked on or after this date
+            
+        Returns:
+            True if the symbol was checked since since_date
+        """
+        conn = self.get_connection()
+        try:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT 1 FROM cache_checks
+                WHERE symbol = %s AND cache_type = %s AND last_checked >= %s
+                LIMIT 1
+            """, (symbol, cache_type, since_date))
+            return cursor.fetchone() is not None
+        finally:
+            self.return_connection(conn)
+    
+    def get_cache_check(self, symbol: str, cache_type: str) -> Optional[Dict[str, Any]]:
+        """
+        Get cache check info for a symbol and cache type.
+        
+        Returns:
+            Dict with last_checked and last_data_date, or None if not found
+        """
+        conn = self.get_connection()
+        try:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT last_checked, last_data_date FROM cache_checks
+                WHERE symbol = %s AND cache_type = %s
+            """, (symbol, cache_type))
+            row = cursor.fetchone()
+            if row:
+                return {
+                    'last_checked': row[0].isoformat() if row[0] else None,
+                    'last_data_date': row[1].isoformat() if row[1] else None
+                }
+            return None
+        finally:
+            self.return_connection(conn)
+    
+    def clear_cache_checks(self, cache_type: Optional[str] = None, 
+                           symbol: Optional[str] = None) -> int:
+        """
+        Clear cache check records.
+        
+        Args:
+            cache_type: Optional - clear only this cache type
+            symbol: Optional - clear only this symbol
+            
+        Returns:
+            Number of rows deleted
+        """
+        conn = self.get_connection()
+        try:
+            cursor = conn.cursor()
+            if symbol and cache_type:
+                cursor.execute(
+                    "DELETE FROM cache_checks WHERE symbol = %s AND cache_type = %s",
+                    (symbol, cache_type)
+                )
+            elif cache_type:
+                cursor.execute(
+                    "DELETE FROM cache_checks WHERE cache_type = %s",
+                    (cache_type,)
+                )
+            elif symbol:
+                cursor.execute(
+                    "DELETE FROM cache_checks WHERE symbol = %s",
+                    (symbol,)
+                )
+            else:
+                cursor.execute("DELETE FROM cache_checks")
+            deleted = cursor.rowcount
+            conn.commit()
+            return deleted
         finally:
             self.return_connection(conn)
 
