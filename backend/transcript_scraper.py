@@ -159,31 +159,40 @@ class TranscriptScraper:
     
     async def _find_transcript_link(self, page: Page) -> Optional[str]:
         """Find the transcript link on the earnings page using fast JS evaluation."""
+        import asyncio
+        
         try:
             # Use JavaScript to find link in a single call instead of slow Python loop
-            transcript_link = await page.evaluate('''() => {
-                // Look for links containing "conference call transcript" text
-                const links = Array.from(document.querySelectorAll('a'));
-                
-                for (const link of links) {
-                    const text = (link.innerText || '').toLowerCase();
-                    if (text.includes('conference call transcript')) {
-                        return link.href;
+            # Add timeout to prevent hanging on problematic pages
+            async def evaluate_with_timeout():
+                return await page.evaluate('''() => {
+                    // Look for links containing "conference call transcript" text
+                    const links = Array.from(document.querySelectorAll('a'));
+                    
+                    for (const link of links) {
+                        const text = (link.innerText || '').toLowerCase();
+                        if (text.includes('conference call transcript')) {
+                            return link.href;
+                        }
                     }
-                }
-                
-                // Fallback: Look for links with #transcript in href
-                for (const link of links) {
-                    if (link.href && link.href.includes('#transcript')) {
-                        return link.href;
+                    
+                    // Fallback: Look for links with #transcript in href
+                    for (const link of links) {
+                        if (link.href && link.href.includes('#transcript')) {
+                            return link.href;
+                        }
                     }
-                }
-                
-                return null;
-            }''')
+                    
+                    return null;
+                }''')
             
+            # 10 second timeout for the JS evaluation
+            transcript_link = await asyncio.wait_for(evaluate_with_timeout(), timeout=10.0)
             return transcript_link
             
+        except asyncio.TimeoutError:
+            logger.warning(f"[TranscriptScraper] Timeout during link search (10s)")
+            return None
         except Exception as e:
             logger.error(f"[TranscriptScraper] Error finding transcript link: {e}")
             return None

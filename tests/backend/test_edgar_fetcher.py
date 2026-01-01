@@ -1027,7 +1027,7 @@ def test_parse_quarterly_net_income_includes_losses(edgar_fetcher):
                     "units": {
                         "USD": [
                             # FY2020 Annual: Total $500M
-                            {"end": "2020-12-31", "val": 500000000, "fy": 2020, "form": "10-K"},
+                            {"start": "2020-01-01", "end": "2020-12-31", "val": 500000000, "fy": 2020, "form": "10-K"},
                             # Q1 2020: $300M (cumulative)
                             {"end": "2020-03-31", "val": 300000000, "fy": 2020, "fp": "Q1", "form": "10-Q"},
                             # Q2 2020: $250M (cumulative) - Q2 had a loss!
@@ -1076,7 +1076,7 @@ def test_parse_quarterly_net_income_accepts_all_mathematically_valid_data(edgar_
                     "units": {
                         "USD": [
                             # FY2020 Annual: Total $500M
-                            {"end": "2020-12-31", "val": 500000000, "fy": 2020, "form": "10-K"},
+                            {"start": "2020-01-01", "end": "2020-12-31", "val": 500000000, "fy": 2020, "form": "10-K"},
                             # Q1 2020: $100M (cumulative)
                             {"end": "2020-03-31", "val": 100000000, "fy": 2020, "fp": "Q1", "form": "10-Q"},
                             # Q2 2020: $300M (cumulative) - big Q2!
