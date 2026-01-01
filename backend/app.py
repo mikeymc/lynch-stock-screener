@@ -507,32 +507,6 @@ def update_settings():
         return jsonify({'error': str(e)}), 500
 
 
-@app.route('/api/admin/clear-weekly-prices', methods=['POST'])
-def clear_weekly_prices():
-    """Clear weekly price cache (admin endpoint for CLI)."""
-    # Check authentication (OAuth OR API token)
-    auth_error = check_flexible_auth()
-    if auth_error:
-        return auth_error
-    
-    try:
-        data = request.get_json() or {}
-        symbol = data.get('symbol')  # None means clear all
-        
-        rows_deleted = db.clear_weekly_prices(symbol)
-        
-        logger.info(f"Cleared weekly prices: symbol={symbol or 'ALL'}, rows_deleted={rows_deleted}")
-        
-        return jsonify({
-            'success': True,
-            'symbol': symbol,
-            'rows_deleted': rows_deleted
-        })
-    except Exception as e:
-        logger.error(f"Error clearing weekly prices: {e}")
-        return jsonify({'error': str(e)}), 500
-
-
 @app.route('/api/admin/clear-material-events', methods=['POST'])
 def clear_material_events():
     """Clear material events (8-K) cache (admin endpoint for CLI)."""
