@@ -1,6 +1,7 @@
 flask
 flask-cors
 flask-session
+flask-sqlalchemy
 yfinance
 pandas
 requests

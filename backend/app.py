@@ -4,6 +4,7 @@
 from flask import Flask, jsonify, request, Response, stream_with_context, send_from_directory, session, redirect
 from flask_cors import CORS
 from flask_session import Session
+from flask_sqlalchemy import SQLAlchemy
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import threading
 import json
@@ -55,9 +56,27 @@ logging.getLogger('peewee').setLevel(logging.WARNING)
 
 app = Flask(__name__, static_folder='static', static_url_path='')
 
-# Configure Flask sessions
+# Configure Flask sessions with SQLAlchemy for persistence across deployments
 app.config['SECRET_KEY'] = os.getenv('SESSION_SECRET_KEY', 'dev-secret-key-change-in-production')
-app.config['SESSION_TYPE'] = os.getenv('SESSION_TYPE', 'filesystem')
+
+# Database URL for SQLAlchemy session storage
+# Use existing DATABASE_URL or construct from individual env vars
+database_url_for_sessions = os.environ.get('DATABASE_URL')
+if not database_url_for_sessions:
+    _db_host = os.environ.get('DB_HOST', 'localhost')
+    _db_port = os.environ.get('DB_PORT', '5432')
+    _db_name = os.environ.get('DB_NAME', 'lynch_stocks')
+    _db_user = os.environ.get('DB_USER', 'lynch')
+    _db_password = os.environ.get('DB_PASSWORD', 'lynch_dev_password')
+    database_url_for_sessions = f"postgresql://{_db_user}:{_db_password}@{_db_host}:{_db_port}/{_db_name}"
+
+app.config['SQLALCHEMY_DATABASE_URI'] = database_url_for_sessions
+app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+
+# Use SQLAlchemy-backed sessions (persists across deployments)
+session_db = SQLAlchemy(app)
+app.config['SESSION_TYPE'] = 'sqlalchemy'
+app.config['SESSION_SQLALCHEMY'] = session_db
 app.config['SESSION_PERMANENT'] = True
 app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(days=30)
 
@@ -68,7 +87,7 @@ app.config['SESSION_COOKIE_SECURE'] = is_production
 app.config['SESSION_COOKIE_HTTPONLY'] = True
 app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
 
-# Initialize session
+# Initialize session (creates sessions table if not exists)
 Session(app)
 
 # Configure CORS with credentials support
