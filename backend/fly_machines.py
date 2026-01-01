@@ -169,8 +169,8 @@ class FlyMachineManager:
                     'env': self.get_env_vars(),
                     'guest': {
                         'cpu_kind': 'shared',
-                        'cpus': 1,  # 1 vCPU sufficient for I/O-bound work
-                        'memory_mb': 2048  # Keep 2GB - peak usage ~1.2GB
+                        'cpus': 2,  # 2 vCPUs to allow 4GB memory (shared-cpu-1x max is 2GB)
+                        'memory_mb': 4096  # 4GB for Form 4, price_history, transcript jobs
                     },
                     'auto_destroy': True,  # Destroy when process exits
                     'restart': {

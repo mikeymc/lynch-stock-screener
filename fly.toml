@@ -24,7 +24,7 @@ primary_region = "iad"
 
 [[vm]]
   size = "shared-cpu-1x"
-  memory = "4gb"  # Changed: Increased from 2GB to 4GB for Form 4, price_history, transcript jobs
+  memory = "2gb"  # Web app only needs 2GB; workers are configured in fly_machines.py
 
 [env]
   PORT = "8080"

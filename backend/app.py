@@ -68,7 +68,14 @@ if not database_url_for_sessions:
     _db_name = os.environ.get('DB_NAME', 'lynch_stocks')
     _db_user = os.environ.get('DB_USER', 'lynch')
     _db_password = os.environ.get('DB_PASSWORD', 'lynch_dev_password')
-    database_url_for_sessions = f"postgresql://{_db_user}:{_db_password}@{_db_host}:{_db_port}/{_db_name}"
+    database_url_for_sessions = f"postgresql+psycopg://{_db_user}:{_db_password}@{_db_host}:{_db_port}/{_db_name}"
+else:
+    # Fix deprecated postgres:// scheme (Fly.io uses postgres://, SQLAlchemy requires postgresql://)
+    # Also switch to psycopg3 driver (postgresql+psycopg://)
+    if database_url_for_sessions.startswith('postgres://'):
+        database_url_for_sessions = database_url_for_sessions.replace('postgres://', 'postgresql+psycopg://', 1)
+    elif database_url_for_sessions.startswith('postgresql://'):
+        database_url_for_sessions = database_url_for_sessions.replace('postgresql://', 'postgresql+psycopg://', 1)
 
 app.config['SQLALCHEMY_DATABASE_URI'] = database_url_for_sessions
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
