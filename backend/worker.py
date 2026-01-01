@@ -442,6 +442,8 @@ class BackgroundWorker:
             'fail_count': fail_count,
             'session_id': session_id
         }
+        # Flush write queue before completing job
+        self.db.flush()
         self.db.complete_job(job_id, result)
         logger.info(f"Screening complete: {total_analyzed} stocks analyzed")
 
@@ -628,6 +630,12 @@ class BackgroundWorker:
                 self._send_heartbeat(job_id)
                 logger.info(f"Price history cache progress: {processed}/{total_to_process} (cached: {cached}, errors: {errors}) | MEMORY: {get_memory_mb():.0f}MB")
                 check_memory_warning(f"[price_history {processed}/{total_to_process}]")
+                
+                # Flush write queue every 100 symbols (non-blocking)
+                self.db.flush_async()
+        
+        # Final flush to ensure all queued writes are committed
+        self.db.flush()
         
         # Complete job
         result = {
@@ -637,6 +645,8 @@ class BackgroundWorker:
             'skipped': skipped,
             'errors': errors
         }
+        # Flush write queue before completing job
+        self.db.flush()
         self.db.complete_job(job_id, result)
         logger.info(f"Price history cache complete: {result}")
 
@@ -762,6 +772,8 @@ class BackgroundWorker:
             'cached': cached,
             'errors': errors
         }
+        # Flush write queue before completing job
+        self.db.flush()
         self.db.complete_job(job_id, result)
         logger.info(f"News cache complete: {result}")
 
@@ -933,6 +945,8 @@ class BackgroundWorker:
             'cached': cached,
             'errors': errors
         }
+        # Flush write queue before completing job
+        self.db.flush()
         self.db.complete_job(job_id, result)
         logger.info(f"10-K/10-Q cache complete: {result}")
 
@@ -1098,6 +1112,8 @@ class BackgroundWorker:
             'cached': cached,
             'errors': errors
         }
+        # Flush write queue before completing job
+        self.db.flush()
         self.db.complete_job(job_id, result)
         logger.info(f"8-K cache complete: {result}")
 
@@ -1322,6 +1338,13 @@ class BackgroundWorker:
             if processed % 10 == 0:
                 logger.info(f"Form 4 cache progress: {processed}/{total} (cached: {cached}, skipped: {skipped}, transactions: {total_transactions}, errors: {errors}) | MEMORY: {get_memory_mb():.0f}MB")
                 check_memory_warning(f"[form4 {processed}/{total}]")
+            
+            # Flush write queue every 100 symbols (non-blocking)
+            if processed % 100 == 0:
+                self.db.flush_async()
+        
+        # Final flush to ensure all queued writes are committed
+        self.db.flush()
         
         # Complete job
         result = {
@@ -1332,6 +1355,8 @@ class BackgroundWorker:
             'total_transactions': total_transactions,
             'errors': errors
         }
+        # Flush write queue before completing job
+        self.db.flush()
         self.db.complete_job(job_id, result)
         logger.info(f"Form 4 cache complete: {result}")
 
@@ -1633,6 +1658,8 @@ class BackgroundWorker:
             'cached': cached,
             'errors': errors
         }
+        # Flush write queue before completing job
+        self.db.flush()
         self.db.complete_job(job_id, result)
         logger.info(f"Outlook cache complete: {result}")
 
@@ -1822,6 +1849,8 @@ class BackgroundWorker:
             'skipped': skipped,
             'errors': errors
         }
+        # Flush write queue before completing job
+        self.db.flush()
         self.db.complete_job(job_id, result)
         logger.info(f"Transcript cache complete: {result}")
 

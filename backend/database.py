@@ -92,9 +92,18 @@ class Database:
         logger.info("Database writer thread started successfully")
 
     def flush(self):
-        """Wait for all pending writes to complete and commit"""
+        """Wait for all pending writes to complete and commit (blocking)"""
         self.write_queue.put("FLUSH")
         self.write_queue.join()
+    
+    def flush_async(self):
+        """Trigger a commit without waiting (non-blocking)
+        
+        Use this for periodic flushes during long jobs where you want to
+        commit progress but don't need to wait. The final flush before
+        job completion should use flush() to ensure all data is committed.
+        """
+        self.write_queue.put("FLUSH")
 
     def get_connection(self):
         """Get a connection from the pool.
@@ -1700,37 +1709,6 @@ class Database:
                 'dates': [row[0].strftime('%Y-%m-%d') for row in rows],
                 'prices': [float(row[1]) for row in rows]
             }
-        finally:
-            self.return_connection(conn)
-    
-    def clear_weekly_prices(self, symbol: str = None) -> int:
-        """
-        Clear weekly price data for a symbol or all symbols.
-        
-        Use this when cached prices need to be refreshed (e.g., after fixing
-        split adjustment issues).
-        
-        Args:
-            symbol: Stock symbol to clear, or None to clear ALL weekly prices
-            
-        Returns:
-            Number of rows deleted
-        """
-        conn = self.get_connection()
-        try:
-            cursor = conn.cursor()
-            
-            if symbol:
-                cursor.execute("DELETE FROM weekly_prices WHERE symbol = %s", (symbol,))
-                rows_deleted = cursor.rowcount
-            else:
-                # TRUNCATE doesn't return rowcount, so query count first
-                cursor.execute("SELECT COUNT(*) FROM weekly_prices")
-                rows_deleted = cursor.fetchone()[0]
-                cursor.execute("TRUNCATE TABLE weekly_prices")
-            
-            conn.commit()
-            return rows_deleted
         finally:
             self.return_connection(conn)
     
