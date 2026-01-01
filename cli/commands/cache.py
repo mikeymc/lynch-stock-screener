@@ -509,68 +509,6 @@ def eight_k(
         raise typer.Exit(1)
 
 
-# Clear 8-K Cache
-@app.command("clear-8k")
-def clear_8k(
-    symbol: str = typer.Argument(None, help="Symbol to clear, or omit for ALL symbols"),
-    prod: bool = typer.Option(False, "--prod", help="Use production database"),
-    confirm: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation prompt"),
-):
-    """Clear 8-K material events cache (use after updating EX-99 extraction)"""
-    if symbol:
-        console.print(f"[yellow]⚠ This will delete all cached 8-K events for {symbol}[/yellow]")
-    else:
-        console.print("[bold red]⚠ This will delete ALL cached 8-K material events for ALL symbols![/bold red]")
-    
-    if not confirm:
-        confirmed = typer.confirm("Are you sure you want to continue?")
-        if not confirmed:
-            console.print("[dim]Cancelled.[/dim]")
-            raise typer.Exit(0)
-    
-    # Determine API URL
-    api_url = API_URL if prod else "http://localhost:5001"
-    
-    # Get token if prod
-    if prod:
-        token = get_api_token()
-        headers = {
-            "Content-Type": "application/json",
-            "Authorization": f"Bearer {token}"
-        }
-    else:
-        headers = {"Content-Type": "application/json"}
-    
-    console.print(f"[bold blue]🗑️ Clearing 8-K cache on {'production' if prod else 'local'}...[/bold blue]")
-    
-    try:
-        payload = {"symbol": symbol} if symbol else {}
-        
-        response = httpx.post(
-            f"{api_url}/api/admin/clear-material-events",
-            json=payload,
-            headers=headers,
-            timeout=60.0
-        )
-        response.raise_for_status()
-        
-        data = response.json()
-        rows_deleted = data.get("rows_deleted", 0)
-        
-        if symbol:
-            console.print(f"[bold green]✓ Deleted {rows_deleted} 8-K events for {symbol}[/bold green]")
-        else:
-            console.print(f"[bold green]✓ Cleared all 8-K material events ({rows_deleted} affected)[/bold green]")
-        
-        console.print("[dim]Run 'bag cache 8k start --prod' to re-fetch with EX-99 exhibit content[/dim]")
-        
-    except httpx.HTTPError as e:
-        console.print(f"[bold red]✗ Failed to clear 8-K cache:[/bold red] {e}")
-        if not prod:
-            console.print("[yellow]Make sure local server is running[/yellow]")
-        raise typer.Exit(1)
-
-
 # Outlook Cache (forward metrics + insider trades)
 @app.command("outlook")
 def outlook(

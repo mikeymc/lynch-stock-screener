@@ -3019,37 +3019,6 @@ class Database:
             return row[0].strftime('%Y-%m-%d')
         return str(row[0])
 
-    def clear_material_events(self, symbol: str = None) -> int:
-        """
-        Clear material events (8-K) cache for a symbol or all symbols.
-        
-        Use this when cached 8-K content needs to be refreshed (e.g., after
-        updating the content extraction logic to fetch EX-99.x exhibits).
-        
-        Args:
-            symbol: Stock symbol to clear, or None to clear ALL material events
-            
-        Returns:
-            Number of rows deleted
-        """
-        conn = self.get_connection()
-        try:
-            cursor = conn.cursor()
-            
-            if symbol:
-                cursor.execute("DELETE FROM material_events WHERE symbol = %s", (symbol,))
-                rows_deleted = cursor.rowcount
-            else:
-                # TRUNCATE doesn't return rowcount, so query count first
-                cursor.execute("SELECT COUNT(*) FROM material_events")
-                rows_deleted = cursor.fetchone()[0]
-                cursor.execute("TRUNCATE TABLE material_events")
-            
-            conn.commit()
-            return rows_deleted
-        finally:
-            self.return_connection(conn)
-
     def save_material_event_summary(self, event_id: int, summary: str, model_version: str = None):
         """
         Save an AI-generated summary for a material event.
