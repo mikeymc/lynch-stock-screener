@@ -24,7 +24,7 @@ primary_region = "iad"
 
 [[vm]]
   size = "shared-cpu-1x"
-  memory = "2gb"  # Changed: Increased from 1GB to 2GB for screening workload
+  memory = "4gb"  # Changed: Increased from 2GB to 4GB for Form 4, price_history, transcript jobs
 
 [env]
   PORT = "8080"
