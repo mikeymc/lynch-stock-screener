@@ -6,6 +6,17 @@ import ReactMarkdown from 'react-markdown'
 
 const API_BASE = '/api'
 
+const LOADING_MESSAGES = [
+  "Scanning earnings reports...",
+  "Reading latest news coverage...",
+  "Processing earnings call transcripts...",
+  "Analyzing insider trading patterns...",
+  "Reviewing financial statements...",
+  "Checking material event filings...",
+  "Synthesizing market context...",
+  "Generating investment insights..."
+]
+
 function SourceCitation({ sources }) {
   const [expanded, setExpanded] = useState(false)
 
@@ -57,6 +68,7 @@ const AnalysisChat = forwardRef(function AnalysisChat({ symbol, stockName, chatO
   const [streamingSources, setStreamingSources] = useState([])
   const [loadingHistory, setLoadingHistory] = useState(true)
   const [showScrollIndicator, setShowScrollIndicator] = useState(false)
+  const [loadingMessageIndex, setLoadingMessageIndex] = useState(0)
 
   const messagesEndRef = useRef(null)
   const messagesContainerRef = useRef(null)
@@ -101,6 +113,23 @@ const AnalysisChat = forwardRef(function AnalysisChat({ symbol, stockName, chatO
       inputRef.current.focus()
     }
   }, [chatLoading])
+
+  // Cycle loading messages during brief generation with random timing
+  useEffect(() => {
+    if ((analysisLoading || isGenerating) && !analysis) {
+      let timeoutId
+      const cycleMessage = () => {
+        setLoadingMessageIndex(prev => (prev + 1) % LOADING_MESSAGES.length)
+        const randomDelay = 1500 + Math.random() * 1500 // 1.5-3 seconds
+        timeoutId = setTimeout(cycleMessage, randomDelay)
+      }
+      const initialDelay = 1500 + Math.random() * 1500
+      timeoutId = setTimeout(cycleMessage, initialDelay)
+      return () => clearTimeout(timeoutId)
+    } else {
+      setLoadingMessageIndex(0)
+    }
+  }, [analysisLoading, isGenerating, analysis])
 
   // Fetch analysis
   const fetchAnalysis = async (forceRefresh = false, signal = null, onlyCached = false) => {
@@ -417,7 +446,7 @@ const AnalysisChat = forwardRef(function AnalysisChat({ symbol, stockName, chatO
                 <div className="generating-spinner"></div>
                 <div className="generating-text">
                   <span className="generating-title">Generating brief...</span>
-                  <span className="generating-subtitle">Analyzing SEC filings and financial data</span>
+                  <span className="generating-subtitle" key={loadingMessageIndex}>{LOADING_MESSAGES[loadingMessageIndex]}</span>
                 </div>
               </div>
             </div>
