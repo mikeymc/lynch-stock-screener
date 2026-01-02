@@ -875,7 +875,6 @@ function StockListView({
           )}
 
           <div className="filter-controls">
-            <label>Filter: </label>
             <select value={filter} onChange={(e) => setFilter(e.target.value)}>
               <option value="all">All</option>
               <option value="watchlist">⭐ Watchlist</option>
@@ -901,7 +900,6 @@ function StockListView({
 
           {summary && (
             <div className="summary-stats">
-              <strong>Analyzed {summary.totalAnalyzed} stocks:</strong>
               {algorithm === 'classic' ? (
                 <>
                   <span className="summary-stat pass">{summary.passCount || 0} PASS</span>
