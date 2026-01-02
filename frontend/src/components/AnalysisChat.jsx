@@ -411,21 +411,7 @@ const AnalysisChat = forwardRef(function AnalysisChat({ symbol, stockName, chatO
     <div className="brief-analysis-container">
       <div className="section-item">
         <div className="section-content">
-          {analysisLoading && !analysis ? (
-            <div className="section-summary">
-              <div className="summary-loading">
-                <span className="loading-spinner"></span>
-                <span>Generating brief. This could take up to a minute...</span>
-              </div>
-            </div>
-          ) : analysisError ? (
-            <div className="section-summary">
-              <p>Failed to load analysis: {analysisError}</p>
-              <button onClick={() => fetchAnalysis(false, null, true)} className="retry-button">
-                Retry
-              </button>
-            </div>
-          ) : isGenerating && !analysis ? (
+          {(analysisLoading || isGenerating) && !analysis ? (
             <div className="section-summary">
               <div className="brief-generating">
                 <div className="generating-spinner"></div>
@@ -434,6 +420,13 @@ const AnalysisChat = forwardRef(function AnalysisChat({ symbol, stockName, chatO
                   <span className="generating-subtitle">Analyzing SEC filings and financial data</span>
                 </div>
               </div>
+            </div>
+          ) : analysisError ? (
+            <div className="section-summary">
+              <p>Failed to load analysis: {analysisError}</p>
+              <button onClick={() => fetchAnalysis(false, null, true)} className="retry-button">
+                Retry
+              </button>
             </div>
           ) : !analysis ? (
             <div className="section-summary">
