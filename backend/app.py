@@ -2252,8 +2252,8 @@ def get_dcf_recommendations(symbol, user_id):
         'revenue_cagr': evaluation.get('revenue_cagr') if evaluation else None
     }
 
-    # Get model from request body (default to gemini-3-pro-preview for DCF)
-    model = data.get('model', 'gemini-3-pro-preview')
+    # Get model from request body (default to gemini-2.5-flash for DCF)
+    model = data.get('model', 'gemini-2.5-flash')
     if model not in AVAILABLE_AI_MODELS:
         return jsonify({'error': f'Invalid model: {model}. Must be one of {AVAILABLE_AI_MODELS}'}), 400
 

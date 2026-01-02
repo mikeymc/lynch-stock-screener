@@ -687,7 +687,7 @@ Do NOT include a header - just the bullet points.
         sections: Optional[Dict[str, Any]] = None,
         news: Optional[List[Dict[str, Any]]] = None,
         material_events: Optional[List[Dict[str, Any]]] = None,
-        model_version: str = "gemini-3-pro-preview"
+        model_version: str = "gemini-2.5-flash"
     ) -> Dict[str, Any]:
         """
         Generate DCF model recommendations using AI.
