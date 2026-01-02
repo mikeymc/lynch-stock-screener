@@ -622,7 +622,8 @@ def get_stock_outlook(symbol):
             'forward_pe': metrics.get('forward_pe'),
             'forward_peg_ratio': metrics.get('forward_peg_ratio'),
             'forward_eps': metrics.get('forward_eps'),
-            'insider_net_buying_6m': metrics.get('insider_net_buying_6m')
+            'insider_net_buying_6m': metrics.get('insider_net_buying_6m'),
+            'next_earnings_date': metrics.get('next_earnings_date')
         },
         'analyst_consensus': {
             'rating': metrics.get('analyst_rating'),  # e.g., "buy", "hold", "sell"

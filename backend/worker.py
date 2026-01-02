@@ -1529,16 +1529,21 @@ class BackgroundWorker:
                 short_ratio = info.get('shortRatio')  # Days to cover
                 short_percent_float = info.get('shortPercentOfFloat')
                 
-                # Extract next earnings date from calendar
+                # Extract next earnings date from earnings_dates DataFrame
+                # This gives us both past and future dates - we want the next future one
                 next_earnings_date = None
                 try:
-                    calendar = ticker.calendar
-                    if calendar and 'Earnings Date' in calendar:
-                        earnings_dates = calendar['Earnings Date']
-                        if earnings_dates and len(earnings_dates) > 0:
-                            next_earnings_date = earnings_dates[0]  # First date is next earnings
+                    earnings_dates_df = ticker.earnings_dates
+                    if earnings_dates_df is not None and not earnings_dates_df.empty:
+                        today = pd.Timestamp.now(tz='America/New_York').normalize()
+                        for date_idx in earnings_dates_df.index:
+                            # Convert to timezone-aware timestamp for comparison
+                            earnings_ts = pd.Timestamp(date_idx)
+                            if earnings_ts >= today:
+                                next_earnings_date = earnings_ts.date()
+                                break
                 except Exception:
-                    pass  # Calendar not available for all stocks
+                    pass  # Earnings dates not available for all stocks
                 
                 # Extract analyst estimates (EPS and Revenue forecasts)
                 estimates_data = {}

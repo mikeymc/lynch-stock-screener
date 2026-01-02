@@ -207,11 +207,14 @@ export default function FutureOutlook({ symbol }) {
             <div className="reports-main-column">
                 <div className="future-outlook-container" style={{ padding: '0 1rem 1rem 1rem' }}>
 
-                    {/* ROW 1: Wall Street Consensus */}
-                    {(analyst_consensus?.rating || short_interest?.short_percent_float) && (
-                        <div style={cardStyle}>
-                            <h3 style={sectionTitleStyle}>Wall Street Consensus</h3>
-                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '2rem' }}>
+                    {/* ROW 1: Wall Street Consensus + Next Earnings */}
+                    {(analyst_consensus?.rating || short_interest?.short_percent_float || metrics?.next_earnings_date) && (
+                        <div style={{ display: 'flex', gap: '1.5rem', marginBottom: '1.5rem' }}>
+                            {/* Wall Street Consensus Card */}
+                            {(analyst_consensus?.rating || short_interest?.short_percent_float) && (
+                            <div style={{ ...cardStyle, flex: 1, marginBottom: 0 }}>
+                                <h3 style={sectionTitleStyle}>Wall Street Consensus</h3>
+                                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '2rem' }}>
 
                                 {/* Analyst Rating */}
                                 {analyst_consensus?.rating && (
@@ -351,7 +354,44 @@ export default function FutureOutlook({ symbol }) {
                                     </div>
                                 )}
 
+                                </div>
                             </div>
+                            )}
+
+                            {/* Next Earnings Date Card - only show if date is in the future */}
+                            {metrics?.next_earnings_date && (() => {
+                                const earningsDate = new Date(metrics.next_earnings_date)
+                                const today = new Date()
+                                today.setHours(0, 0, 0, 0)
+                                earningsDate.setHours(0, 0, 0, 0)
+                                const diffDays = Math.ceil((earningsDate - today) / (1000 * 60 * 60 * 24))
+
+                                if (diffDays < 0) return null
+
+                                let relativeText
+                                if (diffDays === 0) relativeText = 'Today'
+                                else if (diffDays === 1) relativeText = 'Tomorrow'
+                                else if (diffDays <= 7) relativeText = `In ${diffDays} days`
+                                else if (diffDays <= 14) relativeText = 'In ~2 weeks'
+                                else if (diffDays <= 30) relativeText = `In ${Math.round(diffDays / 7)} weeks`
+                                else relativeText = `In ${Math.round(diffDays / 30)} months`
+
+                                return (
+                                    <div style={{ ...cardStyle, minWidth: '200px', maxWidth: '280px', marginBottom: 0 }}>
+                                        <h3 style={sectionTitleStyle}>Next Earnings Date</h3>
+                                        <div style={{ fontSize: '2rem', fontWeight: 'bold', color: '#e2e8f0', marginBottom: '0.5rem' }}>
+                                            {earningsDate.toLocaleDateString('en-US', {
+                                                month: 'short',
+                                                day: 'numeric',
+                                                year: 'numeric'
+                                            })}
+                                        </div>
+                                        <div style={{ fontSize: '0.9rem', color: '#64748b' }}>
+                                            {relativeText}
+                                        </div>
+                                    </div>
+                                )
+                            })()}
                         </div>
                     )}
 
