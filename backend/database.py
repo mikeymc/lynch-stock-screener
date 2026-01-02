@@ -2196,7 +2196,8 @@ class Database:
             
             if sort_by == 'overall_status':
                 # Use status ranking for text-based status sorting
-                order_expr = f"{status_rank_expr} {sort_dir.upper()}"
+                # Secondary sort by overall_score for deterministic ordering within status groups
+                order_expr = f"{status_rank_expr} {sort_dir.upper()}, COALESCE(overall_score, 0) DESC"
             elif sort_by == 'overall_score':
                 # For overall_score, fall back to status ranking when score is NULL
                 order_expr = f"COALESCE(overall_score, 0) {sort_dir.upper()}, {status_rank_expr} ASC"
