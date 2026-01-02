@@ -36,9 +36,6 @@ const AlgorithmSelector = ({ selectedAlgorithm, onAlgorithmChange }) => {
   return (
     <>
       <div className="algorithm-selector">
-        <label htmlFor="algorithm-select">
-          Scoring:
-        </label>
         <select
           id="algorithm-select"
           value={selectedAlgorithm}
@@ -51,7 +48,7 @@ const AlgorithmSelector = ({ selectedAlgorithm, onAlgorithmChange }) => {
               value={key}
               title={algo.short_desc}
             >
-              {algo.name}
+              {algo.name} Scoring
             </option>
           ))}
         </select>
