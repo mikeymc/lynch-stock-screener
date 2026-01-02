@@ -1,89 +1,66 @@
 // ABOUTME: Component for AI-powered DCF recommendations with three scenarios
 // ABOUTME: Displays Conservative, Base Case, and Optimistic scenarios with reasoning
 
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 
-export default function DCFAIRecommendations({ symbol, onApplyScenario, renderInsideChart = false }) {
-    const [recommendations, setRecommendations] = useState(null)
-    const [loading, setLoading] = useState(false)
-    const [error, setError] = useState(null)
-    const [selectedScenario, setSelectedScenario] = useState('base')
+// Overlay button component for rendering inside the chart
+export function DCFOptimizeButton({ loading, hasRecommendations, onGenerate }) {
+    if (loading) {
+        return (
+            <div style={{
+                position: 'absolute',
+                top: '5px',
+                left: '10px',
+                padding: '0.5rem 1rem',
+                backgroundColor: '#1e293b',
+                borderRadius: '0.375rem',
+                border: '1px solid #334155',
+                color: '#94a3b8',
+                fontSize: '1rem',
+                zIndex: 10
+            }}>
+                Optimizing...
+            </div>
+        )
+    }
+
+    return (
+        <button
+            onClick={onGenerate}
+            style={{
+                position: 'absolute',
+                top: '5px',
+                left: '10px',
+                padding: '0.5rem 1rem',
+                backgroundColor: '#8b5cf6',
+                color: 'white',
+                border: 'none',
+                borderRadius: '0.375rem',
+                cursor: 'pointer',
+                fontSize: '1rem',
+                fontWeight: '500',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.5rem',
+                zIndex: 10
+            }}
+        >
+            {hasRecommendations ? '🔄 Optimize' : '✨ Optimize'}
+        </button>
+    )
+}
+
+// Full panel component for displaying recommendations
+export default function DCFAIRecommendations({
+    recommendations,
+    loading,
+    error,
+    onApplyScenario,
+    selectedScenario,
+    onScenarioSelect
+}) {
     const [reasoningExpanded, setReasoningExpanded] = useState(true)
-
-    // Check for cached recommendations on mount
-    useEffect(() => {
-        const controller = new AbortController()
-
-        fetch(`/api/stock/${symbol}/dcf-recommendations`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-                only_cached: true
-            }),
-            signal: controller.signal
-        })
-            .then(response => response.json())
-            .then(data => {
-                if (data.scenarios) {
-                    setRecommendations(data)
-                    // Auto-apply base case scenario
-                    if (data.scenarios.base && onApplyScenario) {
-                        onApplyScenario(data.scenarios.base)
-                    }
-                }
-            })
-            .catch(err => {
-                if (err.name !== 'AbortError') {
-                    console.error('Error checking cache:', err)
-                }
-            })
-
-        return () => controller.abort()
-    }, [symbol])
-
-    const generateRecommendations = async (forceRefresh = false) => {
-        setLoading(true)
-        setError(null)
-        try {
-            const response = await fetch(`/api/stock/${symbol}/dcf-recommendations`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({
-                    force_refresh: forceRefresh
-                })
-            })
-
-            if (!response.ok) {
-                const errorData = await response.json()
-                throw new Error(errorData.error || 'Failed to generate recommendations')
-            }
-
-            const data = await response.json()
-            setRecommendations(data)
-            setSelectedScenario('base')
-
-            // Auto-apply base case scenario
-            if (data.scenarios?.base && onApplyScenario) {
-                onApplyScenario(data.scenarios.base)
-            }
-        } catch (err) {
-            setError(err.message)
-        } finally {
-            setLoading(false)
-        }
-    }
-
-    const handleScenarioSelect = (scenarioName) => {
-        setSelectedScenario(scenarioName)
-        if (recommendations?.scenarios?.[scenarioName] && onApplyScenario) {
-            onApplyScenario(recommendations.scenarios[scenarioName])
-        }
-    }
 
     const scenarioLabels = {
         conservative: { label: 'Conservative', icon: '🛡️', color: '#60a5fa' },
@@ -93,83 +70,20 @@ export default function DCFAIRecommendations({ symbol, onApplyScenario, renderIn
 
     const hasRecommendations = recommendations?.scenarios
 
-    // Button styling for overlay mode
-    const buttonStyle = renderInsideChart ? {
-        position: 'absolute',
-        top: '5px',
-        left: '10px',
-        padding: '0.5rem 1rem',
-        backgroundColor: '#8b5cf6',
-        color: 'white',
-        border: 'none',
-        borderRadius: '0.375rem',
-        cursor: 'pointer',
-        fontSize: '1rem',
-        fontWeight: '500',
-        display: 'flex',
-        alignItems: 'center',
-        gap: '0.5rem',
-        zIndex: 10
-    } : {
-        padding: '0.5rem 1rem',
-        backgroundColor: '#8b5cf6',
-        color: 'white',
-        border: 'none',
-        borderRadius: '0.375rem',
-        cursor: 'pointer',
-        fontSize: '1rem',
-        fontWeight: '500',
-        display: 'flex',
-        alignItems: 'center',
-        gap: '0.5rem'
+    const handleScenarioSelect = (scenarioName) => {
+        onScenarioSelect(scenarioName)
+        if (recommendations?.scenarios?.[scenarioName] && onApplyScenario) {
+            onApplyScenario(recommendations.scenarios[scenarioName])
+        }
     }
 
-    // When renderInsideChart is true, only render the button overlay
-    if (renderInsideChart) {
-        return (
-            <>
-                {!loading && (
-                    <button
-                        onClick={() => generateRecommendations(hasRecommendations)}
-                        style={buttonStyle}
-                    >
-                        {hasRecommendations ? '🔄 Optimize' : '✨ Optimize'}
-                    </button>
-                )}
-                {loading && (
-                    <div style={{
-                        position: 'absolute',
-                        top: '5px',
-                        left: '10px',
-                        padding: '0.5rem 1rem',
-                        backgroundColor: '#1e293b',
-                        borderRadius: '0.375rem',
-                        border: '1px solid #334155',
-                        color: '#94a3b8',
-                        fontSize: '1rem',
-                        zIndex: 10
-                    }}>
-                        Optimizing...
-                    </div>
-                )}
-            </>
-        )
+    // Don't render anything if no recommendations and not loading
+    if (!hasRecommendations && !loading && !error) {
+        return null
     }
 
     return (
         <div style={{ marginBottom: '1.5rem' }}>
-            {/* Generate Button */}
-            <div style={{ display: 'flex', justifyContent: 'flex-start', alignItems: 'center', gap: '1rem', marginBottom: '1rem' }}>
-                {!loading && (
-                    <button
-                        onClick={() => generateRecommendations(hasRecommendations)}
-                        style={buttonStyle}
-                    >
-                        {hasRecommendations ? '🔄 Optimize' : '✨ Optimize'}
-                    </button>
-                )}
-            </div>
-
             {/* Loading State */}
             {loading && (
                 <div style={{
@@ -297,14 +211,17 @@ export default function DCFAIRecommendations({ symbol, onApplyScenario, renderIn
                                 <span>AI Reasoning</span>
                             </div>
                             {reasoningExpanded && (
-                                <div style={{
-                                    padding: '1rem',
-                                    backgroundColor: 'rgba(0,0,0,0.2)',
-                                    borderRadius: '0.375rem',
-                                    fontSize: '0.9rem',
-                                    lineHeight: '1.6',
-                                    color: '#cbd5e1'
-                                }}>
+                                <div
+                                    style={{
+                                        padding: '1rem',
+                                        backgroundColor: 'rgba(0,0,0,0.2)',
+                                        borderRadius: '0.375rem',
+                                        fontSize: '0.9rem',
+                                        lineHeight: '1.6',
+                                        color: '#cbd5e1'
+                                    }}
+                                    className="ai-reasoning-content"
+                                >
                                     <ReactMarkdown>{recommendations.reasoning}</ReactMarkdown>
                                 </div>
                             )}

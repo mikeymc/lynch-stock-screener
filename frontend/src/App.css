@@ -2125,6 +2125,15 @@ td strong {
   margin-bottom: 1.5rem;
 }
 
+/* AI Reasoning Content - paragraph spacing */
+.ai-reasoning-content p {
+  margin-bottom: 1rem;
+}
+
+.ai-reasoning-content p:last-child {
+  margin-bottom: 0;
+}
+
 /* Base Year Selector */
 .base-year-selector {
   display: flex;

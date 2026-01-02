@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Line } from 'react-chartjs-2';
-import DCFAIRecommendations from './DCFAIRecommendations';
+import DCFAIRecommendations, { DCFOptimizeButton } from './DCFAIRecommendations';
 import AnalysisChat from './AnalysisChat';
 import {
   Chart as ChartJS,
@@ -54,6 +54,12 @@ const DCFAnalysis = ({ stockData, earningsHistory }) => {
   const [showSensitivity, setShowSensitivity] = useState(false);
   const chatRef = useRef(null);
 
+  // AI Recommendations state (lifted from DCFAIRecommendations)
+  const [aiRecommendations, setAiRecommendations] = useState(null);
+  const [aiLoading, setAiLoading] = useState(false);
+  const [aiError, setAiError] = useState(null);
+  const [selectedScenario, setSelectedScenario] = useState('base');
+
   // Update discount rate when WACC becomes available
   useEffect(() => {
     if (earningsHistory?.wacc?.wacc && assumptions.discountRate === 10) {
@@ -64,6 +70,81 @@ const DCFAnalysis = ({ stockData, earningsHistory }) => {
       }));
     }
   }, [earningsHistory]);
+
+  // Helper to apply a scenario to assumptions
+  const applyScenario = (scenario) => {
+    setAssumptions(prev => ({
+      ...prev,
+      growthRate: scenario.growthRate,
+      terminalGrowthRate: scenario.terminalGrowthRate,
+      discountRate: scenario.discountRate
+    }));
+    if (scenario.baseYearMethod) {
+      setBaseYearMethod(scenario.baseYearMethod);
+    }
+  };
+
+  // Fetch cached AI recommendations on mount
+  useEffect(() => {
+    if (!stockData?.symbol) return;
+
+    const controller = new AbortController();
+
+    fetch(`/api/stock/${stockData.symbol}/dcf-recommendations`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ only_cached: true }),
+      signal: controller.signal
+    })
+      .then(response => response.json())
+      .then(data => {
+        if (data.scenarios) {
+          setAiRecommendations(data);
+          if (data.scenarios.base) {
+            applyScenario(data.scenarios.base);
+          }
+        }
+      })
+      .catch(err => {
+        if (err.name !== 'AbortError') {
+          console.error('Error checking AI recommendations cache:', err);
+        }
+      });
+
+    return () => controller.abort();
+  }, [stockData?.symbol]);
+
+  // Generate AI recommendations
+  const generateAiRecommendations = async () => {
+    const forceRefresh = !!aiRecommendations?.scenarios;
+    setAiLoading(true);
+    setAiError(null);
+
+    try {
+      const response = await fetch(`/api/stock/${stockData.symbol}/dcf-recommendations`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ force_refresh: forceRefresh })
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to generate recommendations');
+      }
+
+      const data = await response.json();
+      setAiRecommendations(data);
+      setSelectedScenario('base');
+
+      if (data.scenarios?.base) {
+        applyScenario(data.scenarios.base);
+      }
+    } catch (err) {
+      setAiError(err.message);
+    } finally {
+      setAiLoading(false);
+    }
+  };
 
   // Calculate historical metrics
   useEffect(() => {
@@ -379,29 +460,29 @@ const DCFAnalysis = ({ stockData, earningsHistory }) => {
       {/* Left Column - DCF Content (2/3) */}
       <div className="reports-main-column">
         <div className="dcf-container">
-          {/* Historical FCF Chart with AI Button Overlay */}
+          {/* Historical FCF Chart with AI Optimize Button */}
           {historicalMetrics && getChartData() && (
             <div className="dcf-panel dcf-historical-chart" style={{ position: 'relative' }}>
-              <DCFAIRecommendations
-                symbol={stockData.symbol}
-                renderInsideChart={true}
-                onApplyScenario={(scenario) => {
-                  setAssumptions(prev => ({
-                    ...prev,
-                    growthRate: scenario.growthRate,
-                    terminalGrowthRate: scenario.terminalGrowthRate,
-                    discountRate: scenario.discountRate
-                  }));
-                  if (scenario.baseYearMethod) {
-                    setBaseYearMethod(scenario.baseYearMethod);
-                  }
-                }}
+              <DCFOptimizeButton
+                loading={aiLoading}
+                hasRecommendations={!!aiRecommendations?.scenarios}
+                onGenerate={generateAiRecommendations}
               />
               <div style={{ height: '250px' }}>
                 <Line data={getChartData()} options={chartOptions} />
               </div>
             </div>
           )}
+
+          {/* AI Recommendations Panel (full display with scenarios and reasoning) */}
+          <DCFAIRecommendations
+            recommendations={aiRecommendations}
+            loading={aiLoading}
+            error={aiError}
+            selectedScenario={selectedScenario}
+            onScenarioSelect={setSelectedScenario}
+            onApplyScenario={applyScenario}
+          />
 
           <div className="dcf-grid">
             {/* Assumptions Panel */}
