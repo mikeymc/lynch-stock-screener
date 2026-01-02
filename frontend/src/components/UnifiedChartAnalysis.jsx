@@ -1,7 +1,5 @@
 // ABOUTME: Component to generate and display unified chart analysis for all three sections
 import { useState, useEffect } from 'react'
-import ReactMarkdown from 'react-markdown'
-import ModelSelector from './ModelSelector'
 
 export default function UnifiedChartAnalysis({ symbol, onAnalysisGenerated }) {
     const [sections, setSections] = useState({ growth: null, cash: null, valuation: null })
@@ -78,11 +76,6 @@ export default function UnifiedChartAnalysis({ symbol, onAnalysisGenerated }) {
     return (
         <div style={{ marginBottom: '2rem' }}>
             <div style={{ display: 'flex', justifyContent: 'flex-start', alignItems: 'center', gap: '1rem', marginBottom: '1rem' }}>
-                <ModelSelector
-                    selectedModel={selectedModel}
-                    onModelChange={setSelectedModel}
-                    storageKey="chartAnalysisModel"
-                />
                 {!loading && (
                     <button
                         onClick={() => generateAnalysis(hasAnyAnalysis)}

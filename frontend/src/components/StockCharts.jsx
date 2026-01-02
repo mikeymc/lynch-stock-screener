@@ -255,9 +255,6 @@ export default function StockCharts({ historyData, loading, symbol }) {
       {/* Left Column - Charts Content (2/3) */}
       <div className="reports-main-column">
         <div className="section-item">
-          <div className="section-header-simple">
-            <span className="section-title">Financial Charts</span>
-          </div>
           <div className="section-content">
             <div className="stock-charts" onMouseLeave={handleMouseLeave}>
               <UnifiedChartAnalysis
