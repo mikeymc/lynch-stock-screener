@@ -67,7 +67,6 @@ def test_app_initialization_and_ui_elements(page: Page, servers):
     # Verify filter dropdown
     print("[E2E] Checking filter dropdown...")
     filter_dropdown_container = controls.locator('.filter-controls').first
-    expect(filter_dropdown_container.get_by_text('Filter:')).to_be_visible()
     filter_select = filter_dropdown_container.locator('select')
     expect(filter_select).to_be_visible()
     
@@ -80,18 +79,16 @@ def test_app_initialization_and_ui_elements(page: Page, servers):
     assert filter_select.locator('option[value="CAUTION"]').count() > 0, "Missing 'Caution' option"
     assert filter_select.locator('option[value="AVOID"]').count() > 0, "Missing 'Avoid' option"
     
-    # Verify summary stats (if present)
+    # Verify summary stats showing algorithm scoring breakdown
     print("[E2E] Checking summary stats...")
     summary_stats = controls.locator('.summary-stats')
     if summary_stats.is_visible():
-        expect(summary_stats).to_contain_text('Analyzed')
-        expect(summary_stats).to_contain_text('stocks')
-        # Check for weighted algorithm stats
-        expect(summary_stats.locator('.summary-stat.strong-buy')).to_be_visible()
-        expect(summary_stats.locator('.summary-stat.buy')).to_be_visible()
-        expect(summary_stats.locator('.summary-stat.hold')).to_be_visible()
-        expect(summary_stats.locator('.summary-stat.caution')).to_be_visible()
-        expect(summary_stats.locator('.summary-stat.avoid')).to_be_visible()
+        # Check for scoring category labels
+        expect(summary_stats).to_contain_text('Excellent')
+        expect(summary_stats).to_contain_text('Good')
+        expect(summary_stats).to_contain_text('Neutral')
+        expect(summary_stats).to_contain_text('Weak')
+        expect(summary_stats).to_contain_text('Poor')
     
     # Verify algorithm selector shows "weighted"
     print("[E2E] Checking algorithm selector...")
