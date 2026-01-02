@@ -3,7 +3,6 @@
 
 import { useState, useEffect, useRef, forwardRef, useImperativeHandle } from 'react'
 import ReactMarkdown from 'react-markdown'
-import ModelSelector from './ModelSelector'
 
 const API_BASE = '/api'
 
@@ -439,16 +438,9 @@ const AnalysisChat = forwardRef(function AnalysisChat({ symbol, stockName, chatO
           ) : !analysis ? (
             <div className="section-summary">
               <p>No brief generated yet for {stockName}.</p>
-              <div style={{ display: 'flex', flexDirection: 'row', gap: '1rem', alignItems: 'center', marginTop: '1rem' }}>
-                <ModelSelector
-                  selectedModel={selectedModel}
-                  onModelChange={setSelectedModel}
-                  storageKey="lynchAnalysisModel"
-                />
-                <button onClick={handleGenerate} className="generate-button">
-                  ✨ Generate
-                </button>
-              </div>
+              <button onClick={handleGenerate} className="generate-button" style={{ marginTop: '1rem' }}>
+                ✨ Generate
+              </button>
             </div>
           ) : (
             <>
@@ -456,11 +448,6 @@ const AnalysisChat = forwardRef(function AnalysisChat({ symbol, stockName, chatO
                 <span className="brief-metadata">
                   {cached ? '📦 Cached' : '✨ Fresh'} · {formatDate(generatedAt)}
                 </span>
-                <ModelSelector
-                  selectedModel={selectedModel}
-                  onModelChange={setSelectedModel}
-                  storageKey="lynchAnalysisModel"
-                />
                 <button
                   onClick={handleRefresh}
                   disabled={refreshing}
