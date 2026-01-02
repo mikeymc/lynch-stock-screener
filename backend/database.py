@@ -1585,6 +1585,34 @@ class Database:
         args = (symbol, year, eps, revenue, fiscal_end, debt_to_equity, period, net_income, dividend_amount, operating_cash_flow, capital_expenditures, free_cash_flow, datetime.now())
         self.write_queue.put((sql, args))
 
+    def clear_quarterly_earnings(self, symbol: str) -> int:
+        """
+        Delete all quarterly earnings records for a symbol.
+        
+        Used before force-refresh to ensure stale quarterly data is removed
+        before inserting fresh data from EDGAR.
+        
+        Args:
+            symbol: Stock ticker symbol
+            
+        Returns:
+            Number of rows deleted
+        """
+        conn = self.get_connection()
+        try:
+            cursor = conn.cursor()
+            cursor.execute("""
+                DELETE FROM earnings_history 
+                WHERE symbol = %s AND period IN ('Q1', 'Q2', 'Q3', 'Q4')
+            """, (symbol,))
+            deleted = cursor.rowcount
+            conn.commit()
+            if deleted > 0:
+                logger.info(f"[{symbol}] Cleared {deleted} quarterly earnings records for force refresh")
+            return deleted
+        finally:
+            self.return_connection(conn)
+
     def stock_exists(self, symbol: str) -> bool:
         """Check if a stock exists in the stocks table."""
         conn = self.get_connection()

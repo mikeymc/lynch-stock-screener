@@ -310,7 +310,7 @@ class DataFetcher:
                         # Only fetch price history if we haven't already and we're not using cache
                         # But quarterly storage also needs price history for yield... 
                         # Since we skip quarterly data for cache anyway, this is fine.
-                        self._store_edgar_quarterly_earnings(symbol, edgar_data, price_history)
+                        self._store_edgar_quarterly_earnings(symbol, edgar_data, price_history, force_refresh=force_refresh)
                     else:
                         if not using_tradingview_cache:
                             logger.warning(f"[{symbol}] No quarterly Net Income available, falling back to yfinance for quarterly data")
@@ -503,7 +503,7 @@ class DataFetcher:
             self._backfill_cash_flow(symbol, years_needing_cf)
 
     # todo: can this be collapsed with _store_edgar_earnings?
-    def _store_edgar_quarterly_earnings(self, symbol: str, edgar_data: Dict[str, Any], price_history: Optional[pd.DataFrame] = None):
+    def _store_edgar_quarterly_earnings(self, symbol: str, edgar_data: Dict[str, Any], price_history: Optional[pd.DataFrame] = None, force_refresh: bool = False):
         """Store quarterly earnings history from EDGAR data using Net Income"""
         # Use net_income_quarterly (raw quarterly Net Income from EDGAR)
         net_income_quarterly = edgar_data.get('net_income_quarterly', [])
@@ -521,6 +521,12 @@ class DataFetcher:
         if not net_income_quarterly:
             logger.warning(f"[{symbol}] No quarterly Net Income data available from EDGAR")
             return
+
+        # Only clear existing quarterly data on force refresh
+        # This allows the upsert to handle normal updates while ensuring
+        # force refresh completely replaces potentially-bad historical data
+        if force_refresh:
+            self.db.clear_quarterly_earnings(symbol)
 
         quarters_stored = 0
         for entry in net_income_quarterly:

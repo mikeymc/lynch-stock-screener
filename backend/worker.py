@@ -224,6 +224,7 @@ class BackgroundWorker:
         force_refresh = params.get('force_refresh', False)
         limit = params.get('limit')
         region = params.get('region', 'us')  # Default to US only
+        specific_symbols = params.get('symbols')  # Optional list of specific symbols to screen
 
         from tradingview_fetcher import TradingViewFetcher
         from finviz_fetcher import FinvizFetcher
@@ -236,41 +237,51 @@ class BackgroundWorker:
         analyzer = EarningsAnalyzer(self.db)
         criteria = LynchCriteria(self.db, analyzer)
 
-        # Map CLI region to TradingView regions
-        region_mapping = {
-            'us': ['us'],                       # US only
-            'north-america': ['north_america'], # US + Canada + Mexico
-            'south-america': ['south_america'], # South America
-            'europe': ['europe'],
-            'asia': ['asia'],                   # Asia including China & India
-            'all': None                         # None = all regions
-        }
-        tv_regions = region_mapping.get(region, ['us'])
-        
-        # Bulk prefetch market data
-        self.db.update_job_progress(job_id, progress_pct=5, progress_message=f'Fetching market data from TradingView ({region})...')
-        tv_fetcher = TradingViewFetcher()
-        
-        # Note: TradingViewFetcher.fetch_all_stocks handles the region keys defined above
-        market_data_cache = tv_fetcher.fetch_all_stocks(limit=20000, regions=tv_regions)
-        logger.info(f"Loaded {len(market_data_cache)} stocks from TradingView ({region})")
+        # If specific symbols provided, use those directly (for testing)
+        if specific_symbols:
+            logger.info(f"Screening specific symbols: {specific_symbols}")
+            self.db.update_job_progress(job_id, progress_pct=10, progress_message=f'Screening {len(specific_symbols)} specific symbols...')
+            
+            # Skip bulk TradingView/Finviz fetches - let fetch_stock_data handle each symbol individually
+            filtered_symbols = specific_symbols
+            market_data_cache = {}  # Empty cache = each symbol fetches its own data
+            finviz_cache = {}
+        else:
+            # Map CLI region to TradingView regions
+            region_mapping = {
+                'us': ['us'],                       # US only
+                'north-america': ['north_america'], # US + Canada + Mexico
+                'south-america': ['south_america'], # South America
+                'europe': ['europe'],
+                'asia': ['asia'],                   # Asia including China & India
+                'all': None                         # None = all regions
+            }
+            tv_regions = region_mapping.get(region, ['us'])
+            
+            # Bulk prefetch market data
+            self.db.update_job_progress(job_id, progress_pct=5, progress_message=f'Fetching market data from TradingView ({region})...')
+            tv_fetcher = TradingViewFetcher()
+            
+            # Note: TradingViewFetcher.fetch_all_stocks handles the region keys defined above
+            market_data_cache = tv_fetcher.fetch_all_stocks(limit=20000, regions=tv_regions)
+            logger.info(f"Loaded {len(market_data_cache)} stocks from TradingView ({region})")
 
-        self._send_heartbeat(job_id)
+            self._send_heartbeat(job_id)
 
-        # Bulk prefetch institutional ownership
-        self.db.update_job_progress(job_id, progress_pct=10, progress_message='Fetching institutional ownership from Finviz...')
-        finviz_fetcher = FinvizFetcher()
-        finviz_cache = finviz_fetcher.fetch_all_institutional_ownership(limit=20000)
-        logger.info(f"Loaded {len(finviz_cache)} institutional ownership values from Finviz")
+            # Bulk prefetch institutional ownership
+            self.db.update_job_progress(job_id, progress_pct=10, progress_message='Fetching institutional ownership from Finviz...')
+            finviz_fetcher = FinvizFetcher()
+            finviz_cache = finviz_fetcher.fetch_all_institutional_ownership(limit=20000)
+            logger.info(f"Loaded {len(finviz_cache)} institutional ownership values from Finviz")
 
-        self._send_heartbeat(job_id)
+            self._send_heartbeat(job_id)
 
-        # TradingView already filters via _should_skip_ticker (OTC, warrants, etc.)
-        filtered_symbols = list(market_data_cache.keys())
+            # TradingView already filters via _should_skip_ticker (OTC, warrants, etc.)
+            filtered_symbols = list(market_data_cache.keys())
 
-        # Apply limit if specified
-        if limit and limit < len(filtered_symbols):
-            filtered_symbols = filtered_symbols[:limit]
+            # Apply limit if specified
+            if limit and limit < len(filtered_symbols):
+                filtered_symbols = filtered_symbols[:limit]
 
         total = len(filtered_symbols)
         self.db.update_job_progress(job_id, progress_pct=15, progress_message=f'Screening {total} stocks...',

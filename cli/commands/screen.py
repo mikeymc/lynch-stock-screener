@@ -31,6 +31,8 @@ def start(
     limit: int = typer.Option(None, "--limit", "-l", help="Limit number of stocks to screen"),
     region: str = typer.Option("us", "--region", "-r", 
                                help="Region to screen: us, north-america, south-america, europe, asia, all"),
+    force: bool = typer.Option(False, "--force", "-f", help="Force refresh all cached data (bypasses cache)"),
+    symbols: str = typer.Option(None, "--symbols", "-s", help="Comma-separated symbols to screen (for testing)"),
 ):
     """Start stock screening"""
     
@@ -41,6 +43,12 @@ def start(
         console.print(f"[yellow]Valid regions: {', '.join(valid_regions)}[/yellow]")
         raise typer.Exit(1)
     
+    # Parse symbols if provided
+    symbol_list = None
+    if symbols:
+        symbol_list = [s.strip().upper() for s in symbols.split(',')]
+        console.print(f"[dim]Screening specific symbols: {symbol_list}[/dim]")
+    
     if prod:
         # Production: Call /api/jobs
         token = get_api_token()
@@ -48,10 +56,12 @@ def start(
         
         payload = {
             "type": "full_screening",
-            "params": {"algorithm": algorithm, "region": region}
+            "params": {"algorithm": algorithm, "region": region, "force_refresh": force}
         }
         if limit:
             payload["params"]["limit"] = limit
+        if symbol_list:
+            payload["params"]["symbols"] = symbol_list
         
         try:
             response = httpx.post(
@@ -81,10 +91,12 @@ def start(
         
         payload = {
             "type": "full_screening",
-            "params": {"algorithm": algorithm, "region": region}
+            "params": {"algorithm": algorithm, "region": region, "force_refresh": force}
         }
         if limit:
             payload["params"]["limit"] = limit
+        if symbol_list:
+            payload["params"]["symbols"] = symbol_list
         
         try:
             response = httpx.post(
