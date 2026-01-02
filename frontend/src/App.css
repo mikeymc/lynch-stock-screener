@@ -431,7 +431,7 @@ button:disabled {
 /* New algorithm status colors */
 .summary-stat.strong-buy {
   background-color: #22c55e;
-  color: #fff;
+  color: #000;
 }
 
 .summary-stat.buy {
