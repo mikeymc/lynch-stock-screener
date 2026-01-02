@@ -93,7 +93,7 @@ export default function UnifiedChartAnalysis({ symbol, onAnalysisGenerated }) {
                             gap: '0.5rem'
                         }}
                     >
-                        {hasAnyAnalysis ? '🔄 Regenerate All Analyses' : '✨ Generate Chart Analysis'}
+                        {hasAnyAnalysis ? '🔄 Re-Analyze' : '✨ Analyze'}
                     </button>
                 )}
             </div>
