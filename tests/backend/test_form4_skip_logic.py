@@ -9,6 +9,10 @@ This test verifies that:
 
 import pytest
 from datetime import datetime, timedelta
+from pathlib import Path
+
+# Compute project root from this file's location
+PROJECT_ROOT = Path(__file__).parent.parent.parent
 
 
 class TestForm4SkipLogicUnit:
@@ -110,7 +114,7 @@ class TestSQLQuery:
         """
         # Read the actual SQL from the function
         import re
-        with open('/Users/mikey/workspace/lynch-stock-screener/backend/database.py', 'r') as f:
+        with open(PROJECT_ROOT / 'backend' / 'database.py', 'r') as f:
             content = f.read()
         
         # Find the has_recent_insider_trades function
@@ -139,7 +143,7 @@ class TestSQLQuery:
         ```
         """
         import re
-        with open('/Users/mikey/workspace/lynch-stock-screener/backend/database.py', 'r') as f:
+        with open(PROJECT_ROOT / 'backend' / 'database.py', 'r') as f:
             content = f.read()
         
         # Find the function and check return statement
@@ -160,7 +164,7 @@ class TestWorkerIntegration:
     
     def test_worker_has_skip_logic(self):
         """Verify the worker.py has the skip logic implemented."""
-        with open('/Users/mikey/workspace/lynch-stock-screener/backend/worker.py', 'r') as f:
+        with open(PROJECT_ROOT / 'backend' / 'worker.py', 'r') as f:
             content = f.read()
         
         # Check for the skip logic in _run_form4_cache
@@ -173,7 +177,7 @@ class TestWorkerIntegration:
     
     def test_worker_force_refresh_support(self):
         """Verify the worker supports force_refresh parameter."""
-        with open('/Users/mikey/workspace/lynch-stock-screener/backend/worker.py', 'r') as f:
+        with open(PROJECT_ROOT / 'backend' / 'worker.py', 'r') as f:
             content = f.read()
         
         # Check for force_refresh handling
