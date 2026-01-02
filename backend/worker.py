@@ -1842,9 +1842,11 @@ class BackgroundWorker:
                         )
                         self._send_heartbeat(job_id)
                     
-                    if processed % 50 == 0:
+                    if processed % 50 == 0 and processed > 0:
                         logger.info(f"Transcript cache progress: {processed}/{total} (cached: {cached}, skipped: {skipped}, errors: {errors}) | MEMORY: {get_memory_mb():.0f}MB")
                         check_memory_warning(f"[transcript {processed}/{total}]")
+                        # Restart browser periodically to prevent memory buildup
+                        await scraper.restart_browser()
         
         # Run the async caching function
         logger.info("Running async transcript caching...")

@@ -29,6 +29,10 @@ class TranscriptScraper:
         self._browser: Optional[Browser] = None
         self._playwright = None
         self._last_request_time = 0
+
+    def _is_browser_alive(self) -> bool:
+        """Check if browser is still connected."""
+        return self._browser is not None and self._browser.is_connected
     
     async def __aenter__(self):
         """Async context manager entry."""
@@ -40,8 +44,23 @@ class TranscriptScraper:
         await self._close_browser()
     
     async def _start_browser(self):
-        """Start the Playwright browser."""
-        if self._browser is None:
+        """Start the Playwright browser, restarting if dead."""
+        if not self._is_browser_alive():
+            # Clean up dead browser if exists
+            if self._browser is not None:
+                logger.warning("[TranscriptScraper] Browser died, restarting...")
+                try:
+                    await self._browser.close()
+                except Exception:
+                    pass  # Already dead
+                self._browser = None
+            if self._playwright is not None:
+                try:
+                    await self._playwright.stop()
+                except Exception:
+                    pass
+                self._playwright = None
+
             self._playwright = await async_playwright().start()
             self._browser = await self._playwright.chromium.launch(
                 headless=True,
@@ -50,15 +69,27 @@ class TranscriptScraper:
             logger.info("[TranscriptScraper] Browser started")
     
     async def _close_browser(self):
-        """Close the Playwright browser."""
+        """Close the Playwright browser (tolerant of already-dead browsers)."""
         if self._browser:
-            await self._browser.close()
+            try:
+                await self._browser.close()
+            except Exception:
+                pass  # Already dead, ignore
             self._browser = None
         if self._playwright:
-            await self._playwright.stop()
+            try:
+                await self._playwright.stop()
+            except Exception:
+                pass
             self._playwright = None
             logger.info("[TranscriptScraper] Browser closed")
-    
+
+    async def restart_browser(self):
+        """Force restart the browser (for periodic cleanup to prevent memory buildup)."""
+        logger.info("[TranscriptScraper] Restarting browser...")
+        await self._close_browser()
+        await self._start_browser()
+
     async def _rate_limit(self):
         """Enforce rate limiting between requests."""
         current_time = asyncio.get_event_loop().time()
@@ -104,8 +135,17 @@ class TranscriptScraper:
         )
         
         logger.info(f"[TranscriptScraper] [{symbol}] Step 3: Opening new page...")
-        page = await self._browser.new_page()
-        
+        try:
+            page = await self._browser.new_page()
+        except Exception as e:
+            if "Connection closed" in str(e):
+                logger.warning(f"[TranscriptScraper] [{symbol}] Browser connection lost, restarting...")
+                await self._close_browser()
+                await self._start_browser()
+                page = await self._browser.new_page()
+            else:
+                raise
+
         try:
             # Set realistic user agent
             await page.set_extra_http_headers({
