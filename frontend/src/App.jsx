@@ -874,8 +874,6 @@ function StockListView({
             </div>
           )}
 
-          <SearchPopover onSelect={(sym) => navigate(`/stock/${sym}`)} />
-
           <div className="filter-controls">
             <label>Filter: </label>
             <select value={filter} onChange={(e) => setFilter(e.target.value)}>
@@ -898,6 +896,8 @@ function StockListView({
               )}
             </select>
           </div>
+
+          <SearchPopover onSelect={(sym) => navigate(`/stock/${sym}`)} />
 
           {summary && (
             <div className="summary-stats">

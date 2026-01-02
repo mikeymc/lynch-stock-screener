@@ -290,13 +290,13 @@ export default function StockDetail({ watchlist, toggleWatchlist }) {
       {/* Sticky zone - controls and stock summary stick together */}
       <div className="sticky-zone">
         <div className="controls">
-          {/* Search popover for quick stock navigation */}
-          <SearchPopover onSelect={(sym) => navigate(`/stock/${sym}`)} />
-
           {/* All Stocks button */}
           <button className="tab-button nav-button" onClick={() => navigate('/')}>
             All Stocks
           </button>
+
+          {/* Search popover for quick stock navigation */}
+          <SearchPopover onSelect={(sym) => navigate(`/stock/${sym}`)} />
 
           {/* Center: Tab buttons */}
           <div className="tab-button-group"><button
