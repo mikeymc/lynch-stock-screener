@@ -1,7 +1,7 @@
 // ABOUTME: Status bar component that visualizes stock metric scores
 // ABOUTME: Displays metric-specific color zones with a marker indicating the score position
 
-export default function StatusBar({ status, score, value, metricType }) {
+export default function StatusBar({ status, score, value, metricType, compact = false }) {
   const displayValue = typeof value === 'number' ? value.toFixed(2) : (value || 'N/A')
   const tooltipText = `${status}: ${displayValue}`
 
@@ -9,7 +9,13 @@ export default function StatusBar({ status, score, value, metricType }) {
   const markerPosition = `${score}%`
 
   // Check if this metric type uses a gradient
-  const useGradient = ['pe_range', 'revenue_consistency', 'income_consistency'].includes(metricType)
+  const useGradient = [].includes(metricType)
+
+  // Check if this metric type uses a solid fill (partial fill, no marker)
+  const useSolidFill = ['revenue_consistency', 'income_consistency'].includes(metricType)
+
+  // Check if this metric type uses a full bar with marker
+  const useFullBarWithMarker = ['pe_range'].includes(metricType)
 
   // Get gradient style based on metric type
   const getGradientStyle = () => {
@@ -19,7 +25,6 @@ export default function StatusBar({ status, score, value, metricType }) {
         return {
           background: 'linear-gradient(to right, #22c55e 0%, #86efac 25%, #fde047 50%, #fb923c 75%, #ef4444 100%)'
         }
-      case 'revenue_consistency':
       case 'income_consistency':
         // Consistency: red (left, low = bad) -> green (right, high = good)
         return {
@@ -65,18 +70,42 @@ export default function StatusBar({ status, score, value, metricType }) {
   const zones = getZoneConfig()
 
   return (
-    <div className="status-bar-container" title={tooltipText}>
+    <div className={`status-bar-container ${compact ? 'compact' : ''}`} title={tooltipText}>
       <div className="status-bar" data-metric={metricType}>
-        <div
-          className="status-marker"
-          style={{ left: markerPosition }}
-        ></div>
+        {(useGradient || useFullBarWithMarker) && (
+          <div
+            className="status-marker"
+            style={{ left: markerPosition }}
+          ></div>
+        )}
         {useGradient ? (
           <div style={{
             width: '100%',
             height: '100%',
             borderRadius: '4px',
             ...getGradientStyle()
+          }}></div>
+        ) : useSolidFill ? (
+          <div style={{
+            width: '100%',
+            height: '100%',
+            borderRadius: '4px',
+            backgroundColor: '#1E293B',
+            position: 'relative'
+          }}>
+            <div style={{
+              width: markerPosition,
+              height: '100%',
+              borderRadius: '4px',
+              backgroundColor: '#10B981'
+            }}></div>
+          </div>
+        ) : useFullBarWithMarker ? (
+          <div style={{
+            width: '100%',
+            height: '100%',
+            borderRadius: '4px',
+            backgroundColor: '#60A5FA'
           }}></div>
         ) : (
           <div style={{ display: 'flex', width: '100%', height: '100%' }}>

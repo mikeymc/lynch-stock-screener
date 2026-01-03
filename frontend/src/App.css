@@ -901,6 +901,157 @@ td strong {
   filter: drop-shadow(0 0 2px rgba(0, 0, 0, 0.8));
 }
 
+/* ==========================================================================
+   Stock Card Styles - Compact card layout for stock list
+   ========================================================================== */
+
+.stock-cards-container {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 16px;
+  max-width: 900px;
+  margin: 0 auto;
+}
+
+.stock-card {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  background-color: #1e293b;
+  border: 1px solid #334155;
+  border-radius: 12px;
+  padding: 12px 20px;
+  cursor: pointer;
+  transition: background-color 0.2s, border-color 0.2s;
+  max-width: 850px;
+  min-height: 64px;
+}
+
+.stock-card:hover {
+  background-color: #293548;
+  border-color: #475569;
+}
+
+.stock-card-star {
+  background: none;
+  border: none;
+  padding: 0;
+  font-size: 1.25rem;
+  filter: grayscale(100%) brightness(0.4);
+  transition: filter 0.2s ease;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.stock-card-star.checked {
+  filter: grayscale(0%) brightness(1);
+}
+
+.stock-card-star:hover {
+  filter: grayscale(0%) brightness(0.8);
+}
+
+.stock-card-symbol {
+  color: #60a5fa;
+  font-weight: 700;
+  font-size: 1.25rem;
+  line-height: 1.2;
+}
+
+.stock-card-metrics {
+  display: flex;
+  gap: 0;
+  flex: 1;
+  min-width: 0;
+}
+
+.stock-card-metric:first-child {
+  border-left: none;
+}
+
+.stock-card-bars {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 170px;
+  flex-shrink: 0;
+}
+
+.stock-card-bar-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 14px;
+}
+
+.stock-card-bar-row .bar-label {
+  color: #9ca3af;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+/* Compact status bar variant for stock cards */
+.status-bar-container.compact {
+  padding: 0;
+}
+
+.status-bar-container.compact .status-bar {
+  height: 6px;
+  border-radius: 4px;
+}
+
+.status-bar-container.compact .status-marker {
+  width: 3px;
+  background-color: #1E293B;
+  box-shadow: none;
+}
+
+.status-bar-container.compact .status-marker::before {
+  display: none;
+}
+
+.stock-card-badge {
+  padding: 4px 8px;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #000;
+  white-space: nowrap;
+  flex-shrink: 0;
+  align-self: center;
+  margin-left: 12px;
+}
+
+/* Responsive adjustments for stock cards */
+@media (max-width: 800px) {
+  .stock-card {
+    flex-wrap: wrap;
+    padding: 12px;
+    gap: 10px;
+  }
+
+  .stock-card-metrics {
+    order: 3;
+    width: 100%;
+    justify-content: space-around;
+  }
+
+  .stock-card-bars {
+    order: 2;
+    width: auto;
+  }
+
+  .stock-card-bar-row .bar-label {
+    min-width: 80px;
+    font-size: 0.7rem;
+  }
+
+  .stock-card-bar-item {
+    width: 60px;
+  }
+}
+
 .watchlist-star {
   cursor: pointer;
   font-size: 1.25rem;
@@ -1091,8 +1242,15 @@ td strong {
 }
 
 @keyframes subtitle-fade-in {
-  from { opacity: 0; transform: translateY(4px); }
-  to { opacity: 1; transform: translateY(0); }
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 /* Right Column - Chat Sidebar (1/3) - fixed */

@@ -13,6 +13,7 @@ import {
 } from 'chart.js'
 import StockDetail from './pages/StockDetail'
 import StockTableHeader from './components/StockTableHeader'
+import StockCard from './components/StockCard'
 
 
 import AlgorithmTuning from './pages/AlgorithmTuning'
@@ -985,70 +986,16 @@ function StockListView({
 
       {filteredStocks.length > 0 && (
         <>
-          <div className="table-container stock-list-table">
-            <table className="stocks-table">
-              <StockTableHeader
-                sortBy={sortBy}
-                sortDir={sortDir}
-                onSort={toggleSort}
+          <div className="stock-cards-container">
+            {filteredStocks.map(stock => (
+              <StockCard
+                key={stock.symbol}
+                stock={stock}
+                watchlist={watchlist}
+                onToggleWatchlist={toggleWatchlist}
+                onClick={handleStockClick}
               />
-              <tbody>
-                {filteredStocks.map(stock => (
-                  <tr
-                    key={stock.symbol}
-                    onClick={() => handleStockClick(stock.symbol)}
-                    className="stock-row"
-                  >
-                    <td className="watchlist-cell" onClick={(e) => { e.stopPropagation(); toggleWatchlist(stock.symbol); }}>
-                      <span className={`watchlist-star ${watchlist.has(stock.symbol) ? 'checked' : ''}`}>
-                        ⭐
-                      </span>
-                    </td>
-                    <td><strong>{stock.symbol}</strong></td>
-                    <td>{stock.company_name || 'N/A'}</td>
-                    <td>{stock.country || 'N/A'}</td>
-                    <td>{typeof stock.market_cap === 'number' ? `$${(stock.market_cap / 1e9).toFixed(2)}B` : 'N/A'}</td>
-                    <td>{stock.sector || 'N/A'}</td>
-                    <td>{typeof stock.ipo_year === 'number' ? new Date().getFullYear() - stock.ipo_year : 'N/A'}</td>
-                    <td>{typeof stock.price === 'number' ? `$${stock.price.toFixed(2)}` : 'N/A'}</td>
-                    <td>{typeof stock.peg_ratio === 'number' ? stock.peg_ratio.toFixed(2) : 'N/A'}</td>
-                    <td>{typeof stock.pe_ratio === 'number' ? stock.pe_ratio.toFixed(2) : 'N/A'}</td>
-                    <td>{typeof stock.debt_to_equity === 'number' ? stock.debt_to_equity.toFixed(2) : 'N/A'}</td>
-                    <td>{typeof stock.institutional_ownership === 'number' ? `${(stock.institutional_ownership * 100).toFixed(1)}%` : 'N/A'}</td>
-                    <td>{typeof stock.revenue_cagr === 'number' ? `${stock.revenue_cagr.toFixed(1)}%` : 'N/A'}</td>
-                    <td>{typeof stock.earnings_cagr === 'number' ? `${stock.earnings_cagr.toFixed(1)}%` : 'N/A'}</td>
-                    <td>{typeof stock.dividend_yield === 'number' ? `${stock.dividend_yield.toFixed(1)}%` : 'N/A'}</td>
-                    <td>
-                      <StatusBar
-                        status={stock.pe_52_week_position !== null ? `${stock.pe_52_week_min?.toFixed(1)} - ${stock.pe_52_week_max?.toFixed(1)}` : 'N/A'}
-                        score={stock.pe_52_week_position !== null ? stock.pe_52_week_position : 50}
-                        value={stock.pe_ratio}
-                        metricType="pe_range"
-                      />
-                    </td>
-                    <td>
-                      <StatusBar
-                        status={stock.revenue_consistency_score !== null ? 'Revenue Consistency' : 'N/A'}
-                        score={stock.revenue_consistency_score || 50}
-                        value={stock.revenue_consistency_score}
-                        metricType="revenue_consistency"
-                      />
-                    </td>
-                    <td>
-                      <StatusBar
-                        status={stock.income_consistency_score !== null ? 'Income Consistency' : 'N/A'}
-                        score={stock.income_consistency_score || 50}
-                        value={stock.income_consistency_score}
-                        metricType="income_consistency"
-                      />
-                    </td>
-                    <td style={{ backgroundColor: getStatusColor(stock.overall_status), color: '#000', fontWeight: 'bold' }}>
-                      {formatStatusName(stock.overall_status)}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+            ))}
           </div>
 
           <div className="pagination">

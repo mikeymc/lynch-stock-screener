@@ -1,0 +1,190 @@
+/* ==========================================================================
+   Stock Card Styles - Building element by element with explicit pixel values
+   ========================================================================== */
+
+.stock-cards-container {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 16px;
+    max-width: 900px;
+    margin: 0 auto;
+}
+
+/* Step 1: The card container */
+.stock-card {
+    display: flex;
+    align-items: flex-start;
+    /* Align children at top */
+    gap: 0px;
+    background-color: #1E293B;
+    border: 1px solid #334155;
+    border-radius: 12px;
+    padding: 12px 10px;
+    /* 10px left padding to push star closer to edge */
+    cursor: pointer;
+    width: 100%;
+    max-width: 850px;
+    min-width: 750px;
+    height: 90px;
+    /* Increased to match mockup */
+}
+
+.stock-card:hover {
+    background-color: #293548;
+    border-color: #475569;
+}
+
+/* Step 2a: Watchlist Star */
+.stock-card-star {
+    background: none;
+    border: none;
+    padding: 1px;
+    font-size: 27px;
+    cursor: pointer;
+    filter: grayscale(100%) brightness(0.5);
+    transition: filter 0.2s;
+    flex-shrink: 0;
+    align-self: center;
+    /* Stay vertically centered */
+}
+
+.stock-card-star:hover {
+    filter: grayscale(50%) brightness(0.8);
+}
+
+.stock-card-star.watched {
+    filter: grayscale(0%) brightness(1);
+}
+
+/* Step 2b: Symbol + Company Name */
+.stock-card-identity {
+    display: flex;
+    flex-direction: column;
+    min-width: 80px;
+    flex-grow: 1;
+    flex-shrink: 1;
+    padding: 9px 0px 9px 9px;
+}
+
+.stock-card-symbol {
+    font-size: 20px;
+    /* 20px as requested */
+    font-weight: 700;
+    color: #60A5FA;
+    line-height: 1.2;
+}
+
+.stock-card-name {
+    font-size: 11px;
+    color: #9CA3AF;
+    line-height: 1.3;
+    /* Allow wrapping to max 2 lines */
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
+
+/* Step 3: Metric column */
+.stock-card-metric {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: flex-start;
+    /* Align at top */
+    text-align: center;
+    width: 58px;
+    /* Fixed 60px width */
+    padding: 10px 6px;
+    border-left: 1px solid #293548;
+    /* Medium-dark vertical bars */
+    flex-shrink: 0;
+}
+
+.metric-price {
+    border-left: none;
+    /* Remove left border on first metric */
+}
+
+.stock-card-metric .metric-value {
+    font-size: 17px;
+    /* 1px larger */
+    font-weight: 600;
+    color: #E2E8F0;
+    line-height: 1.2;
+    white-space: nowrap;
+}
+
+.stock-card-metric .metric-value.positive {
+    color: #10B981;
+    /* Green for positive growth */
+}
+
+.stock-card-metric .metric-value.negative {
+    color: #EF4444;
+    /* Red for negative growth */
+}
+
+.stock-card-metric .metric-label {
+    font-size: 10px;
+    color: #64748B;
+    line-height: 1.2;
+    /* Allow wrapping */
+}
+
+/* Individual metric column widths */
+.metric-cap {
+    width: 72px;
+    /* Market Cap: 72px */
+}
+
+.metric-pe {
+    width: 50px;
+    /* P/E Ratio */
+}
+
+.metric-peg {
+    width: 40px;
+    /* PEG Ratio */
+}
+
+.metric-dividend {
+    width: 60px;
+    /* Dividend Yield */
+}
+
+.metric-de {
+    width: 48px;
+    /* D/E Ratio */
+}
+
+/* Status Bars Section */
+.stock-card-bars {
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    width: 90px;
+    height: 65px;
+    flex-shrink: 0;
+    align-self: center;
+    /* Vertically center within card */
+}
+
+.stock-card-bar-item {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    width: 90px;
+}
+
+.stock-card-bar-item .bar-label {
+    font-size: 9px;
+    color: #64748B;
+    line-height: 1;
+    text-align: left;
+}
+
+.stock-card-bar-item .status-bar-container {
+    height: 6px;
+}
