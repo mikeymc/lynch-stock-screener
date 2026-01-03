@@ -188,3 +188,260 @@
 .stock-card-bar-item .status-bar-container {
     height: 6px;
 }
+
+/* Mobile responsive design */
+@media (max-width: 800px) {
+    .stock-card {
+        display: grid;
+        grid-template-columns: minmax(120px, 200px) minmax(45px, 0.8fr) minmax(45px, 0.8fr) minmax(45px, 0.8fr) minmax(25px, 0.6fr) auto;
+        grid-template-rows: 39px 39px;
+        column-gap: 1px;
+        row-gap: 0px;
+        height: 90px;
+        max-height: 90px;
+        min-width: 320px;
+        padding: 6px;
+        overflow: hidden;
+    }
+
+    /* Hide overall score badge on mobile */
+    .stock-card-badge {
+        display: none;
+    }
+
+    /* Identity: Top of left column */
+    .stock-card-identity {
+        grid-column: 1;
+        grid-row: 1;
+        align-self: start;
+        padding: 6px 0 0 9px;
+        overflow: visible;
+        z-index: 1;
+    }
+
+    /* Star: Fixed position in second row */
+    .stock-card-star {
+        grid-column: 1;
+        grid-row: 2;
+        align-self: start;
+        padding: 0;
+        padding-left: 9px;
+        padding-top: 5px;
+        justify-self: start;
+        font-size: 16px;
+    }
+
+    /* First row of metrics: Price, Market Cap, P/E, PEG */
+    .metric-price {
+        grid-column: 2;
+        grid-row: 1;
+    }
+
+    .metric-cap {
+        grid-column: 3;
+        grid-row: 1;
+    }
+
+    .metric-pe {
+        grid-column: 4;
+        grid-row: 1;
+    }
+
+    .metric-peg {
+        grid-column: 5;
+        grid-row: 1;
+    }
+
+    /* Second row of metrics: Revenue, Income, Dividend, D/E */
+    .metric-revenue {
+        grid-column: 2;
+        grid-row: 2;
+    }
+
+    .metric-income {
+        grid-column: 3;
+        grid-row: 2;
+    }
+
+    .metric-dividend {
+        grid-column: 4;
+        grid-row: 2;
+    }
+
+    .metric-de {
+        grid-column: 5;
+        grid-row: 2;
+    }
+
+    /* Bars: Right side, spans 2 rows */
+    .stock-card-bars {
+        grid-column: 6;
+        grid-row: 1 / 3;
+        width: auto;
+        height: auto;
+    }
+
+    /* Adjust metric styling for mobile */
+    .stock-card-metric {
+        padding: 2px 0px;
+        width: auto !important;
+        min-width: 0;
+        border-left: none;
+    }
+
+    /* Override specific metric widths for mobile */
+    .metric-cap,
+    .metric-pe,
+    .metric-peg,
+    .metric-dividend,
+    .metric-de {
+        width: auto !important;
+    }
+
+    .stock-card-metric .metric-value {
+        font-size: 13px;
+        line-height: 1.3;
+    }
+
+    .stock-card-metric .metric-label {
+        font-size: 8px;
+        line-height: 1.2;
+        margin-top: 1px;
+    }
+
+    /* Tighter spacing for identity */
+    .stock-card-identity {
+        padding: 2px 0 0 9px;
+    }
+
+    .stock-card-symbol {
+        font-size: 15px;
+        line-height: 1.1;
+    }
+
+    .stock-card-name {
+        line-height: 1.2;
+    }
+}
+
+/* Extra small screens - abbreviated labels */
+@media (max-width: 500px) {
+
+    /* Tighter grid columns for narrow screens - allow identity and bars to flex */
+    .stock-card {
+        grid-template-columns: minmax(80px, 200px) 43px 43px 43px 23px minmax(50px, 90px);
+    }
+
+    /* Bars flex to fill grid column */
+    .stock-card-bars {
+        width: 100%;
+        max-width: 90px;
+        margin-left: 3px;
+    }
+
+    .stock-card-bar-item {
+        width: 95%;
+        max-width: 90px;
+    }
+
+    /* Abbreviated bar labels */
+    .stock-card-bar-item:nth-child(1) .bar-label {
+        font-size: 0;
+    }
+
+    .stock-card-bar-item:nth-child(1) .bar-label::after {
+        content: "52W P/E";
+        font-size: 9px;
+    }
+
+    .stock-card-bar-item:nth-child(2) .bar-label {
+        font-size: 0;
+    }
+
+    .stock-card-bar-item:nth-child(2) .bar-label::after {
+        content: "5Y Rev Cons";
+        font-size: 9px;
+    }
+
+    .stock-card-bar-item:nth-child(3) .bar-label {
+        font-size: 0;
+    }
+
+    .stock-card-bar-item:nth-child(3) .bar-label::after {
+        content: "5Y Inc Cons";
+        font-size: 9px;
+    }
+
+    /* Abbreviated metric labels */
+    .metric-price .metric-label {
+        font-size: 0;
+    }
+
+    .metric-price .metric-label::after {
+        content: "Price";
+        font-size: 8px;
+    }
+
+    .metric-cap .metric-label {
+        font-size: 0;
+    }
+
+    .metric-cap .metric-label::after {
+        content: "MCap";
+        font-size: 8px;
+    }
+
+    .metric-pe .metric-label {
+        font-size: 0;
+    }
+
+    .metric-pe .metric-label::after {
+        content: "P/E";
+        font-size: 8px;
+    }
+
+    .metric-peg .metric-label {
+        font-size: 0;
+    }
+
+    .metric-peg .metric-label::after {
+        content: "PEG";
+        font-size: 8px;
+    }
+
+    .metric-revenue .metric-label {
+        font-size: 0;
+    }
+
+    .metric-revenue .metric-label::after {
+        content: "Rev 5Y";
+        font-size: 8px;
+    }
+
+    .metric-income .metric-label {
+        font-size: 0;
+    }
+
+    .metric-income .metric-label::after {
+        content: "Inc 5Y";
+        font-size: 8px;
+    }
+
+    .metric-dividend .metric-label {
+        font-size: 0;
+    }
+
+    .metric-dividend .metric-label::after {
+        content: "Div";
+        font-size: 8px;
+    }
+
+    .metric-de .metric-label {
+        font-size: 0;
+    }
+
+    .metric-de .metric-label::after {
+        content: "D/E";
+        font-size: 8px;
+    }
+}
