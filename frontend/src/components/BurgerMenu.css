@@ -1,0 +1,71 @@
+/* Burger menu panel - full height slide-out */
+.burger-menu {
+  position: fixed;
+  top: 0;
+  left: 0;
+  height: 100vh;
+  width: 50px;
+  background-color: #0f172a;
+  transition: width 0.3s ease;
+  z-index: 1000;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.burger-menu.open {
+  width: 310px;
+}
+
+/* Burger icon button */
+.burger-icon {
+  width: 40px;
+  height: 40px;
+  background-color: transparent !important;
+  border: none !important;
+  cursor: pointer;
+  padding: 0 !important;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  gap: 3px;
+  flex-shrink: 0;
+  position: relative;
+  border-radius: 50%;
+  transition: background-color 0.2s ease;
+  outline: none !important;
+  margin: 5px;
+}
+
+.burger-menu .burger-icon:hover {
+  background-color: rgba(255, 255, 255, 0.1) !important;
+  border-color: transparent !important;
+}
+
+.burger-menu .burger-icon:focus,
+.burger-menu .burger-icon:focus-visible {
+  outline: none !important;
+  background-color: transparent !important;
+  border-color: transparent !important;
+}
+
+.burger-menu .burger-icon:active {
+  background-color: #334155 !important;
+}
+
+/* Burger icon lines */
+.burger-line {
+  width: 18px;
+  height: 2px;
+  background-color: #E2E8F0;
+  transition: all 0.3s ease;
+  pointer-events: none;
+}
+
+/* Menu content area */
+.burger-content {
+  flex: 1;
+  overflow-y: auto;
+  padding-top: 10px;
+}

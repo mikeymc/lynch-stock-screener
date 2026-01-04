@@ -29,6 +29,7 @@ body {
 .app {
   min-height: 100vh;
   padding: 0;
+  margin-left: 50px;
 }
 
 .app.stock-list-view {
@@ -44,6 +45,7 @@ body {
   display: flex;
   flex-direction: column;
   min-height: 100vh;
+  margin-left: 50px;
 }
 
 /* When reports layout is inside, lock the page to viewport height */

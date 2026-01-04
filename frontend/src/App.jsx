@@ -24,6 +24,7 @@ import SearchPopover from './components/SearchPopover'
 import { useAuth } from './context/AuthContext'
 import LoginModal from './components/LoginModal'
 import UserAvatar from './components/UserAvatar'
+import BurgerMenu from './components/BurgerMenu'
 import './App.css'
 
 ChartJS.register(
@@ -1129,8 +1130,10 @@ function App() {
   }
 
   return (
-    <Routes>
-      <Route path="/" element={
+    <>
+      <BurgerMenu />
+      <Routes>
+        <Route path="/" element={
         <StockListView
           stocks={stocks}
           setStocks={setStocks}
@@ -1160,8 +1163,9 @@ function App() {
       } />
 
 
-      <Route path="/tuning" element={<AlgorithmTuning />} />
-    </Routes>
+        <Route path="/tuning" element={<AlgorithmTuning />} />
+      </Routes>
+    </>
   )
 }
 
