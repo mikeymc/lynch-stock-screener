@@ -1754,6 +1754,74 @@ def get_stock_news(symbol):
         return jsonify({'error': f'Failed to fetch news: {str(e)}'}), 500
 
 
+@app.route('/api/stock/<symbol>/reddit', methods=['GET'])
+def get_stock_reddit(symbol):
+    """
+    Get Reddit sentiment data for a stock.
+    
+    First tries to get cached data from database.
+    If no cached data exists, fetches live from Reddit (rate limited).
+    Includes top conversations (comments + replies) for top 3 posts.
+    """
+    symbol = symbol.upper()
+    force_refresh = request.args.get('refresh', 'false').lower() == 'true'
+    
+    try:
+        # Clear cache if refresh requested
+        if force_refresh:
+            conn = db.get_connection()
+            try:
+                cursor = conn.cursor()
+                cursor.execute("DELETE FROM social_sentiment WHERE symbol = %s", (symbol,))
+                conn.commit()
+                logger.info(f"Cleared {cursor.rowcount} cached Reddit posts for {symbol}")
+            finally:
+                db.return_connection(conn)
+        
+        # Try cached data first (unless we just cleared it)
+        if not force_refresh:
+            posts = db.get_social_sentiment(symbol, limit=20, min_score=10)
+            
+            if posts:
+                return jsonify({
+                    'posts': posts,
+                    'cached': True,
+                    'source': 'database'
+                })
+        
+        # No cached data - fetch live (with rate limiting and conversations)
+        from reddit_client import RedditClient, calculate_simple_sentiment
+        
+        client = RedditClient()
+        raw_posts = client.find_stock_mentions_with_conversations(
+            symbol=symbol,
+            time_filter='year',       # Longer window for quality DD posts
+            max_results=20,
+            min_comment_score=30      # All comments with 30+ upvotes
+        )
+        
+        # Enrich with sentiment scores and symbol
+        for post in raw_posts:
+            post['symbol'] = symbol
+            post['sentiment_score'] = calculate_simple_sentiment(
+                post.get('title', '') + ' ' + post.get('selftext', '')
+            )
+        
+        # Cache for future requests (without conversation data for now)
+        if raw_posts:
+            db.save_social_sentiment(raw_posts)
+        
+        return jsonify({
+            'posts': raw_posts,
+            'cached': False,
+            'source': 'reddit_live'
+        })
+        
+    except Exception as e:
+        logger.error(f"Error fetching Reddit data for {symbol}: {e}")
+        return jsonify({'error': f'Failed to fetch Reddit data: {str(e)}'}), 500
+
+
 
 
 

@@ -17,6 +17,7 @@ import FutureOutlook from '../components/FutureOutlook'
 import SearchPopover from '../components/SearchPopover'
 import UserAvatar from '../components/UserAvatar'
 import TranscriptViewer from '../components/TranscriptViewer'
+import WordOnTheStreet from '../components/WordOnTheStreet'
 
 const API_BASE = '/api'
 
@@ -44,6 +45,9 @@ export default function StockDetail({ watchlist, toggleWatchlist }) {
   // Comments state for inline commenting feature
   const [comments, setComments] = useState([])
   const [isReviewingComments, setIsReviewingComments] = useState(false)
+
+  // Feature flags
+  const [redditEnabled, setRedditEnabled] = useState(false)
 
   // Handler to add a new comment
   const handleAddComment = (comment) => {
@@ -98,6 +102,22 @@ export default function StockDetail({ watchlist, toggleWatchlist }) {
 
     return () => controller.abort()
   }, [symbol, algorithm])
+
+  // Fetch feature flags
+  useEffect(() => {
+    const fetchSettings = async () => {
+      try {
+        const response = await fetch(`${API_BASE}/settings`)
+        if (response.ok) {
+          const settings = await response.json()
+          setRedditEnabled(settings.feature_reddit_enabled?.value === true || settings.feature_reddit_enabled?.value === 'true')
+        }
+      } catch (err) {
+        console.error('Error fetching settings:', err)
+      }
+    }
+    fetchSettings()
+  }, [])
 
   // Fetch history data
   // Fetch history data
@@ -329,6 +349,14 @@ export default function StockDetail({ watchlist, toggleWatchlist }) {
             >
               News
             </button>
+            {redditEnabled && (
+              <button
+                className={`tab-button ${activeTab === 'reddit' ? 'active' : ''}`}
+                onClick={() => setActiveTab('reddit')}
+              >
+                Reddit
+              </button>
+            )}
             <button
               className={`tab-button ${activeTab === 'reports' ? 'active' : ''}`}
               onClick={() => setActiveTab('reports')}
@@ -409,6 +437,10 @@ export default function StockDetail({ watchlist, toggleWatchlist }) {
 
           {activeTab === 'news' && (
             <StockNews newsData={newsData} loading={loadingNews} symbol={stock.symbol} />
+          )}
+
+          {activeTab === 'reddit' && (
+            <WordOnTheStreet symbol={stock.symbol} />
           )}
 
           {activeTab === 'events' && (

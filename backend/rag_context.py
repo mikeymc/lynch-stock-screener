@@ -20,6 +20,7 @@ class RAGContext:
         'charts': 'charts',        # StockCharts page
         'outlook': 'outlook',      # FutureOutlook page
         'transcript': 'transcript', # TranscriptViewer page
+        'reddit': 'reddit',        # WordOnTheStreet page
     }
 
     # Keywords for smart section selection
@@ -108,6 +109,14 @@ class RAGContext:
             context['news_summary'] = self._get_news_summary(symbol, limit=3)
             context['events_summary'] = self._get_events_summary(symbol, limit=3)
             context['filings_summary'] = self._get_filings_summary(symbol)
+            context['outlook_summary'] = self._get_outlook_summary(symbol)
+
+        elif context_type == 'reddit':
+            # Reddit page: social sentiment data is primary
+            context['social_sentiment'] = self._get_social_sentiment(symbol, limit=10)
+            context['news_summary'] = self._get_news_summary(symbol, limit=3)
+            context['events_summary'] = self._get_events_summary(symbol, limit=3)
+            context['insider_summary'] = self._get_insider_summary(symbol)
             context['outlook_summary'] = self._get_outlook_summary(symbol)
 
         else:  # 'brief' or default
@@ -366,6 +375,35 @@ class RAGContext:
     def _get_outlook_summary(self, symbol: str) -> Dict[str, Any]:
         """Same as data for now, lightweight enough"""
         return self._get_outlook_data(symbol)
+    
+    def _get_social_sentiment(self, symbol: str, limit: int = 10) -> List[Dict[str, Any]]:
+        """Get Reddit posts and comments from social_sentiment table"""
+        conn = self.db.get_connection()
+        cursor = conn.cursor()
+        
+        cursor.execute("""
+            SELECT title, selftext, subreddit, author, score, num_comments,
+                   sentiment_score, published_at, url
+            FROM social_sentiment
+            WHERE symbol = %s
+            ORDER BY published_at DESC
+            LIMIT %s
+        """, (symbol, limit))
+        
+        rows = cursor.fetchall()
+        self.db.return_connection(conn)
+        
+        return [{
+            'title': row[0],
+            'body': row[1],
+            'subreddit': row[2],
+            'author': row[3],
+            'score': row[4],
+            'num_comments': row[5],
+            'sentiment_score': row[6],
+            'published_at': row[7],
+            'url': row[8]
+        } for row in rows]
 
     def _get_filing_sections(self, symbol: str, user_query: Optional[str], max_sections: int) -> Tuple[Dict[str, Any], List[str]]:
         """
@@ -484,9 +522,9 @@ class RAGContext:
         dcf_data = context.get('dcf_data')
         insider_summary = context.get('insider_summary')
         outlook_data = context.get('outlook_data') or context.get('outlook_summary')
-        outlook_data = context.get('outlook_data') or context.get('outlook_summary')
         filings_summary = context.get('filings_summary')
         earnings_transcript = context.get('earnings_transcript')
+        social_sentiment = context.get('social_sentiment', [])
 
         # Build the prompt
         prompt_parts = []
@@ -672,6 +710,51 @@ class RAGContext:
                 
                 if summary:
                     prompt_parts.append(f"  {summary}\n")
+            prompt_parts.append("\n")
+        
+        # Social Sentiment (Reddit)
+        if social_sentiment:
+            prompt_parts.append("### Reddit Discussions (Social Sentiment)\n\n")
+            for post in social_sentiment:
+                title = post.get('title', 'Untitled')
+                subreddit = post.get('subreddit', 'unknown')
+                score = post.get('score', 0)
+                num_comments = post.get('num_comments', 0)
+                sentiment = post.get('sentiment_score', 0)
+                body = post.get('body', '')
+                url = post.get('url', '')
+                pub_date = post.get('published_at')
+                
+                # Format date
+                date_str = ''
+                if pub_date:
+                    try:
+                        if hasattr(pub_date, 'strftime'):
+                            date_str = pub_date.strftime('%b %d, %Y')
+                        else:
+                            from datetime import datetime
+                            dt = datetime.fromisoformat(str(pub_date).replace('Z', '+00:00'))
+                            date_str = dt.strftime('%b %d, %Y')
+                    except:
+                        date_str = str(pub_date)[:10]
+                
+                # Sentiment label
+                sent_label = 'Neutral'
+                if sentiment > 0.2:
+                    sent_label = 'Bullish'
+                elif sentiment < -0.2:
+                    sent_label = 'Bearish'
+                
+                # Format post
+                if url:
+                    prompt_parts.append(f"- **[{title}]({url})** (r/{subreddit}, {date_str})\n")
+                else:
+                    prompt_parts.append(f"- **{title}** (r/{subreddit}, {date_str})\n")
+                prompt_parts.append(f"  ⬆ {score} | 💬 {num_comments} | Sentiment: {sent_label}\n")
+                
+                if body:
+                    # Include full body for context
+                    prompt_parts.append(f"  {body}\n")
             prompt_parts.append("\n")
             
         # Filings Summary (Fallback)

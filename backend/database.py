@@ -1234,6 +1234,38 @@ class Database:
             )
         """)
 
+        # Social sentiment from Reddit and other sources
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS social_sentiment (
+                id TEXT PRIMARY KEY,
+                symbol TEXT NOT NULL,
+                source TEXT DEFAULT 'reddit',
+                subreddit TEXT,
+                title TEXT,
+                selftext TEXT,
+                url TEXT,
+                author TEXT,
+                score INTEGER DEFAULT 0,
+                upvote_ratio REAL,
+                num_comments INTEGER DEFAULT 0,
+                sentiment_score REAL,
+                created_utc BIGINT,
+                published_at TIMESTAMP,
+                fetched_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (symbol) REFERENCES stocks(symbol)
+            )
+        """)
+        
+        cursor.execute("""
+            CREATE INDEX IF NOT EXISTS idx_social_sentiment_symbol_date
+            ON social_sentiment(symbol, published_at DESC)
+        """)
+        
+        cursor.execute("""
+            CREATE INDEX IF NOT EXISTS idx_social_sentiment_score
+            ON social_sentiment(score DESC)
+        """)
+
         conn.commit()
 
     def save_stock_basic(self, symbol: str, company_name: str, exchange: str, sector: str = None,
@@ -3433,7 +3465,10 @@ class Database:
             'weight_peg': {'value': 0.50, 'desc': 'Weight for PEG Score in Weighted Algo'},
             'weight_consistency': {'value': 0.25, 'desc': 'Weight for Consistency in Weighted Algo'},
             'weight_debt': {'value': 0.15, 'desc': 'Weight for Debt Score in Weighted Algo'},
-            'weight_ownership': {'value': 0.10, 'desc': 'Weight for Ownership in Weighted Algo'}
+            'weight_ownership': {'value': 0.10, 'desc': 'Weight for Ownership in Weighted Algo'},
+            
+            # Feature flags
+            'feature_reddit_enabled': {'value': False, 'desc': 'Enable Reddit social sentiment tab (experimental)'},
         }
 
         current_settings = self.get_all_settings()
@@ -3858,5 +3893,156 @@ class Database:
                 WHERE id = %s
             """, (job_id,))
             conn.commit()
+        finally:
+            self.return_connection(conn)
+
+    # ==================== Social Sentiment Methods ====================
+    
+    def save_social_sentiment(self, posts: List[Dict[str, Any]]) -> int:
+        """
+        Batch save social sentiment posts (from Reddit).
+        
+        Args:
+            posts: List of post dicts with id, symbol, title, score, etc.
+            
+        Returns:
+            Number of posts saved/updated
+        """
+        if not posts:
+            return 0
+        
+        sql = """
+            INSERT INTO social_sentiment 
+            (id, symbol, source, subreddit, title, selftext, url, author, 
+             score, upvote_ratio, num_comments, sentiment_score, created_utc, published_at)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            ON CONFLICT (id) DO UPDATE SET
+                score = EXCLUDED.score,
+                upvote_ratio = EXCLUDED.upvote_ratio,
+                num_comments = EXCLUDED.num_comments,
+                sentiment_score = EXCLUDED.sentiment_score,
+                fetched_at = CURRENT_TIMESTAMP
+        """
+        
+        count = 0
+        for post in posts:
+            try:
+                args = (
+                    post.get('id'),
+                    post.get('symbol'),
+                    post.get('source', 'reddit'),
+                    post.get('subreddit'),
+                    post.get('title'),
+                    post.get('selftext', '')[:10000],  # Limit text size
+                    post.get('url'),
+                    post.get('author'),
+                    post.get('score', 0),
+                    post.get('upvote_ratio'),
+                    post.get('num_comments', 0),
+                    post.get('sentiment_score'),
+                    post.get('created_utc'),
+                    post.get('created_at'),
+                )
+                self.write_queue.put((sql, args))
+                count += 1
+            except Exception as e:
+                logger.error(f"Error saving social sentiment post {post.get('id')}: {e}")
+        
+        return count
+    
+    def get_social_sentiment(self, symbol: str, limit: int = 20, 
+                            min_score: int = 0) -> List[Dict[str, Any]]:
+        """
+        Get social sentiment posts for a symbol.
+        
+        Args:
+            symbol: Stock ticker
+            limit: Max posts to return
+            min_score: Minimum score filter
+            
+        Returns:
+            List of post dicts sorted by score descending
+        """
+        conn = self.get_connection()
+        try:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT id, symbol, source, subreddit, title, selftext, url, author,
+                       score, upvote_ratio, num_comments, sentiment_score, 
+                       created_utc, published_at, fetched_at
+                FROM social_sentiment
+                WHERE symbol = %s AND score >= %s
+                ORDER BY score DESC
+                LIMIT %s
+            """, (symbol, min_score, limit))
+            
+            rows = cursor.fetchall()
+            return [{
+                'id': row[0],
+                'symbol': row[1],
+                'source': row[2],
+                'subreddit': row[3],
+                'title': row[4],
+                'selftext': row[5],
+                'url': row[6],
+                'author': row[7],
+                'score': row[8],
+                'upvote_ratio': row[9],
+                'num_comments': row[10],
+                'sentiment_score': row[11],
+                'created_utc': row[12],
+                'published_at': row[13].isoformat() if row[13] else None,
+                'fetched_at': row[14].isoformat() if row[14] else None,
+            } for row in rows]
+        finally:
+            self.return_connection(conn)
+    
+    def get_social_sentiment_summary(self, symbol: str, days: int = 30) -> Dict[str, Any]:
+        """
+        Get aggregated social sentiment summary for a symbol.
+        
+        Args:
+            symbol: Stock ticker
+            days: Number of days to look back
+            
+        Returns:
+            Dict with post_count, avg_score, avg_sentiment, top_subreddits
+        """
+        conn = self.get_connection()
+        try:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT 
+                    COUNT(*) as post_count,
+                    AVG(score) as avg_score,
+                    AVG(sentiment_score) as avg_sentiment,
+                    SUM(num_comments) as total_comments
+                FROM social_sentiment
+                WHERE symbol = %s 
+                  AND published_at >= NOW() - INTERVAL '%s days'
+            """, (symbol, days))
+            
+            row = cursor.fetchone()
+            
+            # Get top subreddits
+            cursor.execute("""
+                SELECT subreddit, COUNT(*) as cnt
+                FROM social_sentiment
+                WHERE symbol = %s 
+                  AND published_at >= NOW() - INTERVAL '%s days'
+                GROUP BY subreddit
+                ORDER BY cnt DESC
+                LIMIT 5
+            """, (symbol, days))
+            
+            subreddits = [{'name': r[0], 'count': r[1]} for r in cursor.fetchall()]
+            
+            return {
+                'post_count': row[0] or 0,
+                'avg_score': round(row[1], 1) if row[1] else 0,
+                'avg_sentiment': round(row[2], 2) if row[2] else 0,
+                'total_comments': row[3] or 0,
+                'top_subreddits': subreddits,
+            }
         finally:
             self.return_connection(conn)
