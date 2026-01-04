@@ -12,7 +12,7 @@ export default function StatusBar({ status, score, value, metricType, compact = 
   const useGradient = [].includes(metricType)
 
   // Check if this metric type uses a solid fill (partial fill, no marker)
-  const useSolidFill = ['revenue_consistency', 'income_consistency'].includes(metricType)
+  const useSolidFill = ['revenue_consistency', 'income_consistency', 'institutional'].includes(metricType)
 
   // Check if this metric type uses a full bar with marker
   const useFullBarWithMarker = ['pe_range'].includes(metricType)

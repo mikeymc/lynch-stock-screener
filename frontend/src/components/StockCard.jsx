@@ -189,6 +189,16 @@ export default function StockCard({ stock, watchlist, onToggleWatchlist, onClick
                     />
                     <span className="bar-label">Inc Consistency</span>
                 </div>
+                <div className="stock-card-bar-item">
+                    <StatusBar
+                        compact={true}
+                        metricType="institutional"
+                        score={(stock.institutional_ownership || 0) * 100}
+                        value={(stock.institutional_ownership || 0) * 100}
+                        status="Inst"
+                    />
+                    <span className="bar-label">Inst Ownership</span>
+                </div>
             </div>
 
             {/* Overall Score Badge */}

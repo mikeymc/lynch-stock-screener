@@ -186,7 +186,7 @@
 }
 
 .stock-card-bar-item .status-bar-container {
-    height: 6px;
+    height: 5px;
 }
 
 /* Mobile responsive design */
@@ -369,6 +369,15 @@
 
     .stock-card-bar-item:nth-child(3) .bar-label::after {
         content: "5Y Inc Cons";
+        font-size: 9px;
+    }
+
+    .stock-card-bar-item:nth-child(4) .bar-label {
+        font-size: 0;
+    }
+
+    .stock-card-bar-item:nth-child(4) .bar-label::after {
+        content: "Inst Own";
         font-size: 9px;
     }
 
