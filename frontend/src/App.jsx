@@ -121,6 +121,8 @@ function StockListView({
   const [progress, setProgress] = useState('')
   const [error, setError] = useState(null)
   const itemsPerPage = 100
+  const loadMoreRef = useRef(null)
+  const [isLoadingMore, setIsLoadingMore] = useState(false)
 
   // Advanced filters state
   const [advancedFilters, setAdvancedFilters] = useState({
@@ -326,7 +328,8 @@ function StockListView({
       page = currentPage,
       sort = sortBy,
       dir = sortDir,
-      showLoading = true
+      showLoading = true,
+      append = false
     } = options
 
     if (showLoading) {
@@ -346,7 +349,11 @@ function StockListView({
       .then(response => response.json())
       .then(data => {
         if (data.results) {
-          setStocks(data.results)
+          if (append) {
+            setStocks(prev => [...prev, ...data.results])
+          } else {
+            setStocks(data.results)
+          }
           setTotalPages(data.total_pages || 1)
           setTotalCount(data.total_count || 0)
         }
@@ -377,6 +384,35 @@ function StockListView({
       fetchStocks({ search: value, page: 1 })
     }, 200) // 200ms debounce
   }, [setSearchQuery, setCurrentPage, fetchStocks])
+
+  // Infinite scroll - load more when sentinel is visible
+  useEffect(() => {
+    const observer = new IntersectionObserver(
+      (entries) => {
+        const firstEntry = entries[0]
+        if (firstEntry.isIntersecting && !isLoadingMore && currentPage < totalPages) {
+          setIsLoadingMore(true)
+          const nextPage = currentPage + 1
+          setCurrentPage(nextPage)
+          fetchStocks({ page: nextPage, append: true }).finally(() => {
+            setIsLoadingMore(false)
+          })
+        }
+      },
+      { threshold: 0.1 }
+    )
+
+    const currentRef = loadMoreRef.current
+    if (currentRef) {
+      observer.observe(currentRef)
+    }
+
+    return () => {
+      if (currentRef) {
+        observer.unobserve(currentRef)
+      }
+    }
+  }, [currentPage, totalPages, isLoadingMore, fetchStocks])
 
   // Resume polling if there's an active screening session
   useEffect(() => {
@@ -999,35 +1035,16 @@ function StockListView({
             ))}
           </div>
 
-          <div className="pagination">
-            {totalPages > 1 && (
-              <button
-                onClick={() => {
-                  const newPage = Math.max(1, currentPage - 1)
-                  setCurrentPage(newPage)
-                  fetchStocks({ page: newPage })
-                }}
-                disabled={currentPage === 1 || searchLoading}
-              >
-                Previous
-              </button>
-            )}
-            <span className="page-info">
-              Page {currentPage} of {totalPages}
-            </span>
-            {totalPages > 1 && (
-              <button
-                onClick={() => {
-                  const newPage = Math.min(totalPages, currentPage + 1)
-                  setCurrentPage(newPage)
-                  fetchStocks({ page: newPage })
-                }}
-                disabled={currentPage === totalPages || searchLoading}
-              >
-                Next
-              </button>
-            )}
-          </div>
+          {/* Infinite scroll sentinel and loading indicator */}
+          {currentPage < totalPages && (
+            <div ref={loadMoreRef} style={{ height: '20px', margin: '20px 0' }}>
+              {isLoadingMore && (
+                <div className="loading" style={{ textAlign: 'center', color: '#64748B', fontSize: '14px' }}>
+                  Loading more stocks...
+                </div>
+              )}
+            </div>
+          )}
         </>
       )}
 
