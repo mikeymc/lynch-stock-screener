@@ -2552,6 +2552,98 @@ def send_message_stream(symbol, user_id):
         return jsonify({'error': str(e)}), 500
 
 
+# =============================================================================
+# Smart Chat Agent Endpoint (ReAct-based agentic chat)
+# =============================================================================
+
+# Lazy-initialize the Smart Chat Agent
+_smart_chat_agent = None
+
+def get_smart_chat_agent():
+    """Get or create the Smart Chat Agent singleton."""
+    global _smart_chat_agent
+    if _smart_chat_agent is None:
+        from smart_chat_agent import SmartChatAgent
+        _smart_chat_agent = SmartChatAgent(db)
+    return _smart_chat_agent
+
+
+@app.route('/api/chat/<symbol>/agent', methods=['POST'])
+@require_user_auth
+def agent_chat(symbol, user_id):
+    """
+    Smart Chat Agent endpoint using ReAct pattern.
+    
+    The agent can:
+    - Reason about what data it needs
+    - Call tools to fetch financial data
+    - Synthesize a comprehensive answer
+    
+    Streams response via Server-Sent Events.
+    """
+    try:
+        data = request.get_json()
+        if not data or 'message' not in data:
+            return jsonify({'error': 'Message required'}), 400
+
+        user_message = data['message']
+        conversation_history = data.get('history', [])
+
+        agent = get_smart_chat_agent()
+
+        def generate():
+            """Generate Server-Sent Events for agent response."""
+            try:
+                for event in agent.chat_stream(symbol.upper(), user_message, conversation_history):
+                    yield f"data: {json.dumps(event)}\n\n"
+            except Exception as e:
+                logger.error(f"Agent chat stream error: {e}")
+                yield f"data: {json.dumps({'type': 'error', 'data': str(e)})}\n\n"
+
+        return Response(
+            stream_with_context(generate()),
+            mimetype='text/event-stream',
+            headers={
+                'Cache-Control': 'no-cache',
+                'X-Accel-Buffering': 'no'
+            }
+        )
+
+    except Exception as e:
+        logger.error(f"Error in agent chat for {symbol}: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/chat/<symbol>/agent/sync', methods=['POST'])
+@require_user_auth
+def agent_chat_sync(symbol, user_id):
+    """
+    Synchronous Smart Chat Agent endpoint (non-streaming).
+    
+    Useful for testing or clients that don't support SSE.
+    """
+    try:
+        data = request.get_json()
+        if not data or 'message' not in data:
+            return jsonify({'error': 'Message required'}), 400
+
+        user_message = data['message']
+        conversation_history = data.get('history', [])
+
+        agent = get_smart_chat_agent()
+        result = agent.chat(symbol.upper(), user_message, conversation_history)
+
+        return jsonify(clean_nan_values(result))
+
+    except Exception as e:
+        logger.error(f"Error in sync agent chat for {symbol}: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+
+
 # Serve React static files
 @app.route('/', defaults={'path': ''})
 @app.route('/<path:path>')

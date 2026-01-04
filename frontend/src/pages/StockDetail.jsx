@@ -48,6 +48,7 @@ export default function StockDetail({ watchlist, toggleWatchlist }) {
 
   // Feature flags
   const [redditEnabled, setRedditEnabled] = useState(false)
+  const [agentModeEnabled, setAgentModeEnabled] = useState(false)
 
   // Handler to add a new comment
   const handleAddComment = (comment) => {
@@ -111,6 +112,7 @@ export default function StockDetail({ watchlist, toggleWatchlist }) {
         if (response.ok) {
           const settings = await response.json()
           setRedditEnabled(settings.feature_reddit_enabled?.value === true || settings.feature_reddit_enabled?.value === 'true')
+          setAgentModeEnabled(settings.feature_agent_mode_enabled?.value === true || settings.feature_agent_mode_enabled?.value === 'true')
         }
       } catch (err) {
         console.error('Error fetching settings:', err)
@@ -428,6 +430,7 @@ export default function StockDetail({ watchlist, toggleWatchlist }) {
             <AnalysisChat
               symbol={stock.symbol}
               stockName={stock.company_name}
+              agentModeEnabled={agentModeEnabled}
             />
           )}
 

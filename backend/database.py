@@ -3469,6 +3469,7 @@ class Database:
             
             # Feature flags
             'feature_reddit_enabled': {'value': False, 'desc': 'Enable Reddit social sentiment tab (experimental)'},
+            'feature_agent_mode_enabled': {'value': False, 'desc': 'Enable Agent Mode toggle in chat (experimental)'},
         }
 
         current_settings = self.get_all_settings()

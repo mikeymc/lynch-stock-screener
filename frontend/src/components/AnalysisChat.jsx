@@ -69,6 +69,9 @@ const AnalysisChat = forwardRef(function AnalysisChat({ symbol, stockName, chatO
   const [loadingHistory, setLoadingHistory] = useState(true)
   const [showScrollIndicator, setShowScrollIndicator] = useState(false)
   const [loadingMessageIndex, setLoadingMessageIndex] = useState(0)
+  const [agentMode, setAgentMode] = useState(false)
+  const [agentThinking, setAgentThinking] = useState('')
+  const [agentModeEnabled, setAgentModeEnabled] = useState(false)
 
   const messagesEndRef = useRef(null)
   const messagesContainerRef = useRef(null)
@@ -113,6 +116,25 @@ const AnalysisChat = forwardRef(function AnalysisChat({ symbol, stockName, chatO
       inputRef.current.focus()
     }
   }, [chatLoading])
+
+  // Fetch Agent Mode feature flag
+  useEffect(() => {
+    const fetchAgentModeFlag = async () => {
+      try {
+        const response = await fetch(`${API_BASE}/settings`)
+        if (response.ok) {
+          const settings = await response.json()
+          setAgentModeEnabled(
+            settings.feature_agent_mode_enabled?.value === true ||
+            settings.feature_agent_mode_enabled?.value === 'true'
+          )
+        }
+      } catch (err) {
+        console.error('Error fetching agent mode flag:', err)
+      }
+    }
+    fetchAgentModeFlag()
+  }, [])
 
   // Cycle loading messages during brief generation with random timing
   useEffect(() => {
@@ -309,17 +331,22 @@ const AnalysisChat = forwardRef(function AnalysisChat({ symbol, stockName, chatO
     setChatLoading(true)
     setStreamingMessage('')
     setStreamingSources([])
+    setAgentThinking('')
 
     try {
-      const response = await fetch(`${API_BASE}/chat/${symbol}/message/stream`, {
+      // Choose endpoint based on agent mode
+      const endpoint = agentMode
+        ? `${API_BASE}/chat/${symbol}/agent`
+        : `${API_BASE}/chat/${symbol}/message/stream`
+
+      const body = agentMode
+        ? { message: userMessage, history: messages.map(m => ({ role: m.role, content: m.content })) }
+        : { message: userMessage, conversation_id: conversationId, lynch_analysis: analysis || null, context_type: contextType }
+
+      const response = await fetch(endpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          message: userMessage,
-          conversation_id: conversationId,
-          lynch_analysis: analysis || null,
-          context_type: contextType
-        })
+        body: JSON.stringify(body)
       })
 
       if (!response.ok) {
@@ -331,6 +358,7 @@ const AnalysisChat = forwardRef(function AnalysisChat({ symbol, stockName, chatO
       let buffer = ''
       let fullMessage = ''
       let sources = []
+      let toolCalls = []
 
       while (true) {
         const { done, value } = await reader.read()
@@ -347,10 +375,12 @@ const AnalysisChat = forwardRef(function AnalysisChat({ symbol, stockName, chatO
                       role: 'assistant',
                       content: fullMessage,
                       sources: sources,
-                      message_id: data.data.message_id
+                      toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
+                      message_id: data.data?.message_id
                     }])
                     setStreamingMessage('')
                     setStreamingSources([])
+                    setAgentThinking('')
                     setChatLoading(false)
                   }
                 } catch (e) {
@@ -364,10 +394,12 @@ const AnalysisChat = forwardRef(function AnalysisChat({ symbol, stockName, chatO
             setMessages(prev => [...prev, {
               role: 'assistant',
               content: fullMessage,
-              sources: sources
+              sources: sources,
+              toolCalls: toolCalls.length > 0 ? toolCalls : undefined
             }])
             setStreamingMessage('')
             setStreamingSources([])
+            setAgentThinking('')
             setChatLoading(false)
           }
           break
@@ -392,15 +424,25 @@ const AnalysisChat = forwardRef(function AnalysisChat({ symbol, stockName, chatO
               content = content.replace(/\[Prompt:[^\]]*\]/g, '')
               fullMessage += content
               setStreamingMessage(fullMessage)
+              setAgentThinking('')  // Clear thinking when we start getting response
+            } else if (data.type === 'thinking') {
+              // Agent mode: show what the agent is doing
+              setAgentThinking(data.data)
+            } else if (data.type === 'tool_call') {
+              // Agent mode: track tool calls
+              toolCalls.push(data.data)
+              setAgentThinking(`Calling ${data.data.tool}...`)
             } else if (data.type === 'done') {
               setMessages(prev => [...prev, {
                 role: 'assistant',
                 content: fullMessage,
                 sources: sources,
-                message_id: data.data.message_id
+                toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
+                message_id: data.data?.message_id
               }])
               setStreamingMessage('')
               setStreamingSources([])
+              setAgentThinking('')
               setChatLoading(false)
             } else if (data.type === 'error') {
               console.error('Stream error:', data.data)
@@ -410,6 +452,7 @@ const AnalysisChat = forwardRef(function AnalysisChat({ symbol, stockName, chatO
               }])
               setStreamingMessage('')
               setStreamingSources([])
+              setAgentThinking('')
               setChatLoading(false)
             }
           }
@@ -424,6 +467,7 @@ const AnalysisChat = forwardRef(function AnalysisChat({ symbol, stockName, chatO
       }])
       setStreamingMessage('')
       setStreamingSources([])
+      setAgentThinking('')
       setChatLoading(false)
     }
   }
@@ -523,7 +567,9 @@ const AnalysisChat = forwardRef(function AnalysisChat({ symbol, stockName, chatO
         {/* Streaming message */}
         {chatLoading && (
           <div className="chat-message assistant streaming">
-            <div className="chat-message-header">📊 Thinking...</div>
+            <div className="chat-message-header">
+              {agentMode ? '🤖 Agent' : '📊 Analyst'}{agentThinking ? ` - ${agentThinking}` : ' Thinking...'}
+            </div>
             <div className="chat-message-content markdown-content">
               {streamingMessage ? (
                 <ReactMarkdown>{streamingMessage}</ReactMarkdown>
@@ -553,6 +599,21 @@ const AnalysisChat = forwardRef(function AnalysisChat({ symbol, stockName, chatO
 
       {/* Chat input - always visible at bottom */}
       <div className="unified-chat-input-container">
+        {/* Agent Mode Toggle - only show if feature flag is enabled */}
+        {agentModeEnabled && (
+          <div className="agent-mode-toggle">
+            <label className="toggle-label">
+              <input
+                type="checkbox"
+                checked={agentMode}
+                onChange={(e) => setAgentMode(e.target.checked)}
+                disabled={chatLoading}
+              />
+              <span className="toggle-slider"></span>
+              <span className="toggle-text">🤖 Agent Mode {agentMode ? '(Beta)' : ''}</span>
+            </label>
+          </div>
+        )}
         <div className="chat-input-wrapper">
           <textarea
             ref={inputRef}
@@ -560,7 +621,7 @@ const AnalysisChat = forwardRef(function AnalysisChat({ symbol, stockName, chatO
             value={inputMessage}
             onChange={(e) => setInputMessage(e.target.value)}
             onKeyPress={handleKeyPress}
-            placeholder="Ask anything"
+            placeholder={agentMode ? "Ask complex questions (e.g., 'Compare to peers')" : "Ask anything"}
             rows="2"
             disabled={chatLoading}
           />
