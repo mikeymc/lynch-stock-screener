@@ -2,9 +2,11 @@
 # ABOUTME: Sets worker timeout and binding settings for the Flask app
 
 import multiprocessing
+import os
 
-# Bind to all interfaces on port 8080
-bind = "0.0.0.0:8080"
+# Bind to all interfaces on configurable port
+port = int(os.environ.get('PORT', 8080))
+bind = f"0.0.0.0:{port}"
 
 # Number of worker processes
 # Using 1 worker since we handle concurrency via background threads
