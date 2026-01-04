@@ -65,6 +65,18 @@ function getStatusClass(status) {
     return classMap[status] || ''
 }
 
+// Clean up company name by removing corporate suffixes
+function formatCompanyName(name) {
+    if (!name) return 'N/A'
+
+    // Remove common corporate suffixes (order matters - longer patterns first)
+    return name
+        .replace(/,?\s*Holdings?.*/gi, '')  // Remove "Holding/Holdings" and everything after it
+        .replace(/,?\s*(Incorporated|Corporation|Inc\.|Corp\.|LLC|plc)/gi, '')
+        .replace(/,?\s*(Inc|Corp)/gi, '')
+        .trim()
+}
+
 export default function StockCard({ stock, watchlist, onToggleWatchlist, onClick }) {
     const handleClick = () => {
         if (onClick) onClick(stock.symbol)
@@ -90,7 +102,7 @@ export default function StockCard({ stock, watchlist, onToggleWatchlist, onClick
             {/* Symbol + Company Name */}
             <div className="stock-card-identity">
                 <span className="stock-card-symbol">{stock.symbol}</span>
-                <span className="stock-card-name">{stock.company_name || 'N/A'}</span>
+                <span className="stock-card-name">{formatCompanyName(stock.company_name)}</span>
             </div>
 
             {/* Price */}
