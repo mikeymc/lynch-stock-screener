@@ -265,6 +265,18 @@ screen_stocks_decl = FunctionDeclaration(
     ),
 )
 
+get_sector_comparison_decl = FunctionDeclaration(
+    name="get_sector_comparison",
+    description="Compare a stock's key metrics against its sector averages (P/E, Dividend Yield, Growth, etc.). Use this to determine if a stock is overvalued or undervalued relative to its peers.",
+    parameters=Schema(
+        type=Type.OBJECT,
+        properties={
+            "ticker": Schema(type=Type.STRING, description="Ticker symbol of the stock to compare (e.g., 'AAPL', 'MSFT')"),
+        },
+        required=["ticker"],
+    ),
+)
+
 
 # =============================================================================
 # Tool Registry: Maps tool names to their declarations
@@ -289,6 +301,7 @@ TOOL_DECLARATIONS = [
     find_similar_stocks_decl,
     search_company_decl,
     screen_stocks_decl,
+    get_sector_comparison_decl,
 ]
 
 # Create the Tool object for Gemini API
@@ -343,6 +356,7 @@ class ToolExecutor:
             "find_similar_stocks": self._find_similar_stocks,
             "search_company": self._search_company,
             "screen_stocks": self._screen_stocks,
+            "get_sector_comparison": self._get_sector_comparison,
         }
         
         executor = executor_map.get(tool_name)
@@ -1084,6 +1098,125 @@ class ToolExecutor:
         finally:
             self.db.return_connection(conn)
     
+    def _get_sector_comparison(self, ticker: str) -> Dict[str, Any]:
+        """Compare a stock's metrics to its sector averages."""
+        ticker = ticker.upper()
+        
+        # 1. Get the stock's details and sector
+        stock_query = """
+            SELECT 
+                s.symbol, sr.company_name, sr.sector,
+                sr.pe_ratio, sr.peg_ratio, sr.dividend_yield, 
+                sr.revenue_cagr, sr.earnings_cagr, sr.debt_to_equity
+            FROM stocks s
+            LEFT JOIN screening_results sr ON s.symbol = sr.symbol
+            WHERE s.symbol = %s
+            ORDER BY sr.scored_at DESC
+            LIMIT 1
+        """
+        conn = self.db.get_connection()
+        try:
+            cursor = conn.cursor()
+            cursor.execute(stock_query, (ticker,))
+            stock_row = cursor.fetchone()
+            
+            if not stock_row:
+                return {"error": f"Stock {ticker} not found"}
+            
+            sector = stock_row[2]
+            if not sector:
+                return {"error": f"Sector information not available for {ticker}"}
+            
+            stock_metrics = {
+                "pe_ratio": stock_row[3],
+                "peg_ratio": stock_row[4],
+                "dividend_yield": stock_row[5],
+                "revenue_growth": stock_row[6],
+                "eps_growth": stock_row[7],
+                "debt_to_equity": stock_row[8]
+            }
+            
+            # 2. Calculate sector statistics
+            # We filter for outliers to get a more representative average (e.g., exclude P/E > 200)
+            sector_stats_query = """
+                WITH sector_stocks AS (
+                    SELECT DISTINCT ON (s.symbol) 
+                        sr.pe_ratio, sr.peg_ratio, sr.dividend_yield, 
+                        sr.revenue_cagr, sr.earnings_cagr, sr.debt_to_equity
+                    FROM stocks s
+                    JOIN screening_results sr ON s.symbol = sr.symbol
+                    WHERE sr.sector = %s AND s.symbol != %s
+                    ORDER BY s.symbol, sr.scored_at DESC
+                )
+                SELECT
+                    COUNT(*) as stock_count,
+                    AVG(pe_ratio) FILTER (WHERE pe_ratio > 0 AND pe_ratio < 200) as avg_pe,
+                    PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY pe_ratio) FILTER (WHERE pe_ratio > 0 AND pe_ratio < 200) as median_pe,
+                    
+                    AVG(peg_ratio) FILTER (WHERE peg_ratio > 0 AND peg_ratio < 10) as avg_peg,
+                    
+                    AVG(dividend_yield) FILTER (WHERE dividend_yield != 'NaN') as avg_yield,
+                    PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY dividend_yield) FILTER (WHERE dividend_yield != 'NaN') as median_yield,
+                    
+                    AVG(revenue_cagr) FILTER (WHERE revenue_cagr BETWEEN -50 AND 200 AND revenue_cagr != 'NaN') as avg_rev_growth,
+                    
+                    AVG(earnings_cagr) FILTER (WHERE earnings_cagr BETWEEN -50 AND 200 AND earnings_cagr != 'NaN') as avg_eps_growth,
+                    
+                    AVG(debt_to_equity) FILTER (WHERE debt_to_equity < 50 AND debt_to_equity != 'NaN') as avg_debt_equity
+                FROM sector_stocks
+            """
+            
+            cursor.execute(sector_stats_query, (sector, ticker))
+            stats = cursor.fetchone()
+            
+            if not stats or stats[0] < 3: # Need at least a few peers for valid comparison
+                return {
+                    "ticker": ticker,
+                    "company_name": stock_row[1],
+                    "sector": sector,
+                    "message": "Not enough data in this sector for a meaningful comparison.",
+                    "stock_metrics": stock_metrics
+                }
+
+            return {
+                "ticker": ticker,
+                "company_name": stock_row[1],
+                "sector": sector,
+                "peer_count": stats[0],
+                "comparison": {
+                    "pe_ratio": {
+                        "stock": round(stock_metrics["pe_ratio"], 2) if stock_metrics["pe_ratio"] else None,
+                        "sector_avg": round(stats[1], 2) if stats[1] else None,
+                        "sector_median": round(stats[2], 2) if stats[2] else None,
+                        "diff_percent": round((stock_metrics["pe_ratio"] - stats[1]) / stats[1] * 100, 1) if stock_metrics["pe_ratio"] and stats[1] else None
+                    },
+                    "peg_ratio": {
+                        "stock": round(stock_metrics["peg_ratio"], 2) if stock_metrics["peg_ratio"] else None,
+                        "sector_avg": round(stats[3], 2) if stats[3] else None
+                    },
+                    "dividend_yield": {
+                        "stock": round(stock_metrics["dividend_yield"], 2) if stock_metrics["dividend_yield"] else None,
+                        "sector_avg": round(stats[4], 2) if stats[4] else None,
+                        "sector_median": round(stats[5], 2) if stats[5] else None
+                    },
+                    "revenue_growth": {
+                        "stock": round(stock_metrics["revenue_growth"], 2) if stock_metrics["revenue_growth"] else None,
+                        "sector_avg": round(stats[6], 2) if stats[6] else None
+                    },
+                    "eps_growth": {
+                        "stock": round(stock_metrics["eps_growth"], 2) if stock_metrics["eps_growth"] else None,
+                        "sector_avg": round(stats[7], 2) if stats[7] else None
+                    },
+                    "debt_to_equity": {
+                        "stock": round(stock_metrics["debt_to_equity"], 2) if stock_metrics["debt_to_equity"] else None,
+                        "sector_avg": round(stats[8], 2) if stats[8] else None
+                    }
+                }
+            }
+            
+        finally:
+            self.db.return_connection(conn)
+
     def _screen_stocks(
         self,
         pe_max: float = None,
