@@ -187,6 +187,60 @@ get_dividend_analysis_decl = FunctionDeclaration(
     ),
 )
 
+get_analyst_estimates_decl = FunctionDeclaration(
+    name="get_analyst_estimates",
+    description="Get analyst consensus estimates for future earnings and revenue. Returns EPS and revenue projections for current/next quarter and year, along with growth expectations and analyst counts.",
+    parameters=Schema(
+        type=Type.OBJECT,
+        properties={
+            "ticker": Schema(type=Type.STRING, description="Stock ticker symbol"),
+        },
+        required=["ticker"],
+    ),
+)
+
+compare_stocks_decl = FunctionDeclaration(
+    name="compare_stocks",
+    description="Compare key metrics across 2-5 stocks side-by-side. Returns valuation ratios, profitability metrics, growth rates, and financial health indicators for easy comparison.",
+    parameters=Schema(
+        type=Type.OBJECT,
+        properties={
+            "tickers": Schema(
+                type=Type.ARRAY,
+                items=Schema(type=Type.STRING),
+                description="List of 2-5 stock ticker symbols to compare"
+            ),
+        },
+        required=["tickers"],
+    ),
+)
+
+find_similar_stocks_decl = FunctionDeclaration(
+    name="find_similar_stocks",
+    description="Find stocks with similar characteristics to a given stock. Matches based on sector, market cap, growth rates, and valuation metrics. Useful for discovering alternatives or peers.",
+    parameters=Schema(
+        type=Type.OBJECT,
+        properties={
+            "ticker": Schema(type=Type.STRING, description="Reference stock ticker symbol"),
+            "limit": Schema(type=Type.INTEGER, description="Maximum number of similar stocks to return (default: 5)"),
+        },
+        required=["ticker"],
+    ),
+)
+
+search_company_decl = FunctionDeclaration(
+    name="search_company",
+    description="Search for a company by name and get its ticker symbol. Use this when the user mentions a company name instead of a ticker. Returns matching ticker symbols and company names.",
+    parameters=Schema(
+        type=Type.OBJECT,
+        properties={
+            "company_name": Schema(type=Type.STRING, description="Company name to search for (e.g., 'Apple', 'Figma', 'Microsoft')"),
+            "limit": Schema(type=Type.INTEGER, description="Maximum number of results to return (default: 5)"),
+        },
+        required=["company_name"],
+    ),
+)
+
 
 # =============================================================================
 # Tool Registry: Maps tool names to their declarations
@@ -206,6 +260,10 @@ TOOL_DECLARATIONS = [
     get_growth_rates_decl,
     get_cash_flow_analysis_decl,
     get_dividend_analysis_decl,
+    get_analyst_estimates_decl,
+    compare_stocks_decl,
+    find_similar_stocks_decl,
+    search_company_decl,
 ]
 
 # Create the Tool object for Gemini API
@@ -255,6 +313,10 @@ class ToolExecutor:
             "get_growth_rates": self._get_growth_rates,
             "get_cash_flow_analysis": self._get_cash_flow_analysis,
             "get_dividend_analysis": self._get_dividend_analysis,
+            "get_analyst_estimates": self._get_analyst_estimates,
+            "compare_stocks": self._compare_stocks,
+            "find_similar_stocks": self._find_similar_stocks,
+            "search_company": self._search_company,
         }
         
         executor = executor_map.get(tool_name)
@@ -808,3 +870,190 @@ class ToolExecutor:
             "dividend_history": dividend_data,
             "dividend_growth": growth_rates
         }
+    
+    def _get_analyst_estimates(self, ticker: str) -> Dict[str, Any]:
+        """Get analyst consensus estimates for future earnings and revenue."""
+        ticker = ticker.upper()
+        
+        conn = self.db.get_connection()
+        cursor = conn.cursor()
+        
+        try:
+            cursor.execute("""
+                SELECT period, eps_avg, eps_low, eps_high, eps_growth, eps_num_analysts,
+                       revenue_avg, revenue_low, revenue_high, revenue_growth, revenue_num_analysts
+                FROM analyst_estimates
+                WHERE symbol = %s
+                ORDER BY period
+            """, (ticker,))
+            
+            estimates = {}
+            for row in cursor.fetchall():
+                period = row[0]
+                estimates[period] = {
+                    "eps": {
+                        "avg": round(row[1], 2) if row[1] else None,
+                        "low": round(row[2], 2) if row[2] else None,
+                        "high": round(row[3], 2) if row[3] else None,
+                        "growth_pct": round(row[4], 1) if row[4] else None,
+                        "num_analysts": row[5]
+                    },
+                    "revenue": {
+                        "avg_b": round(row[6] / 1e9, 2) if row[6] else None,
+                        "low_b": round(row[7] / 1e9, 2) if row[7] else None,
+                        "high_b": round(row[8] / 1e9, 2) if row[8] else None,
+                        "growth_pct": round(row[9], 1) if row[9] else None,
+                        "num_analysts": row[10]
+                    }
+                }
+            
+            if not estimates:
+                return {"error": f"No analyst estimates found for {ticker}"}
+            
+            return {
+                "ticker": ticker,
+                "estimates": estimates
+            }
+        finally:
+            self.db.return_connection(conn)
+    
+    def _compare_stocks(self, tickers: list) -> Dict[str, Any]:
+        """Compare multiple stocks side-by-side."""
+        if not tickers or len(tickers) < 2:
+            return {"error": "Need at least 2 tickers to compare"}
+        if len(tickers) > 5:
+            return {"error": "Maximum 5 stocks can be compared at once"}
+        
+        tickers = [t.upper() for t in tickers]
+        comparison = {"tickers": tickers, "metrics": {}}
+        
+        # Get metrics for each stock
+        for ticker in tickers:
+            metrics = self.db.get_stock_metrics(ticker)
+            if not metrics:
+                comparison["metrics"][ticker] = {"error": "Not found"}
+                continue
+            
+            comparison["metrics"][ticker] = {
+                "company_name": metrics.get('company_name'),
+                "sector": metrics.get('sector'),
+                "price": round(metrics.get('price'), 2) if metrics.get('price') else None,
+                "market_cap_b": round(metrics.get('market_cap') / 1e9, 2) if metrics.get('market_cap') else None,
+                "pe_ratio": round(metrics.get('pe_ratio'), 1) if metrics.get('pe_ratio') else None,
+                "forward_pe": round(metrics.get('forward_pe'), 1) if metrics.get('forward_pe') else None,
+                "peg_ratio": round(metrics.get('forward_peg_ratio'), 2) if metrics.get('forward_peg_ratio') else None,
+                "debt_to_equity": round(metrics.get('debt_to_equity'), 2) if metrics.get('debt_to_equity') else None,
+                "dividend_yield_pct": round(metrics.get('dividend_yield'), 2) if metrics.get('dividend_yield') else None,
+                "beta": round(metrics.get('beta'), 2) if metrics.get('beta') else None,
+            }
+        
+        return comparison
+    
+    def _find_similar_stocks(self, ticker: str, limit: int = 5) -> Dict[str, Any]:
+        """Find stocks similar to the given ticker."""
+        ticker = ticker.upper()
+        
+        # Get reference stock metrics
+        ref_metrics = self.db.get_stock_metrics(ticker)
+        if not ref_metrics:
+            return {"error": f"Stock {ticker} not found"}
+        
+        ref_sector = ref_metrics.get('sector')
+        ref_market_cap = ref_metrics.get('market_cap')
+        
+        if not ref_sector or not ref_market_cap:
+            return {"error": f"Insufficient data for {ticker} to find similar stocks"}
+        
+        conn = self.db.get_connection()
+        cursor = conn.cursor()
+        
+        try:
+            # Find stocks in same sector with similar market cap
+            cursor.execute("""
+                SELECT DISTINCT symbol, sector, market_cap, peg_ratio, 
+                       earnings_cagr, revenue_cagr, overall_score
+                FROM screening_results
+                WHERE sector = %s
+                  AND symbol != %s
+                  AND market_cap BETWEEN %s AND %s
+                  AND overall_score IS NOT NULL
+                ORDER BY overall_score DESC
+                LIMIT %s
+            """, (
+                ref_sector,
+                ticker,
+                ref_market_cap * 0.3,  # 30% to 300% of reference market cap
+                ref_market_cap * 3.0,
+                limit
+            ))
+            
+            similar_stocks = []
+            for row in cursor.fetchall():
+                similar_stocks.append({
+                    "symbol": row[0],
+                    "sector": row[1],
+                    "market_cap_b": round(row[2] / 1e9, 2) if row[2] else None,
+                    "peg_ratio": round(row[3], 2) if row[3] else None,
+                    "earnings_cagr_pct": round(row[4], 1) if row[4] else None,
+                    "revenue_cagr_pct": round(row[5], 1) if row[5] else None,
+                    "lynch_score": round(row[6], 1) if row[6] else None,
+                })
+            
+            return {
+                "reference_ticker": ticker,
+                "reference_sector": ref_sector,
+                "reference_market_cap_b": round(ref_market_cap / 1e9, 2),
+                "similar_stocks": similar_stocks,
+                "count": len(similar_stocks)
+            }
+        finally:
+            self.db.return_connection(conn)
+    
+    def _search_company(self, company_name: str, limit: int = 5) -> Dict[str, Any]:
+        """Search for companies by name using fuzzy matching."""
+        conn = self.db.get_connection()
+        cursor = conn.cursor()
+        
+        try:
+            # Use ILIKE for case-insensitive partial matching
+            cursor.execute("""
+                SELECT symbol, company_name, sector, exchange
+                FROM stocks
+                WHERE company_name ILIKE %s
+                ORDER BY 
+                    CASE 
+                        WHEN company_name ILIKE %s THEN 1  -- Exact match first
+                        WHEN company_name ILIKE %s THEN 2  -- Starts with
+                        ELSE 3                              -- Contains
+                    END,
+                    company_name
+                LIMIT %s
+            """, (
+                f'%{company_name}%',  # Contains
+                company_name,          # Exact
+                f'{company_name}%',   # Starts with
+                limit
+            ))
+            
+            results = []
+            for row in cursor.fetchall():
+                results.append({
+                    "ticker": row[0],
+                    "company_name": row[1],
+                    "sector": row[2],
+                    "exchange": row[3]
+                })
+            
+            if not results:
+                return {
+                    "error": f"No companies found matching '{company_name}'",
+                    "suggestion": "Try a different spelling or use the ticker symbol directly"
+                }
+            
+            return {
+                "query": company_name,
+                "matches": results,
+                "count": len(results)
+            }
+        finally:
+            self.db.return_connection(conn)

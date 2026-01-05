@@ -88,10 +88,11 @@ Use a code block with language "chart" and JSON data in this format:
 Chart types: "bar" (for comparisons), "line" (for trends over time)
 Always include a descriptive title. Data values should be numbers (not strings).
 
-IMPORTANT:
-- Always verify you have the data before making claims.
-- If a tool returns an error, explain that data was unavailable.
-- Use recent data when possible (prefer current year and last 1-2 years)."""
+IMPORTANT RULES:
+1. When the user mentions a company name, use search_company to find the ticker.
+2. Always try calling tools before saying data doesn't exist.
+3. If a tool returns an error, explain that data was unavailable.
+4. Use recent data when possible (prefer current year and last 1-2 years)."""
 
 
     def chat(
@@ -132,6 +133,7 @@ IMPORTANT:
         config = GenerateContentConfig(
             system_instruction=system_prompt,
             tools=[AGENT_TOOLS],
+            temperature=0.3,  # Lower = more deterministic, less hallucination
         )
         
         # ReAct loop
