@@ -1,11 +1,10 @@
 // ABOUTME: Stock charts component displaying 10 financial metrics in 3 thematic sections
-// ABOUTME: Two-column layout: charts left (2/3), chat sidebar right (1/3)
+// ABOUTME: Full-width layout with expandable analysis sections
 
-import { useState, useCallback, useRef } from 'react'
+import { useState, useCallback } from 'react'
 import { Line } from 'react-chartjs-2'
 import UnifiedChartAnalysis from './UnifiedChartAnalysis'
 import ReactMarkdown from 'react-markdown'
-import AnalysisChat from './AnalysisChat'
 import {
   Chart as ChartJS,
   CategoryScale,
@@ -115,7 +114,6 @@ const yearTickCallback = function (value, index, values) {
 export default function StockCharts({ historyData, loading, symbol }) {
   const [activeIndex, setActiveIndex] = useState(null)
   const [analyses, setAnalyses] = useState({ growth: null, cash: null, valuation: null })
-  const chatRef = useRef(null)
 
   const handleHover = useCallback((event, elements) => {
     if (elements && elements.length > 0) {
@@ -653,13 +651,6 @@ export default function StockCharts({ historyData, loading, symbol }) {
               )}
             </div>
           </div>
-        </div>
-      </div>
-
-      {/* Right Column - Chat Sidebar (1/3) */}
-      <div className="reports-chat-sidebar">
-        <div className="chat-sidebar-content">
-          <AnalysisChat ref={chatRef} symbol={symbol} chatOnly={true} contextType="charts" />
         </div>
       </div>
     </div>

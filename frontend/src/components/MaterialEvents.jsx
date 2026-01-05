@@ -1,9 +1,8 @@
 // ABOUTME: Material events component for displaying SEC 8-K filings
-// ABOUTME: Two-column layout: filings list left (2/3), chat sidebar right (1/3)
+// ABOUTME: Full-width layout with filings list
 // ABOUTME: Displays AI-generated summaries for high-value events (earnings, M&A, etc.)
 
-import { useRef, useState, useEffect } from 'react'
-import AnalysisChat from './AnalysisChat'
+import { useState, useEffect } from 'react'
 
 // Item codes that get AI summaries
 const SUMMARIZABLE_CODES = ['2.02', '2.01', '1.01', '1.05', '2.06', '4.02']
@@ -15,7 +14,6 @@ const isSummarizable = (itemCodes) => {
 }
 
 export default function MaterialEvents({ eventsData, loading, symbol }) {
-    const chatRef = useRef(null)
     const [summaries, setSummaries] = useState({})
     const [loadingSummaries, setLoadingSummaries] = useState(false)
     const [summaryError, setSummaryError] = useState(null)
@@ -97,11 +95,6 @@ export default function MaterialEvents({ eventsData, loading, symbol }) {
                                 </p>
                             </div>
                         </div>
-                    </div>
-                </div>
-                <div className="reports-chat-sidebar">
-                    <div className="chat-sidebar-content">
-                        <AnalysisChat ref={chatRef} symbol={symbol} chatOnly={true} contextType="events" />
                     </div>
                 </div>
             </div>
@@ -230,13 +223,6 @@ export default function MaterialEvents({ eventsData, loading, symbol }) {
                             </div>
                         </div>
                     </div>
-                </div>
-            </div>
-
-            {/* Right Column - Chat Sidebar (1/3) */}
-            <div className="reports-chat-sidebar">
-                <div className="chat-sidebar-content">
-                    <AnalysisChat ref={chatRef} symbol={symbol} chatOnly={true} contextType="events" />
                 </div>
             </div>
         </div>

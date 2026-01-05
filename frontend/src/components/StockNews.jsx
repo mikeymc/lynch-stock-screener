@@ -1,11 +1,7 @@
 // ABOUTME: News component for displaying stock news articles
-// ABOUTME: Two-column layout: news list left (2/3), chat sidebar right (1/3)
-
-import { useRef } from 'react'
-import AnalysisChat from './AnalysisChat'
+// ABOUTME: Full-width layout with news list
 
 export default function StockNews({ newsData, loading, symbol }) {
-    const chatRef = useRef(null)
 
     if (loading) {
         return (
@@ -83,13 +79,6 @@ export default function StockNews({ newsData, loading, symbol }) {
                             </div>
                         </div>
                     </div>
-                </div>
-            </div>
-
-            {/* Right Column - Chat Sidebar (1/3) */}
-            <div className="reports-chat-sidebar">
-                <div className="chat-sidebar-content">
-                    <AnalysisChat ref={chatRef} symbol={symbol} chatOnly={true} contextType="news" />
                 </div>
             </div>
         </div>

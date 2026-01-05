@@ -1,13 +1,11 @@
-// ABOUTME: Displays earnings call transcripts with two-column layout and RAG chat
-// ABOUTME: Left column has AI summary/full transcript toggle, right column has contextual chat
+// ABOUTME: Displays earnings call transcripts with full-width layout
+// ABOUTME: AI summary/full transcript toggle
 
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect } from 'react'
 import ReactMarkdown from 'react-markdown'
-import AnalysisChat from './AnalysisChat'
 import '../App.css'
 
 export default function TranscriptViewer({ symbol }) {
-    const chatRef = useRef(null)
     const [transcript, setTranscript] = useState(null)
     const [loading, setLoading] = useState(true)
     const [error, setError] = useState(null)
@@ -163,11 +161,6 @@ export default function TranscriptViewer({ symbol }) {
                         </div>
                     </div>
                 </div>
-                <div className="reports-chat-sidebar">
-                    <div className="chat-sidebar-content">
-                        <AnalysisChat ref={chatRef} symbol={symbol} chatOnly={true} contextType="transcript" />
-                    </div>
-                </div>
             </div>
         )
     }
@@ -228,13 +221,6 @@ export default function TranscriptViewer({ symbol }) {
                             )}
                         </div>
                     </div>
-                </div>
-            </div>
-
-            {/* Right Column - Chat Sidebar (1/3) */}
-            <div className="reports-chat-sidebar">
-                <div className="chat-sidebar-content">
-                    <AnalysisChat ref={chatRef} symbol={symbol} chatOnly={true} contextType="transcript" />
                 </div>
             </div>
         </div>

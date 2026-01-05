@@ -1,14 +1,12 @@
 // ABOUTME: Stock detail page with sticky header and tabbed content
 // ABOUTME: Displays charts, reports, analysis, and chat for a specific stock
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import StockTableHeader from '../components/StockTableHeader'
-import StockTableRow from '../components/StockTableRow'
+import StockCard from '../components/StockCard'
 import StockCharts from '../components/StockCharts'
 import StockReports from '../components/StockReports'
 import AnalysisChat from '../components/AnalysisChat'
-import AlgorithmSelector from '../components/AlgorithmSelector'
 import ErrorBoundary from '../components/ErrorBoundary'
 import DCFAnalysis from '../components/DCFAnalysis'
 import StockNews from '../components/StockNews'
@@ -17,8 +15,20 @@ import FutureOutlook from '../components/FutureOutlook'
 import SearchPopover from '../components/SearchPopover'
 import UserAvatar from '../components/UserAvatar'
 import TranscriptViewer from '../components/TranscriptViewer'
+import BurgerMenu from '../components/BurgerMenu'
 
 const API_BASE = '/api'
+
+const detailTabs = [
+  { id: 'analysis', label: 'Brief' },
+  { id: 'charts', label: 'Financials' },
+  { id: 'outlook', label: 'Forward Metrics' },
+  { id: 'dcf', label: 'DCF Analysis' },
+  { id: 'news', label: 'News' },
+  { id: 'reports', label: 'Quarterly & Annual Reports' },
+  { id: 'events', label: 'Material Event Filings' },
+  { id: 'transcript', label: 'Earnings Transcript' }
+]
 
 export default function StockDetail({ watchlist, toggleWatchlist }) {
   const { symbol } = useParams()
@@ -44,6 +54,10 @@ export default function StockDetail({ watchlist, toggleWatchlist }) {
   // Comments state for inline commenting feature
   const [comments, setComments] = useState([])
   const [isReviewingComments, setIsReviewingComments] = useState(false)
+
+  // Chat panel state
+  const [isChatOpen, setIsChatOpen] = useState(false)
+  const chatRef = useRef(null)
 
   // Handler to add a new comment
   const handleAddComment = (comment) => {
@@ -286,9 +300,15 @@ export default function StockDetail({ watchlist, toggleWatchlist }) {
   }
 
   return (
-    <div className="stock-detail-page">
-      {/* Sticky zone - controls and stock summary stick together */}
-      <div className="sticky-zone">
+    <>
+      <BurgerMenu
+        tabs={detailTabs}
+        activeTab={activeTab}
+        onTabChange={setActiveTab}
+      />
+      <div className="stock-detail-page">
+        {/* Sticky zone - controls and stock summary stick together */}
+        <div className="sticky-zone">
         <div className="controls">
           {/* All Stocks button */}
           <button className="tab-button nav-button" onClick={() => navigate('/')}>
@@ -298,75 +318,53 @@ export default function StockDetail({ watchlist, toggleWatchlist }) {
           {/* Search popover for quick stock navigation */}
           <SearchPopover onSelect={(sym) => navigate(`/stock/${sym}`)} />
 
-          {/* Center: Tab buttons */}
-          <div className="tab-button-group"><button
-            className={`tab-button ${activeTab === 'analysis' ? 'active' : ''}`}
-            onClick={() => setActiveTab('analysis')}
-          >
-            Brief
-          </button>
+          <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '12px' }}>
+            {/* Chat icon */}
             <button
-              className={`tab-button ${activeTab === 'charts' ? 'active' : ''}`}
-              onClick={() => setActiveTab('charts')}
+              onClick={() => setIsChatOpen(!isChatOpen)}
+              className="icon-button"
+              style={{
+                width: '24px',
+                height: '24px',
+                padding: 0,
+                background: 'transparent',
+                border: 'none',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                opacity: 0.7,
+                transition: 'opacity 0.2s ease'
+              }}
+              onMouseEnter={(e) => e.currentTarget.style.opacity = '1'}
+              onMouseLeave={(e) => e.currentTarget.style.opacity = '0.7'}
+              title="Chat"
             >
-              Financials
+              <svg
+                width="20"
+                height="20"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="#E2E8F0"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+              </svg>
             </button>
-            <button
-              className={`tab-button ${activeTab === 'outlook' ? 'active' : ''}`}
-              onClick={() => setActiveTab('outlook')}
-            >
-              Forward Metrics
-            </button>
-            <button
-              className={`tab-button ${activeTab === 'dcf' ? 'active' : ''}`}
-              onClick={() => setActiveTab('dcf')}
-            >
-              DCF Analysis
-            </button>
-            <button
-              className={`tab-button ${activeTab === 'news' ? 'active' : ''}`}
-              onClick={() => setActiveTab('news')}
-            >
-              News
-            </button>
-            <button
-              className={`tab-button ${activeTab === 'reports' ? 'active' : ''}`}
-              onClick={() => setActiveTab('reports')}
-            >
-              Quarterly & Annual Reports
-            </button>
-            <button
-              className={`tab-button ${activeTab === 'events' ? 'active' : ''}`}
-              onClick={() => setActiveTab('events')}
-            >
-              Material Event Filings
-            </button>
-            <button
-              className={`tab-button ${activeTab === 'transcript' ? 'active' : ''}`}
-              onClick={() => setActiveTab('transcript')}
-            >
-              Earnings Transcript
-            </button>
-          </div>
 
-          <UserAvatar />
+            <UserAvatar />
+          </div>
         </div>
 
-        {/* Stock summary row - part of sticky zone */}
+        {/* Stock summary card - part of sticky zone */}
         <div className="stock-summary-section">
-          <div className="table-container">
-            <table className="stocks-table">
-              <StockTableHeader readOnly={true} />
-              <tbody>
-                <StockTableRow
-                  stock={stock}
-                  watchlist={watchlist}
-                  onToggleWatchlist={toggleWatchlist}
-                  readOnly={true}
-                />
-              </tbody>
-            </table>
-          </div>
+          <StockCard
+            stock={stock}
+            watchlist={watchlist}
+            onToggleWatchlist={toggleWatchlist}
+          />
         </div>
       </div>
 
@@ -421,6 +419,71 @@ export default function StockDetail({ watchlist, toggleWatchlist }) {
         </div>
       </ErrorBoundary>
     </div>
+
+    {/* Chat panel - slides in from right */}
+    <div
+      style={{
+        position: 'fixed',
+        top: 0,
+        right: 0,
+        width: '400px',
+        height: '100vh',
+        padding: '16px',
+        backgroundColor: '#0f172a',
+        borderLeft: '1px solid #334155',
+        transition: 'transform 0.3s ease',
+        transform: isChatOpen ? 'translateX(0)' : 'translateX(100%)',
+        zIndex: 999,
+        display: 'flex',
+        flexDirection: 'column'
+      }}
+    >
+        {/* Close button */}
+        <button
+          onClick={() => setIsChatOpen(false)}
+          style={{
+            position: 'absolute',
+            top: '16px',
+            right: '16px',
+            background: 'transparent',
+            border: 'none',
+            color: '#94a3b8',
+            cursor: 'pointer',
+            fontSize: '20px',
+            padding: '4px 8px',
+            lineHeight: 1,
+            zIndex: 1
+          }}
+          onMouseEnter={(e) => e.currentTarget.style.color = '#E2E8F0'}
+          onMouseLeave={(e) => e.currentTarget.style.color = '#94a3b8'}
+        >
+          ×
+        </button>
+
+        {/* Reports chat sidebar */}
+        <div className="reports-chat-sidebar" style={{ height: '100%', marginTop: 0 }}>
+          <div className="chat-sidebar-content">
+            <AnalysisChat
+              ref={chatRef}
+              symbol={stock.symbol}
+              stockName={stock.company_name}
+              chatOnly={true}
+              contextType={
+                activeTab === 'analysis' ? 'brief' :
+                activeTab === 'charts' ? 'charts' :
+                activeTab === 'outlook' ? 'outlook' :
+                activeTab === 'dcf' ? 'dcf' :
+                activeTab === 'news' ? 'news' :
+                activeTab === 'reports' ? 'filings' :
+                activeTab === 'events' ? 'events' :
+                activeTab === 'transcript' ? 'transcript' :
+                'brief'
+              }
+            />
+          </div>
+        </div>
+      </div>
+    </>
   )
 }
 

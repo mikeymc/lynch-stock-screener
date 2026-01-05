@@ -311,15 +311,25 @@ const AnalysisChat = forwardRef(function AnalysisChat({ symbol, stockName, chatO
     setStreamingSources([])
 
     try {
+      const requestBody = {
+        message: userMessage,
+        context_type: contextType
+      }
+
+      // Only include conversation_id if it exists
+      if (conversationId) {
+        requestBody.conversation_id = conversationId
+      }
+
+      // Only include lynch_analysis if it exists
+      if (analysis) {
+        requestBody.lynch_analysis = analysis
+      }
+
       const response = await fetch(`${API_BASE}/chat/${symbol}/message/stream`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          message: userMessage,
-          conversation_id: conversationId,
-          lynch_analysis: analysis || null,
-          context_type: contextType
-        })
+        body: JSON.stringify(requestBody)
       })
 
       if (!response.ok) {
@@ -581,19 +591,11 @@ const AnalysisChat = forwardRef(function AnalysisChat({ symbol, stockName, chatO
     return chatContent
   }
 
-  // In full mode, use two-column layout
+  // In full mode, show only analysis content (chat is in sliding panel)
   return (
     <div className="reports-layout">
-      {/* Left Column - Analysis Content (2/3) */}
-      <div className="reports-main-column">
+      <div className="reports-main-column" style={{ flex: 1, maxWidth: '100%' }}>
         {analysisContent}
-      </div>
-
-      {/* Right Column - Chat Sidebar (1/3) */}
-      <div className="reports-chat-sidebar">
-        <div className="chat-sidebar-content">
-          {chatContent}
-        </div>
       </div>
     </div>
   )

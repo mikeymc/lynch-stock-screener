@@ -176,3 +176,40 @@
   width: 100%;
   min-width: unset;
 }
+
+/* Tab navigation in burger menu */
+.burger-tabs {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.burger-menu .burger-tab-button {
+  width: 100%;
+  padding: 0.6rem 1.25rem;
+  color: #64748b !important;
+  background: transparent !important;
+  border: none;
+  border-radius: 0;
+  font-size: 1rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  white-space: nowrap;
+  text-align: left;
+}
+
+.burger-menu .burger-tab-button:hover {
+  color: #94a3b8 !important;
+  background: rgba(100, 116, 139, 0.1) !important;
+}
+
+.burger-menu .burger-tab-button.active {
+  color: #94a3b8 !important;
+  background: rgba(100, 116, 139, 0.2) !important;
+}
+
+.burger-tab-button:focus,
+.burger-tab-button:focus-visible {
+  outline: none;
+}

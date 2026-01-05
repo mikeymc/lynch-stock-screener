@@ -5,7 +5,7 @@ import { useState, useEffect, useRef } from 'react'
 import AlgorithmSelector from './AlgorithmSelector'
 import './BurgerMenu.css'
 
-export default function BurgerMenu({ algorithm, onAlgorithmChange, filter, setFilter }) {
+export default function BurgerMenu({ algorithm, onAlgorithmChange, filter, setFilter, tabs, activeTab, onTabChange }) {
   const [isOpen, setIsOpen] = useState(false)
   const [isHovered, setIsHovered] = useState(false)
   const [filterDropdownOpen, setFilterDropdownOpen] = useState(false)
@@ -90,45 +90,68 @@ export default function BurgerMenu({ algorithm, onAlgorithmChange, filter, setFi
 
       {isOpen && (
         <div className="burger-content">
-          <div className="burger-section">
-            <div className="burger-section-label">Status Filter</div>
-            <div className="filter-dropdown-container" ref={filterDropdownRef}>
-              <button
-                className="burger-filter-dropdown"
-                onClick={() => setFilterDropdownOpen(!filterDropdownOpen)}
-                type="button"
-              >
-                <span className="filter-dropdown-text">{getFilterLabel(filter)}</span>
-                <span className="filter-dropdown-arrow">{filterDropdownOpen ? '▲' : '▼'}</span>
-              </button>
-
-              {filterDropdownOpen && (
-                <div className="filter-dropdown-menu">
-                  {filterOptions.map(option => (
-                    <div
-                      key={option.value}
-                      className={`filter-dropdown-item ${filter === option.value ? 'selected' : ''}`}
-                      onClick={() => {
-                        setFilter(option.value)
-                        setFilterDropdownOpen(false)
-                      }}
-                    >
-                      <span className="filter-option-label">{option.label}</span>
-                      {filter === option.value && <span className="checkmark">✓</span>}
-                    </div>
-                  ))}
-                </div>
-              )}
+          {/* Show tabs if provided (detail page), otherwise show filters/algorithm (list page) */}
+          {tabs ? (
+            <div className="burger-section">
+              <div className="burger-section-label">Navigation</div>
+              <div className="burger-tabs">
+                {tabs.map(tab => (
+                  <button
+                    key={tab.id}
+                    className={`burger-tab-button ${activeTab === tab.id ? 'active' : ''}`}
+                    onClick={() => {
+                      onTabChange(tab.id)
+                      setIsOpen(false)
+                    }}
+                  >
+                    {tab.label}
+                  </button>
+                ))}
+              </div>
             </div>
-          </div>
+          ) : (
+            <>
+              <div className="burger-section">
+                <div className="burger-section-label">Status Filter</div>
+                <div className="filter-dropdown-container" ref={filterDropdownRef}>
+                  <button
+                    className="burger-filter-dropdown"
+                    onClick={() => setFilterDropdownOpen(!filterDropdownOpen)}
+                    type="button"
+                  >
+                    <span className="filter-dropdown-text">{getFilterLabel(filter)}</span>
+                    <span className="filter-dropdown-arrow">{filterDropdownOpen ? '▲' : '▼'}</span>
+                  </button>
 
-          <div className="burger-section">
-            <div className="burger-section-label">Scoring Algorithm</div>
-            <AlgorithmSelector
-              selectedAlgorithm={algorithm}
-              onAlgorithmChange={onAlgorithmChange}
-            />
-          </div>
+                  {filterDropdownOpen && (
+                    <div className="filter-dropdown-menu">
+                      {filterOptions.map(option => (
+                        <div
+                          key={option.value}
+                          className={`filter-dropdown-item ${filter === option.value ? 'selected' : ''}`}
+                          onClick={() => {
+                            setFilter(option.value)
+                            setFilterDropdownOpen(false)
+                          }}
+                        >
+                          <span className="filter-option-label">{option.label}</span>
+                          {filter === option.value && <span className="checkmark">✓</span>}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              <div className="burger-section">
+                <div className="burger-section-label">Scoring Algorithm</div>
+                <AlgorithmSelector
+                  selectedAlgorithm={algorithm}
+                  onAlgorithmChange={onAlgorithmChange}
+                />
+              </div>
+            </>
+          )}
         </div>
       )}
     </div>

@@ -1,7 +1,6 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Line } from 'react-chartjs-2';
 import DCFAIRecommendations, { DCFOptimizeButton } from './DCFAIRecommendations';
-import AnalysisChat from './AnalysisChat';
 import {
   Chart as ChartJS,
   CategoryScale,
@@ -52,7 +51,6 @@ const DCFAnalysis = ({ stockData, earningsHistory }) => {
   const [error, setError] = useState(null);
   const [historicalMetrics, setHistoricalMetrics] = useState(null);
   const [showSensitivity, setShowSensitivity] = useState(false);
-  const chatRef = useRef(null);
 
   // AI Recommendations state (lifted from DCFAIRecommendations)
   const [aiRecommendations, setAiRecommendations] = useState(null);
@@ -741,13 +739,6 @@ const DCFAnalysis = ({ stockData, earningsHistory }) => {
             })()}
           </div>
 
-        </div>
-      </div>
-
-      {/* Right Column - Chat Sidebar (1/3) */}
-      <div className="reports-chat-sidebar">
-        <div className="chat-sidebar-content">
-          <AnalysisChat ref={chatRef} symbol={stockData.symbol} chatOnly={true} contextType="dcf" />
         </div>
       </div>
     </div>

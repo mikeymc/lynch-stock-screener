@@ -1,10 +1,9 @@
 // ABOUTME: Forward-looking metrics page with analyst consensus, insider trades, and business health indicators
-// ABOUTME: Two-column layout: metrics content left (2/3), chat sidebar right (1/3)
+// ABOUTME: Full-width layout with metrics content
 
-import React, { useState, useEffect, useRef } from 'react'
+import React, { useState, useEffect } from 'react'
 import InsiderTradesTable from './InsiderTradesTable'
 import Sparkline from './Sparkline'
-import AnalysisChat from './AnalysisChat'
 import { Line } from 'react-chartjs-2'
 import {
     Chart as ChartJS,
@@ -33,7 +32,6 @@ export default function FutureOutlook({ symbol }) {
     const [data, setData] = useState(null)
     const [loading, setLoading] = useState(true)
     const [error, setError] = useState(null)
-    const chatRef = useRef(null)
 
     useEffect(() => {
         let active = true
@@ -205,7 +203,7 @@ export default function FutureOutlook({ symbol }) {
         <div className="reports-layout">
             {/* Left Column - Future Outlook Content (2/3) */}
             <div className="reports-main-column">
-                <div className="future-outlook-container" style={{ padding: '0 1rem 1rem 1rem' }}>
+                <div className="future-outlook-container">
 
                     {/* ROW 1: Wall Street Consensus + Next Earnings */}
                     {(analyst_consensus?.rating || short_interest?.short_percent_float || metrics?.next_earnings_date) && (
@@ -508,13 +506,6 @@ export default function FutureOutlook({ symbol }) {
                         </div>
                     </div>
 
-                </div>
-            </div>
-
-            {/* Right Column - Chat Sidebar (1/3) */}
-            <div className="reports-chat-sidebar">
-                <div className="chat-sidebar-content">
-                    <AnalysisChat ref={chatRef} symbol={symbol} chatOnly={true} contextType="outlook" />
                 </div>
             </div>
         </div>
