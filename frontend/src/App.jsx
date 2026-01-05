@@ -17,7 +17,6 @@ import StockCard from './components/StockCard'
 
 
 import AlgorithmTuning from './pages/AlgorithmTuning'
-import AlgorithmSelector from './components/AlgorithmSelector'
 import StatusBar from './components/StatusBar'
 import AdvancedFilter from './components/AdvancedFilter'
 import SearchPopover from './components/SearchPopover'
@@ -956,11 +955,6 @@ function StockListView({
             </div>
           )}
 
-          <AlgorithmSelector
-            selectedAlgorithm={algorithm}
-            onAlgorithmChange={setAlgorithm}
-          />
-
           <button
             onClick={() => setShowAdvancedFilters(!showAdvancedFilters)}
             className="filter-button"
@@ -1148,7 +1142,7 @@ function App() {
 
   return (
     <>
-      <BurgerMenu />
+      <BurgerMenu algorithm={algorithm} onAlgorithmChange={setAlgorithm} />
       <Routes>
         <Route path="/" element={
         <StockListView

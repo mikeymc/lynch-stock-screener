@@ -2,9 +2,10 @@
 // ABOUTME: Provides a collapsible sidebar that expands from 50px to 310px
 
 import { useState, useEffect, useRef } from 'react'
+import AlgorithmSelector from './AlgorithmSelector'
 import './BurgerMenu.css'
 
-export default function BurgerMenu() {
+export default function BurgerMenu({ algorithm, onAlgorithmChange }) {
   const [isOpen, setIsOpen] = useState(false)
   const [isHovered, setIsHovered] = useState(false)
   const panelRef = useRef(null)
@@ -55,10 +56,13 @@ export default function BurgerMenu() {
 
       {isOpen && (
         <div className="burger-content">
-          {/* Menu content will go here */}
-          <p style={{ color: '#9CA3AF', padding: '20px', fontSize: '14px' }}>
-            Menu content coming soon...
-          </p>
+          <div className="burger-section">
+            <div className="burger-section-label">Scoring Algorithm</div>
+            <AlgorithmSelector
+              selectedAlgorithm={algorithm}
+              onAlgorithmChange={onAlgorithmChange}
+            />
+          </div>
         </div>
       )}
     </div>

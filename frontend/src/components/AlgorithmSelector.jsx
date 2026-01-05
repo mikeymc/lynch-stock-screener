@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import './AlgorithmSelector.css'
 
 const API_BASE = '/api'
@@ -7,6 +7,8 @@ const AlgorithmSelector = ({ selectedAlgorithm, onAlgorithmChange }) => {
   const [algorithms, setAlgorithms] = useState({})
   const [showHelp, setShowHelp] = useState(false)
   const [loading, setLoading] = useState(true)
+  const [isOpen, setIsOpen] = useState(false)
+  const dropdownRef = useRef(null)
 
   useEffect(() => {
     const controller = new AbortController()
@@ -29,29 +31,63 @@ const AlgorithmSelector = ({ selectedAlgorithm, onAlgorithmChange }) => {
     return () => controller.abort()
   }, [])
 
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (isOpen && dropdownRef.current && !dropdownRef.current.contains(event.target)) {
+        setIsOpen(false)
+      }
+    }
+
+    if (isOpen) {
+      document.addEventListener('mousedown', handleClickOutside)
+    }
+
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside)
+    }
+  }, [isOpen])
+
+  const handleSelect = (key) => {
+    onAlgorithmChange(key)
+    setIsOpen(false)
+  }
+
   if (loading) {
     return <div className="algorithm-selector">Loading algorithms...</div>
   }
 
+  const selectedAlgo = algorithms[selectedAlgorithm]
+
   return (
     <>
-      <div className="algorithm-selector">
-        <select
-          id="algorithm-select"
-          value={selectedAlgorithm}
-          onChange={(e) => onAlgorithmChange(e.target.value)}
+      <div className="algorithm-selector" ref={dropdownRef}>
+        <button
           className="algorithm-dropdown"
+          onClick={() => setIsOpen(!isOpen)}
+          type="button"
         >
-          {Object.entries(algorithms).map(([key, algo]) => (
-            <option
-              key={key}
-              value={key}
-              title={algo.short_desc}
-            >
-              {algo.name} Scoring
-            </option>
-          ))}
-        </select>
+          <span className="algorithm-dropdown-text">
+            {selectedAlgo ? `${selectedAlgo.name} Scoring` : 'Select Algorithm'}
+          </span>
+          <span className="algorithm-dropdown-arrow">{isOpen ? '▲' : '▼'}</span>
+        </button>
+
+        {isOpen && (
+          <div className="algorithm-dropdown-menu">
+            {Object.entries(algorithms).map(([key, algo]) => (
+              <div
+                key={key}
+                className={`algorithm-dropdown-item ${key === selectedAlgorithm ? 'selected' : ''}`}
+                onClick={() => handleSelect(key)}
+                title={algo.short_desc}
+              >
+                <span className="algorithm-name">{algo.name} Scoring</span>
+                {key === selectedAlgorithm && <span className="checkmark">✓</span>}
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
       {showHelp && (

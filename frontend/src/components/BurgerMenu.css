@@ -67,5 +67,48 @@
 .burger-content {
   flex: 1;
   overflow-y: auto;
-  padding-top: 10px;
+  padding: 20px 16px;
+}
+
+/* Menu sections */
+.burger-section {
+  margin-bottom: 32px;
+}
+
+.burger-section-label {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: #64748B;
+  margin-bottom: 12px;
+}
+
+/* Algorithm selector in burger menu */
+.burger-menu .algorithm-selector {
+  margin: 0;
+}
+
+.burger-menu .algorithm-dropdown {
+  width: 100%;
+  min-width: unset;
+  background: #1e293b;
+  border: 1px solid #334155;
+  padding: 10px 12px;
+  font-size: 14px;
+  border-radius: 6px;
+  color: #E2E8F0;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.burger-menu .algorithm-dropdown:hover {
+  background: #334155;
+  border-color: #475569;
+}
+
+.burger-menu .algorithm-dropdown:focus {
+  outline: none;
+  border-color: #475569;
+  background: #334155;
 }
