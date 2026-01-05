@@ -5,11 +5,28 @@ import { useState, useEffect, useRef } from 'react'
 import AlgorithmSelector from './AlgorithmSelector'
 import './BurgerMenu.css'
 
-export default function BurgerMenu({ algorithm, onAlgorithmChange }) {
+export default function BurgerMenu({ algorithm, onAlgorithmChange, filter, setFilter }) {
   const [isOpen, setIsOpen] = useState(false)
   const [isHovered, setIsHovered] = useState(false)
+  const [filterDropdownOpen, setFilterDropdownOpen] = useState(false)
   const panelRef = useRef(null)
   const buttonRef = useRef(null)
+  const filterDropdownRef = useRef(null)
+
+  const filterOptions = [
+    { value: 'all', label: 'All' },
+    { value: 'watchlist', label: '⭐ Watchlist' },
+    { value: 'STRONG_BUY', label: 'Excellent Only' },
+    { value: 'BUY', label: 'Good Only' },
+    { value: 'HOLD', label: 'Fair Only' },
+    { value: 'CAUTION', label: 'Weak Only' },
+    { value: 'AVOID', label: 'Poor Only' }
+  ]
+
+  const getFilterLabel = (value) => {
+    const option = filterOptions.find(opt => opt.value === value)
+    return option ? option.label : 'All'
+  }
 
   // Close panel when clicking outside
   useEffect(() => {
@@ -27,6 +44,23 @@ export default function BurgerMenu({ algorithm, onAlgorithmChange }) {
       document.removeEventListener('mousedown', handleClickOutside)
     }
   }, [isOpen])
+
+  // Close filter dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (filterDropdownOpen && filterDropdownRef.current && !filterDropdownRef.current.contains(event.target)) {
+        setFilterDropdownOpen(false)
+      }
+    }
+
+    if (filterDropdownOpen) {
+      document.addEventListener('mousedown', handleClickOutside)
+    }
+
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside)
+    }
+  }, [filterDropdownOpen])
 
   return (
     <div
@@ -56,6 +90,38 @@ export default function BurgerMenu({ algorithm, onAlgorithmChange }) {
 
       {isOpen && (
         <div className="burger-content">
+          <div className="burger-section">
+            <div className="burger-section-label">Status Filter</div>
+            <div className="filter-dropdown-container" ref={filterDropdownRef}>
+              <button
+                className="burger-filter-dropdown"
+                onClick={() => setFilterDropdownOpen(!filterDropdownOpen)}
+                type="button"
+              >
+                <span className="filter-dropdown-text">{getFilterLabel(filter)}</span>
+                <span className="filter-dropdown-arrow">{filterDropdownOpen ? '▲' : '▼'}</span>
+              </button>
+
+              {filterDropdownOpen && (
+                <div className="filter-dropdown-menu">
+                  {filterOptions.map(option => (
+                    <div
+                      key={option.value}
+                      className={`filter-dropdown-item ${filter === option.value ? 'selected' : ''}`}
+                      onClick={() => {
+                        setFilter(option.value)
+                        setFilterDropdownOpen(false)
+                      }}
+                    >
+                      <span className="filter-option-label">{option.label}</span>
+                      {filter === option.value && <span className="checkmark">✓</span>}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+
           <div className="burger-section">
             <div className="burger-section-label">Scoring Algorithm</div>
             <AlgorithmSelector

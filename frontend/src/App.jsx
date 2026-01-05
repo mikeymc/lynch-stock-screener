@@ -110,7 +110,9 @@ function StockListView({
   sortBy, setSortBy,
   sortDir, setSortDir,
   watchlist, toggleWatchlist,
-  algorithm, setAlgorithm
+  algorithm, setAlgorithm,
+  advancedFilters, setAdvancedFilters,
+  showAdvancedFilters, setShowAdvancedFilters
 }) {
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
@@ -122,18 +124,6 @@ function StockListView({
   const itemsPerPage = 100
   const loadMoreRef = useRef(null)
   const [isLoadingMore, setIsLoadingMore] = useState(false)
-
-  // Advanced filters state
-  const [advancedFilters, setAdvancedFilters] = useState({
-    countries: [],
-    regions: [],
-    institutionalOwnership: { max: null },
-    revenueGrowth: { min: null },
-    incomeGrowth: { min: null },
-    debtToEquity: { max: null },
-    marketCap: { max: null }
-  })
-  const [showAdvancedFilters, setShowAdvancedFilters] = useState(false)
 
   // Debounced search state
   const [searchLoading, setSearchLoading] = useState(false)
@@ -911,28 +901,6 @@ function StockListView({
             </div>
           )}
 
-          <div className="filter-controls">
-            <select value={filter} onChange={(e) => setFilter(e.target.value)}>
-              <option value="all">All</option>
-              <option value="watchlist">⭐ Watchlist</option>
-              {algorithm === 'classic' ? (
-                <>
-                  <option value="PASS">Pass Only</option>
-                  <option value="CLOSE">Close Only</option>
-                  <option value="FAIL">Fail Only</option>
-                </>
-              ) : (
-                <>
-                  <option value="STRONG_BUY">Excellent</option>
-                  <option value="BUY">Good</option>
-                  <option value="HOLD">Neutral</option>
-                  <option value="CAUTION">Weak</option>
-                  <option value="AVOID">Poor</option>
-                </>
-              )}
-            </select>
-          </div>
-
           <SearchPopover onSelect={(sym) => navigate(`/stock/${sym}`)} />
 
           {summary && (
@@ -1077,6 +1045,18 @@ function App() {
   const [watchlist, setWatchlist] = useState(new Set())
   const [algorithm, setAlgorithm] = useState('weighted')
 
+  // Advanced filters state
+  const [advancedFilters, setAdvancedFilters] = useState({
+    countries: [],
+    regions: [],
+    institutionalOwnership: { max: null },
+    revenueGrowth: { min: null },
+    incomeGrowth: { min: null },
+    debtToEquity: { max: null },
+    marketCap: { max: null }
+  })
+  const [showAdvancedFilters, setShowAdvancedFilters] = useState(false)
+
   // Load watchlist on mount
   useEffect(() => {
     if (!user) return
@@ -1142,7 +1122,12 @@ function App() {
 
   return (
     <>
-      <BurgerMenu algorithm={algorithm} onAlgorithmChange={setAlgorithm} />
+      <BurgerMenu
+        algorithm={algorithm}
+        onAlgorithmChange={setAlgorithm}
+        filter={filter}
+        setFilter={setFilter}
+      />
       <Routes>
         <Route path="/" element={
         <StockListView
@@ -1164,6 +1149,10 @@ function App() {
           toggleWatchlist={toggleWatchlist}
           algorithm={algorithm}
           setAlgorithm={setAlgorithm}
+          advancedFilters={advancedFilters}
+          setAdvancedFilters={setAdvancedFilters}
+          showAdvancedFilters={showAdvancedFilters}
+          setShowAdvancedFilters={setShowAdvancedFilters}
         />
       } />
       <Route path="/stock/:symbol" element={
