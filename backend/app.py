@@ -5,6 +5,7 @@ from flask import Flask, jsonify, request, Response, stream_with_context, send_f
 from flask_cors import CORS
 from flask_session import Session
 from flask_sqlalchemy import SQLAlchemy
+from werkzeug.middleware.proxy_fix import ProxyFix
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import threading
 import json
@@ -55,6 +56,17 @@ logging.getLogger('urllib3').setLevel(logging.WARNING)
 logging.getLogger('peewee').setLevel(logging.WARNING)
 
 app = Flask(__name__, static_folder='static', static_url_path='')
+
+# Configure ProxyFix for Fly.io reverse proxy
+# This tells Flask to trust X-Forwarded-* headers from Fly's proxy
+# so it recognizes the custom domain instead of the internal .fly.dev address
+app.wsgi_app = ProxyFix(
+    app.wsgi_app,
+    x_for=1,      # Trust X-Forwarded-For (client IP)
+    x_proto=1,    # Trust X-Forwarded-Proto (http/https)
+    x_host=1,     # Trust X-Forwarded-Host (custom domain)
+    x_prefix=1    # Trust X-Forwarded-Prefix (URL prefix)
+)
 
 # Configure Flask sessions with SQLAlchemy for persistence across deployments
 app.config['SECRET_KEY'] = os.getenv('SESSION_SECRET_KEY', 'dev-secret-key-change-in-production')
