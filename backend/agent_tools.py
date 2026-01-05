@@ -241,6 +241,30 @@ search_company_decl = FunctionDeclaration(
     ),
 )
 
+screen_stocks_decl = FunctionDeclaration(
+    name="screen_stocks",
+    description="Screen and filter stocks based on various criteria. Use this to find stocks matching specific requirements like low P/E, high dividend yield, large market cap, strong growth, etc. Returns a list of matching stocks with key metrics.",
+    parameters=Schema(
+        type=Type.OBJECT,
+        properties={
+            "pe_max": Schema(type=Type.NUMBER, description="Maximum P/E ratio (e.g., 15 for value stocks)"),
+            "pe_min": Schema(type=Type.NUMBER, description="Minimum P/E ratio (e.g., 5 to exclude distressed stocks)"),
+            "dividend_yield_min": Schema(type=Type.NUMBER, description="Minimum dividend yield percentage (e.g., 3.0 for income stocks)"),
+            "market_cap_min": Schema(type=Type.NUMBER, description="Minimum market cap in billions (e.g., 10 for large caps)"),
+            "market_cap_max": Schema(type=Type.NUMBER, description="Maximum market cap in billions (e.g., 2 for small caps)"),
+            "revenue_growth_min": Schema(type=Type.NUMBER, description="Minimum revenue growth percentage YoY"),
+            "eps_growth_min": Schema(type=Type.NUMBER, description="Minimum EPS growth percentage YoY"),
+            "sector": Schema(type=Type.STRING, description="Filter by sector (e.g., 'Technology', 'Healthcare', 'Financials')"),
+            "peg_max": Schema(type=Type.NUMBER, description="Maximum PEG ratio (P/E divided by growth rate)"),
+            "debt_to_equity_max": Schema(type=Type.NUMBER, description="Maximum debt-to-equity ratio"),
+            "sort_by": Schema(type=Type.STRING, description="Sort results by: 'pe', 'dividend_yield', 'market_cap', 'revenue_growth', 'eps_growth' (default: 'market_cap')"),
+            "sort_order": Schema(type=Type.STRING, description="Sort order: 'asc' or 'desc' (default: 'desc')"),
+            "limit": Schema(type=Type.INTEGER, description="Maximum number of results to return (default: 20, max: 50)"),
+        },
+        required=[],  # All filters are optional
+    ),
+)
+
 
 # =============================================================================
 # Tool Registry: Maps tool names to their declarations
@@ -264,6 +288,7 @@ TOOL_DECLARATIONS = [
     compare_stocks_decl,
     find_similar_stocks_decl,
     search_company_decl,
+    screen_stocks_decl,
 ]
 
 # Create the Tool object for Gemini API
@@ -317,6 +342,7 @@ class ToolExecutor:
             "compare_stocks": self._compare_stocks,
             "find_similar_stocks": self._find_similar_stocks,
             "search_company": self._search_company,
+            "screen_stocks": self._screen_stocks,
         }
         
         executor = executor_map.get(tool_name)
@@ -1054,6 +1080,179 @@ class ToolExecutor:
                 "query": company_name,
                 "matches": results,
                 "count": len(results)
+            }
+        finally:
+            self.db.return_connection(conn)
+    
+    def _screen_stocks(
+        self,
+        pe_max: float = None,
+        pe_min: float = None,
+        dividend_yield_min: float = None,
+        market_cap_min: float = None,
+        market_cap_max: float = None,
+        revenue_growth_min: float = None,
+        eps_growth_min: float = None,
+        sector: str = None,
+        peg_max: float = None,
+        debt_to_equity_max: float = None,
+        sort_by: str = "market_cap",
+        sort_order: str = "desc",
+        limit: int = 20
+    ) -> Dict[str, Any]:
+        """Screen stocks based on various criteria."""
+        
+        # Cap limit at 50
+        limit = min(limit or 20, 50)
+        
+        # Build dynamic WHERE clause
+        conditions = []
+        params = []
+        
+        # P/E filters
+        if pe_max is not None:
+            conditions.append("sr.pe_ratio <= %s")
+            params.append(pe_max)
+        if pe_min is not None:
+            conditions.append("sr.pe_ratio >= %s")
+            params.append(pe_min)
+        
+        # Dividend yield filter
+        if dividend_yield_min is not None:
+            conditions.append("sr.dividend_yield >= %s")
+            params.append(dividend_yield_min)
+        
+        # Market cap filters (convert billions to actual value)
+        if market_cap_min is not None:
+            conditions.append("sr.market_cap >= %s")
+            params.append(market_cap_min * 1_000_000_000)
+        if market_cap_max is not None:
+            conditions.append("sr.market_cap <= %s")
+            params.append(market_cap_max * 1_000_000_000)
+        
+        # Growth filters (table uses _cagr suffix)
+        if revenue_growth_min is not None:
+            conditions.append("sr.revenue_cagr >= %s")
+            params.append(revenue_growth_min)
+        if eps_growth_min is not None:
+            conditions.append("sr.earnings_cagr >= %s")
+            params.append(eps_growth_min)
+        
+        # Sector filter
+        if sector:
+            conditions.append("LOWER(s.sector) LIKE LOWER(%s)")
+            params.append(f"%{sector}%")
+        
+        # PEG filter
+        if peg_max is not None:
+            conditions.append("sr.peg_ratio <= %s")
+            params.append(peg_max)
+        
+        # Debt to equity filter
+        if debt_to_equity_max is not None:
+            conditions.append("sr.debt_to_equity <= %s")
+            params.append(debt_to_equity_max)
+        
+        # Always exclude null P/E and require positive metrics
+        conditions.append("sr.pe_ratio IS NOT NULL")
+        conditions.append("sr.pe_ratio > 0")
+        conditions.append("sr.market_cap > 0")
+        
+        where_clause = " AND ".join(conditions) if conditions else "1=1"
+        
+        # Build ORDER BY clause
+        sort_columns = {
+            "pe": "sr.pe_ratio",
+            "dividend_yield": "sr.dividend_yield",
+            "market_cap": "sr.market_cap",
+            "revenue_growth": "sr.revenue_cagr",
+            "eps_growth": "sr.earnings_cagr",
+        }
+        order_column = sort_columns.get(sort_by, "sr.market_cap")
+        order_dir = "DESC" if sort_order.lower() == "desc" else "ASC"
+        
+        # Handle nulls in sorting
+        null_handling = "NULLS LAST" if order_dir == "DESC" else "NULLS FIRST"
+        
+        query = f"""
+            WITH latest_screening AS (
+                SELECT DISTINCT ON (symbol) *
+                FROM screening_results
+                ORDER BY symbol, scored_at DESC
+            )
+            SELECT 
+                s.symbol,
+                s.company_name,
+                s.sector,
+                sr.market_cap,
+                sr.pe_ratio,
+                sr.peg_ratio,
+                sr.dividend_yield,
+                sr.revenue_cagr,
+                sr.earnings_cagr,
+                sr.debt_to_equity
+            FROM stocks s
+            JOIN latest_screening sr ON s.symbol = sr.symbol
+            WHERE {where_clause}
+            ORDER BY {order_column} {order_dir} {null_handling}
+            LIMIT %s
+        """
+        params.append(limit)
+        
+        conn = self.db.get_connection()
+        try:
+            cursor = conn.cursor()
+            cursor.execute(query, tuple(params))
+            
+            results = []
+            for row in cursor.fetchall():
+                # Format market cap for readability
+                market_cap = row[3]
+                if market_cap:
+                    if market_cap >= 1_000_000_000_000:
+                        market_cap_str = f"${market_cap / 1_000_000_000_000:.1f}T"
+                    elif market_cap >= 1_000_000_000:
+                        market_cap_str = f"${market_cap / 1_000_000_000:.1f}B"
+                    else:
+                        market_cap_str = f"${market_cap / 1_000_000:.0f}M"
+                else:
+                    market_cap_str = "N/A"
+                
+                results.append({
+                    "ticker": row[0],
+                    "company_name": row[1],
+                    "sector": row[2],
+                    "market_cap": market_cap_str,
+                    "pe_ratio": round(row[4], 1) if row[4] else None,
+                    "peg_ratio": round(row[5], 2) if row[5] else None,
+                    "dividend_yield": round(row[6], 2) if row[6] else None,
+                    "revenue_growth": round(row[7], 1) if row[7] else None,
+                    "eps_growth": round(row[8], 1) if row[8] else None,
+                    "debt_to_equity": round(row[9], 2) if row[9] else None,
+                })
+            
+            # Build filter summary
+            filters_applied = []
+            if pe_max is not None:
+                filters_applied.append(f"P/E <= {pe_max}")
+            if pe_min is not None:
+                filters_applied.append(f"P/E >= {pe_min}")
+            if dividend_yield_min is not None:
+                filters_applied.append(f"Div Yield >= {dividend_yield_min}%")
+            if market_cap_min is not None:
+                filters_applied.append(f"Market Cap >= ${market_cap_min}B")
+            if market_cap_max is not None:
+                filters_applied.append(f"Market Cap <= ${market_cap_max}B")
+            if sector:
+                filters_applied.append(f"Sector: {sector}")
+            if peg_max is not None:
+                filters_applied.append(f"PEG <= {peg_max}")
+            
+            return {
+                "filters_applied": filters_applied if filters_applied else ["None (showing all stocks)"],
+                "sort": f"{sort_by} {sort_order}",
+                "count": len(results),
+                "stocks": results
             }
         finally:
             self.db.return_connection(conn)
