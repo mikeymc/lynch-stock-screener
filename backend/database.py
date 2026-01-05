@@ -1692,11 +1692,24 @@ class Database:
         try:
             cursor = conn.cursor()
             cursor.execute("""
-                SELECT sm.*, s.company_name, s.exchange, s.sector, s.country, s.ipo_year
+                SELECT sm.*, s.company_name, s.exchange, 
+                       COALESCE(s.sector, sr.sector) as sector, 
+                       s.country, s.ipo_year,
+                       -- Prefer screening_results PEG if stock_metrics is null
+                       COALESCE(sm.forward_peg_ratio, sr.peg_ratio) as forward_peg_ratio,
+                       -- Also grab dividend_yield fallback just in case
+                       COALESCE(sm.dividend_yield, sr.dividend_yield) as dividend_yield
                 FROM stock_metrics sm
                 JOIN stocks s ON sm.symbol = s.symbol
+                LEFT JOIN (
+                    SELECT sector, peg_ratio, dividend_yield
+                    FROM screening_results 
+                    WHERE symbol = %s 
+                    ORDER BY scored_at DESC 
+                    LIMIT 1
+                ) sr ON true
                 WHERE sm.symbol = %s
-            """, (symbol,))
+            """, (symbol, symbol))
             row = cursor.fetchone()
 
             if not row:

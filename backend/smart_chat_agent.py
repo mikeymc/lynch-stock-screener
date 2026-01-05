@@ -12,7 +12,7 @@ from rag_context import RAGContext
 logger = logging.getLogger(__name__)
 
 # Maximum number of reasoning steps before forcing a final answer
-MAX_ITERATIONS = 8
+MAX_ITERATIONS = 15
 
 
 class SmartChatAgent:
@@ -92,7 +92,9 @@ IMPORTANT RULES:
 1. When the user mentions a company name, use search_company to find the ticker.
 2. Always try calling tools before saying data doesn't exist.
 3. If a tool returns an error, explain that data was unavailable.
-4. Use recent data when possible (prefer current year and last 1-2 years)."""
+4. Use recent data when possible (prefer current year and last 1-2 years).
+5. COMPLETE THE WORK: Never leave tasks as an exercise for the user. If asked to compare or analyze, do the comparison yourself using the data you fetched. Don't ask the user to "review" or "find" information.
+6. LABEL DATA SOURCES: When comparing forecasts, clearly distinguish between sources. Say "Management stated X" vs "Analysts estimate Y" vs "The company reported Z". Always attribute data to its source."""
 
 
     def chat(

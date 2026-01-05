@@ -257,9 +257,16 @@ screen_stocks_decl = FunctionDeclaration(
             "sector": Schema(type=Type.STRING, description="Filter by sector (e.g., 'Technology', 'Healthcare', 'Financials')"),
             "peg_max": Schema(type=Type.NUMBER, description="Maximum PEG ratio (P/E divided by growth rate)"),
             "debt_to_equity_max": Schema(type=Type.NUMBER, description="Maximum debt-to-equity ratio"),
-            "sort_by": Schema(type=Type.STRING, description="Sort results by: 'pe', 'dividend_yield', 'market_cap', 'revenue_growth', 'eps_growth' (default: 'market_cap')"),
+            "profit_margin_min": Schema(type=Type.NUMBER, description="Minimum Net Profit Margin percentage (e.g., 20.0 for high margin businesses)"),
+            "has_transcript": Schema(type=Type.BOOLEAN, description="If true, only return stocks that have an earnings call transcript available"),
+            "sort_by": Schema(type=Type.STRING, description="Sort results by: 'pe', 'dividend_yield', 'market_cap', 'revenue_growth', 'eps_growth', 'debt_to_equity' (default: 'market_cap')"),
             "sort_order": Schema(type=Type.STRING, description="Sort order: 'asc' or 'desc' (default: 'desc')"),
             "limit": Schema(type=Type.INTEGER, description="Maximum number of results to return (default: 20, max: 50)"),
+            "exclude_tickers": Schema(
+                type=Type.ARRAY, 
+                items=Schema(type=Type.STRING), 
+                description="List of tickers to exclude from results (e.g., ['NVDA'] to find *other* stocks)"
+            ),
         },
         required=[],  # All filters are optional
     ),
@@ -267,11 +274,26 @@ screen_stocks_decl = FunctionDeclaration(
 
 get_sector_comparison_decl = FunctionDeclaration(
     name="get_sector_comparison",
-    description="Compare a stock's key metrics against its sector averages (P/E, Dividend Yield, Growth, etc.). Use this to determine if a stock is overvalued or undervalued relative to its peers.",
+    description="Compare a stock relative to its industry peers. Returns detailed comparison against sector averages and medians for P/E, PEG, Yield, Growth, and Debt. Use this tool when asked to compare against 'peers', 'competitors', or 'industry', especially when specific competitor names are not provided.",
     parameters=Schema(
         type=Type.OBJECT,
         properties={
             "ticker": Schema(type=Type.STRING, description="Ticker symbol of the stock to compare (e.g., 'AAPL', 'MSFT')"),
+        },
+        required=["ticker"],
+    ),
+)
+
+
+get_earnings_history_decl = FunctionDeclaration(
+    name="get_earnings_history",
+    description="Get historical financial data including EPS, Revenue, and Net Income (Quarterly/Annual), plus Free Cash Flow (Annual). Returns trend data to analyze growth, profitability, and cash flow. Note: FCF is typically Annual-only.",
+    parameters=Schema(
+        type=Type.OBJECT,
+        properties={
+            "ticker": Schema(type=Type.STRING, description="Ticker symbol (e.g., 'AAPL')"),
+            "period_type": Schema(type=Type.STRING, description="Type of periods to return: 'quarterly', 'annual', or 'both' (default: 'quarterly')"),
+            "limit": Schema(type=Type.INTEGER, description="Maximum number of periods to return (default: 12)"),
         },
         required=["ticker"],
     ),
@@ -302,6 +324,7 @@ TOOL_DECLARATIONS = [
     search_company_decl,
     screen_stocks_decl,
     get_sector_comparison_decl,
+    get_earnings_history_decl,
 ]
 
 # Create the Tool object for Gemini API
@@ -357,6 +380,7 @@ class ToolExecutor:
             "search_company": self._search_company,
             "screen_stocks": self._screen_stocks,
             "get_sector_comparison": self._get_sector_comparison,
+            "get_earnings_history": self._get_earnings_history,
         }
         
         executor = executor_map.get(tool_name)
@@ -491,12 +515,21 @@ class ToolExecutor:
         if not trades:
             return {"ticker": ticker, "trades": [], "message": "No insider trades found"}
         
-        # Filter to open market transactions (P=Purchase, S=Sale)
-        open_market_trades = [t for t in trades if t.get("transaction_code") in ("P", "S")]
+        # Filter to open market transactions (P=Purchase, S=Sale) or explicit Buy/Sell types
+        open_market_trades = []
+        for t in trades:
+            code = t.get("transaction_code")
+            type_label = t.get("transaction_type") or ""
+            
+            # Check for P/S code OR explicit Buy/Sell/Purchase/Sale type
+            if code in ("P", "S"):
+                open_market_trades.append(t)
+            elif type_label.lower() in ("buy", "purchase", "sell", "sale"):
+                open_market_trades.append(t)
         
         # Summarize
-        buys = [t for t in open_market_trades if t.get("transaction_code") == "P"]
-        sells = [t for t in open_market_trades if t.get("transaction_code") == "S"]
+        buys = [t for t in open_market_trades if t.get("transaction_code") == "P" or t.get("transaction_type", "").lower() in ("buy", "purchase")]
+        sells = [t for t in open_market_trades if t.get("transaction_code") == "S" or t.get("transaction_type", "").lower() in ("sell", "sale")]
         
         return {
             "ticker": ticker,
@@ -1217,6 +1250,112 @@ class ToolExecutor:
         finally:
             self.db.return_connection(conn)
 
+    def _get_earnings_history(self, ticker: str, period_type: str = "quarterly", limit: int = 12) -> Dict[str, Any]:
+        """Get historical earnings and revenue data."""
+        ticker = ticker.upper()
+        limit = min(limit or 12, 40)
+        
+        conditions = ["symbol = %s"]
+        params = [ticker]
+        
+        if period_type == "quarterly":
+            conditions.append("period != 'annual'")
+        elif period_type == "annual":
+            conditions.append("period = 'annual'")
+            
+        where_clause = " AND ".join(conditions)
+        
+        # Sort by year descending, then period (Annual > Q4 > Q3 > Q2 > Q1)
+        # Note: We treat 'annual' as coming after Q4 of the same year
+        order_case = """
+            CASE period 
+                WHEN 'annual' THEN 5 
+                WHEN 'Q4' THEN 4 
+                WHEN 'Q3' THEN 3 
+                WHEN 'Q2' THEN 2 
+                WHEN 'Q1' THEN 1 
+                ELSE 0 
+            END DESC
+        """
+        query = f"""
+            SELECT 
+                year, period, earnings_per_share, revenue, net_income,
+                free_cash_flow, operating_cash_flow, capital_expenditures
+            FROM earnings_history
+            WHERE {where_clause}
+            ORDER BY year DESC, {order_case}
+            LIMIT %s
+        """
+        params.append(limit)
+        
+        conn = self.db.get_connection()
+        try:
+            cursor = conn.cursor()
+            cursor.execute(query, tuple(params))
+            
+            history = []
+            for row in cursor.fetchall():
+                # Only include rows with meaningful data
+                if row[2] is None and row[3] is None and row[4] is None:
+                    continue
+                    
+                history.append({
+                    "year": row[0],
+                    "period": row[1],
+                    "eps": float(row[2]) if row[2] is not None else None,
+                    "revenue": float(row[3]) if row[3] is not None else None,
+                    "net_income": float(row[4]) if row[4] is not None else None,
+                    "free_cash_flow": float(row[5]) if row[5] is not None else None,
+                    "operating_cash_flow": float(row[6]) if row[6] is not None else None,
+                    "capex": float(row[7]) if row[7] is not None else None
+                })
+            
+            if not history:
+                return {
+                    "ticker": ticker,
+                    "message": "No earnings history found."
+                }
+                
+            # Check if quarterly FCF is all null - if so, fetch annual FCF for context
+            annual_fcf_context = None
+            if period_type == "quarterly":
+                has_quarterly_fcf = any(h.get("free_cash_flow") is not None for h in history)
+                if not has_quarterly_fcf:
+                    # Fetch latest annual FCF for context
+                    cursor.execute("""
+                        SELECT year, free_cash_flow, operating_cash_flow, capital_expenditures
+                        FROM earnings_history
+                        WHERE symbol = %s AND period = 'annual' AND free_cash_flow IS NOT NULL
+                        ORDER BY year DESC
+                        LIMIT 2
+                    """, (ticker,))
+                    annual_rows = cursor.fetchall()
+                    if annual_rows:
+                        annual_fcf_context = [
+                            {
+                                "year": r[0],
+                                "free_cash_flow": float(r[1]) if r[1] else None,
+                                "operating_cash_flow": float(r[2]) if r[2] else None,
+                                "capex": float(r[3]) if r[3] else None
+                            }
+                            for r in annual_rows
+                        ]
+            
+            result = {
+                "ticker": ticker,
+                "period_type": period_type,
+                "count": len(history),
+                "history": history
+            }
+            
+            if annual_fcf_context:
+                result["annual_fcf_context"] = annual_fcf_context
+                result["note"] = "Quarterly Free Cash Flow data is unavailable. Annual FCF provided for context."
+            
+            return result
+        finally:
+            self.db.return_connection(conn)
+
     def _screen_stocks(
         self,
         pe_max: float = None,
@@ -1229,9 +1368,12 @@ class ToolExecutor:
         sector: str = None,
         peg_max: float = None,
         debt_to_equity_max: float = None,
+        profit_margin_min: float = None,
+        has_transcript: bool = None,
         sort_by: str = "market_cap",
         sort_order: str = "desc",
-        limit: int = 20
+        limit: int = 20,
+        exclude_tickers: list = None
     ) -> Dict[str, Any]:
         """Screen stocks based on various criteria."""
         
@@ -1242,33 +1384,42 @@ class ToolExecutor:
         conditions = []
         params = []
         
+        # Exclude tickers
+        if exclude_tickers:
+            # Format inputs to uppercase
+            excluded = [t.upper() for t in exclude_tickers if isinstance(t, str)]
+            if excluded:
+                placeholders = ', '.join(['%s'] * len(excluded))
+                conditions.append(f"s.symbol NOT IN ({placeholders})")
+                params.extend(excluded)
+        
         # P/E filters
         if pe_max is not None:
-            conditions.append("sr.pe_ratio <= %s")
+            conditions.append("sr.pe_ratio <= %s AND sr.pe_ratio != 'NaN'")
             params.append(pe_max)
         if pe_min is not None:
-            conditions.append("sr.pe_ratio >= %s")
+            conditions.append("sr.pe_ratio >= %s AND sr.pe_ratio != 'NaN'")
             params.append(pe_min)
         
         # Dividend yield filter
         if dividend_yield_min is not None:
-            conditions.append("sr.dividend_yield >= %s")
+            conditions.append("sr.dividend_yield >= %s AND sr.dividend_yield != 'NaN'")
             params.append(dividend_yield_min)
         
         # Market cap filters (convert billions to actual value)
         if market_cap_min is not None:
-            conditions.append("sr.market_cap >= %s")
+            conditions.append("sr.market_cap >= %s AND sr.market_cap != 'NaN'")
             params.append(market_cap_min * 1_000_000_000)
         if market_cap_max is not None:
-            conditions.append("sr.market_cap <= %s")
+            conditions.append("sr.market_cap <= %s AND sr.market_cap != 'NaN'")
             params.append(market_cap_max * 1_000_000_000)
         
         # Growth filters (table uses _cagr suffix)
         if revenue_growth_min is not None:
-            conditions.append("sr.revenue_cagr >= %s")
+            conditions.append("sr.revenue_cagr >= %s AND sr.revenue_cagr != 'NaN'")
             params.append(revenue_growth_min)
         if eps_growth_min is not None:
-            conditions.append("sr.earnings_cagr >= %s")
+            conditions.append("sr.earnings_cagr >= %s AND sr.earnings_cagr != 'NaN'")
             params.append(eps_growth_min)
         
         # Sector filter
@@ -1278,18 +1429,52 @@ class ToolExecutor:
         
         # PEG filter
         if peg_max is not None:
-            conditions.append("sr.peg_ratio <= %s")
+            conditions.append("sr.peg_ratio <= %s AND sr.peg_ratio != 'NaN'")
             params.append(peg_max)
         
         # Debt to equity filter
         if debt_to_equity_max is not None:
-            conditions.append("sr.debt_to_equity <= %s")
+            conditions.append("sr.debt_to_equity <= %s AND sr.debt_to_equity != 'NaN'")
             params.append(debt_to_equity_max)
+        
+        # Transcript filter - only show stocks with earnings call transcripts
+        if has_transcript:
+            conditions.append("""EXISTS (
+                SELECT 1 FROM earnings_transcripts et 
+                WHERE et.symbol = s.symbol 
+                AND et.transcript_text IS NOT NULL 
+                AND LENGTH(et.transcript_text) > 100
+            )""")
+
+        # Profit Margin Filter
+        join_clause = ""
+        if profit_margin_min is not None:
+            # Join with latest annual earnings to get net income and revenue
+            join_clause = """
+                JOIN (
+                    SELECT DISTINCT ON (symbol) symbol, net_income, revenue 
+                    FROM earnings_history 
+                    WHERE period='annual' AND revenue > 0
+                    ORDER BY symbol, year DESC
+                ) eh ON s.symbol = eh.symbol
+            """
+            # Calculate margin: (Net Income / Revenue) * 100
+            conditions.append("(eh.net_income::float / eh.revenue::float * 100) >= %s")
+            params.append(profit_margin_min)
+
         
         # Always exclude null P/E and require positive metrics
         conditions.append("sr.pe_ratio IS NOT NULL")
         conditions.append("sr.pe_ratio > 0")
         conditions.append("sr.market_cap > 0")
+        
+        # Ensure company has quarterly earnings history (so it can be analyzed further)
+        conditions.append("""EXISTS (
+            SELECT 1 FROM earnings_history eh 
+            WHERE eh.symbol = s.symbol 
+            AND eh.period != 'annual' 
+            AND eh.net_income IS NOT NULL
+        )""")
         
         where_clause = " AND ".join(conditions) if conditions else "1=1"
         
@@ -1300,6 +1485,7 @@ class ToolExecutor:
             "market_cap": "sr.market_cap",
             "revenue_growth": "sr.revenue_cagr",
             "eps_growth": "sr.earnings_cagr",
+            "debt_to_equity": "sr.debt_to_equity",
         }
         order_column = sort_columns.get(sort_by, "sr.market_cap")
         order_dir = "DESC" if sort_order.lower() == "desc" else "ASC"
@@ -1326,6 +1512,7 @@ class ToolExecutor:
                 sr.debt_to_equity
             FROM stocks s
             JOIN latest_screening sr ON s.symbol = sr.symbol
+            {join_clause}
             WHERE {where_clause}
             ORDER BY {order_column} {order_dir} {null_handling}
             LIMIT %s
