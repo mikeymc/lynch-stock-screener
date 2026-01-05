@@ -149,6 +149,44 @@ get_historical_pe_decl = FunctionDeclaration(
     ),
 )
 
+get_growth_rates_decl = FunctionDeclaration(
+    name="get_growth_rates",
+    description="Calculate revenue and earnings growth rates (CAGR) over multiple time periods. Returns 1-year, 3-year, and 5-year compound annual growth rates for both revenue and earnings.",
+    parameters=Schema(
+        type=Type.OBJECT,
+        properties={
+            "ticker": Schema(type=Type.STRING, description="Stock ticker symbol"),
+        },
+        required=["ticker"],
+    ),
+)
+
+get_cash_flow_analysis_decl = FunctionDeclaration(
+    name="get_cash_flow_analysis",
+    description="Analyze cash flow trends over multiple years. Returns operating cash flow, free cash flow, capital expenditures, FCF margin, and CapEx as percentage of revenue.",
+    parameters=Schema(
+        type=Type.OBJECT,
+        properties={
+            "ticker": Schema(type=Type.STRING, description="Stock ticker symbol"),
+            "years": Schema(type=Type.INTEGER, description="Number of years of history (default: 5)"),
+        },
+        required=["ticker"],
+    ),
+)
+
+get_dividend_analysis_decl = FunctionDeclaration(
+    name="get_dividend_analysis",
+    description="Analyze dividend history and trends. Returns dividend payments over time, dividend growth rates (CAGR), payout ratios, and current yield. Useful for income-focused analysis.",
+    parameters=Schema(
+        type=Type.OBJECT,
+        properties={
+            "ticker": Schema(type=Type.STRING, description="Stock ticker symbol"),
+            "years": Schema(type=Type.INTEGER, description="Number of years of history (default: 5)"),
+        },
+        required=["ticker"],
+    ),
+)
+
 
 # =============================================================================
 # Tool Registry: Maps tool names to their declarations
@@ -165,6 +203,9 @@ TOOL_DECLARATIONS = [
     get_material_events_decl,
     get_price_history_decl,
     get_historical_pe_decl,
+    get_growth_rates_decl,
+    get_cash_flow_analysis_decl,
+    get_dividend_analysis_decl,
 ]
 
 # Create the Tool object for Gemini API
@@ -211,6 +252,9 @@ class ToolExecutor:
             "get_material_events": self._get_material_events,
             "get_price_history": self._get_price_history,
             "get_historical_pe": self._get_historical_pe,
+            "get_growth_rates": self._get_growth_rates,
+            "get_cash_flow_analysis": self._get_cash_flow_analysis,
+            "get_dividend_analysis": self._get_dividend_analysis,
         }
         
         executor = executor_map.get(tool_name)
@@ -578,4 +622,189 @@ class ToolExecutor:
             "ticker": ticker,
             "years_of_data": len(pe_data),
             "pe_history": pe_data,
+        }
+    
+    def _get_growth_rates(self, ticker: str) -> Dict[str, Any]:
+        """Calculate revenue and earnings growth rates (CAGR)."""
+        ticker = ticker.upper()
+        
+        earnings = self.db.get_earnings_history(ticker, period_type='annual')
+        if not earnings or len(earnings) < 2:
+            return {
+                "error": f"Insufficient data for {ticker}",
+                "suggestion": "Need at least 2 years of data to calculate growth rates."
+            }
+        
+        # Sort by year descending (most recent first)
+        earnings.sort(key=lambda x: x['year'], reverse=True)
+        
+        def calculate_cagr(start_val, end_val, years):
+            """Calculate compound annual growth rate."""
+            if not start_val or not end_val or start_val <= 0:
+                return None
+            return ((end_val / start_val) ** (1 / years) - 1) * 100
+        
+        # Get most recent year
+        latest = earnings[0]
+        
+        # Calculate growth rates for different periods
+        growth_data = {
+            "ticker": ticker,
+            "latest_year": latest['year'],
+            "revenue_growth": {},
+            "earnings_growth": {}
+        }
+        
+        for period, years_back in [("1_year", 1), ("3_year", 3), ("5_year", 5)]:
+            if len(earnings) > years_back:
+                past = earnings[years_back]
+                
+                rev_cagr = calculate_cagr(past.get('revenue'), latest.get('revenue'), years_back)
+                eps_cagr = calculate_cagr(past.get('eps'), latest.get('eps'), years_back)
+                
+                growth_data["revenue_growth"][period] = {
+                    "cagr_pct": round(rev_cagr, 1) if rev_cagr else None,
+                    "start_year": past['year'],
+                    "end_year": latest['year']
+                }
+                growth_data["earnings_growth"][period] = {
+                    "cagr_pct": round(eps_cagr, 1) if eps_cagr else None,
+                    "start_year": past['year'],
+                    "end_year": latest['year']
+                }
+        
+        return growth_data
+    
+    def _get_cash_flow_analysis(self, ticker: str, years: int = 5) -> Dict[str, Any]:
+        """Analyze cash flow trends over multiple years."""
+        ticker = ticker.upper()
+        
+        earnings = self.db.get_earnings_history(ticker, period_type='annual')
+        if not earnings:
+            return {
+                "error": f"No earnings history for {ticker}",
+                "suggestion": "Try using get_financials for current cash flow data."
+            }
+        
+        cash_flow_data = []
+        current_year = 2025
+        
+        for record in earnings:
+            year = record.get('year')
+            if not year or year < current_year - years:
+                continue
+            
+            revenue = record.get('revenue')
+            ocf = record.get('operating_cash_flow')
+            capex = record.get('capital_expenditures')
+            fcf = record.get('free_cash_flow')
+            
+            # Calculate metrics
+            fcf_margin = (fcf / revenue * 100) if fcf and revenue else None
+            capex_pct = (abs(capex) / revenue * 100) if capex and revenue else None
+            
+            cash_flow_data.append({
+                "year": year,
+                "operating_cash_flow_b": round(ocf / 1e9, 2) if ocf else None,  # Billions
+                "capital_expenditures_b": round(abs(capex) / 1e9, 2) if capex else None,
+                "free_cash_flow_b": round(fcf / 1e9, 2) if fcf else None,
+                "fcf_margin_pct": round(fcf_margin, 1) if fcf_margin else None,
+                "capex_as_pct_revenue": round(capex_pct, 1) if capex_pct else None,
+            })
+        
+        # Sort by year ascending
+        cash_flow_data.sort(key=lambda x: x['year'])
+        
+        if not cash_flow_data:
+            return {
+                "ticker": ticker,
+                "cash_flow_trends": [],
+                "message": "No cash flow data available for the specified period."
+            }
+        
+        return {
+            "ticker": ticker,
+            "years_of_data": len(cash_flow_data),
+            "cash_flow_trends": cash_flow_data
+        }
+    
+    def _get_dividend_analysis(self, ticker: str, years: int = 5) -> Dict[str, Any]:
+        """Analyze dividend history and trends."""
+        ticker = ticker.upper()
+        
+        # Get current dividend yield
+        stock_metrics = self.db.get_stock_metrics(ticker)
+        current_yield = stock_metrics.get('dividend_yield') if stock_metrics else None
+        
+        # Get historical dividend data
+        earnings = self.db.get_earnings_history(ticker, period_type='annual')
+        if not earnings:
+            return {
+                "error": f"No earnings history for {ticker}",
+                "suggestion": "This stock may not pay dividends or data is unavailable."
+            }
+        
+        dividend_data = []
+        current_year = 2025
+        
+        for record in earnings:
+            year = record.get('year')
+            if not year or year < current_year - years:
+                continue
+            
+            dividend = record.get('dividend_amount')
+            eps = record.get('eps')
+            
+            # Calculate payout ratio
+            payout_ratio = (dividend / eps * 100) if dividend and eps and eps > 0 else None
+            
+            if dividend:  # Only include years with dividend data
+                dividend_data.append({
+                    "year": year,
+                    "dividend_per_share": round(dividend, 2),
+                    "eps": round(eps, 2) if eps else None,
+                    "payout_ratio_pct": round(payout_ratio, 1) if payout_ratio else None,
+                })
+        
+        # Sort by year ascending
+        dividend_data.sort(key=lambda x: x['year'])
+        
+        if not dividend_data:
+            return {
+                "ticker": ticker,
+                "current_yield_pct": round(current_yield, 2) if current_yield else None,
+                "dividend_history": [],
+                "message": "No dividend payments found in the specified period."
+            }
+        
+        # Calculate dividend growth rates
+        def calculate_cagr(start_val, end_val, years):
+            if not start_val or not end_val or start_val <= 0:
+                return None
+            return ((end_val / start_val) ** (1 / years) - 1) * 100
+        
+        growth_rates = {}
+        latest = dividend_data[-1]
+        
+        for period, years_back in [("1_year", 1), ("3_year", 3), ("5_year", 5)]:
+            if len(dividend_data) > years_back:
+                past = dividend_data[-(years_back + 1)]
+                cagr = calculate_cagr(
+                    past['dividend_per_share'],
+                    latest['dividend_per_share'],
+                    years_back
+                )
+                if cagr is not None:
+                    growth_rates[period] = {
+                        "cagr_pct": round(cagr, 1),
+                        "start_year": past['year'],
+                        "end_year": latest['year']
+                    }
+        
+        return {
+            "ticker": ticker,
+            "current_yield_pct": round(current_yield, 2) if current_yield else None,
+            "years_of_data": len(dividend_data),
+            "dividend_history": dividend_data,
+            "dividend_growth": growth_rates
         }
