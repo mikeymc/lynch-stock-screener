@@ -69,10 +69,30 @@ INSTRUCTIONS:
 5. Be concise but thorough. Use specific numbers when available.
 6. For comparisons, present data in a structured format when helpful.
 
+CHART OUTPUT:
+When comparing multiple data points (especially across companies or years), you can output an interactive chart.
+Use a code block with language "chart" and JSON data in this format:
+
+```chart
+{{
+  "type": "bar",
+  "title": "Revenue Comparison (in billions USD)",
+  "data": [
+    {{"name": "2022", "AMD": 23.6, "NVDA": 26.9}},
+    {{"name": "2023", "AMD": 22.7, "NVDA": 27.0}},
+    {{"name": "2024", "AMD": 25.8, "NVDA": 60.9}}
+  ]
+}}
+```
+
+Chart types: "bar" (for comparisons), "line" (for trends over time)
+Always include a descriptive title. Data values should be numbers (not strings).
+
 IMPORTANT:
 - Always verify you have the data before making claims.
 - If a tool returns an error, explain that data was unavailable.
 - Use recent data when possible (prefer current year and last 1-2 years)."""
+
 
     def chat(
         self, 

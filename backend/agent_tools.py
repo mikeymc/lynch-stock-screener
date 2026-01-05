@@ -98,6 +98,57 @@ get_filing_section_decl = FunctionDeclaration(
     ),
 )
 
+get_earnings_transcript_decl = FunctionDeclaration(
+    name="get_earnings_transcript",
+    description="Get the most recent earnings call transcript for a stock. Contains management's prepared remarks and Q&A with analysts. Useful for understanding forward guidance, margin commentary, and strategic priorities.",
+    parameters=Schema(
+        type=Type.OBJECT,
+        properties={
+            "ticker": Schema(type=Type.STRING, description="Stock ticker symbol"),
+        },
+        required=["ticker"],
+    ),
+)
+
+get_material_events_decl = FunctionDeclaration(
+    name="get_material_events",
+    description="Get recent material events (8-K SEC filings) for a stock. These include significant corporate announcements like acquisitions, leadership changes, guidance updates, restructuring, and other material developments. Returns headline, description, and AI summary for each event.",
+    parameters=Schema(
+        type=Type.OBJECT,
+        properties={
+            "ticker": Schema(type=Type.STRING, description="Stock ticker symbol"),
+            "limit": Schema(type=Type.INTEGER, description="Maximum number of events to return (default: 10)"),
+        },
+        required=["ticker"],
+    ),
+)
+
+get_price_history_decl = FunctionDeclaration(
+    name="get_price_history",
+    description="Get historical weekly stock prices for trend analysis. Returns dates and prices for the specified time period. Useful for analyzing stock performance over time.",
+    parameters=Schema(
+        type=Type.OBJECT,
+        properties={
+            "ticker": Schema(type=Type.STRING, description="Stock ticker symbol"),
+            "start_year": Schema(type=Type.INTEGER, description="Optional start year to filter data (e.g., 2020)"),
+        },
+        required=["ticker"],
+    ),
+)
+
+get_historical_pe_decl = FunctionDeclaration(
+    name="get_historical_pe",
+    description="Get historical annual P/E (Price-to-Earnings) ratios for a stock over multiple years. Calculates P/E by dividing year-end stock price by annual EPS. Useful for comparing valuations over time or across companies.",
+    parameters=Schema(
+        type=Type.OBJECT,
+        properties={
+            "ticker": Schema(type=Type.STRING, description="Stock ticker symbol"),
+            "years": Schema(type=Type.INTEGER, description="Number of years of history (default: 5)"),
+        },
+        required=["ticker"],
+    ),
+)
+
 
 # =============================================================================
 # Tool Registry: Maps tool names to their declarations
@@ -110,6 +161,10 @@ TOOL_DECLARATIONS = [
     get_insider_activity_decl,
     search_news_decl,
     get_filing_section_decl,
+    get_earnings_transcript_decl,
+    get_material_events_decl,
+    get_price_history_decl,
+    get_historical_pe_decl,
 ]
 
 # Create the Tool object for Gemini API
@@ -152,6 +207,10 @@ class ToolExecutor:
             "get_insider_activity": self._get_insider_activity,
             "search_news": self._search_news,
             "get_filing_section": self._get_filing_section,
+            "get_earnings_transcript": self._get_earnings_transcript,
+            "get_material_events": self._get_material_events,
+            "get_price_history": self._get_price_history,
+            "get_historical_pe": self._get_historical_pe,
         }
         
         executor = executor_map.get(tool_name)
@@ -350,4 +409,173 @@ class ToolExecutor:
             "filing_type": section_data.get("filing_type"),
             "filing_date": section_data.get("filing_date"),
             "content": content,
+        }
+    
+    def _get_earnings_transcript(self, ticker: str) -> Dict[str, Any]:
+        """Get the most recent earnings call transcript."""
+        ticker = ticker.upper()
+        
+        transcript = self.db.get_latest_earnings_transcript(ticker)
+        
+        if not transcript:
+            return {
+                "error": f"No earnings transcript found for {ticker}",
+                "suggestion": "Try using get_filing_section to read the 10-K or 10-Q instead."
+            }
+        
+        # Return transcript with truncated text if very long
+        text = transcript.get('transcript_text', '')
+        if len(text) > 15000:
+            text = text[:15000] + "\n... [TRUNCATED - see full transcript for more]"
+        
+        return {
+            "ticker": ticker,
+            "quarter": transcript.get('quarter'),
+            "fiscal_year": transcript.get('fiscal_year'),
+            "earnings_date": transcript.get('earnings_date'),
+            "has_qa": transcript.get('has_qa'),
+            "participants": transcript.get('participants', []),
+            "summary": transcript.get('summary'),
+            "transcript_text": text,
+        }
+    
+    def _get_material_events(self, ticker: str, limit: int = 10) -> Dict[str, Any]:
+        """Get recent material events (8-K filings)."""
+        ticker = ticker.upper()
+        
+        events = self.db.get_material_events(ticker, limit=limit)
+        
+        if not events:
+            return {
+                "ticker": ticker,
+                "events": [],
+                "message": "No material events (8-K filings) found for this stock."
+            }
+        
+        # Clean up events for output (exclude very long content_text)
+        cleaned_events = []
+        for event in events:
+            cleaned_events.append({
+                "event_type": event.get('event_type'),
+                "headline": event.get('headline'),
+                "description": event.get('description'),
+                "filing_date": event.get('filing_date'),
+                "sec_item_codes": event.get('sec_item_codes', []),
+                "summary": event.get('summary'),  # AI-generated summary if available
+            })
+        
+        return {
+            "ticker": ticker,
+            "event_count": len(cleaned_events),
+            "events": cleaned_events,
+        }
+    
+    def _get_price_history(self, ticker: str, start_year: int = None) -> Dict[str, Any]:
+        """Get historical weekly stock prices."""
+        ticker = ticker.upper()
+        
+        price_data = self.db.get_weekly_prices(ticker, start_year=start_year)
+        
+        if not price_data or not price_data.get('dates'):
+            return {
+                "error": f"No price history found for {ticker}",
+                "suggestion": "Price data may not be available for this symbol."
+            }
+        
+        dates = price_data.get('dates', [])
+        prices = price_data.get('prices', [])
+        
+        # Calculate some basic stats
+        if prices:
+            current_price = prices[-1]
+            first_price = prices[0]
+            pct_change = ((current_price - first_price) / first_price * 100) if first_price else 0
+            high = max(prices)
+            low = min(prices)
+        else:
+            current_price = pct_change = high = low = None
+        
+        return {
+            "ticker": ticker,
+            "data_points": len(dates),
+            "date_range": {"start": dates[0] if dates else None, "end": dates[-1] if dates else None},
+            "summary": {
+                "current_price": current_price,
+                "period_high": high,
+                "period_low": low,
+                "total_return_pct": round(pct_change, 2) if pct_change else None,
+            },
+            # Return sampled data if too many points
+            "prices": prices[-52:] if len(prices) > 52 else prices,  # Last 52 weeks
+            "dates": dates[-52:] if len(dates) > 52 else dates,
+        }
+    
+    def _get_historical_pe(self, ticker: str, years: int = 5) -> Dict[str, Any]:
+        """Get historical annual P/E ratios."""
+        ticker = ticker.upper()
+        
+        # Get earnings history (annual EPS)
+        earnings = self.db.get_earnings_history(ticker, period_type='annual')
+        
+        if not earnings:
+            return {
+                "error": f"No earnings history found for {ticker}",
+                "suggestion": "Try using get_stock_metrics for current P/E ratio."
+            }
+        
+        # Get price history
+        price_data = self.db.get_weekly_prices(ticker)
+        
+        if not price_data or not price_data.get('dates'):
+            return {
+                "error": f"No price history found for {ticker}",
+            }
+        
+        # Build a dict of year -> year-end price (use last week of December)
+        year_end_prices = {}
+        for date_str, price in zip(price_data['dates'], price_data['prices']):
+            # Parse date (format: YYYY-MM-DD)
+            year = int(date_str[:4])
+            month = int(date_str[5:7])
+            # Use December prices as year-end
+            if month == 12:
+                year_end_prices[year] = price
+        
+        # Calculate P/E for each year
+        pe_data = []
+        current_year = 2025  # Current year
+        
+        for record in earnings:
+            year = record.get('year')
+            eps = record.get('eps')
+            
+            if not year or not eps or year < current_year - years:
+                continue
+            
+            # Get year-end price (use previous year for annual EPS announced in Q1)
+            price = year_end_prices.get(year)
+            
+            if price and eps and eps > 0:
+                pe = round(price / eps, 2)
+                pe_data.append({
+                    "year": year,
+                    "eps": eps,
+                    "year_end_price": round(price, 2),
+                    "pe_ratio": pe
+                })
+        
+        # Sort by year ascending
+        pe_data.sort(key=lambda x: x['year'])
+        
+        if not pe_data:
+            return {
+                "ticker": ticker,
+                "pe_history": [],
+                "message": "Could not calculate P/E ratios - missing price or EPS data for matched years."
+            }
+        
+        return {
+            "ticker": ticker,
+            "years_of_data": len(pe_data),
+            "pe_history": pe_data,
         }

@@ -2644,6 +2644,75 @@ def agent_chat_sync(symbol, user_id):
         return jsonify({'error': str(e)}), 500
 
 
+# =============================================================================
+# Agent Conversation Persistence Endpoints
+# =============================================================================
+
+@app.route('/api/agent/conversations', methods=['GET'])
+@require_user_auth
+def get_agent_conversations_list(user_id):
+    """Get user's agent conversation list."""
+    try:
+        conversations = db.get_agent_conversations(user_id, limit=10)
+        return jsonify({'conversations': conversations})
+    except Exception as e:
+        logger.error(f"Error getting agent conversations: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/agent/conversations', methods=['POST'])
+@require_user_auth
+def create_agent_conversation_endpoint(user_id):
+    """Create a new agent conversation."""
+    try:
+        conversation_id = db.create_agent_conversation(user_id)
+        return jsonify({'conversation_id': conversation_id})
+    except Exception as e:
+        logger.error(f"Error creating agent conversation: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/agent/conversation/<int:conversation_id>/messages', methods=['GET'])
+@require_user_auth
+def get_agent_conversation_messages(conversation_id, user_id):
+    """Get messages for an agent conversation."""
+    try:
+        messages = db.get_agent_messages(conversation_id)
+        return jsonify({'messages': messages})
+    except Exception as e:
+        logger.error(f"Error getting agent messages: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/agent/conversation/<int:conversation_id>/messages', methods=['POST'])
+@require_user_auth
+def save_agent_conversation_message(conversation_id, user_id):
+    """Save a message to an agent conversation."""
+    try:
+        data = request.get_json()
+        if not data or 'role' not in data or 'content' not in data:
+            return jsonify({'error': 'role and content required'}), 400
+        
+        db.save_agent_message(
+            conversation_id,
+            data['role'],
+            data['content'],
+            data.get('tool_calls')
+        )
+        
+        # Auto-generate title from first user message
+        if data['role'] == 'user':
+            messages = db.get_agent_messages(conversation_id)
+            if len(messages) == 1:  # This is the first message
+                title = data['content'][:50]  # Truncate to 50 chars
+                db.update_conversation_title(conversation_id, title)
+        
+        return jsonify({'success': True})
+    except Exception as e:
+        logger.error(f"Error saving agent message: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
 # Serve React static files
 @app.route('/', defaults={'path': ''})
 @app.route('/<path:path>')

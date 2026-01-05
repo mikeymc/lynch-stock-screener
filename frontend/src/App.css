@@ -2399,6 +2399,97 @@ td strong {
   padding: 0;
 }
 
+/* Markdown Tables */
+.markdown-content table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 1rem 0;
+  font-size: 0.9rem;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.markdown-content thead {
+  background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+}
+
+.markdown-content th {
+  position: static;
+  /* Override global sticky th */
+  padding: 0.75rem 1rem;
+  text-align: left;
+  font-weight: 600;
+  color: #fff;
+  border: 1px solid #3b82f6;
+}
+
+.markdown-content td {
+  padding: 0.6rem 1rem;
+  border: 1px solid #334155;
+  color: #e2e8f0;
+}
+
+.markdown-content tbody tr {
+  background-color: #1e293b;
+}
+
+.markdown-content tbody tr:nth-child(even) {
+  background-color: #0f172a;
+}
+
+.markdown-content tbody tr:hover {
+  background-color: #334155;
+}
+
+/* Right-align numeric columns (when they contain $, %, or numbers) */
+.markdown-content td:not(:first-child) {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Chat Charts */
+.chat-chart-container {
+  background: #0f172a;
+  border-radius: 8px;
+  padding: 1rem;
+  margin: 1rem 0;
+  border: 1px solid #334155;
+}
+
+.chat-chart-title {
+  color: #f1f5f9;
+  font-size: 1rem;
+  font-weight: 600;
+  margin: 0 0 1rem 0;
+  text-align: center;
+}
+
+.chat-chart-tooltip {
+  background: #1e293b;
+  border: 1px solid #475569;
+  border-radius: 6px;
+  padding: 0.5rem 0.75rem;
+  font-size: 0.85rem;
+}
+
+.chat-chart-tooltip .tooltip-label {
+  color: #f1f5f9;
+  font-weight: 600;
+  margin: 0 0 0.25rem 0;
+}
+
+.chat-chart-tooltip p {
+  margin: 0.15rem 0;
+}
+
+.chat-chart-error {
+  background: #7f1d1d;
+  color: #fecaca;
+  padding: 0.75rem 1rem;
+  border-radius: 6px;
+  font-size: 0.9rem;
+}
+
 /* Advanced Filter Panel Styles */
 .advanced-filter-panel {
   background-color: #1e293b;

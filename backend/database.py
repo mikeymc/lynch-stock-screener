@@ -1104,6 +1104,38 @@ class Database:
             )
         """)
 
+        # Agent chat tables (separate from regular chat - cross-stock conversations)
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS agent_conversations (
+                id SERIAL PRIMARY KEY,
+                user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                title TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                last_message_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+
+        cursor.execute("""
+            CREATE INDEX IF NOT EXISTS idx_agent_conversations_user 
+            ON agent_conversations(user_id, last_message_at DESC)
+        """)
+
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS agent_messages (
+                id SERIAL PRIMARY KEY,
+                conversation_id INTEGER NOT NULL REFERENCES agent_conversations(id) ON DELETE CASCADE,
+                role TEXT NOT NULL CHECK (role IN ('user', 'assistant')),
+                content TEXT NOT NULL,
+                tool_calls JSONB,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+
+        cursor.execute("""
+            CREATE INDEX IF NOT EXISTS idx_agent_messages_conversation 
+            ON agent_messages(conversation_id, created_at ASC)
+        """)
+
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS app_settings (
                 key TEXT PRIMARY KEY,
@@ -4045,5 +4077,154 @@ class Database:
                 'total_comments': row[3] or 0,
                 'top_subreddits': subreddits,
             }
+        finally:
+            self.return_connection(conn)
+    
+    # =========================================================================
+    # Agent Chat Methods
+    # =========================================================================
+    
+    def create_agent_conversation(self, user_id: int) -> int:
+        """
+        Create a new agent conversation.
+        
+        Args:
+            user_id: User ID
+            
+        Returns:
+            conversation_id
+        """
+        conn = self.get_connection()
+        try:
+            cursor = conn.cursor()
+            cursor.execute("""
+                INSERT INTO agent_conversations (user_id, created_at, last_message_at)
+                VALUES (%s, NOW(), NOW())
+                RETURNING id
+            """, (user_id,))
+            conversation_id = cursor.fetchone()[0]
+            conn.commit()
+            return conversation_id
+        finally:
+            self.return_connection(conn)
+    
+    def get_agent_conversations(self, user_id: int, limit: int = 10) -> List[Dict[str, Any]]:
+        """
+        Get user's agent conversations, ordered by last_message_at DESC.
+        
+        Args:
+            user_id: User ID
+            limit: Maximum number of conversations to return
+            
+        Returns:
+            List of conversation dicts
+        """
+        conn = self.get_connection()
+        try:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT id, title, created_at, last_message_at
+                FROM agent_conversations
+                WHERE user_id = %s
+                ORDER BY last_message_at DESC
+                LIMIT %s
+            """, (user_id, limit))
+            
+            rows = cursor.fetchall()
+            return [
+                {
+                    'id': row[0],
+                    'title': row[1],
+                    'created_at': row[2].isoformat() if row[2] else None,
+                    'last_message_at': row[3].isoformat() if row[3] else None,
+                }
+                for row in rows
+            ]
+        finally:
+            self.return_connection(conn)
+    
+    def get_agent_messages(self, conversation_id: int) -> List[Dict[str, Any]]:
+        """
+        Get all messages for a conversation, ordered by created_at ASC.
+        
+        Args:
+            conversation_id: Conversation ID
+            
+        Returns:
+            List of message dicts
+        """
+        conn = self.get_connection()
+        try:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT id, role, content, tool_calls, created_at
+                FROM agent_messages
+                WHERE conversation_id = %s
+                ORDER BY created_at ASC
+            """, (conversation_id,))
+            
+            rows = cursor.fetchall()
+            return [
+                {
+                    'id': row[0],
+                    'role': row[1],
+                    'content': row[2],
+                    'tool_calls': row[3],
+                    'created_at': row[4].isoformat() if row[4] else None,
+                }
+                for row in rows
+            ]
+        finally:
+            self.return_connection(conn)
+    
+    def save_agent_message(self, conversation_id: int, role: str, content: str, tool_calls: dict = None):
+        """
+        Save a message to conversation and update last_message_at.
+        
+        Args:
+            conversation_id: Conversation ID
+            role: 'user' or 'assistant'
+            content: Message content
+            tool_calls: Optional tool execution details (JSON)
+        """
+        conn = self.get_connection()
+        try:
+            cursor = conn.cursor()
+            
+            # Insert message
+            import json
+            cursor.execute("""
+                INSERT INTO agent_messages (conversation_id, role, content, tool_calls, created_at)
+                VALUES (%s, %s, %s, %s, NOW())
+            """, (conversation_id, role, content, json.dumps(tool_calls) if tool_calls else None))
+            
+            # Update conversation last_message_at
+            cursor.execute("""
+                UPDATE agent_conversations
+                SET last_message_at = NOW()
+                WHERE id = %s
+            """, (conversation_id,))
+            
+            conn.commit()
+        finally:
+            self.return_connection(conn)
+    
+    def update_conversation_title(self, conversation_id: int, title: str):
+        """
+        Update conversation title (called after first message).
+        
+        Args:
+            conversation_id: Conversation ID
+            title: Conversation title (truncated from first message)
+        """
+        conn = self.get_connection()
+        try:
+            cursor = conn.cursor()
+            cursor.execute("""
+                UPDATE agent_conversations
+                SET title = %s
+                WHERE id = %s
+            """, (title[:50], conversation_id))  # Truncate to 50 chars
+            conn.commit()
         finally:
             self.return_connection(conn)
