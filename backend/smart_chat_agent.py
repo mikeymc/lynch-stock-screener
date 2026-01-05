@@ -301,17 +301,29 @@ IMPORTANT RULES:
                     contents.append(Content(role="user", parts=function_responses))
                     continue
                 
-                # Final text response - stream it
+                # Final text response - stream it in chunks for better UX
                 text_parts = [p for p in parts if hasattr(p, 'text') and p.text]
                 if text_parts:
+                    import time
                     for part in text_parts:
-                        yield {"type": "token", "data": part.text}
+                        # Stream the text in chunks to simulate real-time streaming
+                        text = part.text
+                        chunk_size = 30  # Characters per chunk
+                        for i in range(0, len(text), chunk_size):
+                            yield {"type": "token", "data": text[i:i+chunk_size]}
+                            time.sleep(0.015)  # 15ms delay between chunks
                     
                     yield {"type": "done", "data": {"tool_calls": tool_calls_log, "iterations": iterations}}
                     return
             
             if response.text:
-                yield {"type": "token", "data": response.text}
+                # Stream in chunks
+                import time
+                text = response.text
+                chunk_size = 30
+                for i in range(0, len(text), chunk_size):
+                    yield {"type": "token", "data": text[i:i+chunk_size]}
+                    time.sleep(0.015)
                 yield {"type": "done", "data": {"tool_calls": tool_calls_log, "iterations": iterations}}
                 return
             

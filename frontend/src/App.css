@@ -2920,6 +2920,12 @@ td strong {
   background-color: #475569;
 }
 
+/* Scroll-down variant - positioned for "more content below" */
+.scroll-indicator.scroll-down {
+  margin-top: 0;
+  position: relative;
+}
+
 /* ============================================
    Inline Comment Feature Styles
    ============================================ */

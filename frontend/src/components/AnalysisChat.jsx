@@ -1,7 +1,7 @@
 // ABOUTME: Brief page component with AI-generated stock analysis and chat interface
 // ABOUTME: Two-column layout in full mode (analysis left, chat right); chatOnly mode for sidebar use
 
-import { useState, useEffect, useRef, forwardRef, useImperativeHandle } from 'react'
+import { useState, useEffect, useRef, forwardRef, useImperativeHandle, memo, useCallback, useMemo } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import ChatChart from './ChatChart'
@@ -70,6 +70,23 @@ const markdownComponents = {
   }
 }
 
+// Memoized ChatMessage component - only re-renders when content changes
+const ChatMessage = memo(function ChatMessage({ role, content, sources }) {
+  const roleLabel = role === 'user' ? '👤 You' : role === 'assistant' ? '📊 Analyst' : '⚠️ Error'
+
+  return (
+    <div className={`chat-message ${role} analysis-message`}>
+      <div className="chat-message-header">{roleLabel}</div>
+      <div className="chat-message-content markdown-content">
+        <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
+          {content}
+        </ReactMarkdown>
+      </div>
+      {role === 'assistant' && <SourceCitation sources={sources} />}
+    </div>
+  )
+})
+
 const AnalysisChat = forwardRef(function AnalysisChat({ symbol, stockName, chatOnly = false, contextType = 'brief' }, ref) {
   // Analysis state
   const [analysis, setAnalysis] = useState(null)
@@ -83,7 +100,7 @@ const AnalysisChat = forwardRef(function AnalysisChat({ symbol, stockName, chatO
 
   // Chat state
   const [messages, setMessages] = useState([])
-  const [inputMessage, setInputMessage] = useState('')
+  // Note: inputMessage removed - using uncontrolled textarea via ref for performance
   const [chatLoading, setChatLoading] = useState(false)
   const [conversationId, setConversationId] = useState(null)
   const [streamingMessage, setStreamingMessage] = useState('')
@@ -98,6 +115,8 @@ const AnalysisChat = forwardRef(function AnalysisChat({ symbol, stockName, chatO
   })
   const [agentThinking, setAgentThinking] = useState('')
   const [agentModeEnabled, setAgentModeEnabled] = useState(false)
+  const [showScrollDown, setShowScrollDown] = useState(false)
+  const [isNearBottom, setIsNearBottom] = useState(true)
 
   const messagesEndRef = useRef(null)
   const messagesContainerRef = useRef(null)
@@ -108,33 +127,63 @@ const AnalysisChat = forwardRef(function AnalysisChat({ symbol, stockName, chatO
     sendMessage: (message, options) => sendMessage(message, options)
   }))
 
-  // Track scroll position to show/hide scroll indicator
-  const handleScroll = () => {
-    const container = messagesContainerRef.current
-    if (!container) return
+  // Track scroll position to show/hide scroll indicator and down arrow (debounced)
+  const scrollTimeoutRef = useRef(null)
+  const handleScroll = useCallback(() => {
+    // Debounce scroll handling
+    if (scrollTimeoutRef.current) clearTimeout(scrollTimeoutRef.current)
+    scrollTimeoutRef.current = setTimeout(() => {
+      const container = messagesContainerRef.current
+      if (!container) return
 
-    const { scrollTop, scrollHeight, clientHeight } = container
-    const hasMoreContent = scrollHeight > clientHeight
-    const isNearTop = scrollTop < 50
+      const { scrollTop, scrollHeight, clientHeight } = container
+      const hasMoreContent = scrollHeight > clientHeight
+      const isNearTop = scrollTop < 50
+      const distanceFromBottom = scrollHeight - scrollTop - clientHeight
+      const nearBottom = distanceFromBottom < 100
 
-    setShowScrollIndicator(hasMoreContent && isNearTop)
-  }
+      setShowScrollIndicator(hasMoreContent && isNearTop)
+      setIsNearBottom(nearBottom)
+      setShowScrollDown(!nearBottom && scrollHeight > clientHeight)
+    }, 50)  // 50ms debounce
+  }, [])
 
   // Check for scroll indicator on content changes
   useEffect(() => {
     handleScroll()
   }, [analysis, messages, analysisLoading])
 
-  // Auto-scroll to bottom when messages change
+  // When a new message is added, scroll appropriately:
+  // - User messages: scroll to bottom (so user sees their message)
+  // - Assistant messages: scroll to show the START of the message (so user can read from beginning)
+  const prevMessagesLengthRef = useRef(messages.length)
+
   useEffect(() => {
-    if (messages.length > 0 || streamingMessage) {
-      // Scroll within the container only, not the whole page
-      const container = messagesContainerRef.current
-      if (container) {
+    const container = messagesContainerRef.current
+    if (!container) return
+
+    // Check if a new message was added
+    if (messages.length > prevMessagesLengthRef.current) {
+      const lastMessage = messages[messages.length - 1]
+
+      if (lastMessage?.role === 'user') {
+        // User message: scroll to bottom to show their message
         container.scrollTop = container.scrollHeight
+      } else if (lastMessage?.role === 'assistant') {
+        // Assistant message: scroll the USER's question to the TOP
+        // so both the question and response are visible
+        const allMessages = container.querySelectorAll('.chat-message')
+        if (allMessages.length >= 2) {
+          // Get the second-to-last message (the user's question)
+          const userQuestionEl = allMessages[allMessages.length - 2]
+          userQuestionEl.scrollIntoView({ behavior: 'auto', block: 'start' })
+        }
       }
     }
-  }, [messages, streamingMessage])
+
+    prevMessagesLengthRef.current = messages.length
+    handleScroll()
+  }, [messages.length])
 
   // Restore focus to input after chat response completes
   useEffect(() => {
@@ -189,6 +238,13 @@ const AnalysisChat = forwardRef(function AnalysisChat({ symbol, stockName, chatO
             const msgData = await msgResponse.json()
             console.log('[Agent] Loaded messages from DB:', msgData.messages)
             setMessages(msgData.messages || [])
+            // Scroll to bottom after messages load
+            setTimeout(() => {
+              const container = messagesContainerRef.current
+              if (container) {
+                container.scrollTop = container.scrollHeight
+              }
+            }, 100)
           }
         } else {
           // Create new conversation
@@ -428,10 +484,11 @@ const AnalysisChat = forwardRef(function AnalysisChat({ symbol, stockName, chatO
   }
 
   const sendMessage = async (messageText = null, options = {}) => {
-    const userMessage = (messageText || inputMessage).trim()
+    const userMessage = (messageText || inputRef.current?.value || '').trim()
     if (!userMessage || chatLoading) return
 
-    setInputMessage('')
+    // Clear input via DOM (uncontrolled)
+    if (inputRef.current) inputRef.current.value = ''
     // Only show user message bubble if not hidden (for comment reviews)
     if (!options.hideUserMessage) {
       setMessages(prev => [...prev, { role: 'user', content: userMessage }])
@@ -665,19 +722,14 @@ const AnalysisChat = forwardRef(function AnalysisChat({ symbol, stockName, chatO
           </div>
         )}
 
-        {/* Chat messages */}
+        {/* Chat messages - using memoized component for performance */}
         {messages.map((msg, idx) => (
-          <div key={idx} className={`chat-message ${msg.role} analysis-message`}>
-            <div className="chat-message-header">
-              {msg.role === 'user' ? '👤 You' : msg.role === 'assistant' ? '📊 Analyst' : '⚠️ Error'}
-            </div>
-            <div className="chat-message-content markdown-content">
-              <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>{msg.content}</ReactMarkdown>
-            </div>
-            {msg.role === 'assistant' && (
-              <SourceCitation sources={msg.sources} />
-            )}
-          </div>
+          <ChatMessage
+            key={msg.message_id || idx}
+            role={msg.role}
+            content={msg.content}
+            sources={msg.sources}
+          />
         ))}
 
         {/* Streaming message */}
@@ -706,9 +758,17 @@ const AnalysisChat = forwardRef(function AnalysisChat({ symbol, stockName, chatO
         <div ref={messagesEndRef} />
       </div>
 
-      {/* Scroll indicator arrow */}
-      {showScrollIndicator && (
-        <div className="scroll-indicator">
+      {/* Scroll indicator arrow - shows when not at bottom */}
+      {(showScrollIndicator || showScrollDown) && (
+        <div
+          className="scroll-indicator"
+          onClick={() => {
+            const container = messagesContainerRef.current
+            if (container) {
+              container.scrollTo({ top: container.scrollHeight, behavior: 'smooth' })
+            }
+          }}
+        >
           <span>↓</span>
         </div>
       )}
@@ -738,9 +798,8 @@ const AnalysisChat = forwardRef(function AnalysisChat({ symbol, stockName, chatO
           <textarea
             ref={inputRef}
             className="chat-input"
-            value={inputMessage}
-            onChange={(e) => setInputMessage(e.target.value)}
-            onKeyPress={handleKeyPress}
+            defaultValue=""
+            onKeyDown={handleKeyPress}
             placeholder={agentMode ? "Ask complex questions (e.g., 'Compare to peers')" : "Ask anything"}
             rows="2"
             disabled={chatLoading}
@@ -748,7 +807,7 @@ const AnalysisChat = forwardRef(function AnalysisChat({ symbol, stockName, chatO
           <button
             className="chat-send-button"
             onClick={() => sendMessage()}
-            disabled={chatLoading || !inputMessage.trim()}
+            disabled={chatLoading}
           >
             {chatLoading ? '...' : 'Send'}
           </button>
