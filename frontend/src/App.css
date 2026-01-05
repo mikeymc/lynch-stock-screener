@@ -2744,12 +2744,52 @@ td strong {
   align-items: center;
 }
 
+/* Agent Mode Controls Container */
+.agent-mode-controls {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 1rem;
+  width: 100%;
+  max-width: 750px;
+  margin-bottom: 0.25rem;
+}
+
+/* New Chat Button */
+.new-chat-button {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.4rem 0.75rem;
+  background: transparent;
+  border: 1px solid #475569;
+  border-radius: 6px;
+  color: #94a3b8;
+  font-size: 0.8rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.new-chat-button:hover:not(:disabled) {
+  background: rgba(148, 163, 184, 0.1);
+  border-color: #64748b;
+  color: #cbd5e1;
+}
+
+.new-chat-button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.new-chat-button svg {
+  opacity: 0.8;
+}
+
 /* Agent Mode Toggle */
 .agent-mode-toggle {
   display: flex;
   justify-content: center;
-  width: 100%;
-  max-width: 750px;
 }
 
 .agent-mode-toggle .toggle-label {

@@ -118,6 +118,17 @@ const AnalysisChat = forwardRef(function AnalysisChat({ symbol, stockName, chatO
   const [showScrollDown, setShowScrollDown] = useState(false)
   const [isNearBottom, setIsNearBottom] = useState(true)
 
+  // Start a new chat session (clears messages and resets conversation)
+  const startNewChat = useCallback(() => {
+    setMessages([])
+    setConversationId(null)
+    setStreamingMessage('')
+    setStreamingSources([])
+    setAgentThinking('')
+    // Focus input after reset
+    setTimeout(() => inputRef.current?.focus(), 100)
+  }, [])
+
   const messagesEndRef = useRef(null)
   const messagesContainerRef = useRef(null)
   const inputRef = useRef(null)
@@ -775,23 +786,38 @@ const AnalysisChat = forwardRef(function AnalysisChat({ symbol, stockName, chatO
 
       {/* Chat input - always visible at bottom */}
       <div className="unified-chat-input-container">
-        {/* Agent Mode Toggle - only show if feature flag is enabled */}
+        {/* Agent Mode Toggle and New Chat - only show if feature flag is enabled */}
         {agentModeEnabled && (
-          <div className="agent-mode-toggle">
-            <label className="toggle-label">
-              <input
-                type="checkbox"
-                checked={agentMode}
-                onChange={(e) => {
-                  const newValue = e.target.checked
-                  setAgentMode(newValue)
-                  localStorage.setItem('agentModeEnabled', newValue.toString())
-                }}
-                disabled={chatLoading}
-              />
-              <span className="toggle-slider"></span>
-              <span className="toggle-text">🤖 Agent Mode {agentMode ? '(Beta)' : ''}</span>
-            </label>
+          <div className="agent-mode-controls">
+            {agentMode && (
+              <button
+                className="new-chat-button"
+                onClick={startNewChat}
+                disabled={chatLoading || messages.length === 0}
+                title="Start a new conversation"
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M12 5v14M5 12h14" />
+                </svg>
+                New Chat
+              </button>
+            )}
+            <div className="agent-mode-toggle">
+              <label className="toggle-label">
+                <input
+                  type="checkbox"
+                  checked={agentMode}
+                  onChange={(e) => {
+                    const newValue = e.target.checked
+                    setAgentMode(newValue)
+                    localStorage.setItem('agentModeEnabled', newValue.toString())
+                  }}
+                  disabled={chatLoading}
+                />
+                <span className="toggle-slider"></span>
+                <span className="toggle-text">🤖 Agent Mode {agentMode ? '(Beta)' : ''}</span>
+              </label>
+            </div>
           </div>
         )}
         <div className="chat-input-wrapper">
