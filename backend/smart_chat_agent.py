@@ -2,6 +2,7 @@
 # ABOUTME: Orchestrates multi-step reasoning with tool calls to answer complex questions
 
 import logging
+from datetime import datetime
 from typing import Dict, Any, List, Optional, Generator
 from google import genai
 from google.genai.types import GenerateContentConfig, Content, Part
@@ -57,7 +58,10 @@ class SmartChatAgent:
     
     def _build_system_prompt(self, primary_symbol: str) -> str:
         """Build the system prompt for the agent."""
+        today = datetime.now().strftime("%Y-%m-%d")
         return f"""You are a financial research assistant with access to tools for fetching stock data.
+
+Today is {today}.
 
 Your primary context is {primary_symbol}, but you can fetch data about other stocks to make comparisons.
 

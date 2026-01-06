@@ -254,13 +254,17 @@ screen_stocks_decl = FunctionDeclaration(
             "market_cap_max": Schema(type=Type.NUMBER, description="Maximum market cap in billions (e.g., 2 for small caps)"),
             "revenue_growth_min": Schema(type=Type.NUMBER, description="Minimum revenue growth percentage YoY"),
             "eps_growth_min": Schema(type=Type.NUMBER, description="Minimum EPS growth percentage YoY"),
-            "sector": Schema(type=Type.STRING, description="Filter by sector (e.g., 'Technology', 'Healthcare', 'Financials')"),
+            "sector": Schema(type=Type.STRING, description="Filter by sector. Valid values: 'Technology', 'Healthcare', 'Finance' (banks like JPM/BAC/GS), 'Financial Services' (fintech), 'Consumer Cyclical', 'Consumer Defensive', 'Energy', 'Industrials', 'Basic Materials', 'Real Estate', 'Utilities', 'Communication Services'"),
             "peg_max": Schema(type=Type.NUMBER, description="Maximum PEG ratio (P/E divided by growth rate)"),
+            "peg_min": Schema(type=Type.NUMBER, description="Minimum PEG ratio (e.g., 2.0 to find potentially overvalued stocks)"),
             "debt_to_equity_max": Schema(type=Type.NUMBER, description="Maximum debt-to-equity ratio"),
             "profit_margin_min": Schema(type=Type.NUMBER, description="Minimum Net Profit Margin percentage (e.g., 20.0 for high margin businesses)"),
             "has_transcript": Schema(type=Type.BOOLEAN, description="If true, only return stocks that have an earnings call transcript available"),
+            "has_fcf": Schema(type=Type.BOOLEAN, description="If true, only return stocks that have Free Cash Flow data available (useful for dividend coverage analysis)"),
+            "has_recent_insider_activity": Schema(type=Type.BOOLEAN, description="If true, only return stocks with insider BUY transactions in the last 90 days"),
             "sort_by": Schema(type=Type.STRING, description="Sort results by: 'pe', 'dividend_yield', 'market_cap', 'revenue_growth', 'eps_growth', 'debt_to_equity' (default: 'market_cap')"),
             "sort_order": Schema(type=Type.STRING, description="Sort order: 'asc' or 'desc' (default: 'desc')"),
+            "top_n_by_market_cap": Schema(type=Type.INTEGER, description="UNIVERSE FILTER: Only consider the top N companies by market cap (within sector if specified). Use this when asked for 'top 50 by market cap' or similar. Apply this BEFORE other sorts like 'lowest P/E'."),
             "limit": Schema(type=Type.INTEGER, description="Maximum number of results to return (default: 20, max: 50)"),
             "exclude_tickers": Schema(
                 type=Type.ARRAY, 
@@ -864,12 +868,19 @@ class ToolExecutor:
         }
     
     def _get_dividend_analysis(self, ticker: str, years: int = 5) -> Dict[str, Any]:
-        """Analyze dividend history and trends."""
+        """Analyze dividend history, trends, and FCF coverage."""
         ticker = ticker.upper()
         
-        # Get current dividend yield
+        # Get current stock metrics (price, market cap for shares calculation)
         stock_metrics = self.db.get_stock_metrics(ticker)
         current_yield = stock_metrics.get('dividend_yield') if stock_metrics else None
+        price = stock_metrics.get('price') if stock_metrics else None
+        market_cap = stock_metrics.get('market_cap') if stock_metrics else None
+        
+        # Calculate shares outstanding for total dividend computation
+        shares_outstanding = None
+        if price and market_cap and price > 0:
+            shares_outstanding = market_cap / price
         
         # Get historical dividend data
         earnings = self.db.get_earnings_history(ticker, period_type='annual')
@@ -880,7 +891,7 @@ class ToolExecutor:
             }
         
         dividend_data = []
-        current_year = 2025
+        current_year = 2026  # Updated for current year
         
         for record in earnings:
             year = record.get('year')
@@ -889,17 +900,40 @@ class ToolExecutor:
             
             dividend = record.get('dividend_amount')
             eps = record.get('eps')
+            fcf = record.get('free_cash_flow')
             
-            # Calculate payout ratio
-            payout_ratio = (dividend / eps * 100) if dividend and eps and eps > 0 else None
+            # Calculate payout ratio vs EPS
+            eps_payout_ratio = (dividend / eps * 100) if dividend and eps and eps > 0 else None
+            
+            # Calculate payout ratio vs FCF (using total dividends)
+            fcf_payout_ratio = None
+            total_dividend = None
+            if dividend and shares_outstanding and fcf:
+                total_dividend = dividend * shares_outstanding
+                if fcf > 0:
+                    fcf_payout_ratio = (total_dividend / fcf) * 100
             
             if dividend:  # Only include years with dividend data
-                dividend_data.append({
+                entry = {
                     "year": year,
                     "dividend_per_share": round(dividend, 2),
                     "eps": round(eps, 2) if eps else None,
-                    "payout_ratio_pct": round(payout_ratio, 1) if payout_ratio else None,
-                })
+                    "payout_ratio_vs_eps_pct": round(eps_payout_ratio, 1) if eps_payout_ratio else None,
+                }
+                
+                # Add FCF coverage data if available
+                if fcf:
+                    entry["free_cash_flow"] = fcf
+                    entry["free_cash_flow_formatted"] = f"${fcf/1e9:.2f}B" if abs(fcf) >= 1e9 else f"${fcf/1e6:.0f}M"
+                if total_dividend:
+                    entry["total_dividend_paid"] = total_dividend
+                    entry["total_dividend_formatted"] = f"${total_dividend/1e9:.2f}B" if total_dividend >= 1e9 else f"${total_dividend/1e6:.0f}M"
+                if fcf_payout_ratio is not None:
+                    entry["dividend_to_fcf_ratio_pct"] = round(fcf_payout_ratio, 1)
+                elif fcf and fcf < 0:
+                    entry["dividend_to_fcf_ratio_pct"] = "N/A (Negative FCF)"
+                
+                dividend_data.append(entry)
         
         # Sort by year ascending
         dividend_data.sort(key=lambda x: x['year'])
@@ -936,12 +970,27 @@ class ToolExecutor:
                         "end_year": latest['year']
                     }
         
+        # Add FCF coverage summary for most recent year with positive FCF
+        fcf_coverage_summary = None
+        for entry in reversed(dividend_data):
+            if entry.get('dividend_to_fcf_ratio_pct') and isinstance(entry['dividend_to_fcf_ratio_pct'], (int, float)):
+                fcf_coverage_summary = {
+                    "year": entry['year'],
+                    "total_dividend_paid": entry.get('total_dividend_formatted'),
+                    "free_cash_flow": entry.get('free_cash_flow_formatted'),
+                    "payout_ratio_pct": entry['dividend_to_fcf_ratio_pct'],
+                    "assessment": "Sustainable" if entry['dividend_to_fcf_ratio_pct'] < 70 else "High" if entry['dividend_to_fcf_ratio_pct'] < 100 else "Unsustainable (>100%)"
+                }
+                break
+        
         return {
             "ticker": ticker,
             "current_yield_pct": round(current_yield, 2) if current_yield else None,
+            "shares_outstanding": f"{shares_outstanding/1e9:.2f}B" if shares_outstanding else None,
             "years_of_data": len(dividend_data),
             "dividend_history": dividend_data,
-            "dividend_growth": growth_rates
+            "dividend_growth": growth_rates,
+            "fcf_coverage_summary": fcf_coverage_summary
         }
     
     def _get_analyst_estimates(self, ticker: str) -> Dict[str, Any]:
@@ -1367,11 +1416,15 @@ class ToolExecutor:
         eps_growth_min: float = None,
         sector: str = None,
         peg_max: float = None,
+        peg_min: float = None,
         debt_to_equity_max: float = None,
         profit_margin_min: float = None,
         has_transcript: bool = None,
+        has_fcf: bool = None,
+        has_recent_insider_activity: bool = None,
         sort_by: str = "market_cap",
         sort_order: str = "desc",
+        top_n_by_market_cap: int = None,
         limit: int = 20,
         exclude_tickers: list = None
     ) -> Dict[str, Any]:
@@ -1422,15 +1475,24 @@ class ToolExecutor:
             conditions.append("sr.earnings_cagr >= %s AND sr.earnings_cagr != 'NaN'")
             params.append(eps_growth_min)
         
-        # Sector filter
+        # Sector filter with aliasing for common synonyms
         if sector:
-            conditions.append("LOWER(s.sector) LIKE LOWER(%s)")
-            params.append(f"%{sector}%")
+            sector_lower = sector.lower().strip()
+            # Handle finance-related sector aliases
+            # "Financials", "Financial Services", "Finance" should all include both sectors
+            if 'financ' in sector_lower:
+                conditions.append("(LOWER(s.sector) = 'finance' OR LOWER(s.sector) = 'financial services')")
+            else:
+                conditions.append("LOWER(s.sector) LIKE LOWER(%s)")
+                params.append(f"%{sector}%")
         
         # PEG filter
         if peg_max is not None:
             conditions.append("sr.peg_ratio <= %s AND sr.peg_ratio != 'NaN'")
             params.append(peg_max)
+        if peg_min is not None:
+            conditions.append("sr.peg_ratio >= %s AND sr.peg_ratio != 'NaN'")
+            params.append(peg_min)
         
         # Debt to equity filter
         if debt_to_equity_max is not None:
@@ -1444,6 +1506,24 @@ class ToolExecutor:
                 WHERE et.symbol = s.symbol 
                 AND et.transcript_text IS NOT NULL 
                 AND LENGTH(et.transcript_text) > 100
+            )""")
+
+        # FCF filter - check for valid free cash flow data
+        if has_fcf:
+            conditions.append("""EXISTS (
+                SELECT 1 FROM earnings_history eh 
+                WHERE eh.symbol = s.symbol 
+                AND eh.free_cash_flow IS NOT NULL 
+                AND eh.free_cash_flow > 0
+            )""")
+
+        # Insider Activity Filter (Buys in last 90 days)
+        if has_recent_insider_activity:
+            conditions.append("""EXISTS (
+                SELECT 1 FROM insider_trades it
+                WHERE it.symbol = s.symbol
+                AND (it.transaction_type = 'Buy' OR it.transaction_type = 'Purchase')
+                AND it.transaction_date >= (CURRENT_DATE - INTERVAL '90 days')
             )""")
 
         # Profit Margin Filter
@@ -1498,23 +1578,40 @@ class ToolExecutor:
                 SELECT DISTINCT ON (symbol) *
                 FROM screening_results
                 ORDER BY symbol, scored_at DESC
+            ),
+            universe AS (
+                -- If top_n_by_market_cap is specified, this creates the universe
+                -- Otherwise, it includes all stocks
+                SELECT 
+                    s.symbol,
+                    s.company_name,
+                    s.sector,
+                    sr.market_cap,
+                    sr.pe_ratio,
+                    sr.peg_ratio,
+                    sr.dividend_yield,
+                    sr.revenue_cagr,
+                    sr.earnings_cagr,
+                    sr.debt_to_equity
+                FROM stocks s
+                JOIN latest_screening sr ON s.symbol = sr.symbol
+                {join_clause}
+                WHERE {where_clause}
+                {'ORDER BY sr.market_cap DESC NULLS LAST LIMIT ' + str(top_n_by_market_cap) if top_n_by_market_cap else ''}
             )
             SELECT 
-                s.symbol,
-                s.company_name,
-                s.sector,
-                sr.market_cap,
-                sr.pe_ratio,
-                sr.peg_ratio,
-                sr.dividend_yield,
-                sr.revenue_cagr,
-                sr.earnings_cagr,
-                sr.debt_to_equity
-            FROM stocks s
-            JOIN latest_screening sr ON s.symbol = sr.symbol
-            {join_clause}
-            WHERE {where_clause}
-            ORDER BY {order_column} {order_dir} {null_handling}
+                symbol,
+                company_name,
+                sector,
+                market_cap,
+                pe_ratio,
+                peg_ratio,
+                dividend_yield,
+                revenue_cagr,
+                earnings_cagr,
+                debt_to_equity
+            FROM universe
+            ORDER BY {order_column.replace('sr.', '')} {order_dir} {null_handling}
             LIMIT %s
         """
         params.append(limit)

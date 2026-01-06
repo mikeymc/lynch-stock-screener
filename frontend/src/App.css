@@ -2454,6 +2454,9 @@ td strong {
   padding: 1rem;
   margin: 1rem 0;
   border: 1px solid #334155;
+  max-width: 100%;
+  overflow-x: auto;
+  box-sizing: border-box;
 }
 
 .chat-chart-title {
@@ -2462,6 +2465,10 @@ td strong {
   font-weight: 600;
   margin: 0 0 1rem 0;
   text-align: center;
+  white-space: normal;
+  overflow-wrap: break-word;
+  max-width: 100%;
+  line-height: 1.4;
 }
 
 .chat-chart-tooltip {
