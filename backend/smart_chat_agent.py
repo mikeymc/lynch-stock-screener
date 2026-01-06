@@ -79,6 +79,10 @@ class SmartChatAgent:
 
 TODAY'S DATE: {current_date_str}. ALL data from tools is historical relative to this date.
 
+### RESPONSE FORMATTING:
+Whenever you mention a ticker (e.g., NVDA) or a company name (e.g., Nvidia), wrap it in a markdown link to `/stock/{TICKER}`.
+Example: `[NVDA](/stock/NVDA)` or `[Nvidia](/stock/NVDA)`.
+
 ### HOW TO USE TOOLS:
 1.  **Verify, Don't Guess**: Never state a number unless you have fetched it with a tool.
 2.  **Multi-Step Reasoning**: If asked "Is X a good buy?", don't just get the price. Get the P/E, growth rate, peer comparison, and insider buying before answering.

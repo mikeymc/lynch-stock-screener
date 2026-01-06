@@ -2,6 +2,7 @@
 // ABOUTME: Two-column layout in full mode (analysis left, chat right); chatOnly mode for sidebar use
 
 import { useState, useEffect, useRef, forwardRef, useImperativeHandle, memo, useCallback, useMemo } from 'react'
+import { useNavigate } from 'react-router-dom'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import ChatChart from './ChatChart'
@@ -50,8 +51,8 @@ function SourceCitation({ sources }) {
   )
 }
 
-// Custom markdown components for chart rendering
-const markdownComponents = {
+// Custom markdown components
+const MarkdownComponents = ({ navigate }) => useMemo(() => ({
   code({ node, inline, className, children, ...props }) {
     const match = /language-(\w+)/.exec(className || '')
     const language = match ? match[1] : ''
@@ -67,18 +68,37 @@ const markdownComponents = {
         {children}
       </code>
     )
+  },
+  // Custom link renderer for client-side navigation
+  a({ href, children, ...props }) {
+    const handleClick = (e) => {
+      // Check if it's an internal link
+      if (href && (href.startsWith('/') || href.startsWith(window.location.origin))) {
+        e.preventDefault()
+        const path = href.startsWith(window.location.origin)
+          ? href.substring(window.location.origin.length)
+          : href
+        navigate(path)
+      }
+    }
+
+    return (
+      <a href={href} onClick={handleClick} {...props}>
+        {children}
+      </a>
+    )
   }
-}
+}), [navigate])
 
 // Memoized ChatMessage component - only re-renders when content changes
-const ChatMessage = memo(function ChatMessage({ role, content, sources }) {
+const ChatMessage = memo(function ChatMessage({ role, content, sources, components }) {
   const roleLabel = role === 'user' ? '👤 You' : role === 'assistant' ? '📊 Analyst' : '⚠️ Error'
 
   return (
     <div className={`chat-message ${role} analysis-message`}>
       <div className="chat-message-header">{roleLabel}</div>
       <div className="chat-message-content markdown-content">
-        <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
+        <ReactMarkdown remarkPlugins={[remarkGfm]} components={components}>
           {content}
         </ReactMarkdown>
       </div>
@@ -88,6 +108,10 @@ const ChatMessage = memo(function ChatMessage({ role, content, sources }) {
 })
 
 const AnalysisChat = forwardRef(function AnalysisChat({ symbol, stockName, chatOnly = false, contextType = 'brief' }, ref) {
+  // Navigation for internal links
+  const navigate = useNavigate()
+  const components = MarkdownComponents({ navigate })
+
   // Analysis state
   const [analysis, setAnalysis] = useState(null)
   const [analysisLoading, setAnalysisLoading] = useState(true)
@@ -709,7 +733,7 @@ const AnalysisChat = forwardRef(function AnalysisChat({ symbol, stockName, chatO
               </div>
               <div className="section-summary">
                 <div className="summary-content">
-                  <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>{analysis}</ReactMarkdown>
+                  <ReactMarkdown remarkPlugins={[remarkGfm]} components={components}>{analysis}</ReactMarkdown>
                 </div>
               </div>
             </>
@@ -741,6 +765,7 @@ const AnalysisChat = forwardRef(function AnalysisChat({ symbol, stockName, chatO
             role={msg.role}
             content={msg.content}
             sources={msg.sources}
+            components={components}
           />
         ))}
 
@@ -752,7 +777,7 @@ const AnalysisChat = forwardRef(function AnalysisChat({ symbol, stockName, chatO
             </div>
             <div className="chat-message-content markdown-content">
               {streamingMessage ? (
-                <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>{streamingMessage}</ReactMarkdown>
+                <ReactMarkdown remarkPlugins={[remarkGfm]} components={components}>{streamingMessage}</ReactMarkdown>
               ) : (
                 <div className="chat-loading">
                   <span className="typing-indicator">●</span>
