@@ -20,6 +20,27 @@ const LOADING_MESSAGES = [
   "Generating investment insights..."
 ]
 
+const TOOL_DESCRIPTIONS = {
+  get_financial_metric: "Analyzing financial metrics",
+  get_financials: "Gathering financial statements",
+  get_stock_price: "Fetching real-time quote",
+  get_peers: "Finding competitors",
+  search_news: "Scanning latest headlines",
+  get_earnings_transcript: "Reading earnings call transcripts",
+  get_price_history: "Analyzing price trends",
+  get_growth_rates: "Calculating growth metrics",
+  get_dividend_analysis: "Checking dividend safety",
+  compare_stocks: "Comparing against peers",
+  search_company: "Finding ticker symbol",
+  screen_stocks: "Screening the market",
+  get_earnings_history: "Reviewing earnings history",
+  get_sector_comparison: "Benchmarking against sector",
+  get_analyst_estimates: "Checking analyst forecasts",
+  find_similar_stocks: "Finding similar companies",
+  get_material_events: "Checking SEC filings",
+  get_historical_pe: "Analyzing valuation history"
+}
+
 function SourceCitation({ sources }) {
   const [expanded, setExpanded] = useState(false)
 
@@ -638,7 +659,8 @@ const AnalysisChat = forwardRef(function AnalysisChat({ symbol, stockName, chatO
             } else if (data.type === 'tool_call') {
               // Agent mode: track tool calls
               toolCalls.push(data.data)
-              setAgentThinking(`Calling ${data.data.tool}...`)
+              const friendlyName = TOOL_DESCRIPTIONS[data.data.tool] || `Calling ${data.data.tool}`
+              setAgentThinking(`${friendlyName}...`)
             } else if (data.type === 'done') {
               setMessages(prev => [...prev, {
                 role: 'assistant',
