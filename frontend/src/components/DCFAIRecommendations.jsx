@@ -95,7 +95,7 @@ export default function DCFAIRecommendations({
                     fontStyle: 'italic',
                     textAlign: 'center'
                 }}>
-                    Generating AI recommendations. Please wait. This could take up to a minute...
+                    Generating DCF recommendation. Please wait. This could take up to a minute...
                 </div>
             )}
 

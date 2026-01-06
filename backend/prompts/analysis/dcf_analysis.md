@@ -97,3 +97,4 @@ Your reasoning should:
 - Explain key differences between scenarios
 - Note any concerning trends or positive indicators
 - Use markdown formatting (bold for emphasis, bullet points if helpful)
+- **CRITICAL**: Do NOT use unescaped double quotes anywhere inside the "reasoning" string. Use single quotes (') instead if needed, or ensure double quotes are properly escaped (\").

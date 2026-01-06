@@ -5,6 +5,7 @@ import os
 from typing import Dict, Any, List, Optional
 from datetime import datetime
 from google import genai
+from google.genai.types import GenerateContentConfig
 
 # Available AI models for analysis generation
 AVAILABLE_MODELS = ["gemini-2.5-flash", "gemini-3-flash-preview", "gemini-3-pro-preview"]
@@ -828,7 +829,10 @@ class LynchAnalyst:
         # Generate response
         response = self.client.models.generate_content(
             model=model_version,
-            contents=final_prompt
+            contents=final_prompt,
+            config=GenerateContentConfig(
+                response_mime_type="application/json"
+            )
         )
 
         # Check if response was blocked or has no content
@@ -900,52 +904,20 @@ class LynchAnalyst:
             raise ValueError(f"Invalid model: {model_version}. Must be one of {AVAILABLE_MODELS}")
 
         # Craft a comprehensive prompt for transcript summarization
-        prompt = f"""You are an expert financial analyst summarizing an earnings call transcript for investors.
-
-**Company**: {company_name}
-**Period**: {quarter} Fiscal Year {fiscal_year}
-
-**Instructions**:
-Create a comprehensive summary (1000-1500 words) of this earnings call transcript.
-Structure your summary with the following sections:
-
-## Key Financial Highlights
-- Revenue, EPS, margins, and other key metrics mentioned
-- Year-over-year and quarter-over-quarter comparisons
-- Any beats or misses vs. expectations
-
-## Business Performance
-- Segment performance highlights
-- Geographic trends
-- Product/service updates
-- Market share or competitive positioning
-
-## Forward Guidance
-- Revenue and earnings guidance for next quarter/year
-- Any raised, lowered, or maintained guidance
-- Key assumptions underlying guidance
-
-## Strategic Initiatives
-- Major announcements (products, partnerships, M&A, restructuring)
-- Capital allocation priorities (buybacks, dividends, investments)
-- Long-term strategic direction
-
-## Management Tone & Analyst Concerns
-- Overall tone of management (confident, cautious, defensive)
-- Key questions raised by analysts
-- Any areas where management seemed evasive or defensive
-- Notable surprises or revelations from Q&A
-
-## Key Risks & Watchpoints
-- Challenges or headwinds mentioned
-- Items to monitor going forward
-
-Be specific and quantitative where possible. Include direct quotes for particularly notable statements.
-Focus on actionable insights for investors making buy/hold/sell decisions.
-
-**Transcript**:
-{transcript_text}
-"""
+        # Load prompt template from file
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        prompt_path = os.path.join(script_dir, "prompts", "summarization", "transcript_summary.md")
+        
+        with open(prompt_path, 'r') as f:
+            prompt_template = f.read()
+            
+        # Format the prompt
+        prompt = prompt_template.format(
+            company_name=company_name,
+            quarter=quarter,
+            fiscal_year=fiscal_year,
+            transcript_text=transcript_text
+        )
 
         # Generate summary
         response = self.client.models.generate_content(
