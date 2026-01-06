@@ -92,8 +92,19 @@ else:
 app.config['SQLALCHEMY_DATABASE_URI'] = database_url_for_sessions
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
+# Add pool health checks to prevent stale connection errors in Flask-Session
+# pool_pre_ping: Test connections before use (detects closed connections)
+# pool_recycle: Recycle connections after 5 minutes (before Fly.io Postgres times them out)
+app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
+    'pool_pre_ping': True,
+    'pool_recycle': 300,
+    'pool_size': 5,
+    'max_overflow': 10,
+}
+
 # Use SQLAlchemy-backed sessions (persists across deployments)
 session_db = SQLAlchemy(app)
+
 app.config['SESSION_TYPE'] = 'sqlalchemy'
 app.config['SESSION_SQLALCHEMY'] = session_db
 app.config['SESSION_PERMANENT'] = True
