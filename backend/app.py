@@ -55,7 +55,7 @@ logging.getLogger('yfinance').setLevel(logging.WARNING)
 logging.getLogger('urllib3').setLevel(logging.WARNING)
 logging.getLogger('peewee').setLevel(logging.WARNING)
 
-app = Flask(__name__, static_folder='static', static_url_path='')
+app = Flask(__name__, static_folder='static')
 
 # Configure ProxyFix for Fly.io reverse proxy
 # This tells Flask to trust X-Forwarded-* headers from Fly's proxy
@@ -3133,6 +3133,25 @@ def get_backtest_results():
         return jsonify(clean_nan_values(results))
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+
+
+# ============================================================
+# Catch-all Route for SPA Client-Side Routing
+# ============================================================
+
+@app.route('/', defaults={'path': ''})
+@app.route('/<path:path>')
+def serve(path):
+    """
+    Catch-all route to serve the React frontend app.
+    If the path exists as a static file, serve it.
+    Otherwise, serve index.html and let React Router handle the route.
+    """
+    if path != "" and os.path.exists(app.static_folder + '/' + path):
+        return send_from_directory(app.static_folder, path)
+    else:
+        return send_from_directory(app.static_folder, 'index.html')
+
 
 if __name__ == '__main__':
     # Start debugpy if ENABLE_DEBUGPY environment variable is set
