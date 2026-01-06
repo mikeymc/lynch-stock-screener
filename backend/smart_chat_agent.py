@@ -58,25 +58,38 @@ class SmartChatAgent:
     
     def _build_system_prompt(self, primary_symbol: str) -> str:
         """Build the system prompt for the agent."""
-        today = datetime.now().strftime("%Y-%m-%d")
-        return f"""You are a financial research assistant with access to tools for fetching stock data.
+        current_date_str = datetime.now().strftime('%Y-%m-%d')
+        
+        # Load persona logic (default to Lynch for now)
+        # Future: Make this configurable via an argument
+        persona_content = ""
+        try:
+            import os
+            base_dir = os.path.dirname(os.path.abspath(__file__))
+            persona_path = os.path.join(base_dir, 'prompts', 'agent_personas', 'lynch_agent.md')
+            if os.path.exists(persona_path):
+                with open(persona_path, 'r') as f:
+                    persona_content = f.read()
+        except Exception as e:
+            logger.error(f"Failed to load agent persona: {e}")
+            # Fallback to a simple persona if file load fails
+            persona_content = "You are a pragmatic, data-driven investment analyst."
+        
+        return f"""{persona_content}
 
-Today is {today}.
+TODAY'S DATE: {current_date_str}. ALL data from tools is historical relative to this date.
 
-Your primary context is {primary_symbol}, but you can fetch data about other stocks to make comparisons.
+### HOW TO USE TOOLS:
+1.  **Verify, Don't Guess**: Never state a number unless you have fetched it with a tool.
+2.  **Multi-Step Reasoning**: If asked "Is X a good buy?", don't just get the price. Get the P/E, growth rate, peer comparison, and insider buying before answering.
+3.  **Search Broadly**: If `get_financial_metric` is empty, try `screen_stocks` or `get_earnings_history`.
+4.  **Inline Charts**: Use charts to prove your points. If you cite a trend (e.g., "revenue is up"), GENERATE A CHART.
 
-INSTRUCTIONS:
-1. When a user asks a question, think about what data you need to answer it.
-2. Use the available tools to fetch the data. You can make multiple tool calls.
-3. After gathering enough data, synthesize a clear, accurate answer.
-4. If data is missing or unavailable, say so rather than guessing.
-5. Be concise but thorough. Use specific numbers when available.
-6. For comparisons, present data in a structured format when helpful.
+### CHART GENERATION RULES:
+You can generate charts by outputting a JSON block. 
+Supported chart types: "bar", "line", "area", "composed".
 
-CHART OUTPUT:
-When comparing multiple data points (especially across companies or years), you can output an interactive chart.
-Use a code block with language "chart" and JSON data in this format:
-
+Example:
 ```chart
 {{
   "type": "bar",
@@ -88,8 +101,7 @@ Use a code block with language "chart" and JSON data in this format:
   ]
 }}
 ```
-
-Chart types: "bar" (for comparisons), "line" (for trends over time)
+Always verify you have the data before charting.
 Always include a descriptive title. Data values should be numbers (not strings).
 
 IMPORTANT RULES:
@@ -97,8 +109,12 @@ IMPORTANT RULES:
 2. Always try calling tools before saying data doesn't exist.
 3. If a tool returns an error, explain that data was unavailable.
 4. Use recent data when possible (prefer current year and last 1-2 years).
-5. COMPLETE THE WORK: Never leave tasks as an exercise for the user. If asked to compare or analyze, do the comparison yourself using the data you fetched. Don't ask the user to "review" or "find" information.
-6. LABEL DATA SOURCES: When comparing forecasts, clearly distinguish between sources. Say "Management stated X" vs "Analysts estimate Y" vs "The company reported Z". Always attribute data to its source."""
+5. COMPLETE THE WORK: Never leave tasks as an exercise for the user.
+6. LABEL DATA SOURCES: When comparing forecasts, clearly distinguish between "Management stated X" vs "Analysts estimate Y".
+
+Current Context:
+Primary Symbol: {primary_symbol} if relevant.
+"""
 
 
     def chat(
