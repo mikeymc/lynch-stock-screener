@@ -187,7 +187,8 @@ const AnalysisChat = forwardRef(function AnalysisChat({ symbol, stockName, chatO
         if (allMessages.length >= 2) {
           // Get the second-to-last message (the user's question)
           const userQuestionEl = allMessages[allMessages.length - 2]
-          userQuestionEl.scrollIntoView({ behavior: 'auto', block: 'start' })
+          // Use offsetTop instead of scrollIntoView to avoid scrolling the page
+          container.scrollTop = userQuestionEl.offsetTop - container.offsetTop
         }
       }
     }
