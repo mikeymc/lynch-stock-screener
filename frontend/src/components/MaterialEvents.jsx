@@ -1,9 +1,14 @@
 // ABOUTME: Material events component for displaying SEC 8-K filings
-// ABOUTME: Two-column layout: filings list left (2/3), chat sidebar right (1/3)
 // ABOUTME: Displays AI-generated summaries for high-value events (earnings, M&A, etc.)
 
-import { useRef, useState, useEffect } from 'react'
-import AnalysisChat from './AnalysisChat'
+import { useState, useEffect } from 'react'
+import {
+    Card,
+    CardContent,
+    CardHeader,
+    CardTitle,
+} from "@/components/ui/card"
+import { Badge } from "@/components/ui/badge"
 
 // Item codes that get AI summaries
 const SUMMARIZABLE_CODES = ['2.02', '2.01', '1.01', '1.05', '2.06', '4.02']
@@ -15,7 +20,6 @@ const isSummarizable = (itemCodes) => {
 }
 
 export default function MaterialEvents({ eventsData, loading, symbol }) {
-    const chatRef = useRef(null)
     const [summaries, setSummaries] = useState({})
     const [loadingSummaries, setLoadingSummaries] = useState(false)
     const [summaryError, setSummaryError] = useState(null)
@@ -70,7 +74,7 @@ export default function MaterialEvents({ eventsData, loading, symbol }) {
 
     if (loading) {
         return (
-            <div className="loading" style={{ padding: '40px', textAlign: 'center' }}>
+            <div className="loading p-10 text-center">
                 Loading material events...
             </div>
         )
@@ -80,28 +84,21 @@ export default function MaterialEvents({ eventsData, loading, symbol }) {
 
     if (events.length === 0) {
         return (
-            <div className="reports-layout">
-                <div className="reports-main-column">
-                    <div className="section-item">
-                        <div className="section-header-simple">
-                            <span className="section-title">Material Event Filings</span>
-                        </div>
-                        <div className="section-content">
-                            <div className="section-summary">
-                                <p style={{ textAlign: 'center', color: '#94a3b8', margin: '2rem 0' }}>
-                                    No material events (SEC 8-K filings) available for this stock.
-                                </p>
-                                <p style={{ fontSize: '13px', textAlign: 'center', color: '#64748b' }}>
-                                    Material events include significant corporate announcements like earnings releases,
-                                    acquisitions, leadership changes, and other important disclosures.
-                                </p>
-                            </div>
-                        </div>
+            <div className="w-full">
+                <div className="section-item">
+                    <div className="section-header-simple">
+                        <span className="section-title">Material Event Filings</span>
                     </div>
-                </div>
-                <div className="reports-chat-sidebar">
-                    <div className="chat-sidebar-content">
-                        <AnalysisChat ref={chatRef} symbol={symbol} chatOnly={true} contextType="events" />
+                    <div className="section-content">
+                        <div className="section-summary">
+                            <p className="text-center text-slate-400 my-8">
+                                No material events (SEC 8-K filings) available for this stock.
+                            </p>
+                            <p className="text-[13px] text-center text-slate-500">
+                                Material events include significant corporate announcements like earnings releases,
+                                acquisitions, leadership changes, and other important disclosures.
+                            </p>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -120,123 +117,94 @@ export default function MaterialEvents({ eventsData, loading, symbol }) {
         : null
 
     return (
-        <div className="reports-layout">
-            {/* Left Column - Events Content (2/3) */}
-            <div className="reports-main-column">
-                <div className="section-item">
-                    <div className="section-header-simple">
-                        <span className="section-title">{events.length} Filings</span>
-                        {dateRange && <span className="section-metadata">({dateRange})</span>}
-                    </div>
-                    <div className="section-content">
-                        <div className="section-summary">
-                            <div className="events-list">
-                                {events.map((event, index) => {
-                                    const filingDate = event.filing_date
-                                        ? new Date(event.filing_date).toLocaleDateString('en-US', {
-                                            year: 'numeric',
-                                            month: 'short',
-                                            day: 'numeric'
-                                        })
-                                        : 'Unknown date'
+        <div className="w-full">
+            <div className="section-item">
+                <div className="section-header-simple">
+                    <span className="section-title">{events.length} Filings</span>
+                    {dateRange && <span className="section-metadata">({dateRange})</span>}
+                </div>
+                <div className="section-content">
+                    <div className="section-summary">
+                        <div className="events-list space-y-4">
+                            {events.map((event, index) => {
+                                const filingDate = event.filing_date
+                                    ? new Date(event.filing_date).toLocaleDateString('en-US', {
+                                        year: 'numeric',
+                                        month: 'short',
+                                        day: 'numeric'
+                                    })
+                                    : 'Unknown date'
 
-                                    const hasSummary = isSummarizable(event.sec_item_codes)
-                                    const summary = summaries[event.id]
+                                const hasSummary = isSummarizable(event.sec_item_codes)
+                                const summary = summaries[event.id]
 
-                                    return (
-                                        <div key={event.id || index} className="material-event" style={{
-                                            borderBottom: '1px solid rgba(71, 85, 105, 0.5)',
-                                            paddingBottom: '16px',
-                                            marginBottom: '16px'
-                                        }}>
-                                            {/* Header with SEC badge and date */}
-                                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
-                                                <span style={{
-                                                    backgroundColor: '#2563eb',
-                                                    color: '#fff',
-                                                    padding: '2px 8px',
-                                                    borderRadius: '4px',
-                                                    fontSize: '11px',
-                                                    fontWeight: '600',
-                                                    letterSpacing: '0.5px'
-                                                }}>
-                                                    SEC 8-K
-                                                </span>
-                                                <span style={{ fontSize: '13px', color: '#94a3b8' }}>
-                                                    Filed: {filingDate}
-                                                </span>
+                                return (
+                                    <Card key={event.id || index}>
+                                        <CardHeader className="pb-3">
+                                            <div className="flex items-center gap-2 mb-2">
+                                                <Badge className="bg-blue-600 hover:bg-blue-700">SEC 8-K</Badge>
+                                                <span className="text-sm text-muted-foreground">Filed: {filingDate}</span>
                                             </div>
-
-                                            {/* Headline */}
-                                            <h3 style={{ margin: '0 0 8px 0', fontSize: '16px', lineHeight: '1.4', fontWeight: '600' }}>
+                                            <CardTitle className="text-base leading-snug">
                                                 {event.url ? (
                                                     <a
                                                         href={event.url}
                                                         target="_blank"
                                                         rel="noopener noreferrer"
-                                                        style={{ color: '#60a5fa', textDecoration: 'none' }}
+                                                        className="text-blue-400 hover:underline hover:text-blue-300"
                                                     >
                                                         {event.headline || 'No headline'}
                                                     </a>
                                                 ) : (
-                                                    <span style={{ color: '#f1f5f9' }}>{event.headline || 'No headline'}</span>
+                                                    <span className="text-foreground">{event.headline || 'No headline'}</span>
                                                 )}
-                                            </h3>
-
-                                            {/* AI Summary - always visible for summarizable events */}
+                                            </CardTitle>
+                                        </CardHeader>
+                                        <CardContent>
+                                            {/* AI Summary */}
                                             {hasSummary && (
-                                                <div className="event-summary">
+                                                <div className="mb-4 bg-muted/30 p-3 rounded-md border border-border/50">
                                                     {loadingSummaries && !summary ? (
-                                                        <div className="summary-loading">
-                                                            <span className="loading-dot">●</span> Generating AI summary...
+                                                        <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                                                            <span className="animate-pulse">●</span> Generating AI summary...
                                                         </div>
                                                     ) : summary ? (
-                                                        <p className="summary-text">{summary}</p>
+                                                        <p className="text-sm leading-relaxed text-muted-foreground">{summary}</p>
                                                     ) : summaryError ? (
-                                                        <div className="summary-error">
+                                                        <div className="text-sm text-red-400">
                                                             Unable to generate summary
                                                         </div>
                                                     ) : null}
                                                 </div>
                                             )}
 
-                                            {/* Item codes as badges */}
+                                            {/* Item codes */}
                                             {event.sec_item_codes && event.sec_item_codes.length > 0 && (
-                                                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginTop: '8px' }}>
+                                                <div className="flex flex-wrap gap-2 mb-2">
                                                     {event.sec_item_codes.map((code, idx) => (
-                                                        <span key={idx} style={{
-                                                            backgroundColor: SUMMARIZABLE_CODES.includes(code) ? '#1e3a5f' : '#374151',
-                                                            color: SUMMARIZABLE_CODES.includes(code) ? '#93c5fd' : '#d1d5db',
-                                                            padding: '2px 8px',
-                                                            borderRadius: '4px',
-                                                            fontSize: '11px',
-                                                            fontWeight: '500'
-                                                        }}>
+                                                        <Badge
+                                                            key={idx}
+                                                            variant="outline"
+                                                            className={SUMMARIZABLE_CODES.includes(code) ? "border-blue-500/50 text-blue-400 bg-blue-500/10" : "text-muted-foreground"}
+                                                        >
                                                             Item {code}
-                                                        </span>
+                                                        </Badge>
                                                     ))}
                                                 </div>
                                             )}
 
-                                            {/* Accession number */}
+                                            {/* Accession */}
                                             {event.sec_accession_number && (
-                                                <div style={{ marginTop: '8px', fontSize: '11px', color: '#64748b' }}>
+                                                <div className="text-xs text-muted-foreground mt-2">
                                                     Accession: {event.sec_accession_number}
                                                 </div>
                                             )}
-                                        </div>
-                                    )
-                                })}
-                            </div>
+                                        </CardContent>
+                                    </Card>
+                                )
+                            })}
                         </div>
                     </div>
-                </div>
-            </div>
-
-            {/* Right Column - Chat Sidebar (1/3) */}
-            <div className="reports-chat-sidebar">
-                <div className="chat-sidebar-content">
-                    <AnalysisChat ref={chatRef} symbol={symbol} chatOnly={true} contextType="events" />
                 </div>
             </div>
         </div>

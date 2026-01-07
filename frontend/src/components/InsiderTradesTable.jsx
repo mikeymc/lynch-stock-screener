@@ -1,4 +1,14 @@
 import React, { useState } from 'react'
+import {
+    Table,
+    TableBody,
+    TableCell,
+    TableHead,
+    TableHeader,
+    TableRow,
+} from "@/components/ui/table"
+import { Badge } from "@/components/ui/badge"
+import { Button } from "@/components/ui/button"
 
 export default function InsiderTradesTable({ trades }) {
     const [showDetails, setShowDetails] = useState(false)
@@ -6,7 +16,7 @@ export default function InsiderTradesTable({ trades }) {
 
     if (!trades || trades.length === 0) {
         return (
-            <p style={{ padding: '1rem', color: '#94a3b8', fontStyle: 'italic' }}>
+            <p className="p-4 text-slate-400 italic">
                 No insider transactions found.
             </p>
         )
@@ -22,26 +32,30 @@ export default function InsiderTradesTable({ trades }) {
         return new Date(dateString).toLocaleDateString()
     }
 
-    // Transaction code to color mapping
-    const getCodeColor = (code) => {
-        const colors = {
-            'P': '#4ade80',  // Purchase - green
-            'S': '#f87171',  // Sale - red
-            'M': '#fbbf24',  // Option Exercise - amber/yellow
-            'A': '#60a5fa',  // Award/Grant - blue
-            'F': '#94a3b8',  // Tax Withholding - gray
-            'G': '#a78bfa',  // Gift - purple
-            'D': '#f87171',  // Disposition - red
-            'C': '#60a5fa',  // Conversion - blue
-            'X': '#fbbf24',  // Exercise In-the-Money - amber
+    // Transaction code to color class mapping
+    const getCodeClass = (code) => {
+        const classes = {
+            'P': 'text-green-400',  // Purchase
+            'S': 'text-red-400',    // Sale
+            'M': 'text-amber-400',  // Option Exercise
+            'A': 'text-blue-400',   // Award/Grant
+            'F': 'text-slate-400',  // Tax Withholding
+            'G': 'text-violet-400', // Gift
+            'D': 'text-red-400',    // Disposition
+            'C': 'text-blue-400',   // Conversion
+            'X': 'text-amber-400',  // Exercise In-the-Money
         }
-        return colors[code] || '#cbd5e1'
+        return classes[code] || 'text-slate-300'
     }
 
-    const getTypeColor = (type) => {
-        if (type === 'Buy') return '#4ade80'
-        if (type === 'Sell') return '#f87171'
-        return '#fbbf24'  // Other - amber for option exercises etc.
+    const getTypeClass = (type) => {
+        if (type === 'Buy') return 'text-green-400'
+        if (type === 'Sell') return 'text-red-400'
+        return 'text-amber-400'  // Other
+    }
+
+    const getBgClass = (colorClass) => {
+        return colorClass.replace('text-', 'bg-') + '/20'
     }
 
     // Transaction code to human-readable label
@@ -197,18 +211,19 @@ export default function InsiderTradesTable({ trades }) {
         cursor: 'default'
     }
 
-    // 10b5-1 Badge component
+    // 10b5-1 Indicator
     const PlanBadge = () => (
-        <span style={{
-            fontSize: '0.7rem',
-            backgroundColor: 'rgba(96, 165, 250, 0.2)',
-            color: '#60a5fa',
-            padding: '2px 6px',
-            borderRadius: '4px',
-            marginLeft: '6px',
-            whiteSpace: 'nowrap'
-        }}>
-            📋 10b5-1
+        <span
+            title="Executed under a 10b5-1 pre-scheduled trading plan (often less bearish than spontaneous sales)"
+            className="ml-1.5 inline-flex items-center justify-center text-muted-foreground hover:text-blue-400 cursor-help transition-colors"
+        >
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                <polyline points="14 2 14 8 20 8"></polyline>
+                <line x1="16" y1="13" x2="8" y2="13"></line>
+                <line x1="16" y1="17" x2="8" y2="17"></line>
+                <polyline points="10 9 9 9 8 9"></polyline>
+            </svg>
         </span>
     )
 
@@ -216,49 +231,42 @@ export default function InsiderTradesTable({ trades }) {
         <div>
             {/* Type Filter Toggle */}
             {hasOtherTypes && (
-                <div style={{ marginBottom: '0.75rem' }}>
-                    <button
+                <div className="mb-3">
+                    <Button
+                        variant={showAllTypes ? "default" : "outline"}
+                        size="sm"
                         onClick={() => setShowAllTypes(!showAllTypes)}
-                        style={{
-                            background: showAllTypes ? 'rgba(251, 191, 36, 0.2)' : 'transparent',
-                            border: `1px solid ${showAllTypes ? '#fbbf24' : '#475569'}`,
-                            color: showAllTypes ? '#fbbf24' : '#94a3b8',
-                            padding: '0.4rem 0.8rem',
-                            borderRadius: '0.25rem',
-                            cursor: 'pointer',
-                            fontSize: '0.8rem'
-                        }}
+                        className={showAllTypes ? "bg-amber-500/20 text-amber-500 border-amber-500 hover:bg-amber-500/30" : "text-muted-foreground"}
                     >
                         {showAllTypes ? '✓ Showing All Types' : `Show All Types (+${hiddenCount})`}
-                    </button>
-                    <span style={{ marginLeft: '0.75rem', fontSize: '0.75rem', color: '#64748b' }}>
+                    </Button>
+                    <span className="ml-3 text-xs text-muted-foreground">
                         {showAllTypes ? 'Including option exercises, awards, gifts' : 'Open market only'}
                     </span>
                 </div>
             )}
 
             {/* Summary View */}
-            <div style={{ marginBottom: '1rem' }}>
-                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.9rem' }}>
-                    <thead>
-                        <tr style={{ backgroundColor: '#0f172a' }}>
-                            <th style={{ ...thStyle, position: 'static' }}>Insider</th>
-                            <th style={{ ...thStyle, position: 'static' }}>Types</th>
-                            <th style={{ ...thStyle, position: 'static', textAlign: 'right', color: '#4ade80' }}>Bought</th>
-                            <th style={{ ...thStyle, position: 'static', textAlign: 'right', color: '#f87171' }}>Sold</th>
-                            <th style={{ ...thStyle, position: 'static', textAlign: 'right' }}>Total %</th>
-                            <th style={{ ...thStyle, position: 'static', textAlign: 'right' }}>Net</th>
-                        </tr>
-                    </thead>
-                    <tbody>
+            <div className="mb-4 rounded-md border">
+                <Table>
+                    <TableHeader>
+                        <TableRow className="bg-muted/50">
+                            <TableHead className="w-[200px]">Insider</TableHead>
+                            <TableHead>Types</TableHead>
+                            <TableHead className="text-right text-green-400">Bought</TableHead>
+                            <TableHead className="text-right text-red-400">Sold</TableHead>
+                            <TableHead className="text-right">Total %</TableHead>
+                            <TableHead className="text-right">Net</TableHead>
+                        </TableRow>
+                    </TableHeader>
+                    <TableBody>
                         {summaryData.map((person, idx) => {
                             const net = person.totalBought - person.totalSold
-                            const netColor = net > 0 ? '#4ade80' : net < 0 ? '#f87171' : '#cbd5e1'
+                            const netColorClass = net > 0 ? 'text-green-400' : net < 0 ? 'text-red-400' : 'text-muted-foreground'
 
                             // Render type breakdown as compact badges
                             const typeBadges = Object.entries(person.typeBreakdown).map(([code, count]) => {
                                 const label = codeToLabel[code] || code
-                                // Use short labels for compact display
                                 const shortLabel = {
                                     'P': 'Purchase',
                                     'S': 'Sale',
@@ -272,21 +280,14 @@ export default function InsiderTradesTable({ trades }) {
                                     'J': 'Other'
                                 }[code] || label
 
+                                const colorClass = getCodeClass(code)
+                                const bgClass = getBgClass(colorClass)
+
                                 return (
                                     <span
                                         key={code}
                                         title={`${count} ${label}`}
-                                        style={{
-                                            display: 'inline-block',
-                                            fontSize: '0.7rem',
-                                            padding: '2px 6px',
-                                            marginRight: '4px',
-                                            marginBottom: '2px',
-                                            borderRadius: '3px',
-                                            backgroundColor: `${getCodeColor(code)}20`,
-                                            color: getCodeColor(code),
-                                            whiteSpace: 'nowrap'
-                                        }}
+                                        className={`inline-block text-[10px] px-1.5 py-0.5 mr-1 mb-0.5 rounded ${bgClass} ${colorClass}`}
                                     >
                                         {count}× {shortLabel}
                                     </span>
@@ -294,164 +295,146 @@ export default function InsiderTradesTable({ trades }) {
                             })
 
                             return (
-                                <tr key={idx} style={{ borderBottom: '1px solid #334155' }}>
-                                    <td style={{ padding: '10px 8px' }}>
-                                        <div style={{ fontWeight: 'bold' }}>
+                                <TableRow key={idx}>
+                                    <TableCell className="font-medium align-top">
+                                        <div className="font-bold">
                                             {person.name}
                                             {person.has10b51 && <PlanBadge />}
                                         </div>
-                                        <div style={{ fontSize: '0.8rem', color: '#94a3b8' }}>{person.position}</div>
-                                    </td>
-                                    <td style={{ padding: '10px 8px' }}>
+                                        <div className="text-xs text-muted-foreground">{person.position}</div>
+                                    </TableCell>
+                                    <TableCell className="align-top">
                                         {typeBadges}
-                                    </td>
-                                    <td style={{ padding: '10px 8px', textAlign: 'right', color: '#4ade80' }}>
+                                    </TableCell>
+                                    <TableCell className="text-right align-top text-green-400">
                                         {person.buyCount > 0 ? `${formatCurrency(person.totalBought)} (${person.buyCount})` : '-'}
-                                    </td>
-                                    <td style={{ padding: '10px 8px', textAlign: 'right', color: '#f87171' }}>
+                                    </TableCell>
+                                    <TableCell className="text-right align-top text-red-400">
                                         {person.sellCount > 0 ? `${formatCurrency(person.totalSold)} (${person.sellCount})` : '-'}
-                                    </td>
-                                    <td style={{
-                                        padding: '10px 8px',
-                                        textAlign: 'right'
-                                    }}>
+                                    </TableCell>
+                                    <TableCell className="text-right align-top">
                                         {person.totalPctSold > 0 ? (
                                             <span
-                                                style={{
-                                                    color: '#f87171',
-                                                    fontWeight: person.totalPctSold > 20 ? 'bold' : 'normal'
-                                                }}
+                                                className={person.totalPctSold > 20 ? 'text-red-400 font-bold' : 'text-red-400'}
                                                 title={`Sold ${person.totalPctSold.toFixed(1)}% of holdings cumulative`}
                                             >
                                                 -{person.totalPctSold.toFixed(1)}%
                                             </span>
                                         ) : person.totalPctBought > 0 ? (
                                             <span
-                                                style={{ color: '#4ade80' }}
+                                                className="text-green-400"
                                                 title={`Bought equivalent of ${person.totalPctBought.toFixed(1)}% of current holdings`}
                                             >
                                                 +{person.totalPctBought.toFixed(1)}%
                                             </span>
                                         ) : '-'}
-                                    </td>
-                                    <td style={{ padding: '10px 8px', textAlign: 'right', fontWeight: 'bold', color: netColor }}>
+                                    </TableCell>
+                                    <TableCell className={`text-right align-top font-bold ${netColorClass}`}>
                                         {net > 0 ? '+' : ''}{formatCurrency(net)}
-                                    </td>
-                                </tr>
+                                    </TableCell>
+                                </TableRow>
                             )
                         })}
-                    </tbody>
-                </table>
+                    </TableBody>
+                </Table>
             </div>
 
+
             {/* Toggle for detailed view */}
-            <button
-                onClick={() => setShowDetails(!showDetails)}
-                style={{
-                    background: 'transparent',
-                    border: '1px solid #475569',
-                    color: '#94a3b8',
-                    padding: '0.5rem 1rem',
-                    borderRadius: '0.25rem',
-                    cursor: 'pointer',
-                    fontSize: '0.85rem',
-                    marginBottom: '0.5rem'
-                }}
+            < Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setShowDetails(!showDetails)
+                }
+                className="mb-2 text-muted-foreground w-full justify-start"
             >
-                {showDetails ? '▼ Hide Details' : '▶ Show All Transactions'} ({filteredTrades.length})
-            </button>
+                {showDetails ? '▼ Hide Details' : '▶ Show All Transactions'}({filteredTrades.length})
+            </Button >
 
             {/* Detailed View */}
-            {showDetails && (
-                <div style={{ maxHeight: '300px', overflowY: 'auto', marginTop: '0.5rem' }}>
-                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
-                        <thead>
-                            <tr>
-                                <th style={thStyle}>Date</th>
-                                <th style={thStyle}>Name</th>
-                                <th style={thStyle}>Type</th>
-                                <th style={{ ...thStyle, textAlign: 'right' }}>Value</th>
-                                <th style={{ ...thStyle, textAlign: 'right' }}>% Holdings</th>
-                                <th style={thStyle}>Notes</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {uniqueTrades.map((trade, idx) => {
-                                const typeLabel = trade.transaction_type_label ||
-                                    codeToLabel[trade.transaction_code] ||
-                                    trade.transaction_type
-                                const typeColor = trade.transaction_code
-                                    ? getCodeColor(trade.transaction_code)
-                                    : getTypeColor(trade.transaction_type)
+            {
+                showDetails && (
+                    <div className="rounded-md border max-h-[400px] overflow-y-auto">
+                        <Table>
+                            <TableHeader>
+                                <TableRow className="bg-muted/50 sticky top-0 z-10">
+                                    <TableHead>Date</TableHead>
+                                    <TableHead>Name</TableHead>
+                                    <TableHead>Type</TableHead>
+                                    <TableHead className="text-right">Value</TableHead>
+                                    <TableHead className="text-right">% Holdings</TableHead>
+                                    <TableHead>Notes</TableHead>
+                                </TableRow>
+                            </TableHeader>
+                            <TableBody>
+                                {uniqueTrades.map((trade, idx) => {
+                                    const typeLabel = trade.transaction_type_label ||
+                                        codeToLabel[trade.transaction_code] ||
+                                        trade.transaction_type
+                                    const typeClass = trade.transaction_code
+                                        ? getCodeClass(trade.transaction_code)
+                                        : getTypeClass(trade.transaction_type)
 
-                                // Get footnotes if available
-                                const footnotes = trade.footnotes || []
-                                const hasFootnotes = footnotes.length > 0
+                                    // Get footnotes if available
+                                    const footnotes = trade.footnotes || []
+                                    const hasFootnotes = footnotes.length > 0
 
-                                // Format ownership change percentage
-                                const ownershipPct = trade.ownership_change_pct
-                                const isSale = trade.transaction_code === 'S' || trade.transaction_code === 'F' || trade.transaction_code === 'D'
+                                    // Format ownership change percentage
+                                    const ownershipPct = trade.ownership_change_pct
+                                    const isSale = trade.transaction_code === 'S' || trade.transaction_code === 'F' || trade.transaction_code === 'D'
 
-                                // Get canonical name from grouping map
-                                let normalizedKey = trade.name.toLowerCase().replace(/[.,]/g, ' ').trim().replace(/\s+/g, ' ')
-                                const parts = normalizedKey.split(' ')
-                                if (parts.length >= 2) {
-                                    normalizedKey = `${parts[0]} ${parts[1]}`
-                                }
-                                const displayName = groupedByPerson[normalizedKey] ? groupedByPerson[normalizedKey].name : trade.name
+                                    // Get canonical name from grouping map
+                                    let normalizedKey = trade.name.toLowerCase().replace(/[.,]/g, ' ').trim().replace(/\s+/g, ' ')
+                                    const parts = normalizedKey.split(' ')
+                                    if (parts.length >= 2) {
+                                        normalizedKey = `${parts[0]} ${parts[1]}`
+                                    }
+                                    const displayName = groupedByPerson[normalizedKey] ? groupedByPerson[normalizedKey].name : trade.name
 
-                                return (
-                                    <tr key={idx} style={{ borderBottom: '1px solid #334155' }}>
-                                        <td style={{ padding: '8px', whiteSpace: 'nowrap' }}>
-                                            {formatDate(trade.transaction_date)}
-                                        </td>
-                                        <td style={{ padding: '8px' }}>
-                                            {displayName}
-                                            {trade.is_10b51_plan && <PlanBadge />}
-                                        </td>
-                                        <td style={{ padding: '8px', color: typeColor, fontWeight: 'bold' }}>
-                                            {typeLabel}
-                                        </td>
-                                        <td style={{ padding: '8px', textAlign: 'right', color: typeColor }}>
-                                            {formatCurrency(trade.value)}
-                                        </td>
-                                        <td style={{
-                                            padding: '8px',
-                                            textAlign: 'right',
-                                            color: ownershipPct > 50 ? '#f87171' : ownershipPct > 20 ? '#fbbf24' : '#94a3b8',
-                                            fontWeight: ownershipPct > 20 ? 'bold' : 'normal'
-                                        }}>
-                                            {ownershipPct != null ? (
-                                                <span title={`${isSale ? 'Sold' : 'Bought'} ${ownershipPct}% of holdings`}>
-                                                    {ownershipPct.toFixed(1)}%
-                                                </span>
-                                            ) : '-'}
-                                        </td>
-                                        <td style={{ padding: '8px', fontSize: '0.75rem', color: '#94a3b8', maxWidth: '250px' }}>
-                                            {hasFootnotes ? (
-                                                <span
-                                                    title={footnotes.join('\n\n')}
-                                                    style={{
-                                                        cursor: 'help',
-                                                        display: 'block',
-                                                        overflow: 'hidden',
-                                                        textOverflow: 'ellipsis',
-                                                        whiteSpace: 'nowrap'
-                                                    }}
-                                                >
-                                                    📝 {footnotes[0].substring(0, 60)}{footnotes[0].length > 60 ? '...' : ''}
-                                                </span>
-                                            ) : (
-                                                <span style={{ color: '#475569' }}>-</span>
-                                            )}
-                                        </td>
-                                    </tr>
-                                )
-                            })}
-                        </tbody>
-                    </table>
-                </div>
-            )}
+                                    const pctColorClass = ownershipPct > 50 ? 'text-red-400 font-bold' : ownershipPct > 20 ? 'text-amber-400 font-bold' : 'text-muted-foreground'
+
+                                    return (
+                                        <TableRow key={idx}>
+                                            <TableCell className="whitespace-nowrap">
+                                                {formatDate(trade.transaction_date)}
+                                            </TableCell>
+                                            <TableCell>
+                                                {displayName}
+                                                {trade.is_10b51_plan && <PlanBadge />}
+                                            </TableCell>
+                                            <TableCell className={`font-bold ${typeClass}`}>
+                                                {typeLabel}
+                                            </TableCell>
+                                            <TableCell className={`text-right ${typeClass}`}>
+                                                {formatCurrency(trade.value)}
+                                            </TableCell>
+                                            <TableCell className={`text-right ${pctColorClass}`}>
+                                                {ownershipPct != null ? (
+                                                    <span title={`${isSale ? 'Sold' : 'Bought'} ${ownershipPct}% of holdings`}>
+                                                        {ownershipPct.toFixed(1)}%
+                                                    </span>
+                                                ) : '-'}
+                                            </TableCell>
+                                            <TableCell className="text-xs text-muted-foreground max-w-[250px]">
+                                                {hasFootnotes ? (
+                                                    <span
+                                                        title={footnotes.join('\n\n')}
+                                                        className="cursor-help block truncate"
+                                                    >
+                                                        📝 {footnotes[0].substring(0, 60)}{footnotes[0].length > 60 ? '...' : ''}
+                                                    </span>
+                                                ) : (
+                                                    <span>-</span>
+                                                )}
+                                            </TableCell>
+                                        </TableRow>
+                                    )
+                                })}
+                            </TableBody>
+                        </Table>
+                    </div>
+                )
+            }
         </div>
     )
 }

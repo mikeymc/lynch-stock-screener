@@ -1,13 +1,16 @@
 // ABOUTME: Word on the Street component for displaying Reddit sentiment
-// ABOUTME: Two-column layout: Reddit posts left (2/3), chat sidebar right (1/3)
+// ABOUTME: Full-width layout: Reddit posts list with theme-aware styling
 
-import { useState, useEffect, useRef } from 'react'
-import AnalysisChat from './AnalysisChat'
+import { useState, useEffect } from 'react'
+import ReactMarkdown from 'react-markdown'
+import { RefreshCw, MessageCircle, ArrowUp, Loader2 } from 'lucide-react'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Button } from '@/components/ui/button'
+import { Badge } from '@/components/ui/badge'
 
 const API_BASE = '/api'
 
 export default function WordOnTheStreet({ symbol }) {
-    const chatRef = useRef(null)
     const [posts, setPosts] = useState([])
     const [loading, setLoading] = useState(true)
     const [refreshing, setRefreshing] = useState(false)
@@ -55,11 +58,11 @@ export default function WordOnTheStreet({ symbol }) {
         return score.toString()
     }
 
-    // Helper to get sentiment color and icon
+    // Helper to get sentiment display
     const getSentimentDisplay = (score) => {
-        if (score > 0.2) return { icon: '🟢', label: 'Bullish', color: '#22c55e' }
-        if (score < -0.2) return { icon: '🔴', label: 'Bearish', color: '#ef4444' }
-        return { icon: '⚪', label: 'Neutral', color: '#94a3b8' }
+        if (score > 0.2) return { label: 'Bullish', variant: 'success' }
+        if (score < -0.2) return { label: 'Bearish', variant: 'destructive' }
+        return { label: 'Neutral', variant: 'secondary' }
     }
 
     // Helper to format date
@@ -71,7 +74,8 @@ export default function WordOnTheStreet({ symbol }) {
 
     if (loading) {
         return (
-            <div className="loading" style={{ padding: '40px', textAlign: 'center' }}>
+            <div className="p-10 text-center text-muted-foreground flex items-center justify-center gap-2">
+                <Loader2 className="h-5 w-5 animate-spin" />
                 Loading Reddit discussions...
             </div>
         )
@@ -79,7 +83,7 @@ export default function WordOnTheStreet({ symbol }) {
 
     if (error) {
         return (
-            <div style={{ padding: '40px', textAlign: 'center', color: '#888' }}>
+            <div className="p-10 text-center text-muted-foreground">
                 <p>{error}</p>
             </div>
         )
@@ -87,273 +91,169 @@ export default function WordOnTheStreet({ symbol }) {
 
     if (posts.length === 0) {
         return (
-            <div style={{ padding: '40px', textAlign: 'center', color: '#888' }}>
-                <p>No Reddit discussions found for {symbol}.</p>
-                <p style={{ fontSize: '13px', marginTop: '8px' }}>
-                    Try checking back later or verify the stock is commonly discussed.
-                </p>
-            </div>
+            <Card>
+                <CardContent className="py-10 text-center text-muted-foreground">
+                    <p>No Reddit discussions found for {symbol}.</p>
+                    <p className="text-sm mt-2">
+                        Try checking back later or verify the stock is commonly discussed.
+                    </p>
+                </CardContent>
+            </Card>
         )
     }
 
     return (
-        <div className="reports-layout">
-            {/* Left Column - Reddit Posts (2/3) */}
-            <div className="reports-main-column">
-                <div className="section-item">
-                    <div className="section-header-simple" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <span className="section-title">
-                            {posts.length} discussions from Reddit
-                            {source === 'database' && <span style={{ fontSize: '12px', color: '#94a3b8', fontWeight: 'normal', marginLeft: '8px' }}>(cached)</span>}
-                        </span>
-                        <button
-                            onClick={() => fetchSentiment(true)}
-                            disabled={refreshing}
-                            style={{
-                                padding: '6px 12px',
-                                fontSize: '12px',
-                                backgroundColor: refreshing ? 'rgba(255, 69, 0, 0.3)' : 'rgba(255, 69, 0, 0.1)',
-                                border: '1px solid #ff4500',
-                                borderRadius: '6px',
-                                color: '#ff4500',
-                                cursor: refreshing ? 'wait' : 'pointer',
-                                display: 'flex',
-                                alignItems: 'center',
-                                gap: '6px',
-                                transition: 'all 0.2s'
-                            }}
+        <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-4">
+                <CardTitle className="text-lg">
+                    {posts.length} discussions from Reddit
+                    {source === 'database' && (
+                        <span className="text-sm text-muted-foreground font-normal ml-2">(cached)</span>
+                    )}
+                </CardTitle>
+                <Button
+                    variant="default"
+                    size="sm"
+                    onClick={() => fetchSentiment(true)}
+                    disabled={refreshing}
+                >
+                    {refreshing ? (
+                        <>
+                            <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                            Refreshing...
+                        </>
+                    ) : (
+                        <>
+                            <RefreshCw className="h-4 w-4 mr-2" />
+                            Refresh
+                        </>
+                    )}
+                </Button>
+            </CardHeader>
+            <CardContent className="space-y-6">
+                {posts.map((post, index) => {
+                    const sentiment = getSentimentDisplay(post.sentiment_score || 0)
+
+                    return (
+                        <div
+                            key={post.id || index}
+                            className="pb-6 border-b border-border last:border-b-0 last:pb-0"
                         >
-                            {refreshing ? (
-                                <>
-                                    <span style={{ animation: 'spin 1s linear infinite' }}>🔄</span>
-                                    Refreshing...
-                                </>
-                            ) : (
-                                <>🔄 Refresh Live</>
-                            )}
-                        </button>
-                    </div>
-                    <div className="section-content">
-                        <div className="section-summary">
-                            <div className="reddit-posts-list">
-                                {posts.map((post, index) => {
-                                    const sentiment = getSentimentDisplay(post.sentiment_score || 0)
+                            {/* Post Header */}
+                            <div className="flex items-center gap-3 mb-2 text-sm flex-wrap">
+                                {/* Subreddit */}
+                                <span className="text-orange-500 font-semibold">
+                                    r/{post.subreddit}
+                                </span>
 
-                                    return (
-                                        <div
-                                            key={post.id || index}
-                                            className="reddit-post"
-                                            style={{
-                                                borderBottom: '1px solid rgba(71, 85, 105, 0.5)',
-                                                paddingBottom: '16px',
-                                                marginBottom: '16px'
-                                            }}
-                                        >
-                                            {/* Post Header */}
-                                            <div style={{
-                                                display: 'flex',
-                                                alignItems: 'center',
-                                                gap: '12px',
-                                                marginBottom: '8px',
-                                                fontSize: '13px',
-                                                color: '#94a3b8'
-                                            }}>
-                                                {/* Subreddit */}
-                                                <span style={{
-                                                    color: '#ff4500',
-                                                    fontWeight: '600'
-                                                }}>
-                                                    r/{post.subreddit}
-                                                </span>
+                                {/* Score */}
+                                <span className="flex items-center gap-1 text-orange-400">
+                                    <ArrowUp className="h-3 w-3" />
+                                    {formatScore(post.score)}
+                                </span>
 
-                                                {/* Score */}
-                                                <span style={{
-                                                    display: 'flex',
-                                                    alignItems: 'center',
-                                                    gap: '4px',
-                                                    color: '#f97316'
-                                                }}>
-                                                    ⬆ {formatScore(post.score)}
-                                                </span>
+                                {/* Comments */}
+                                <span className="flex items-center gap-1 text-muted-foreground">
+                                    <MessageCircle className="h-3 w-3" />
+                                    {post.num_comments}
+                                </span>
 
-                                                {/* Comments */}
-                                                <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                                                    💬 {post.num_comments}
-                                                </span>
+                                {/* Time */}
+                                <span className="text-muted-foreground">{formatDate(post.published_at || post.created_at)}</span>
 
-                                                {/* Time */}
-                                                <span>{formatDate(post.created_at)}</span>
-
-                                                {/* Sentiment */}
-                                                <span style={{
-                                                    color: sentiment.color,
-                                                    fontWeight: '500',
-                                                    marginLeft: 'auto'
-                                                }}>
-                                                    {sentiment.icon} {sentiment.label}
-                                                </span>
-                                            </div>
-
-                                            {/* Post Title */}
-                                            <h3 style={{
-                                                margin: '0 0 8px 0',
-                                                fontSize: '16px',
-                                                lineHeight: '1.4',
-                                                fontWeight: '600'
-                                            }}>
-                                                {post.url ? (
-                                                    <a
-                                                        href={post.url}
-                                                        target="_blank"
-                                                        rel="noopener noreferrer"
-                                                        style={{ color: '#60a5fa', textDecoration: 'none' }}
-                                                    >
-                                                        {post.title}
-                                                    </a>
-                                                ) : (
-                                                    <span style={{ color: '#f1f5f9' }}>{post.title}</span>
-                                                )}
-                                            </h3>
-
-                                            {/* Post Body - Full text */}
-                                            {post.selftext && (
-                                                <p style={{
-                                                    margin: '0',
-                                                    lineHeight: '1.6',
-                                                    color: '#cbd5e1',
-                                                    fontSize: '14px',
-                                                    whiteSpace: 'pre-wrap'
-                                                }}>
-                                                    {post.selftext}
-                                                </p>
-                                            )}
-
-                                            {/* Author */}
-                                            <div style={{
-                                                marginTop: '8px',
-                                                fontSize: '12px',
-                                                color: '#64748b'
-                                            }}>
-                                                Posted by u/{post.author}
-                                            </div>
-
-                                            {/* Top Conversations - Shows all comments with 30+ upvotes */}
-                                            {post.conversation && post.conversation.comments && post.conversation.comments.length > 0 && (
-                                                <div style={{
-                                                    marginTop: '16px',
-                                                    padding: '12px',
-                                                    backgroundColor: 'rgba(30, 41, 59, 0.6)',
-                                                    borderRadius: '8px',
-                                                    borderLeft: '3px solid #ff4500'
-                                                }}>
-                                                    <div style={{
-                                                        fontSize: '11px',
-                                                        color: '#94a3b8',
-                                                        marginBottom: '12px',
-                                                        fontWeight: '600',
-                                                        textTransform: 'uppercase',
-                                                        letterSpacing: '0.5px'
-                                                    }}>
-                                                        💬 Top Comments ({post.conversation.count})
-                                                    </div>
-
-                                                    {/* All quality comments */}
-                                                    {post.conversation.comments.map((comment, commentIdx) => (
-                                                        <div
-                                                            key={comment.id || commentIdx}
-                                                            style={{
-                                                                marginBottom: commentIdx < post.conversation.comments.length - 1 ? '16px' : 0,
-                                                                paddingBottom: commentIdx < post.conversation.comments.length - 1 ? '12px' : 0,
-                                                                borderBottom: commentIdx < post.conversation.comments.length - 1 ? '1px solid rgba(71, 85, 105, 0.3)' : 'none'
-                                                            }}
-                                                        >
-                                                            <div style={{
-                                                                display: 'flex',
-                                                                alignItems: 'center',
-                                                                gap: '8px',
-                                                                marginBottom: '4px',
-                                                                fontSize: '12px'
-                                                            }}>
-                                                                <span style={{ color: '#f97316', fontWeight: '600' }}>
-                                                                    ⬆ {formatScore(comment.score)}
-                                                                </span>
-                                                                <span style={{ color: '#64748b' }}>
-                                                                    u/{comment.author}
-                                                                </span>
-                                                            </div>
-                                                            <p style={{
-                                                                margin: 0,
-                                                                fontSize: '14px',
-                                                                lineHeight: '1.6',
-                                                                color: '#e2e8f0',
-                                                                whiteSpace: 'pre-wrap'
-                                                            }}>
-                                                                {comment.body}
-                                                            </p>
-
-                                                            {/* Nested replies */}
-                                                            {comment.replies && comment.replies.length > 0 && (
-                                                                <div style={{
-                                                                    marginTop: '12px',
-                                                                    marginLeft: '16px',
-                                                                    paddingLeft: '12px',
-                                                                    borderLeft: '2px solid rgba(148, 163, 184, 0.3)'
-                                                                }}>
-                                                                    {comment.replies.map((reply, replyIdx) => (
-                                                                        <div key={reply.id || replyIdx} style={{
-                                                                            marginBottom: replyIdx < comment.replies.length - 1 ? '10px' : 0
-                                                                        }}>
-                                                                            <div style={{
-                                                                                display: 'flex',
-                                                                                alignItems: 'center',
-                                                                                gap: '8px',
-                                                                                marginBottom: '2px',
-                                                                                fontSize: '11px'
-                                                                            }}>
-                                                                                <span style={{ color: '#f97316' }}>
-                                                                                    ⬆ {formatScore(reply.score)}
-                                                                                </span>
-                                                                                <span style={{ color: '#64748b' }}>
-                                                                                    u/{reply.author}
-                                                                                </span>
-                                                                            </div>
-                                                                            <p style={{
-                                                                                margin: 0,
-                                                                                fontSize: '13px',
-                                                                                lineHeight: '1.5',
-                                                                                color: '#cbd5e1',
-                                                                                whiteSpace: 'pre-wrap'
-                                                                            }}>
-                                                                                {reply.body}
-                                                                            </p>
-                                                                        </div>
-                                                                    ))}
-                                                                </div>
-                                                            )}
-                                                        </div>
-                                                    ))}
-                                                </div>
-                                            )}
-                                        </div>
-                                    )
-                                })}
+                                {/* Sentiment */}
+                                <Badge
+                                    variant={sentiment.variant}
+                                    className="ml-auto"
+                                >
+                                    {sentiment.label}
+                                </Badge>
                             </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
 
-            {/* Right Column - Chat Sidebar (1/3) */}
-            <div className="reports-chat-sidebar">
-                <div className="chat-sidebar-content">
-                    <AnalysisChat
-                        ref={chatRef}
-                        symbol={symbol}
-                        chatOnly={true}
-                        contextType="reddit"
-                    />
-                </div>
-            </div>
-        </div>
+                            {/* Post Title */}
+                            <h3 className="font-semibold text-base mb-2 leading-snug">
+                                {post.url ? (
+                                    <a
+                                        href={post.url}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="text-primary hover:underline"
+                                    >
+                                        {post.title}
+                                    </a>
+                                ) : (
+                                    <span>{post.title}</span>
+                                )}
+                            </h3>
+
+                            {/* Post Body */}
+                            {post.selftext && (
+                                <div className="text-sm text-muted-foreground leading-relaxed mb-2 prose prose-sm dark:prose-invert max-w-none [&>p]:mb-2 [&>ul]:mb-2 [&>ol]:mb-2">
+                                    <ReactMarkdown>{post.selftext}</ReactMarkdown>
+                                </div>
+                            )}
+
+                            {/* Author */}
+                            <div className="text-xs text-muted-foreground/70">
+                                Posted by u/{post.author}
+                            </div>
+
+                            {/* Top Comments Section */}
+                            {post.conversation?.comments?.length > 0 && (
+                                <div className="mt-4 p-4 bg-muted/50 rounded-lg border-l-4 border-orange-500">
+                                    <div className="text-xs text-muted-foreground font-semibold uppercase tracking-wide mb-3">
+                                        💬 Top Comments ({post.conversation.count})
+                                    </div>
+
+                                    <div className="space-y-4">
+                                        {post.conversation.comments.map((comment, commentIdx) => (
+                                            <div
+                                                key={comment.id || commentIdx}
+                                                className="pb-3 border-b border-border/50 last:border-b-0 last:pb-0"
+                                            >
+                                                <div className="flex items-center gap-2 mb-1 text-xs">
+                                                    <span className="text-orange-400 font-semibold flex items-center gap-1">
+                                                        <ArrowUp className="h-3 w-3" />
+                                                        {formatScore(comment.score)}
+                                                    </span>
+                                                    <span className="text-muted-foreground/70">
+                                                        u/{comment.author}
+                                                    </span>
+                                                </div>
+                                                <div className="text-sm leading-relaxed prose prose-sm dark:prose-invert max-w-none [&>p]:mb-1">
+                                                    <ReactMarkdown>{comment.body}</ReactMarkdown>
+                                                </div>
+
+                                                {/* Nested Replies */}
+                                                {comment.replies?.length > 0 && (
+                                                    <div className="mt-3 ml-4 pl-3 border-l-2 border-border/30 space-y-2">
+                                                        {comment.replies.map((reply, replyIdx) => (
+                                                            <div key={reply.id || replyIdx}>
+                                                                <div className="flex items-center gap-2 mb-1 text-xs">
+                                                                    <span className="text-orange-400 flex items-center gap-1">
+                                                                        <ArrowUp className="h-2.5 w-2.5" />
+                                                                        {formatScore(reply.score)}
+                                                                    </span>
+                                                                    <span className="text-muted-foreground/70">
+                                                                        u/{reply.author}
+                                                                    </span>
+                                                                </div>
+                                                                <div className="text-sm text-muted-foreground leading-relaxed prose prose-sm dark:prose-invert max-w-none [&>p]:mb-1">
+                                                                    <ReactMarkdown>{reply.body}</ReactMarkdown>
+                                                                </div>
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                )}
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+                    )
+                })}
+            </CardContent>
+        </Card>
     )
 }

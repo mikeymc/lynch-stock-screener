@@ -5,7 +5,12 @@ import { useState, useEffect, useRef, forwardRef, useImperativeHandle, memo, use
 import { useNavigate } from 'react-router-dom'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
+import { RefreshCw, Sparkles } from 'lucide-react'
 import ChatChart from './ChatChart'
+import { Button } from '@/components/ui/button'
+import { Textarea } from '@/components/ui/textarea'
+import { Switch } from '@/components/ui/switch'
+import { Card } from '@/components/ui/card'
 
 const API_BASE = '/api'
 
@@ -54,17 +59,17 @@ function SourceCitation({ sources }) {
   }
 
   return (
-    <div className="chat-message-sources">
+    <div className="mt-2 text-xs border-t border-border/50 pt-2">
       <button
-        className="sources-toggle"
+        className="flex items-center gap-1 text-muted-foreground hover:text-foreground transition-colors font-medium"
         onClick={() => setExpanded(!expanded)}
       >
         📚 Sources ({sources.length}) {expanded ? '▼' : '▶'}
       </button>
       {expanded && (
-        <ul className="sources-list">
+        <ul className="list-disc list-inside mt-2 pl-1 text-muted-foreground space-y-1">
           {sources.map((source, idx) => (
-            <li key={idx}>{sourceLabels[source] || source}</li>
+            <li key={idx} className="truncate">{sourceLabels[source] || source}</li>
           ))}
         </ul>
       )}
@@ -74,6 +79,33 @@ function SourceCitation({ sources }) {
 
 // Custom markdown components
 const MarkdownComponents = ({ navigate }) => useMemo(() => ({
+  h1: (props) => (
+    <h1 className="scroll-m-20 text-2xl font-semibold tracking-tight mb-4" {...props} />
+  ),
+  h2: (props) => (
+    <h2 className="scroll-m-20 border-b pb-2 text-xl font-semibold tracking-tight transition-colors first:mt-0 mb-4 mt-8" {...props} />
+  ),
+  h3: (props) => (
+    <h3 className="scroll-m-20 text-lg font-semibold tracking-tight mb-2 mt-6" {...props} />
+  ),
+  p: (props) => (
+    <p className="leading-7 [&:not(:first-child)]:mt-6 mb-4" {...props} />
+  ),
+  ul: (props) => (
+    <ul className="my-6 ml-6 list-disc [&>li]:mt-2" {...props} />
+  ),
+  ol: (props) => (
+    <ol className="my-6 ml-6 list-decimal [&>li]:mt-2" {...props} />
+  ),
+  li: (props) => (
+    <li className="leading-7" {...props} />
+  ),
+  blockquote: (props) => (
+    <blockquote className="mt-6 border-l-2 pl-6 italic text-muted-foreground" {...props} />
+  ),
+  strong: (props) => (
+    <strong className="font-bold text-foreground" {...props} />
+  ),
   code({ node, inline, className, children, ...props }) {
     const match = /language-(\w+)/.exec(className || '')
     const language = match ? match[1] : ''
@@ -84,6 +116,10 @@ const MarkdownComponents = ({ navigate }) => useMemo(() => ({
     }
 
     // Default code block rendering
+    if (inline) {
+      return <code className="relative rounded bg-muted px-[0.3rem] py-[0.2rem] font-mono text-sm font-semibold" {...props}>{children}</code>
+    }
+
     return (
       <code className={className} {...props}>
         {children}
@@ -104,7 +140,7 @@ const MarkdownComponents = ({ navigate }) => useMemo(() => ({
     }
 
     return (
-      <a href={href} onClick={handleClick} {...props}>
+      <a href={href} onClick={handleClick} {...props} className="font-medium text-primary underline underline-offset-4 hover:text-primary/80">
         {children}
       </a>
     )
@@ -113,22 +149,32 @@ const MarkdownComponents = ({ navigate }) => useMemo(() => ({
 
 // Memoized ChatMessage component - only re-renders when content changes
 const ChatMessage = memo(function ChatMessage({ role, content, sources, components }) {
-  const roleLabel = role === 'user' ? '👤 You' : role === 'assistant' ? '📊 Analyst' : '⚠️ Error'
+  const isUser = role === 'user'
+  const isError = role === 'error'
 
   return (
-    <div className={`chat-message ${role} analysis-message`}>
-      <div className="chat-message-header">{roleLabel}</div>
-      <div className="chat-message-content markdown-content">
-        <ReactMarkdown remarkPlugins={[remarkGfm]} components={components}>
-          {content}
-        </ReactMarkdown>
+    <div className={`flex flex-col gap-1 mb-4 ${isUser ? 'items-end' : 'items-start'}`}>
+      <div className="text-xs text-muted-foreground px-2">
+        {isUser ? '👤 You' : isError ? '⚠️ Error' : '📊 Analyst'}
       </div>
-      {role === 'assistant' && <SourceCitation sources={sources} />}
+      <div className={`rounded-lg px-4 py-3 max-w-[85%] ${isUser
+        ? 'bg-primary text-primary-foreground'
+        : isError
+          ? 'bg-destructive/10 text-destructive border border-destructive/20'
+          : 'bg-muted'
+        }`}>
+        <div className="text-sm">
+          <ReactMarkdown remarkPlugins={[remarkGfm]} components={components}>
+            {content}
+          </ReactMarkdown>
+        </div>
+        {role === 'assistant' && <SourceCitation sources={sources} />}
+      </div>
     </div>
   )
 })
 
-const AnalysisChat = forwardRef(function AnalysisChat({ symbol, stockName, chatOnly = false, contextType = 'brief' }, ref) {
+const AnalysisChat = forwardRef(function AnalysisChat({ symbol, stockName, chatOnly = false, hideChat = false, contextType = 'brief' }, ref) {
   // Navigation for internal links
   const navigate = useNavigate()
   const components = MarkdownComponents({ navigate })
@@ -276,7 +322,7 @@ const AnalysisChat = forwardRef(function AnalysisChat({ symbol, stockName, chatO
     const loadAgentConversation = async () => {
       try {
         // Fetch recent agent conversations
-        const response = await fetch(`${API_BASE}/agent/conversations`)
+        const response = await fetch(`${API_BASE}/agent/conversations`, { credentials: 'include' })
         if (!response.ok) {
           console.error('Failed to fetch agent conversations')
           return
@@ -290,7 +336,7 @@ const AnalysisChat = forwardRef(function AnalysisChat({ symbol, stockName, chatO
           setConversationId(conv.id)
 
           // Load messages
-          const msgResponse = await fetch(`${API_BASE}/agent/conversation/${conv.id}/messages`)
+          const msgResponse = await fetch(`${API_BASE}/agent/conversation/${conv.id}/messages`, { credentials: 'include' })
           if (msgResponse.ok) {
             const msgData = await msgResponse.json()
             console.log('[Agent] Loaded messages from DB:', msgData.messages)
@@ -307,7 +353,8 @@ const AnalysisChat = forwardRef(function AnalysisChat({ symbol, stockName, chatO
           // Create new conversation
           const createResponse = await fetch(`${API_BASE}/agent/conversations`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' }
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'include'
           })
 
           if (createResponse.ok) {
@@ -362,7 +409,14 @@ const AnalysisChat = forwardRef(function AnalysisChat({ symbol, stockName, chatO
         const response = await fetch(url, { signal })
         if (!response.ok) throw new Error(response.statusText)
         const data = await response.json()
-        setAnalysis(data.analysis)
+
+        // Clean cached content
+        let cleanContent = data.analysis
+        if (cleanContent) {
+          cleanContent = cleanContent.replace(/\[Prompt:[^\]]*\]/g, '')
+        }
+
+        setAnalysis(cleanContent)
         setGeneratedAt(data.generated_at)
         setCached(data.cached)
         return
@@ -455,7 +509,7 @@ const AnalysisChat = forwardRef(function AnalysisChat({ symbol, stockName, chatO
     const loadConversationHistory = async () => {
       try {
         setLoadingHistory(true)
-        const response = await fetch(`${API_BASE}/chat/${symbol}/conversations`)
+        const response = await fetch(`${API_BASE}/chat/${symbol}/conversations`, { credentials: 'include' })
 
         if (response.ok) {
           const data = await response.json()
@@ -465,7 +519,7 @@ const AnalysisChat = forwardRef(function AnalysisChat({ symbol, stockName, chatO
             const recentConversation = conversations[0]
             setConversationId(recentConversation.id)
 
-            const messagesResponse = await fetch(`${API_BASE}/chat/conversation/${recentConversation.id}/messages`)
+            const messagesResponse = await fetch(`${API_BASE}/chat/conversation/${recentConversation.id}/messages`, { credentials: 'include' })
             if (messagesResponse.ok) {
               const messagesData = await messagesResponse.json()
               setMessages(messagesData.messages || [])
@@ -527,6 +581,7 @@ const AnalysisChat = forwardRef(function AnalysisChat({ symbol, stockName, chatO
       const response = await fetch(`${API_BASE}/agent/conversation/${conversationId}/messages`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
         body: JSON.stringify({ role, content, tool_calls: toolCalls })
       })
 
@@ -570,6 +625,7 @@ const AnalysisChat = forwardRef(function AnalysisChat({ symbol, stockName, chatO
       const response = await fetch(endpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
         body: JSON.stringify(body)
       })
 
@@ -712,71 +768,75 @@ const AnalysisChat = forwardRef(function AnalysisChat({ symbol, stockName, chatO
 
   // Analysis content (for left column in two-column mode)
   const analysisContent = (
-    <div className="brief-analysis-container">
-      <div className="section-item">
-        <div className="section-content">
+    <div className="w-full h-full overflow-y-auto pr-2">
+      <Card className="h-full border-0 shadow-none bg-transparent">
+        <div className="h-full">
           {(analysisLoading || isGenerating) && !analysis ? (
-            <div className="section-summary">
-              <div className="brief-generating">
-                <div className="generating-spinner"></div>
-                <div className="generating-text">
-                  <span className="generating-title">Generating brief...</span>
-                  <span className="generating-subtitle" key={loadingMessageIndex}>{LOADING_MESSAGES[loadingMessageIndex]}</span>
-                </div>
+            <div className="flex flex-col items-center justify-center h-[50vh] space-y-6 text-center text-muted-foreground">
+              <div className="relative">
+                <div className="h-12 w-12 rounded-full border-4 border-primary/20"></div>
+                <div className="absolute top-0 left-0 h-12 w-12 rounded-full border-4 border-primary border-t-transparent animate-spin"></div>
+              </div>
+              <div className="space-y-2">
+                <span className="block text-lg font-medium text-foreground">Generating brief...</span>
+                <span className="block text-sm animate-pulse" key={loadingMessageIndex}>
+                  {LOADING_MESSAGES[loadingMessageIndex]}
+                </span>
               </div>
             </div>
           ) : analysisError ? (
-            <div className="section-summary">
+            <div className="flex flex-col items-center justify-center h-[50vh] space-y-4 text-destructive">
               <p>Failed to load analysis: {analysisError}</p>
-              <button onClick={() => fetchAnalysis(false, null, true)} className="retry-button">
+              <Button onClick={() => fetchAnalysis(false, null, true)} variant="outline">
                 Retry
-              </button>
+              </Button>
             </div>
           ) : !analysis ? (
-            <div className="section-summary">
+            <div className="flex flex-col items-center justify-center h-[50vh] space-y-4 text-muted-foreground">
               <p>No brief generated yet for {stockName}.</p>
-              <button onClick={handleGenerate} className="generate-button" style={{ marginTop: '1rem' }}>
-                ✨ Generate
-              </button>
+              <Button onClick={handleGenerate} className="mt-4">
+                <Sparkles className="mr-2 h-4 w-4" /> Generate Brief
+              </Button>
             </div>
           ) : (
             <>
-              <div className="brief-controls">
-                <span className="brief-metadata">
-                  {cached ? '📦 Cached' : '✨ Fresh'} · {formatDate(generatedAt)}
+              <div className="flex items-center justify-between mb-6 pb-4 border-b">
+                <span className="text-sm text-muted-foreground font-medium">
+                  {cached ? 'Cached' : 'Fresh'} · {formatDate(generatedAt)}
                 </span>
-                <button
+                <Button
                   onClick={handleRefresh}
                   disabled={refreshing}
-                  className="generate-button"
+                  variant="default"
+                  size="sm"
+                  className="gap-2 bg-slate-700 hover:bg-slate-600 text-white"
                 >
-                  {refreshing ? '...' : '🔄 Regenerate'}
-                </button>
+                  <RefreshCw className={`h-4 w-4 ${refreshing ? 'animate-spin' : ''}`} />
+                  Re-Analyze
+                </Button>
               </div>
-              <div className="section-summary">
-                <div className="summary-content">
-                  <ReactMarkdown remarkPlugins={[remarkGfm]} components={components}>{analysis}</ReactMarkdown>
-                </div>
+              <div className="prose prose-sm dark:prose-invert max-w-none pb-8">
+                <ReactMarkdown remarkPlugins={[remarkGfm]} components={components}>{analysis}</ReactMarkdown>
               </div>
             </>
           )}
         </div>
-      </div>
+      </Card>
     </div>
   )
 
   // Chat content (for right column or standalone)
   const chatContent = (
-    <div className="unified-chat-container">
+    <div className="flex flex-col h-full bg-background">
       <div
-        className="unified-chat-messages"
+        className="flex-1 overflow-y-auto p-4 space-y-2"
         ref={messagesContainerRef}
         onScroll={handleScroll}
       >
         {/* Loading history indicator */}
         {loadingHistory && (
-          <div className="chat-loading-history">
-            <div className="loading">Loading conversation history...</div>
+          <div className="flex items-center justify-center py-4">
+            <div className="text-sm text-muted-foreground">Loading conversation history...</div>
           </div>
         )}
 
@@ -793,24 +853,26 @@ const AnalysisChat = forwardRef(function AnalysisChat({ symbol, stockName, chatO
 
         {/* Streaming message */}
         {chatLoading && (
-          <div className="chat-message assistant streaming">
-            <div className="chat-message-header">
+          <div className="flex flex-col gap-1 mb-4 items-start">
+            <div className="text-xs text-muted-foreground px-2">
               {agentMode ? '🤖 Agent' : '📊 Analyst'}{agentThinking ? ` - ${agentThinking}` : ' Thinking...'}
             </div>
-            <div className="chat-message-content markdown-content">
+            <div className="rounded-lg px-4 py-3 max-w-[85%] bg-muted">
               {streamingMessage ? (
-                <ReactMarkdown remarkPlugins={[remarkGfm]} components={components}>{streamingMessage}</ReactMarkdown>
+                <div className="prose prose-sm max-w-none">
+                  <ReactMarkdown remarkPlugins={[remarkGfm]} components={components}>{streamingMessage}</ReactMarkdown>
+                </div>
               ) : (
-                <div className="chat-loading">
-                  <span className="typing-indicator">●</span>
-                  <span className="typing-indicator">●</span>
-                  <span className="typing-indicator">●</span>
+                <div className="flex gap-1">
+                  <span className="animate-pulse">●</span>
+                  <span className="animate-pulse delay-100">●</span>
+                  <span className="animate-pulse delay-200">●</span>
                 </div>
               )}
+              {streamingMessage && (
+                <span className="inline-block animate-pulse">▊</span>
+              )}
             </div>
-            {streamingMessage && (
-              <div className="streaming-cursor">▊</div>
-            )}
           </div>
         )}
 
@@ -819,8 +881,8 @@ const AnalysisChat = forwardRef(function AnalysisChat({ symbol, stockName, chatO
 
       {/* Scroll indicator arrow - shows when not at bottom */}
       {(showScrollIndicator || showScrollDown) && (
-        <div
-          className="scroll-indicator"
+        <button
+          className="absolute bottom-20 left-1/2 -translate-x-1/2 w-8 h-8 rounded-full bg-primary text-primary-foreground shadow-lg flex items-center justify-center hover:scale-110 transition-transform"
           onClick={() => {
             const container = messagesContainerRef.current
             if (container) {
@@ -829,62 +891,61 @@ const AnalysisChat = forwardRef(function AnalysisChat({ symbol, stockName, chatO
           }}
         >
           <span>↓</span>
-        </div>
+        </button>
       )}
 
       {/* Chat input - always visible at bottom */}
-      <div className="unified-chat-input-container">
+      <div className="p-4 border-t bg-background">
         {/* Agent Mode Toggle and New Chat - only show if feature flag is enabled */}
         {agentModeEnabled && (
-          <div className="agent-mode-controls">
+          <div className="flex items-center justify-between mb-3">
             {agentMode && (
-              <button
-                className="new-chat-button"
+              <Button
+                variant="ghost"
+                size="sm"
                 onClick={startNewChat}
                 disabled={chatLoading || messages.length === 0}
-                title="Start a new conversation"
+                className="text-muted-foreground"
               >
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="mr-1">
                   <path d="M12 5v14M5 12h14" />
                 </svg>
                 New Chat
-              </button>
+              </Button>
             )}
-            <div className="agent-mode-toggle">
-              <label className="toggle-label">
-                <input
-                  type="checkbox"
-                  checked={agentMode}
-                  onChange={(e) => {
-                    const newValue = e.target.checked
-                    setAgentMode(newValue)
-                    localStorage.setItem('agentModeEnabled', newValue.toString())
-                  }}
-                  disabled={chatLoading}
-                />
-                <span className="toggle-slider"></span>
-                <span className="toggle-text">🤖 Agent Mode {agentMode ? '(Beta)' : ''}</span>
+            <div className="flex items-center gap-2 ml-auto">
+              <Switch
+                id="agent-mode"
+                checked={agentMode}
+                onCheckedChange={(checked) => {
+                  setAgentMode(checked)
+                  localStorage.setItem('agentModeEnabled', checked.toString())
+                }}
+                disabled={chatLoading}
+              />
+              <label htmlFor="agent-mode" className="text-sm text-muted-foreground cursor-pointer">
+                Agent Mode {agentMode ? '(Beta)' : ''}
               </label>
             </div>
           </div>
         )}
-        <div className="chat-input-wrapper">
-          <textarea
+        <div className="flex gap-2">
+          <Textarea
             ref={inputRef}
-            className="chat-input"
             defaultValue=""
             onKeyDown={handleKeyPress}
             placeholder={agentMode ? "Ask complex questions (e.g., 'Compare to peers')" : "Ask anything"}
-            rows="2"
+            rows={2}
             disabled={chatLoading}
+            className="flex-1 resize-none"
           />
-          <button
-            className="chat-send-button"
+          <Button
             onClick={() => sendMessage()}
             disabled={chatLoading}
+            className="self-end"
           >
             {chatLoading ? '...' : 'Send'}
-          </button>
+          </Button>
         </div>
       </div>
     </div>
@@ -895,17 +956,26 @@ const AnalysisChat = forwardRef(function AnalysisChat({ symbol, stockName, chatO
     return chatContent
   }
 
+  // In hideChat mode, just render the analysis
+  if (hideChat) {
+    return (
+      <div className="w-full">
+        {analysisContent}
+      </div>
+    )
+  }
+
   // In full mode, use two-column layout
   return (
-    <div className="reports-layout">
+    <div className="flex flex-col lg:flex-row h-[calc(100vh-140px)] gap-6">
       {/* Left Column - Analysis Content (2/3) */}
-      <div className="reports-main-column">
+      <div className="hidden lg:flex lg:w-2/3 flex-col min-h-0">
         {analysisContent}
       </div>
 
       {/* Right Column - Chat Sidebar (1/3) */}
-      <div className="reports-chat-sidebar">
-        <div className="chat-sidebar-content">
+      <div className="flex-1 lg:w-1/3 flex flex-col min-h-0 border rounded-xl overflow-hidden bg-card shadow-sm">
+        <div className="flex-1 flex flex-col min-h-0">
           {chatContent}
         </div>
       </div>

@@ -2,34 +2,37 @@
 // ABOUTME: Displays charts, reports, analysis, and chat for a specific stock
 
 import { useState, useEffect } from 'react'
-import { useParams, useNavigate } from 'react-router-dom'
-import StockTableHeader from '../components/StockTableHeader'
-import StockTableRow from '../components/StockTableRow'
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom'
 import StockCharts from '../components/StockCharts'
+import StockHeader from '../components/StockHeader'
+import StockOverview from '../components/StockOverview'
 import StockReports from '../components/StockReports'
 import AnalysisChat from '../components/AnalysisChat'
-import AlgorithmSelector from '../components/AlgorithmSelector'
 import ErrorBoundary from '../components/ErrorBoundary'
 import DCFAnalysis from '../components/DCFAnalysis'
 import StockNews from '../components/StockNews'
 import MaterialEvents from '../components/MaterialEvents'
-import FutureOutlook from '../components/FutureOutlook'
-import SearchPopover from '../components/SearchPopover'
-import UserAvatar from '../components/UserAvatar'
+import WallStreetSentiment from '../components/WallStreetSentiment'
+import BusinessHealth from '../components/BusinessHealth'
 import TranscriptViewer from '../components/TranscriptViewer'
 import WordOnTheStreet from '../components/WordOnTheStreet'
+import { Badge } from '@/components/ui/badge'
+import { Skeleton } from '@/components/ui/skeleton'
+import { Button } from '@/components/ui/button'
+import { Card, CardContent } from "@/components/ui/card"
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 
 const API_BASE = '/api'
 
-export default function StockDetail({ watchlist, toggleWatchlist }) {
+export default function StockDetail({ watchlist, toggleWatchlist, algorithm }) {
   const { symbol } = useParams()
   const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
   const [stock, setStock] = useState(null)
   const [loading, setLoading] = useState(true)
-  const [activeTab, setActiveTab] = useState('charts')
+  // Read active tab from URL, default to 'overview'
+  const activeTab = searchParams.get('tab') || 'overview'
   const [periodType, setPeriodType] = useState('annual')
-  const [algorithm, setAlgorithm] = useState('weighted')
-
   // Data state
   const [historyData, setHistoryData] = useState(null)
   const [loadingHistory, setLoadingHistory] = useState(false)
@@ -71,7 +74,6 @@ export default function StockDetail({ watchlist, toggleWatchlist }) {
   }
 
 
-  // Load stock data
   // Load stock data
   useEffect(() => {
     const controller = new AbortController()
@@ -122,7 +124,6 @@ export default function StockDetail({ watchlist, toggleWatchlist }) {
   }, [])
 
   // Fetch history data
-  // Fetch history data
   useEffect(() => {
     if (!stock) return
 
@@ -154,8 +155,6 @@ export default function StockDetail({ watchlist, toggleWatchlist }) {
     return () => controller.abort()
   }, [stock, symbol, periodType])
 
-  // Fetch filings data
-  // Fetch filings data (Lazy load)
   // Fetch filings data (Lazy load)
   useEffect(() => {
     if (!stock || activeTab !== 'reports' || filingsData) return
@@ -188,8 +187,6 @@ export default function StockDetail({ watchlist, toggleWatchlist }) {
     return () => controller.abort()
   }, [stock, symbol, activeTab, filingsData])
 
-  // Fetch sections data
-  // Fetch sections data (Lazy load)
   // Fetch sections data (Lazy load)
   useEffect(() => {
     if (!stock || activeTab !== 'reports' || sectionsData) return
@@ -223,7 +220,6 @@ export default function StockDetail({ watchlist, toggleWatchlist }) {
   }, [stock, symbol, activeTab, sectionsData])
 
   // Fetch news data
-  // Fetch news data
   useEffect(() => {
     if (!stock) return
 
@@ -255,7 +251,6 @@ export default function StockDetail({ watchlist, toggleWatchlist }) {
     return () => controller.abort()
   }, [stock, symbol])
 
-  // Fetch material events data
   // Fetch material events data
   useEffect(() => {
     if (!stock) return
@@ -295,114 +290,45 @@ export default function StockDetail({ watchlist, toggleWatchlist }) {
 
 
   if (loading) {
-    return <div className="app"><div className="loading">Loading stock data...</div></div>
+    return (
+      <div className="p-6 space-y-4 w-full">
+        <Skeleton className="h-8 w-48" />
+        <Skeleton className="h-4 w-32" />
+        <div className="grid grid-cols-6 gap-4">
+          {[...Array(6)].map((_, i) => <Skeleton key={i} className="h-12" />)}
+        </div>
+      </div>
+    )
   }
 
   if (!stock) {
     return (
-      <div className="app">
-        <div className="error">Stock {symbol} not found</div>
-        <button onClick={() => navigate('/')}>Back to Stock List</button>
+      <div className="flex flex-col items-center justify-center p-12 space-y-4">
+        <Alert variant="destructive" className="max-w-md">
+          <AlertTitle>Error</AlertTitle>
+          <AlertDescription>Stock {symbol} not found or could not be loaded.</AlertDescription>
+        </Alert>
+        <Button onClick={() => navigate('/')}>Back to Stock List</Button>
       </div>
     )
   }
 
   return (
-    <div className="stock-detail-page">
-      {/* Sticky zone - controls and stock summary stick together */}
-      <div className="sticky-zone">
-        <div className="controls">
-          {/* All Stocks button */}
-          <button className="tab-button nav-button" onClick={() => navigate('/')}>
-            All Stocks
-          </button>
-
-          {/* Search popover for quick stock navigation */}
-          <SearchPopover onSelect={(sym) => navigate(`/stock/${sym}`)} />
-
-          {/* Center: Tab buttons */}
-          <div className="tab-button-group"><button
-            className={`tab-button ${activeTab === 'analysis' ? 'active' : ''}`}
-            onClick={() => setActiveTab('analysis')}
-          >
-            Brief
-          </button>
-            <button
-              className={`tab-button ${activeTab === 'charts' ? 'active' : ''}`}
-              onClick={() => setActiveTab('charts')}
-            >
-              Financials
-            </button>
-            <button
-              className={`tab-button ${activeTab === 'outlook' ? 'active' : ''}`}
-              onClick={() => setActiveTab('outlook')}
-            >
-              Forward Metrics
-            </button>
-            <button
-              className={`tab-button ${activeTab === 'dcf' ? 'active' : ''}`}
-              onClick={() => setActiveTab('dcf')}
-            >
-              DCF Analysis
-            </button>
-            <button
-              className={`tab-button ${activeTab === 'news' ? 'active' : ''}`}
-              onClick={() => setActiveTab('news')}
-            >
-              News
-            </button>
-            {redditEnabled && (
-              <button
-                className={`tab-button ${activeTab === 'reddit' ? 'active' : ''}`}
-                onClick={() => setActiveTab('reddit')}
-              >
-                Reddit
-              </button>
-            )}
-            <button
-              className={`tab-button ${activeTab === 'reports' ? 'active' : ''}`}
-              onClick={() => setActiveTab('reports')}
-            >
-              Quarterly & Annual Reports
-            </button>
-            <button
-              className={`tab-button ${activeTab === 'events' ? 'active' : ''}`}
-              onClick={() => setActiveTab('events')}
-            >
-              Material Event Filings
-            </button>
-            <button
-              className={`tab-button ${activeTab === 'transcript' ? 'active' : ''}`}
-              onClick={() => setActiveTab('transcript')}
-            >
-              Earnings Transcript
-            </button>
-          </div>
-
-          <UserAvatar />
-        </div>
-
-        {/* Stock summary row - part of sticky zone */}
-        <div className="stock-summary-section">
-          <div className="table-container">
-            <table className="stocks-table">
-              <StockTableHeader readOnly={true} />
-              <tbody>
-                <StockTableRow
-                  stock={stock}
-                  watchlist={watchlist}
-                  onToggleWatchlist={toggleWatchlist}
-                  readOnly={true}
-                />
-              </tbody>
-            </table>
-          </div>
-        </div>
-      </div>
+    <div className="flex flex-col w-full min-h-full space-y-6">
+      {/* Stock info header - reusing shared StockHeader */}
+      <StockHeader
+        stock={stock}
+        toggleWatchlist={toggleWatchlist}
+        watchlist={watchlist}
+      />
 
       {/* Content area - fills remaining space */}
       <ErrorBoundary>
-        <div className="stock-detail-content">
+        <div className="flex-1 w-full">
+          {activeTab === 'overview' && (
+            <StockOverview stock={stock} />
+          )}
+
           {activeTab === 'charts' && (
             <StockCharts historyData={historyData} loading={loadingHistory} symbol={symbol} />
           )}
@@ -431,11 +357,17 @@ export default function StockDetail({ watchlist, toggleWatchlist }) {
               symbol={stock.symbol}
               stockName={stock.company_name}
               agentModeEnabled={agentModeEnabled}
+              hideChat={true}
             />
           )}
 
-          {activeTab === 'outlook' && (
-            <FutureOutlook symbol={stock.symbol} />
+
+          {activeTab === 'sentiment' && (
+            <WallStreetSentiment symbol={stock.symbol} />
+          )}
+
+          {activeTab === 'health' && (
+            <BusinessHealth symbol={stock.symbol} />
           )}
 
           {activeTab === 'news' && (
@@ -450,7 +382,7 @@ export default function StockDetail({ watchlist, toggleWatchlist }) {
             <MaterialEvents eventsData={materialEventsData} loading={loadingMaterialEvents} symbol={stock.symbol} />
           )}
 
-          {activeTab === 'transcript' && (
+          {activeTab === 'transcripts' && (
             <TranscriptViewer symbol={symbol} />
           )}
         </div>

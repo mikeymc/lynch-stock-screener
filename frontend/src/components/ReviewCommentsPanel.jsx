@@ -2,6 +2,7 @@
 // ABOUTME: Sends batch of comments to AI for analysis, auto-clears after review
 
 import { useState } from 'react'
+import { Button } from "@/components/ui/button"
 
 export default function ReviewCommentsPanel({ comments, onReviewAll, onClearAll, isReviewing }) {
     const [expanded, setExpanded] = useState(true)
@@ -44,33 +45,35 @@ export default function ReviewCommentsPanel({ comments, onReviewAll, onClearAll,
     }
 
     return (
-        <div className="review-comments-panel">
+        <div className="bg-card border rounded-lg overflow-hidden my-4 shadow-sm">
             <div
-                className="review-panel-header"
+                className="flex items-center justify-between p-3 bg-muted/50 border-b cursor-pointer hover:bg-muted/80 transition-colors"
                 onClick={() => setExpanded(!expanded)}
             >
-                <span className="review-panel-title">
-                    💬 Comments ({comments.length})
+                <span className="font-semibold text-sm flex items-center gap-2">
+                    💬 Comments <span className="text-xs bg-primary text-primary-foreground px-1.5 py-0.5 rounded-full">{comments.length}</span>
                 </span>
-                <span className="review-panel-toggle">
-                    {expanded ? '▼' : '▶'}
+                <span className="text-muted-foreground text-xs">
+                    {expanded ? '▲' : '▶'}
                 </span>
             </div>
 
             {expanded && (
                 <>
-                    <div className="review-panel-list">
+                    <div className="max-h-[300px] overflow-y-auto p-3 space-y-2">
                         {comments.map((comment, idx) => (
-                            <div key={comment.id} className="review-panel-item">
-                                <div className="review-item-number">{idx + 1}</div>
-                                <div className="review-item-content">
-                                    <div className="review-item-section">
+                            <div key={comment.id} className="flex gap-3 p-3 bg-muted/30 rounded-md border border-transparent hover:border-border transition-colors">
+                                <div className="flex-shrink-0 w-6 h-6 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-xs font-bold shadow-sm">
+                                    {idx + 1}
+                                </div>
+                                <div className="flex-1 min-w-0">
+                                    <div className="text-[10px] uppercase tracking-wider text-muted-foreground mb-1 font-semibold">
                                         {sectionLabels[comment.sectionName] || comment.sectionName}
                                     </div>
-                                    <div className="review-item-excerpt">
+                                    <div className="text-xs italic text-muted-foreground mb-1 truncate border-l-2 border-primary/20 pl-2">
                                         "{truncate(comment.selectedText)}"
                                     </div>
-                                    <div className="review-item-comment">
+                                    <div className="text-sm">
                                         {comment.comment}
                                     </div>
                                 </div>
@@ -78,21 +81,24 @@ export default function ReviewCommentsPanel({ comments, onReviewAll, onClearAll,
                         ))}
                     </div>
 
-                    <div className="review-panel-actions">
-                        <button
-                            className="review-panel-clear"
+                    <div className="flex justify-end gap-2 p-3 bg-muted/50 border-t">
+                        <Button
+                            variant="outline"
+                            size="sm"
                             onClick={onClearAll}
                             disabled={isReviewing}
+                            className="h-8"
                         >
                             Clear All
-                        </button>
-                        <button
-                            className="review-panel-submit"
+                        </Button>
+                        <Button
+                            size="sm"
                             onClick={handleReviewClick}
                             disabled={isReviewing}
+                            className="h-8 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white border-0"
                         >
                             {isReviewing ? 'Reviewing...' : `Review All (${comments.length})`}
-                        </button>
+                        </Button>
                     </div>
                 </>
             )}

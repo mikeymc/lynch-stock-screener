@@ -72,44 +72,17 @@ export default function UserAvatar() {
       <button
         ref={buttonRef}
         onClick={() => setShowDropdown(!showDropdown)}
-        className="hover:opacity-80 transition-opacity focus:outline-none focus:ring-2 focus:ring-blue-500"
-        style={{
-          width: '24px',
-          height: '24px',
-          minWidth: '24px',
-          minHeight: '24px',
-          maxWidth: '24px',
-          maxHeight: '24px',
-          padding: 0,
-          borderRadius: '50%',
-          border: '2px solid #d1d5db',
-          overflow: 'hidden'
-        }}
+        className="hover:opacity-80 transition-opacity focus:outline-none focus:ring-2 focus:ring-blue-500 w-6 h-6 min-w-[24px] min-h-[24px] max-w-[24px] max-h-[24px] p-0 rounded-full border-2 border-gray-300 overflow-hidden"
         title={user.name || user.email}
       >
         {user.picture ? (
           <img
             src={user.picture}
             alt={user.name || 'User'}
-            style={{
-              width: '100%',
-              height: '100%',
-              objectFit: 'cover',
-              display: 'block'
-            }}
+            className="w-full h-full object-cover block"
           />
         ) : (
-          <div style={{
-            width: '100%',
-            height: '100%',
-            backgroundColor: '#3b82f6',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            color: 'white',
-            fontWeight: 'bold',
-            fontSize: '10px'
-          }}>
+          <div className="w-full h-full bg-blue-500 flex items-center justify-center text-white font-bold text-[10px]">
             {(user.name || user.email || '?')[0].toUpperCase()}
           </div>
         )}
@@ -118,26 +91,16 @@ export default function UserAvatar() {
       {showDropdown && createPortal(
         <div
           ref={dropdownRef}
-          className="rounded-md shadow-lg border"
+          className="rounded-md shadow-lg border border-slate-600 bg-slate-700 z-50"
           style={{
             position: 'fixed',
             top: `${dropdownPosition.top}px`,
-            left: `${dropdownPosition.left}px`,
-            zIndex: 1000,
-            backgroundColor: '#334155',
-            borderColor: '#475569'
+            left: `${dropdownPosition.left}px`
           }}
         >
           <button
             onClick={handleLogout}
-            className="block w-full text-left px-4 py-2 text-sm transition-colors whitespace-nowrap"
-            style={{
-              color: '#f1f5f9',
-              background: 'transparent',
-              padding: '0.5rem 1rem'
-            }}
-            onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#475569'}
-            onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
+            className="block w-full text-left px-4 py-2 text-sm transition-colors whitespace-nowrap text-slate-100 bg-transparent hover:bg-slate-700"
           >
             Sign out
           </button>

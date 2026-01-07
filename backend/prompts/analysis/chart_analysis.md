@@ -39,7 +39,12 @@ Here is the 5-year historical data:
 
 ## Output Format
 
-Provide your analysis in three sections with clear headers. Use markdown formatting. Each section should be 2-4 concise paragraphs. Connect your observations across sections (e.g., "The strong earnings growth translates directly to shareholder returns through dividend increases...").
+Provide your analysis in three sections with clear headers. **Formatting is critical**:
+1.  **Paragraphs**: Use **DOUBLE NEWLINES** between every paragraph. Do not write large blocks of text.
+2.  **Lists**: Use bullet points for listing metrics, observations, or lists of pros/cons to break up density.
+3.  **Readability**: Keep paragraphs concise (3-5 sentences max).
+
+Connect your observations across sections (e.g., "The strong earnings growth translates directly to shareholder returns through dividend increases...").
 
 ### Growth & Profitability
 

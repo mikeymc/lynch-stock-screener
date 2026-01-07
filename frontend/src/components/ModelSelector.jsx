@@ -1,5 +1,11 @@
 import { useState, useEffect } from 'react'
-import './ModelSelector.css'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 
 const API_BASE = '/api'
 
@@ -45,24 +51,22 @@ const ModelSelector = ({ selectedModel, onModelChange, storageKey }) => {
   }
 
   if (loading) {
-    return <div className="model-selector">Loading models...</div>
+    return <div className="text-sm text-muted-foreground">Loading models...</div>
   }
 
   return (
-    <div className="model-selector">
-      <select
-        id={`model-select-${storageKey}`}
-        value={selectedModel}
-        onChange={(e) => handleChange(e.target.value)}
-        className="model-dropdown"
-      >
+    <Select value={selectedModel} onValueChange={handleChange}>
+      <SelectTrigger className="w-[180px]">
+        <SelectValue placeholder="Select model" />
+      </SelectTrigger>
+      <SelectContent>
         {models.map(model => (
-          <option key={model} value={model}>
+          <SelectItem key={model} value={model}>
             {model}
-          </option>
+          </SelectItem>
         ))}
-      </select>
-    </div>
+      </SelectContent>
+    </Select>
   )
 }
 

@@ -3,7 +3,8 @@
 
 import { useState, useRef, useEffect, useCallback } from 'react'
 import { createPortal } from 'react-dom'
-import './SearchPopover.css'
+import { Input } from '@/components/ui/input'
+import { Button } from '@/components/ui/button'
 
 const API_BASE = '/api'
 
@@ -144,12 +145,12 @@ export default function SearchPopover({ onSelect }) {
   }, [])
 
   return (
-    <div className="search-popover-container" ref={containerRef}>
-      <div className="search-popover-input-wrapper" ref={inputWrapperRef}>
-        <input
+    <div className="relative" ref={containerRef}>
+      <div className="relative flex items-center" ref={inputWrapperRef}>
+        <Input
           ref={inputRef}
           type="text"
-          className="search-popover-input"
+          className="w-[200px] pr-8"
           value={query}
           onChange={handleInputChange}
           onKeyDown={handleKeyDown}
@@ -157,8 +158,10 @@ export default function SearchPopover({ onSelect }) {
           placeholder="Search..."
         />
         {query && (
-          <button
-            className="search-popover-clear"
+          <Button
+            variant="ghost"
+            size="sm"
+            className="absolute right-0 h-full px-2"
             onClick={() => {
               setQuery('')
               setResults([])
@@ -168,13 +171,13 @@ export default function SearchPopover({ onSelect }) {
             aria-label="Clear search"
           >
             ×
-          </button>
+          </Button>
         )}
       </div>
 
       {isOpen && results.length > 0 && createPortal(
         <div
-          className="search-popover-dropdown"
+          className="bg-popover border rounded-md shadow-md py-1 z-50 min-w-[200px]"
           ref={dropdownRef}
           style={{
             position: 'fixed',
@@ -185,12 +188,12 @@ export default function SearchPopover({ onSelect }) {
           {results.map((stock, index) => (
             <div
               key={stock.symbol}
-              className={`search-popover-item ${index === highlightedIndex ? 'highlighted' : ''}`}
+              className={`px-3 py-2 cursor-pointer flex gap-2 items-center ${index === highlightedIndex ? 'bg-accent' : 'hover:bg-muted'}`}
               onClick={() => handleSelect(stock)}
               onMouseEnter={() => setHighlightedIndex(index)}
             >
-              <span className="search-popover-symbol">{stock.symbol}</span>
-              <span className="search-popover-name">{stock.company_name}</span>
+              <span className="font-medium text-sm">{stock.symbol}</span>
+              <span className="text-sm text-muted-foreground truncate">{stock.company_name}</span>
             </div>
           ))}
         </div>,

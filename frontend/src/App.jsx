@@ -1,5 +1,6 @@
 import { useState, useMemo, useEffect, useRef, useCallback } from 'react'
 import { Routes, Route, useNavigate, useSearchParams } from 'react-router-dom'
+import AppShell from './components/layout/AppShell'
 import { Line } from 'react-chartjs-2'
 import {
   Chart as ChartJS,
@@ -12,18 +13,17 @@ import {
   Legend
 } from 'chart.js'
 import StockDetail from './pages/StockDetail'
-import StockTableHeader from './components/StockTableHeader'
+import StockHeader from './components/StockHeader'
 
 
 import AlgorithmTuning from './pages/AlgorithmTuning'
-import AlgorithmSelector from './components/AlgorithmSelector'
 import StatusBar from './components/StatusBar'
 import AdvancedFilter from './components/AdvancedFilter'
 import SearchPopover from './components/SearchPopover'
 import { useAuth } from './context/AuthContext'
 import LoginModal from './components/LoginModal'
 import UserAvatar from './components/UserAvatar'
-import './App.css'
+// import './App.css' // Disabled for shadcn migration
 
 ChartJS.register(
   CategoryScale,
@@ -109,7 +109,9 @@ function StockListView({
   sortBy, setSortBy,
   sortDir, setSortDir,
   watchlist, toggleWatchlist,
-  algorithm, setAlgorithm
+  algorithm, setAlgorithm,
+  algorithms,
+  showAdvancedFilters, setShowAdvancedFilters
 }) {
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
@@ -130,7 +132,6 @@ function StockListView({
     debtToEquity: { max: null },
     marketCap: { max: null }
   })
-  const [showAdvancedFilters, setShowAdvancedFilters] = useState(false)
 
   // Debounced search state
   const [searchLoading, setSearchLoading] = useState(false)
@@ -209,6 +210,7 @@ function StockListView({
 
     reEvaluateStocks()
   }, [algorithm])
+
 
   // Load advanced filters on mount
   useEffect(() => {
@@ -353,6 +355,72 @@ function StockListView({
       .catch(err => console.error('Error fetching stocks:', err))
       .finally(() => setSearchLoading(false))
   }, [searchQuery, currentPage, sortBy, sortDir, setStocks])
+
+
+  // Watchlist fetching logic
+  const prevFilterRef = useRef(filter)
+  useEffect(() => {
+    const prevFilter = prevFilterRef.current
+
+    // If switching to watchlist, fetch watchlist items manually
+    if (filter === 'watchlist') {
+      const fetchWatchlistItems = async () => {
+        setLoading(true)
+        setProgress('Loading watchlist...')
+
+        try {
+          if (watchlist.size === 0) {
+            setStocks([])
+            setLoading(false)
+            setProgress('')
+            return
+          }
+
+          const promises = Array.from(watchlist).map(async symbol => {
+            try {
+              const res = await fetch(`${API_BASE}/stock/${symbol}?algorithm=${algorithm}`)
+              if (!res.ok) return null
+              const data = await res.json()
+              // Flatten structure to match session results
+              if (data.stock_data && data.evaluation) {
+                return {
+                  ...data.stock_data,
+                  ...data.evaluation,
+                  // Ensure symbol is present
+                  symbol: data.stock_data.symbol || symbol
+                }
+              }
+              return null
+            } catch (e) {
+              console.error(`Failed to fetch ${symbol}`, e)
+              return null
+            }
+          })
+
+          const results = (await Promise.all(promises)).filter(item => item !== null)
+
+          setStocks(results)
+          setTotalPages(1) // Watchlist is single page for now
+          setTotalCount(results.length)
+        } catch (e) {
+          console.error('Error fetching watchlist:', e)
+          setError('Failed to load watchlist items')
+        } finally {
+          setLoading(false)
+          setProgress('')
+        }
+      }
+
+      fetchWatchlistItems()
+    }
+    // If switching FROM watchlist back to other filters, reload session data
+    else if (prevFilter === 'watchlist' && filter !== 'watchlist') {
+      fetchStocks({ page: 1 })
+      setCurrentPage(1)
+    }
+
+    prevFilterRef.current = filter
+  }, [filter, watchlist, algorithm, fetchStocks])
 
   // Debounced search handler - calls backend API after delay
   const handleSearchChange = useCallback((value) => {
@@ -688,6 +756,17 @@ function StockListView({
       }
 
       // Search is now handled by backend API - no frontend filter needed
+      // EXCEPT for watchlist mode which is client-side
+      if (filter === 'watchlist' && searchQuery) {
+        const query = searchQuery.toLowerCase()
+        const symbol = stock.symbol || ''
+        const name = stock.company_name || stock.company || ''
+        const matchesSymbol = symbol.toLowerCase().includes(query)
+        const matchesName = name.toLowerCase().includes(query)
+        if (!matchesSymbol && !matchesName) {
+          return false
+        }
+      }
 
       // Apply advanced filters
       // Region/Country filter
@@ -856,10 +935,10 @@ function StockListView({
   }
 
   return (
-    <div className="app stock-list-view">
-      {/* Sticky zone - controls + table header stick together */}
-      <div className="sticky-zone stock-list-sticky">
-        <div className="controls">
+    <div className="flex flex-col h-full">
+      {/* Controls bar */}
+      <div className="mb-4">
+        <div className="flex flex-wrap items-center gap-4">
           {isAdmin && (
             <div className="flex gap-2">
               {activeSessionId ? (
@@ -874,74 +953,14 @@ function StockListView({
             </div>
           )}
 
-          <div className="filter-controls">
-            <select value={filter} onChange={(e) => setFilter(e.target.value)}>
-              <option value="all">All</option>
-              <option value="watchlist">⭐ Watchlist</option>
-              {algorithm === 'classic' ? (
-                <>
-                  <option value="PASS">Pass Only</option>
-                  <option value="CLOSE">Close Only</option>
-                  <option value="FAIL">Fail Only</option>
-                </>
-              ) : (
-                <>
-                  <option value="STRONG_BUY">Excellent</option>
-                  <option value="BUY">Good</option>
-                  <option value="HOLD">Neutral</option>
-                  <option value="CAUTION">Weak</option>
-                  <option value="AVOID">Poor</option>
-                </>
-              )}
-            </select>
-          </div>
+          {/* Summary badges - removed as they are now in the sidebar */}
 
-          <SearchPopover onSelect={(sym) => navigate(`/stock/${sym}`)} />
-
-          {summary && (
-            <div className="summary-stats">
-              {algorithm === 'classic' ? (
-                <>
-                  <span className="summary-stat pass">{summary.passCount || 0} PASS</span>
-                  <span className="summary-stat close">{summary.closeCount || 0} CLOSE</span>
-                  <span className="summary-stat fail">{summary.failCount || 0} FAIL</span>
-                </>
-              ) : (
-                <>
-                  <span className="summary-stat strong-buy">{summary.strong_buy_count || 0} Excellent</span>
-                  <span className="summary-stat buy">{summary.buy_count || 0} Good</span>
-                  <span className="summary-stat hold">{summary.hold_count || 0} Neutral</span>
-                  <span className="summary-stat caution">{summary.caution_count || 0} Weak</span>
-                  <span className="summary-stat avoid">{summary.avoid_count || 0} Poor</span>
-                </>
-              )}
-            </div>
-          )}
-
-          <AlgorithmSelector
-            selectedAlgorithm={algorithm}
-            onAlgorithmChange={setAlgorithm}
-          />
-
-          <button
-            onClick={() => setShowAdvancedFilters(!showAdvancedFilters)}
-            className="filter-button"
-            title="Advanced Filters"
-          >
-            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"></polygon>
-            </svg>
-            {getActiveFilterCount() > 0 && (
-              <span className="filter-badge">{getActiveFilterCount()}</span>
-            )}
-          </button>
+          {/* Advanced Filters Button and Count moved to Header */}
 
           {isAdmin && (
             <button
               onClick={() => navigate('/tuning')}
-              className="settings-button"
-              title="Tune Algorithm"
-              style={{ marginLeft: '5px' }}
+              className="settings-button ml-1"
             >
               <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <line x1="4" y1="21" x2="4" y2="14"></line>
@@ -956,8 +975,6 @@ function StockListView({
               </svg>
             </button>
           )}
-
-          <UserAvatar />
         </div>
       </div>
 
@@ -985,73 +1002,28 @@ function StockListView({
 
       {filteredStocks.length > 0 && (
         <>
-          <div className="table-container stock-list-table">
-            <table className="stocks-table">
-              <StockTableHeader
-                sortBy={sortBy}
-                sortDir={sortDir}
-                onSort={toggleSort}
+          <div className="space-y-3 pb-4">
+            {/* Sort controls could go here if needed, or rely on sidebar/header filters */}
+            <div className="flex justify-end gap-2 text-sm text-muted-foreground mb-2 px-1">
+              <span>Sorted by {sortBy.replace('_', ' ')} ({sortDir})</span>
+              <button onClick={() => toggleSort(sortBy)} className="text-primary hover:underline">
+                Toggle Order
+              </button>
+            </div>
+
+            {filteredStocks.map(stock => (
+              <StockHeader
+                key={stock.symbol}
+                stock={stock}
+                toggleWatchlist={toggleWatchlist}
+                watchlist={watchlist}
+                className="mb-3"
+                onClick={() => navigate(`/stock/${stock.symbol}`)}
               />
-              <tbody>
-                {filteredStocks.map(stock => (
-                  <tr
-                    key={stock.symbol}
-                    onClick={() => handleStockClick(stock.symbol)}
-                    className="stock-row"
-                  >
-                    <td className="watchlist-cell" onClick={(e) => { e.stopPropagation(); toggleWatchlist(stock.symbol); }}>
-                      <span className={`watchlist-star ${watchlist.has(stock.symbol) ? 'checked' : ''}`}>
-                        ⭐
-                      </span>
-                    </td>
-                    <td><strong>{stock.symbol}</strong></td>
-                    <td>{stock.company_name || 'N/A'}</td>
-                    <td>{stock.country || 'N/A'}</td>
-                    <td>{typeof stock.market_cap === 'number' ? `$${(stock.market_cap / 1e9).toFixed(2)}B` : 'N/A'}</td>
-                    <td>{stock.sector || 'N/A'}</td>
-                    <td>{typeof stock.ipo_year === 'number' ? new Date().getFullYear() - stock.ipo_year : 'N/A'}</td>
-                    <td>{typeof stock.price === 'number' ? `$${stock.price.toFixed(2)}` : 'N/A'}</td>
-                    <td>{typeof stock.peg_ratio === 'number' ? stock.peg_ratio.toFixed(2) : 'N/A'}</td>
-                    <td>{typeof stock.pe_ratio === 'number' ? stock.pe_ratio.toFixed(2) : 'N/A'}</td>
-                    <td>{typeof stock.debt_to_equity === 'number' ? stock.debt_to_equity.toFixed(2) : 'N/A'}</td>
-                    <td>{typeof stock.institutional_ownership === 'number' ? `${(stock.institutional_ownership * 100).toFixed(1)}%` : 'N/A'}</td>
-                    <td>{typeof stock.revenue_cagr === 'number' ? `${stock.revenue_cagr.toFixed(1)}%` : 'N/A'}</td>
-                    <td>{typeof stock.earnings_cagr === 'number' ? `${stock.earnings_cagr.toFixed(1)}%` : 'N/A'}</td>
-                    <td>{typeof stock.dividend_yield === 'number' ? `${stock.dividend_yield.toFixed(1)}%` : 'N/A'}</td>
-                    <td>
-                      <StatusBar
-                        status={stock.pe_52_week_position !== null ? `${stock.pe_52_week_min?.toFixed(1)} - ${stock.pe_52_week_max?.toFixed(1)}` : 'N/A'}
-                        score={stock.pe_52_week_position !== null ? stock.pe_52_week_position : 50}
-                        value={stock.pe_ratio}
-                        metricType="pe_range"
-                      />
-                    </td>
-                    <td>
-                      <StatusBar
-                        status={stock.revenue_consistency_score !== null ? 'Revenue Consistency' : 'N/A'}
-                        score={stock.revenue_consistency_score || 50}
-                        value={stock.revenue_consistency_score}
-                        metricType="revenue_consistency"
-                      />
-                    </td>
-                    <td>
-                      <StatusBar
-                        status={stock.income_consistency_score !== null ? 'Income Consistency' : 'N/A'}
-                        score={stock.income_consistency_score || 50}
-                        value={stock.income_consistency_score}
-                        metricType="income_consistency"
-                      />
-                    </td>
-                    <td style={{ backgroundColor: getStatusColor(stock.overall_status), color: '#000', fontWeight: 'bold' }}>
-                      {formatStatusName(stock.overall_status)}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+            ))}
           </div>
 
-          <div className="pagination">
+          <div className="flex items-center justify-center gap-4 py-4">
             {totalPages > 1 && (
               <button
                 onClick={() => {
@@ -1060,11 +1032,12 @@ function StockListView({
                   fetchStocks({ page: newPage })
                 }}
                 disabled={currentPage === 1 || searchLoading}
+                className="px-4 py-2 text-sm font-medium border rounded-md bg-background hover:bg-accent disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 Previous
               </button>
             )}
-            <span className="page-info">
+            <span className="text-sm text-muted-foreground">
               Page {currentPage} of {totalPages}
             </span>
             {totalPages > 1 && (
@@ -1075,6 +1048,7 @@ function StockListView({
                   fetchStocks({ page: newPage })
                 }}
                 disabled={currentPage === totalPages || searchLoading}
+                className="px-4 py-2 text-sm font-medium border rounded-md bg-background hover:bg-accent disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 Next
               </button>
@@ -1117,6 +1091,25 @@ function App() {
   const [sortDir, setSortDir] = useState('asc')
   const [watchlist, setWatchlist] = useState(new Set())
   const [algorithm, setAlgorithm] = useState('weighted')
+  const [algorithms, setAlgorithms] = useState({})
+  const [showAdvancedFilters, setShowAdvancedFilters] = useState(false)
+
+  // Fetch algorithm metadata
+  useEffect(() => {
+    const controller = new AbortController()
+    // Fetch algorithm metadata from API
+    fetch(`${API_BASE}/algorithms`, { signal: controller.signal, credentials: 'include' })
+      .then(res => res.json())
+      .then(data => {
+        setAlgorithms(data)
+      })
+      .catch(err => {
+        if (err.name !== 'AbortError') {
+          console.error('Error fetching algorithms:', err)
+        }
+      })
+    return () => controller.abort()
+  }, [])
 
   // Load watchlist on mount
   useEffect(() => {
@@ -1183,37 +1176,54 @@ function App() {
 
   return (
     <Routes>
-      <Route path="/" element={
-        <StockListView
-          stocks={stocks}
-          setStocks={setStocks}
-          summary={summary}
-          setSummary={setSummary}
+      <Route element={
+        <AppShell
           filter={filter}
           setFilter={setFilter}
-          searchQuery={searchQuery}
-          setSearchQuery={setSearchQuery}
-          currentPage={currentPage}
-          setCurrentPage={setCurrentPage}
-          sortBy={sortBy}
-          setSortBy={setSortBy}
-          sortDir={sortDir}
-          setSortDir={setSortDir}
-          watchlist={watchlist}
-          toggleWatchlist={toggleWatchlist}
           algorithm={algorithm}
           setAlgorithm={setAlgorithm}
+          algorithms={algorithms}
+          summary={summary}
+          watchlistCount={watchlist.size}
+          showAdvancedFilters={showAdvancedFilters}
+          setShowAdvancedFilters={setShowAdvancedFilters}
         />
-      } />
-      <Route path="/stock/:symbol" element={
-        <StockDetail
-          watchlist={watchlist}
-          toggleWatchlist={toggleWatchlist}
-        />
-      } />
-
-
-      <Route path="/tuning" element={<AlgorithmTuning />} />
+      }>
+        <Route path="/" element={
+          <StockListView
+            stocks={stocks}
+            setStocks={setStocks}
+            summary={summary}
+            setSummary={setSummary}
+            filter={filter}
+            setFilter={setFilter}
+            searchQuery={searchQuery}
+            setSearchQuery={setSearchQuery}
+            currentPage={currentPage}
+            setCurrentPage={setCurrentPage}
+            sortBy={sortBy}
+            setSortBy={setSortBy}
+            sortDir={sortDir}
+            setSortDir={setSortDir}
+            watchlist={watchlist}
+            toggleWatchlist={toggleWatchlist}
+            algorithm={algorithm}
+            setAlgorithm={setAlgorithm}
+            algorithms={algorithms}
+            showAdvancedFilters={showAdvancedFilters}
+            setShowAdvancedFilters={setShowAdvancedFilters}
+          />
+        } />
+        <Route path="/stock/:symbol" element={
+          <StockDetail
+            watchlist={watchlist}
+            toggleWatchlist={toggleWatchlist}
+            algorithm={algorithm}
+            algorithms={algorithms}
+          />
+        } />
+        <Route path="/tuning" element={<AlgorithmTuning />} />
+      </Route>
     </Routes>
   )
 }

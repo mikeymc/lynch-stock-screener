@@ -1,71 +1,111 @@
-:root {
-  font-family: system-ui, Avenir, Helvetica, Arial, sans-serif;
-  line-height: 1.5;
-  font-weight: 400;
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
 
-  color-scheme: light dark;
-  color: rgba(255, 255, 255, 0.87);
-  background-color: #242424;
-
-  font-synthesis: none;
-  text-rendering: optimizeLegibility;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-}
-
-a {
-  font-weight: 500;
-  color: #646cff;
-  text-decoration: inherit;
-}
-
-a:hover {
-  color: #535bf2;
-}
-
-body {
-  margin: 0;
-  min-width: 320px;
-  min-height: 100vh;
-}
-
-h1 {
-  font-size: 3.2em;
-  line-height: 1.1;
-}
-
-button {
-  border-radius: 8px;
-  border: 1px solid transparent;
-  padding: 0.6em 1.2em;
-  font-size: 1em;
-  font-weight: 500;
-  font-family: inherit;
-  background-color: #1a1a1a;
-  cursor: pointer;
-  transition: border-color 0.25s;
-}
-
-button:hover {
-  border-color: #646cff;
-}
-
-button:focus,
-button:focus-visible {
-  outline: 4px auto -webkit-focus-ring-color;
-}
-
-@media (prefers-color-scheme: light) {
+@layer base {
   :root {
-    color: #213547;
-    background-color: #ffffff;
+    /* Paper Theme - Light Mode */
+    --background: 30 6% 98%;
+    /* #fafaf9 off-white */
+    --foreground: 209 44% 25%;
+    /* #1e3a5f deep navy */
+    --card: 0 0% 100%;
+    /* #ffffff white */
+    --card-foreground: 209 44% 25%;
+    /* #1e3a5f deep navy */
+    --popover: 0 0% 100%;
+    --popover-foreground: 209 44% 25%;
+    --primary: 209 44% 25%;
+    /* #1e3a5f deep navy */
+    --primary-foreground: 0 0% 100%;
+    --secondary: 215 16% 47%;
+    /* #64748b slate gray */
+    --secondary-foreground: 0 0% 100%;
+    --muted: 30 6% 96%;
+    --muted-foreground: 215 16% 47%;
+    /* #64748b slate gray */
+    --accent: 30 6% 96%;
+    --accent-foreground: 209 44% 25%;
+    --destructive: 0 72% 51%;
+    /* #dc2626 crimson (losses) */
+    --destructive-foreground: 0 0% 100%;
+    --border: 0 0% 90%;
+    /* #e5e5e5 light gray */
+    --input: 0 0% 90%;
+    --ring: 209 44% 25%;
+    /* Custom chart colors */
+    --chart-1: 160 84% 39%;
+    /* #059669 emerald (gains) */
+    --chart-2: 0 72% 51%;
+    /* #dc2626 crimson (losses) */
+    --chart-3: 209 44% 25%;
+    /* #1e3a5f deep navy */
+    --chart-4: 215 16% 47%;
+    /* #64748b slate */
+    --chart-5: 30 6% 70%;
+    /* muted */
+    --radius: 0.5rem;
+    /* Gains/Losses semantic colors */
+    --success: 160 84% 39%;
+    /* #059669 emerald */
+    --danger: 0 72% 51%;
+    /* #dc2626 crimson */
+    /* Sidebar */
+    --sidebar-background: 30 6% 98%;
+    --sidebar-foreground: 209 44% 25%;
+    --sidebar-primary: 209 44% 25%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 30 6% 94%;
+    --sidebar-accent-foreground: 209 44% 25%;
+    --sidebar-border: 0 0% 90%;
+    --sidebar-ring: 209 44% 25%;
   }
 
-  a:hover {
-    color: #747bff;
+  .dark {
+    /* Keep dark mode for future if needed */
+    --background: 20 14.3% 4.1%;
+    --foreground: 60 9.1% 97.8%;
+    --card: 20 14.3% 4.1%;
+    --card-foreground: 60 9.1% 97.8%;
+    --popover: 20 14.3% 4.1%;
+    --popover-foreground: 60 9.1% 97.8%;
+    --primary: 60 9.1% 97.8%;
+    --primary-foreground: 24 9.8% 10%;
+    --secondary: 12 6.5% 15.1%;
+    --secondary-foreground: 60 9.1% 97.8%;
+    --muted: 12 6.5% 15.1%;
+    --muted-foreground: 24 5.4% 63.9%;
+    --accent: 12 6.5% 15.1%;
+    --accent-foreground: 60 9.1% 97.8%;
+    --destructive: 0 62.8% 30.6%;
+    --destructive-foreground: 60 9.1% 97.8%;
+    --border: 12 6.5% 15.1%;
+    --input: 12 6.5% 15.1%;
+    --ring: 24 5.7% 82.9%;
+    --chart-1: 160 60% 45%;
+    --chart-2: 0 70% 50%;
+    --chart-3: 220 70% 50%;
+    --chart-4: 280 65% 60%;
+    --chart-5: 30 80% 55%;
+    --success: 160 60% 45%;
+    --danger: 0 70% 50%;
+    --sidebar-background: 240 5.9% 10%;
+    --sidebar-foreground: 240 4.8% 95.9%;
+    --sidebar-primary: 224.3 76.3% 48%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 240 3.7% 15.9%;
+    --sidebar-accent-foreground: 240 4.8% 95.9%;
+    --sidebar-border: 240 3.7% 15.9%;
+    --sidebar-ring: 217.2 91.2% 59.8%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
   }
 
-  button {
-    background-color: #f9f9f9;
+  body {
+    @apply bg-background text-foreground;
   }
 }

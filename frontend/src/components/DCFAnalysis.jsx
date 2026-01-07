@@ -1,7 +1,7 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Line } from 'react-chartjs-2';
 import DCFAIRecommendations, { DCFOptimizeButton } from './DCFAIRecommendations';
-import AnalysisChat from './AnalysisChat';
+// import AnalysisChat from './AnalysisChat'; // Removed for duplicate cleanup
 import {
   Chart as ChartJS,
   CategoryScale,
@@ -12,6 +12,20 @@ import {
   Tooltip,
   Legend
 } from 'chart.js';
+import {
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card"
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table"
 
 ChartJS.register(
   CategoryScale,
@@ -36,6 +50,42 @@ const calculateAverage = (values) => {
   return validValues.reduce((sum, val) => sum + val, 0) / validValues.length;
 };
 
+// Helper function to format large numbers as B (billions) or M (millions)
+const formatLargeValue = (value) => {
+  const absValue = Math.abs(value);
+  if (absValue >= 1000000000) {
+    return `$${(value / 1000000000).toFixed(2)}B`;
+  }
+  return `$${(value / 1000000).toFixed(0)}M`;
+};
+
+// Custom Legend Component - Matching StockCharts.jsx style
+const CustomLegend = ({ items }) => {
+  if (!items || items.length === 0) return null
+
+  return (
+    <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-2 mt-4 px-2">
+      {items.map((item, idx) => (
+        <div key={idx} className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+          <span
+            className="block"
+            style={{
+              width: item.type === 'rect' ? '12px' : '16px',
+              height: item.type === 'rect' ? '12px' : '2px',
+              borderRadius: item.type === 'rect' ? '2px' : '0',
+              backgroundColor: item.color,
+              border: item.border ? `1px solid ${item.borderColor}` : 'none',
+              borderStyle: item.dashed ? 'dashed' : 'solid',
+              borderColor: item.color
+            }}
+          />
+          <span>{item.label}</span>
+        </div>
+      ))}
+    </div>
+  )
+}
+
 const DCFAnalysis = ({ stockData, earningsHistory }) => {
   // Default assumptions
   const [assumptions, setAssumptions] = useState({
@@ -52,7 +102,6 @@ const DCFAnalysis = ({ stockData, earningsHistory }) => {
   const [error, setError] = useState(null);
   const [historicalMetrics, setHistoricalMetrics] = useState(null);
   const [showSensitivity, setShowSensitivity] = useState(false);
-  const chatRef = useRef(null);
 
   // AI Recommendations state (lifted from DCFAIRecommendations)
   const [aiRecommendations, setAiRecommendations] = useState(null);
@@ -378,7 +427,7 @@ const DCFAnalysis = ({ stockData, earningsHistory }) => {
       labels: allLabels,
       datasets: [
         {
-          label: 'Historical FCF',
+          label: 'Historical',
           data: historicalDataset,
           borderColor: '#3b82f6',
           backgroundColor: 'rgba(59, 130, 246, 0.1)',
@@ -386,7 +435,7 @@ const DCFAnalysis = ({ stockData, earningsHistory }) => {
           borderWidth: 2
         },
         {
-          label: 'Projected FCF',
+          label: 'Projected',
           data: projectionDataset,
           borderColor: '#10b981',
           backgroundColor: 'rgba(16, 185, 129, 0.1)',
@@ -403,32 +452,44 @@ const DCFAnalysis = ({ stockData, earningsHistory }) => {
     maintainAspectRatio: false,
     plugins: {
       legend: {
-        display: true,
-        labels: {
-          color: '#cbd5e1',
-          usePointStyle: true,
-          padding: 15
-        }
+        display: false
       },
       title: {
-        display: true,
+        display: false, // Moved to CardTitle for consistency
         text: 'Historical & Projected Free Cash Flow',
-        color: '#f1f5f9'
+        color: 'hsl(var(--foreground))'
       }
     },
     scales: {
+      x: {
+        ticks: {
+          color: '#64748b', // Slate gray for labels
+          autoSkip: false,
+          maxRotation: 45,
+          minRotation: 45
+        },
+        grid: {
+          color: 'rgba(100, 116, 139, 0.1)' // Light grid lines
+        }
+      },
       y: {
-        ticks: { color: '#94a3b8' },
-        grid: { color: '#334155' },
         title: {
           display: true,
           text: 'FCF ($M)',
-          color: '#94a3b8'
+          color: '#64748b'
+        },
+        ticks: {
+          color: '#64748b'
+        },
+        grid: {
+          color: (context) => {
+            // Hide default zero line so we can draw our own
+            if (Math.abs(context.tick.value) < 0.00001) {
+              return 'transparent';
+            }
+            return 'rgba(100, 116, 139, 0.1)'; // Light grid for Paper theme
+          }
         }
-      },
-      x: {
-        ticks: { color: '#94a3b8' },
-        grid: { color: '#334155' }
       }
     }
   };
@@ -456,91 +517,105 @@ const DCFAnalysis = ({ stockData, earningsHistory }) => {
   }
 
   return (
-    <div className="reports-layout">
-      {/* Left Column - DCF Content (2/3) */}
-      <div className="reports-main-column">
-        <div className="dcf-container">
-          {/* Historical FCF Chart with AI Optimize Button */}
-          {historicalMetrics && getChartData() && (
-            <div className="dcf-panel dcf-historical-chart" style={{ position: 'relative' }}>
+    <div className="w-full">
+      <div className="dcf-container">
+        {/* Historical FCF Chart with AI Optimize Button */}
+        {historicalMetrics && getChartData() && (
+          <Card className="mb-6 relative">
+            <CardHeader className="flex flex-col items-center gap-4 pb-4">
+              <CardTitle className="text-xl font-semibold text-center">Free Cash Flow</CardTitle>
+            </CardHeader>
+
+            <CardContent className="pt-0">
+              <div className="h-64">
+                <Line data={getChartData()} options={chartOptions} />
+              </div>
+              <CustomLegend items={[
+                { label: 'Historical', color: '#3b82f6' },
+                { label: 'Projected', color: '#10b981', dashed: true }
+              ]} />
+            </CardContent>
+          </Card>
+        )}
+
+        {/* AI Recommendations Panel (full display with scenarios and reasoning) */}
+        <DCFAIRecommendations
+          recommendations={aiRecommendations}
+          loading={aiLoading}
+          error={aiError}
+          selectedScenario={selectedScenario}
+          onScenarioSelect={setSelectedScenario}
+          onApplyScenario={applyScenario}
+        />
+
+        <div className="grid grid-cols-1 2xl:grid-cols-2 gap-6">
+          {/* Assumptions Panel */}
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle>Assumptions</CardTitle>
               <DCFOptimizeButton
                 loading={aiLoading}
                 hasRecommendations={!!aiRecommendations?.scenarios}
                 onGenerate={generateAiRecommendations}
               />
-              <div style={{ height: '250px' }}>
-                <Line data={getChartData()} options={chartOptions} />
-              </div>
-            </div>
-          )}
-
-          {/* AI Recommendations Panel (full display with scenarios and reasoning) */}
-          <DCFAIRecommendations
-            recommendations={aiRecommendations}
-            loading={aiLoading}
-            error={aiError}
-            selectedScenario={selectedScenario}
-            onScenarioSelect={setSelectedScenario}
-            onApplyScenario={applyScenario}
-          />
-
-          <div className="dcf-grid">
-            {/* Assumptions Panel */}
-            <div className="dcf-panel assumptions-panel">
-              <h3>Assumptions</h3>
+            </CardHeader>
+            <CardContent className="space-y-6">
 
               {/* Base Year Selection */}
               {historicalMetrics && (
-                <div className="assumption-group">
-                  <div className="assumption-header">
-                    <label>Base Year FCF</label>
-                    <span className="assumption-value">
-                      ${(analysis.baseFCF / 1000000).toFixed(0)}M
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm font-medium">Base Year FCF</span>
+                    <span className="text-sm font-bold text-primary">
+                      {formatLargeValue(analysis.baseFCF)}
                     </span>
                   </div>
-                  <div className="base-year-selector">
-                    <label className={baseYearMethod === 'latest' ? 'active' : ''}>
+                  <div className="flex flex-wrap gap-2">
+                    <label className={`flex items-center gap-2 px-3 py-1.5 rounded-md border cursor-pointer transition-colors ${baseYearMethod === 'latest' ? 'bg-primary/10 border-primary text-primary' : 'border-border hover:bg-muted'}`}>
                       <input
                         type="radio"
                         name="baseYear"
                         value="latest"
                         checked={baseYearMethod === 'latest'}
                         onChange={(e) => setBaseYearMethod(e.target.value)}
+                        className="sr-only"
                       />
-                      Latest Year ({historicalMetrics.annualHistory[0].year})
+                      <span className="text-sm">Latest Year ({historicalMetrics.annualHistory[0].year})</span>
                     </label>
                     {historicalMetrics.avg3 && (
-                      <label className={baseYearMethod === 'avg3' ? 'active' : ''}>
+                      <label className={`flex items-center gap-2 px-3 py-1.5 rounded-md border cursor-pointer transition-colors ${baseYearMethod === 'avg3' ? 'bg-primary/10 border-primary text-primary' : 'border-border hover:bg-muted'}`}>
                         <input
                           type="radio"
                           name="baseYear"
                           value="avg3"
                           checked={baseYearMethod === 'avg3'}
                           onChange={(e) => setBaseYearMethod(e.target.value)}
+                          className="sr-only"
                         />
-                        3-Year Average
+                        <span className="text-sm">3-Year Average</span>
                       </label>
                     )}
                     {historicalMetrics.avg5 && (
-                      <label className={baseYearMethod === 'avg5' ? 'active' : ''}>
+                      <label className={`flex items-center gap-2 px-3 py-1.5 rounded-md border cursor-pointer transition-colors ${baseYearMethod === 'avg5' ? 'bg-primary/10 border-primary text-primary' : 'border-border hover:bg-muted'}`}>
                         <input
                           type="radio"
                           name="baseYear"
                           value="avg5"
                           checked={baseYearMethod === 'avg5'}
                           onChange={(e) => setBaseYearMethod(e.target.value)}
+                          className="sr-only"
                         />
-                        5-Year Average
+                        <span className="text-sm">5-Year Average</span>
                       </label>
                     )}
                   </div>
                 </div>
               )}
 
-              <div className="assumption-group">
-                <div className="assumption-header">
-                  <label>Growth Rate (First 5 Years)</label>
-                  <span className="assumption-value">{assumptions.growthRate}%</span>
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-sm font-medium">Growth Rate (First 5 Years)</span>
+                  <span className="text-sm font-bold text-primary">{assumptions.growthRate}%</span>
                 </div>
                 <input
                   type="range"
@@ -548,60 +623,52 @@ const DCFAnalysis = ({ stockData, earningsHistory }) => {
                   max="30"
                   value={assumptions.growthRate}
                   onChange={(e) => handleAssumptionChange('growthRate', e.target.value)}
-                  className="assumption-slider"
+                  className="w-full h-2 bg-muted rounded-lg appearance-none cursor-pointer accent-primary"
                 />
                 {historicalMetrics && (
-                  <div className="historical-growth-rates">
-                    <small>Historical FCF Growth: </small>
+                  <p className="text-xs text-muted-foreground">
+                    Historical FCF Growth: {' '}
                     {historicalMetrics.cagr3 !== null && (
-                      <small>3yr: {historicalMetrics.cagr3.toFixed(1)}%</small>
+                      <span>3yr: {historicalMetrics.cagr3.toFixed(1)}%</span>
                     )}
                     {historicalMetrics.cagr5 !== null && (
-                      <small> | 5yr: {historicalMetrics.cagr5.toFixed(1)}%</small>
+                      <span> | 5yr: {historicalMetrics.cagr5.toFixed(1)}%</span>
                     )}
-                    {historicalMetrics.cagr10 !== null && (
-                      <small> | 10yr: {historicalMetrics.cagr10.toFixed(1)}%</small>
-                    )}
-                  </div>
+                  </p>
                 )}
               </div>
 
-              <div className="assumption-group">
-                <div className="assumption-header">
-                  <label>Discount Rate (WACC)</label>
-                  <span className="assumption-value">{assumptions.discountRate}%</span>
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-sm font-medium">Discount Rate (WACC)</span>
+                  <span className="text-sm font-bold text-primary">{assumptions.discountRate.toFixed(2)}%</span>
                 </div>
                 <input
                   type="range"
                   min="5"
                   max="20"
+                  step="0.1"
                   value={assumptions.discountRate}
                   onChange={(e) => handleAssumptionChange('discountRate', e.target.value)}
-                  className="assumption-slider"
+                  className="w-full h-2 bg-muted rounded-lg appearance-none cursor-pointer accent-primary"
                 />
                 {earningsHistory?.wacc && (
-                  <div className="wacc-breakdown">
-                    <small>
-                      <strong>Calculated WACC: {earningsHistory.wacc.wacc}%</strong>
-                      <span className="info-icon" title="Weighted Average Cost of Capital">ⓘ</span>
-                    </small>
-                    <small>
-                      • Cost of Equity: {earningsHistory.wacc.cost_of_equity}% (Beta: {earningsHistory.wacc.beta})
-                    </small>
-                    <small>
-                      • After-Tax Cost of Debt: {earningsHistory.wacc.after_tax_cost_of_debt}%
-                    </small>
-                    <small>
-                      • Capital Structure: {earningsHistory.wacc.equity_weight}% Equity / {earningsHistory.wacc.debt_weight}% Debt
-                    </small>
+                  <div className="text-xs text-muted-foreground space-y-1 p-3 bg-muted/50 rounded-md">
+                    <p className="font-semibold flex items-center gap-1">
+                      Calculated WACC: {earningsHistory.wacc.wacc}%
+                      <span className="cursor-help" title="Weighted Average Cost of Capital">ⓘ</span>
+                    </p>
+                    <p>• Cost of Equity: {earningsHistory.wacc.cost_of_equity}% (Beta: {earningsHistory.wacc.beta})</p>
+                    <p>• After-Tax Cost of Debt: {earningsHistory.wacc.after_tax_cost_of_debt}%</p>
+                    <p>• Capital Structure: {earningsHistory.wacc.equity_weight}% Equity / {earningsHistory.wacc.debt_weight}% Debt</p>
                   </div>
                 )}
               </div>
 
-              <div className="assumption-group">
-                <div className="assumption-header">
-                  <label>Terminal Growth Rate</label>
-                  <span className="assumption-value">{assumptions.terminalGrowthRate}%</span>
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-sm font-medium">Terminal Growth Rate</span>
+                  <span className="text-sm font-bold text-primary">{assumptions.terminalGrowthRate}%</span>
                 </div>
                 <input
                   type="range"
@@ -610,147 +677,154 @@ const DCFAnalysis = ({ stockData, earningsHistory }) => {
                   step="0.1"
                   value={assumptions.terminalGrowthRate}
                   onChange={(e) => handleAssumptionChange('terminalGrowthRate', e.target.value)}
-                  className="assumption-slider"
+                  className="w-full h-2 bg-muted rounded-lg appearance-none cursor-pointer accent-primary"
                 />
               </div>
-            </div>
+            </CardContent>
+          </Card>
 
-            {/* Results Panel */}
-            <div className="dcf-content">
-              <div className="dcf-panel results-panel">
-                <h3>Valuation Results</h3>
-                <div className="results-grid">
-                  <div className="result-card">
-                    <span className="result-label">Intrinsic Value</span>
-                    <span className="result-value highlight">${analysis.intrinsicValuePerShare.toFixed(2)}</span>
+          {/* Results Panel */}
+          <div className="space-y-6">
+            <Card>
+              <CardHeader>
+                <CardTitle>Valuation Results</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="flex flex-wrap items-center justify-between gap-4">
+                  <div className="flex-1 min-w-[120px] p-4 bg-muted/50 rounded-lg text-center">
+                    <p className="text-sm text-muted-foreground mb-1">Intrinsic Value</p>
+                    <p className="text-xl sm:text-2xl font-bold text-primary">${analysis.intrinsicValuePerShare.toFixed(2)}</p>
                   </div>
-                  <div className="result-card">
-                    <span className="result-label">Current Price</span>
-                    <span className="result-value">${stockData.price.toFixed(2)}</span>
+                  <div className="flex-1 min-w-[120px] p-4 bg-muted/50 rounded-lg text-center">
+                    <p className="text-sm text-muted-foreground mb-1">Current Price</p>
+                    <p className="text-xl sm:text-2xl font-semibold">${stockData.price.toFixed(2)}</p>
                   </div>
-                  <div className={`result-card ${analysis.upside > 0 ? 'positive' : 'negative'}`}>
-                    <span className="result-label">Upside / Downside</span>
-                    <span className="result-value">
-                      {analysis.upside > 0 ? '+' : ''}{analysis.upside.toFixed(2)}%
-                    </span>
+                  <div className={`flex-1 min-w-[120px] p-4 rounded-lg text-center ${analysis.upside > 0 ? 'bg-green-500/10' : 'bg-red-500/10'}`}>
+                    <p className="text-sm text-muted-foreground mb-1">Upside / Downside</p>
+                    <p className={`text-xl sm:text-2xl font-semibold ${analysis.upside > 0 ? 'text-green-600' : 'text-red-600'}`}>
+                      {analysis.upside > 0 ? '+' : ''}{analysis.upside.toFixed(0)}%
+                    </p>
                   </div>
                 </div>
-              </div>
+              </CardContent>
+            </Card>
 
-              <div className="dcf-panel projections-panel">
-                <h3>Projections</h3>
-                <div className="table-container">
-                  <table>
-                    <thead>
-                      <tr>
-                        <th>Year</th>
-                        <th align="right">Projected FCF</th>
-                        <th align="right">Discount Factor</th>
-                        <th align="right">Present Value</th>
-                      </tr>
-                    </thead>
-                    <tbody>
+            <Card>
+              <CardHeader>
+                <CardTitle>Projections</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="overflow-x-auto">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Year</TableHead>
+                        <TableHead className="text-right">Projected FCF</TableHead>
+                        <TableHead className="text-right">Discount Factor</TableHead>
+                        <TableHead className="text-right">Present Value</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
                       {analysis.projections.map((row) => (
-                        <tr key={row.year}>
-                          <td>{row.year}</td>
-                          <td align="right">${(row.fcf / 1000000).toFixed(0)}M</td>
-                          <td align="right">{row.discountFactor.toFixed(3)}</td>
-                          <td align="right">${(row.presentValue / 1000000).toFixed(0)}M</td>
-                        </tr>
+                        <TableRow key={row.year}>
+                          <TableCell>{row.year}</TableCell>
+                          <TableCell className="text-right">{formatLargeValue(row.fcf)}</TableCell>
+                          <TableCell className="text-right">{row.discountFactor.toFixed(3)}</TableCell>
+                          <TableCell className="text-right">{formatLargeValue(row.presentValue)}</TableCell>
+                        </TableRow>
                       ))}
-                      <tr className="summary-row">
-                        <td colSpan={3} align="right"><strong>Sum of PV of FCF</strong></td>
-                        <td align="right"><strong>${(analysis.totalPresentValue / 1000000).toFixed(0)}M</strong></td>
-                      </tr>
-                      <tr className="summary-row">
-                        <td colSpan={3} align="right">
-                          <strong>Terminal Value PV</strong>
-                          <span className="info-icon" title={`Terminal Value: $${(analysis.terminalValue / 1000000).toFixed(0)}M`}>ⓘ</span>
-                        </td>
-                        <td align="right"><strong>${(analysis.terminalValuePresent / 1000000).toFixed(0)}M</strong></td>
-                      </tr>
-                      <tr className="total-row">
-                        <td colSpan={3} align="right"><strong>Total Equity Value</strong></td>
-                        <td align="right"><strong>${(analysis.totalEquityValue / 1000000).toFixed(0)}M</strong></td>
-                      </tr>
-                    </tbody>
-                  </table>
+                      <TableRow className="font-bold bg-muted/50">
+                        <TableCell colSpan={3} className="text-right">Sum of PV of FCF</TableCell>
+                        <TableCell className="text-right">{formatLargeValue(analysis.totalPresentValue)}</TableCell>
+                      </TableRow>
+                      <TableRow className="font-bold bg-muted/50">
+                        <TableCell colSpan={3} className="text-right">
+                          <div className="flex items-center justify-end gap-1">
+                            Terminal Value PV
+                            <span className="text-xs text-muted-foreground" title={`Terminal Value: ${formatLargeValue(analysis.terminalValue)}`}>ⓘ</span>
+                          </div>
+                        </TableCell>
+                        <TableCell className="text-right">{formatLargeValue(analysis.terminalValuePresent)}</TableCell>
+                      </TableRow>
+                      <TableRow className="font-bold text-base border-t-2">
+                        <TableCell colSpan={3} className="text-right">Total Equity Value</TableCell>
+                        <TableCell className="text-right">{formatLargeValue(analysis.totalEquityValue)}</TableCell>
+                      </TableRow>
+                    </TableBody>
+                  </Table>
                 </div>
-              </div>
-            </div>
+              </CardContent>
+            </Card>
           </div>
+        </div>
 
-          {/* Sensitivity Analysis */}
-          <div className="dcf-panel">
-            <div
-              className="sensitivity-toggle"
-              onClick={() => setShowSensitivity(!showSensitivity)}
-            >
+        {/* Sensitivity Analysis */}
+        < Card className="mt-6" >
+          <CardHeader
+            className="cursor-pointer flex flex-row items-center space-y-0 pb-2"
+            onClick={() => setShowSensitivity(!showSensitivity)}
+          >
+            <CardTitle className="text-lg flex items-center gap-2">
               <span>{showSensitivity ? '▼' : '▶'}</span>
-              <h3>Sensitivity Analysis</h3>
-            </div>
-            {showSensitivity && (() => {
+              Sensitivity Analysis
+            </CardTitle>
+          </CardHeader>
+          {
+            showSensitivity && (() => {
               const sensitivity = calculateSensitivity();
               if (!sensitivity) return null;
 
               return (
-                <div className="sensitivity-content">
-                  <p style={{ color: '#94a3b8', fontSize: '0.9rem', marginBottom: '1rem' }}>
+                <CardContent className="fade-in-slide-down">
+                  <p className="text-sm text-muted-foreground mb-4">
                     Intrinsic value at different growth and discount rates (current assumption highlighted)
                   </p>
-                  <div className="table-container">
-                    <table className="sensitivity-table">
-                      <thead>
-                        <tr>
-                          <th>Discount Rate ↓ / Growth Rate →</th>
+                  <div className="rounded-md border">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Discount Rate ↓ / Growth Rate →</TableHead>
                           {sensitivity.growthRates.map(rate => (
-                            <th key={rate} align="center">{rate}%</th>
+                            <TableHead key={rate} className="text-center">{rate}%</TableHead>
                           ))}
-                        </tr>
-                      </thead>
-                      <tbody>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
                         {sensitivity.results.map(row => (
-                          <tr key={row.discountRate}>
-                            <td><strong>{row.discountRate}%</strong></td>
+                          <TableRow key={row.discountRate}>
+                            <TableCell className="font-semibold">{row.discountRate}%</TableCell>
                             {row.values.map((cell, idx) => {
                               const currentPrice = stockData.price;
                               const percentDiff = ((cell.value - currentPrice) / currentPrice) * 100;
+
                               let colorClass = '';
-                              if (percentDiff > 20) colorClass = 'sens-high';
-                              else if (percentDiff > 0) colorClass = 'sens-medium';
-                              else if (percentDiff > -20) colorClass = 'sens-low';
-                              else colorClass = 'sens-very-low';
+                              if (percentDiff > 20) colorClass = 'text-green-500 bg-green-500/10 font-bold';
+                              else if (percentDiff > 0) colorClass = 'text-green-600 bg-green-500/5';
+                              else if (percentDiff > -20) colorClass = 'text-orange-500 bg-orange-500/5';
+                              else colorClass = 'text-red-500 bg-red-500/10 font-bold';
 
                               return (
-                                <td
+                                <TableCell
                                   key={idx}
-                                  align="center"
-                                  className={`${colorClass} ${cell.isCurrent ? 'sens-current' : ''}`}
+                                  className={`text-center ${colorClass} ${cell.isCurrent ? 'ring-2 ring-primary' : ''}`}
                                 >
                                   ${cell.value.toFixed(0)}
-                                </td>
+                                </TableCell>
                               );
                             })}
-                          </tr>
+                          </TableRow>
                         ))}
-                      </tbody>
-                    </table>
+                      </TableBody>
+                    </Table>
                   </div>
-                </div>
+                </CardContent>
               );
-            })()}
-          </div>
+            })()
+          }
+        </Card >
 
-        </div>
-      </div>
-
-      {/* Right Column - Chat Sidebar (1/3) */}
-      <div className="reports-chat-sidebar">
-        <div className="chat-sidebar-content">
-          <AnalysisChat ref={chatRef} symbol={stockData.symbol} chatOnly={true} contextType="dcf" />
-        </div>
-      </div>
-    </div>
+      </div >
+    </div >
   );
 };
 

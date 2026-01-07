@@ -1,9 +1,7 @@
 // ABOUTME: Stock reports component displaying filing sections with AI summaries
-// ABOUTME: Two-column layout: reports left (2/3), chat right (1/3) with fixed input
+// ABOUTME: Full-width layout: reports and review panel
 
-import { useRef } from 'react'
 import FilingSections from './FilingSections'
-import AnalysisChat from './AnalysisChat'
 import ReviewCommentsPanel from './ReviewCommentsPanel'
 
 export default function StockReports({
@@ -18,18 +16,20 @@ export default function StockReports({
   onReviewComments,
   isReviewingComments
 }) {
-  const chatRef = useRef(null)
+  // Chat reference removed as AnalysisChat is now global
+  // const chatRef = useRef(null)
 
   // Handler to send review message to chat
   const handleReviewAll = (message) => {
-    if (chatRef.current?.sendMessage) {
-      // Hide user message bubble since it's from comment review, not chat input
-      chatRef.current.sendMessage(message, { hideUserMessage: true })
-      // Clear comments after sending
-      if (onClearComments) {
-        onClearComments()
-      }
-    }
+    // COMMENTED OUT: AnalysisChat removed from this component.
+    // The user should use the global sidebar chat for interactions.
+    // if (chatRef.current?.sendMessage) {
+    //   chatRef.current.sendMessage(message, { hideUserMessage: true })
+    //   if (onClearComments) {
+    //     onClearComments()
+    //   }
+    // }
+    console.log("Review request:", message);
   }
 
   if (loadingSections) {
@@ -41,9 +41,8 @@ export default function StockReports({
   }
 
   return (
-    <div className="reports-layout">
-      {/* Left Column - Reports Content (2/3) */}
-      <div className="reports-main-column">
+    <div className="w-full">
+      <div className="section-item">
         <FilingSections
           sections={sectionsData}
           symbol={symbol}
@@ -52,20 +51,12 @@ export default function StockReports({
           onAddComment={onAddComment}
         />
 
-        {/* Review Comments Panel - in reports column */}
         <ReviewCommentsPanel
           comments={comments}
           onReviewAll={handleReviewAll}
           onClearAll={onClearComments}
           isReviewing={isReviewingComments}
         />
-      </div>
-
-      {/* Right Column - Chat Sidebar (1/3) */}
-      <div className="reports-chat-sidebar">
-        <div className="chat-sidebar-content">
-          <AnalysisChat ref={chatRef} symbol={symbol} chatOnly={true} contextType="filings" />
-        </div>
       </div>
     </div>
   )

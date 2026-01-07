@@ -1298,6 +1298,17 @@ class Database:
             ON social_sentiment(score DESC)
         """)
 
+        # Migration: add conversation_json column for storing Reddit comments
+        cursor.execute("""
+            DO $$
+            BEGIN
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                               WHERE table_name = 'social_sentiment' AND column_name = 'conversation_json') THEN
+                    ALTER TABLE social_sentiment ADD COLUMN conversation_json JSONB;
+                END IF;
+            END $$;
+        """)
+
         conn.commit()
 
     def save_stock_basic(self, symbol: str, company_name: str, exchange: str, sector: str = None,
@@ -3960,19 +3971,26 @@ class Database:
         sql = """
             INSERT INTO social_sentiment 
             (id, symbol, source, subreddit, title, selftext, url, author, 
-             score, upvote_ratio, num_comments, sentiment_score, created_utc, published_at)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+             score, upvote_ratio, num_comments, sentiment_score, created_utc, published_at,
+             conversation_json)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             ON CONFLICT (id) DO UPDATE SET
                 score = EXCLUDED.score,
                 upvote_ratio = EXCLUDED.upvote_ratio,
                 num_comments = EXCLUDED.num_comments,
                 sentiment_score = EXCLUDED.sentiment_score,
+                conversation_json = EXCLUDED.conversation_json,
                 fetched_at = CURRENT_TIMESTAMP
         """
         
         count = 0
         for post in posts:
             try:
+                # Serialize conversation data to JSON
+                import json
+                conversation = post.get('conversation')
+                conversation_json = json.dumps(conversation) if conversation else None
+                
                 args = (
                     post.get('id'),
                     post.get('symbol'),
@@ -3988,6 +4006,7 @@ class Database:
                     post.get('sentiment_score'),
                     post.get('created_utc'),
                     post.get('created_at'),
+                    conversation_json,
                 )
                 self.write_queue.put((sql, args))
                 count += 1
@@ -4015,7 +4034,7 @@ class Database:
             cursor.execute("""
                 SELECT id, symbol, source, subreddit, title, selftext, url, author,
                        score, upvote_ratio, num_comments, sentiment_score, 
-                       created_utc, published_at, fetched_at
+                       created_utc, published_at, fetched_at, conversation_json
                 FROM social_sentiment
                 WHERE symbol = %s AND score >= %s
                 ORDER BY score DESC
@@ -4039,6 +4058,7 @@ class Database:
                 'created_utc': row[12],
                 'published_at': row[13].isoformat() if row[13] else None,
                 'fetched_at': row[14].isoformat() if row[14] else None,
+                'conversation': row[15],  # JSONB is auto-parsed by psycopg2
             } for row in rows]
         finally:
             self.return_connection(conn)

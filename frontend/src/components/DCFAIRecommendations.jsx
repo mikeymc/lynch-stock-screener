@@ -2,24 +2,16 @@
 // ABOUTME: Displays Conservative, Base Case, and Optimistic scenarios with reasoning
 
 import { useState } from 'react'
+import { Sparkles, Loader2 } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
+import { Card, CardContent } from '@/components/ui/card'
 
 // Overlay button component for rendering inside the chart
-export function DCFOptimizeButton({ loading, hasRecommendations, onGenerate }) {
+export function DCFOptimizeButton({ loading, hasRecommendations, onGenerate, className }) {
     if (loading) {
         return (
-            <div style={{
-                position: 'absolute',
-                top: '5px',
-                left: '10px',
-                padding: '0.5rem 1rem',
-                backgroundColor: '#1e293b',
-                borderRadius: '0.375rem',
-                border: '1px solid #334155',
-                color: '#94a3b8',
-                fontSize: '1rem',
-                zIndex: 10
-            }}>
+            <div className={`px-4 py-2 bg-slate-700 text-white rounded-md text-sm flex items-center gap-2 ${className || ''}`}>
+                <Loader2 className="h-4 w-4 animate-spin" />
                 Optimizing...
             </div>
         )
@@ -28,25 +20,10 @@ export function DCFOptimizeButton({ loading, hasRecommendations, onGenerate }) {
     return (
         <button
             onClick={onGenerate}
-            style={{
-                position: 'absolute',
-                top: '5px',
-                left: '10px',
-                padding: '0.5rem 1rem',
-                backgroundColor: '#8b5cf6',
-                color: 'white',
-                border: 'none',
-                borderRadius: '0.375rem',
-                cursor: 'pointer',
-                fontSize: '1rem',
-                fontWeight: '500',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '0.5rem',
-                zIndex: 10
-            }}
+            className={`px-4 py-2 bg-primary hover:bg-primary/90 text-primary-foreground shadow-sm rounded-md text-sm font-medium flex items-center gap-2 transition-colors ${className || ''}`}
         >
-            {hasRecommendations ? '🔄 Optimize' : '✨ Optimize'}
+            <Sparkles className="h-4 w-4" />
+            {hasRecommendations ? 'Re-Optimize' : 'Optimize'}
         </button>
     )
 }
@@ -63,9 +40,9 @@ export default function DCFAIRecommendations({
     const [reasoningExpanded, setReasoningExpanded] = useState(true)
 
     const scenarioLabels = {
-        conservative: { label: 'Conservative', icon: '🛡️', color: '#60a5fa' },
-        base: { label: 'Base Case', icon: '📊', color: '#4ade80' },
-        optimistic: { label: 'Optimistic', icon: '🚀', color: '#fbbf24' }
+        conservative: { label: 'Conservative' },
+        base: { label: 'Base Case' },
+        optimistic: { label: 'Optimistic' }
     }
 
     const hasRecommendations = recommendations?.scenarios
@@ -83,151 +60,97 @@ export default function DCFAIRecommendations({
     }
 
     return (
-        <div style={{ marginBottom: '1.5rem' }}>
+        <div className="mb-6">
             {/* Loading State */}
             {loading && (
-                <div style={{
-                    padding: '2rem',
-                    backgroundColor: '#1e293b',
-                    borderRadius: '0.5rem',
-                    border: '1px solid #334155',
-                    color: '#94a3b8',
-                    fontStyle: 'italic',
-                    textAlign: 'center'
-                }}>
-                    Generating DCF recommendation. Please wait. This could take up to a minute...
-                </div>
+                <Card>
+                    <CardContent className="py-8 text-center text-muted-foreground italic">
+                        <Loader2 className="h-6 w-6 animate-spin mx-auto mb-3" />
+                        Generating DCF recommendation. Please wait. This could take up to a minute...
+                    </CardContent>
+                </Card>
             )}
 
             {/* Error State */}
             {error && (
-                <div style={{
-                    padding: '1rem',
-                    backgroundColor: '#7f1d1d',
-                    borderRadius: '0.5rem',
-                    border: '1px solid #991b1b',
-                    color: '#fecaca'
-                }}>
+                <div className="p-4 rounded-lg bg-red-500/10 border border-red-500/20 text-red-600">
                     Error: {error}
                 </div>
             )}
 
             {/* Recommendations Display */}
             {hasRecommendations && !loading && (
-                <div style={{
-                    backgroundColor: '#1e293b',
-                    borderRadius: '0.5rem',
-                    border: '1px solid #334155',
-                    padding: '1rem'
-                }}>
-                    {/* Scenario Buttons */}
-                    <div style={{
-                        display: 'flex',
-                        gap: '0.75rem',
-                        marginBottom: '1rem'
-                    }}>
-                        {Object.entries(scenarioLabels).map(([key, { label, icon, color }]) => (
-                            <button
-                                key={key}
-                                onClick={() => handleScenarioSelect(key)}
-                                style={{
-                                    flex: 1,
-                                    padding: '0.75rem 1rem',
-                                    backgroundColor: selectedScenario === key ? color : '#334155',
-                                    color: selectedScenario === key ? '#0f172a' : '#e2e8f0',
-                                    border: selectedScenario === key ? `2px solid ${color}` : '2px solid transparent',
-                                    borderRadius: '0.5rem',
-                                    cursor: 'pointer',
-                                    fontSize: '0.95rem',
-                                    fontWeight: selectedScenario === key ? '600' : '400',
-                                    transition: 'all 0.2s ease',
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    justifyContent: 'center',
-                                    gap: '0.5rem'
-                                }}
-                            >
-                                <span>{icon}</span>
-                                <span>{label}</span>
-                            </button>
-                        ))}
-                    </div>
-
-                    {/* Selected Scenario Summary */}
-                    {recommendations.scenarios[selectedScenario] && (
-                        <div style={{
-                            display: 'grid',
-                            gridTemplateColumns: 'repeat(4, 1fr)',
-                            gap: '0.75rem',
-                            marginBottom: '1rem',
-                            padding: '0.75rem',
-                            backgroundColor: 'rgba(0,0,0,0.2)',
-                            borderRadius: '0.375rem'
-                        }}>
-                            <div style={{ textAlign: 'center' }}>
-                                <div style={{ fontSize: '0.75rem', color: '#94a3b8' }}>Growth Rate</div>
-                                <div style={{ fontSize: '1.1rem', fontWeight: '600', color: '#e2e8f0' }}>
-                                    {recommendations.scenarios[selectedScenario].growthRate}%
-                                </div>
-                            </div>
-                            <div style={{ textAlign: 'center' }}>
-                                <div style={{ fontSize: '0.75rem', color: '#94a3b8' }}>Discount Rate</div>
-                                <div style={{ fontSize: '1.1rem', fontWeight: '600', color: '#e2e8f0' }}>
-                                    {recommendations.scenarios[selectedScenario].discountRate}%
-                                </div>
-                            </div>
-                            <div style={{ textAlign: 'center' }}>
-                                <div style={{ fontSize: '0.75rem', color: '#94a3b8' }}>Terminal Growth</div>
-                                <div style={{ fontSize: '1.1rem', fontWeight: '600', color: '#e2e8f0' }}>
-                                    {recommendations.scenarios[selectedScenario].terminalGrowthRate}%
-                                </div>
-                            </div>
-                            <div style={{ textAlign: 'center' }}>
-                                <div style={{ fontSize: '0.75rem', color: '#94a3b8' }}>Base FCF</div>
-                                <div style={{ fontSize: '1.1rem', fontWeight: '600', color: '#e2e8f0' }}>
-                                    {recommendations.scenarios[selectedScenario].baseYearMethod === 'latest' ? 'Latest Year' :
-                                        recommendations.scenarios[selectedScenario].baseYearMethod === 'avg3' ? '3-Year Avg' : '5-Year Avg'}
-                                </div>
-                            </div>
-                        </div>
-                    )}
-
-                    {/* AI Reasoning */}
-                    {recommendations.reasoning && (
-                        <div>
-                            <div
-                                onClick={() => setReasoningExpanded(!reasoningExpanded)}
-                                style={{
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    gap: '0.5rem',
-                                    cursor: 'pointer',
-                                    marginBottom: reasoningExpanded ? '0.75rem' : 0,
-                                    color: '#94a3b8',
-                                    fontSize: '0.9rem'
-                                }}
-                            >
-                                <span>{reasoningExpanded ? '▼' : '▶'}</span>
-                                <span>AI Reasoning</span>
-                            </div>
-                            {reasoningExpanded && (
-                                <div
-                                    style={{
-                                        padding: '1rem',
-                                        backgroundColor: 'rgba(0,0,0,0.2)',
-                                        borderRadius: '0.375rem',
-                                        fontSize: '0.9rem',
-                                        lineHeight: '1.6',
-                                        color: '#cbd5e1'
-                                    }}
-                                    className="ai-reasoning-content"
+                <Card>
+                    <CardContent className="pt-6 space-y-4">
+                        {/* Scenario Buttons */}
+                        <div className="grid grid-cols-3 gap-3">
+                            {Object.entries(scenarioLabels).map(([key, { label }]) => (
+                                <button
+                                    key={key}
+                                    onClick={() => handleScenarioSelect(key)}
+                                    className={`py-3 px-4 rounded-lg font-medium transition-all flex items-center justify-center
+                                        ${selectedScenario === key
+                                            ? 'bg-primary text-primary-foreground shadow-sm'
+                                            : 'bg-muted hover:bg-muted/80 text-foreground'
+                                        }`}
                                 >
-                                    <ReactMarkdown>{recommendations.reasoning}</ReactMarkdown>
-                                </div>
-                            )}
+                                    {label}
+                                </button>
+                            ))}
                         </div>
-                    )}
-                </div>
+
+                        {/* Selected Scenario Summary */}
+                        {recommendations.scenarios[selectedScenario] && (
+                            <div className="grid grid-cols-4 gap-3 p-4 bg-muted/50 rounded-lg">
+                                <div className="text-center">
+                                    <div className="text-xs text-muted-foreground mb-1">Growth Rate</div>
+                                    <div className="text-lg font-semibold">
+                                        {recommendations.scenarios[selectedScenario].growthRate}%
+                                    </div>
+                                </div>
+                                <div className="text-center">
+                                    <div className="text-xs text-muted-foreground mb-1">Discount Rate</div>
+                                    <div className="text-lg font-semibold">
+                                        {recommendations.scenarios[selectedScenario].discountRate}%
+                                    </div>
+                                </div>
+                                <div className="text-center">
+                                    <div className="text-xs text-muted-foreground mb-1">Terminal Growth</div>
+                                    <div className="text-lg font-semibold">
+                                        {recommendations.scenarios[selectedScenario].terminalGrowthRate}%
+                                    </div>
+                                </div>
+                                <div className="text-center">
+                                    <div className="text-xs text-muted-foreground mb-1">Base FCF</div>
+                                    <div className="text-lg font-semibold">
+                                        {recommendations.scenarios[selectedScenario].baseYearMethod === 'latest' ? 'Latest Year' :
+                                            recommendations.scenarios[selectedScenario].baseYearMethod === 'avg3' ? '3-Year Avg' : '5-Year Avg'}
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* AI Reasoning */}
+                        {recommendations.reasoning && (
+                            <div>
+                                <button
+                                    onClick={() => setReasoningExpanded(!reasoningExpanded)}
+                                    className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors mb-3"
+                                >
+                                    <span>{reasoningExpanded ? '▼' : '▶'}</span>
+                                    <span>AI Reasoning</span>
+                                </button>
+                                {reasoningExpanded && (
+                                    <div className="p-4 bg-muted/50 rounded-lg text-sm leading-relaxed">
+                                        <div className="prose prose-sm dark:prose-invert max-w-none [&>p]:mb-4 [&>p:last-child]:mb-0 [&>ul]:mb-4 [&>ol]:mb-4">
+                                            <ReactMarkdown>{recommendations.reasoning}</ReactMarkdown>
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+                        )}
+                    </CardContent>
+                </Card>
             )}
         </div>
     )

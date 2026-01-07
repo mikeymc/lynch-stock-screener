@@ -548,6 +548,51 @@ def get_stock(symbol):
 
 
 
+@app.route('/api/stock/<symbol>/insider', methods=['GET'])
+@require_user_auth
+def get_stock_insider_trades(symbol, user_id):
+    """
+    Get insider trades for a dedicated page.
+    """
+    symbol = symbol.upper()
+    
+    # Get all trades
+    trades = db.get_insider_trades(symbol)
+    
+    # Calculate net buying (last 6 months)
+    six_months_ago = datetime.now() - timedelta(days=180)
+    net_buying = 0
+    
+    for t in trades:
+        t_date = datetime.strptime(t['transaction_date'], '%Y-%m-%d')
+        if t_date >= six_months_ago:
+            shares = t.get('shares') or 0
+            price = t.get('price_per_share') or 0
+            value = t.get('value') or (shares * price)
+            
+            # Form 4 transaction codes: P=Purchase, S=Sale
+            code = t.get('transaction_code', '')
+            is_purchase = code == 'P'
+            is_sale = code == 'S'
+            
+            # Fallback to transaction_type if code missing
+            if not code:
+                t_type = t.get('transaction_type', '').lower()
+                is_purchase = 'buy' in t_type or 'purchase' in t_type
+                is_sale = 'sell' in t_type or 'sale' in t_type
+
+            if is_purchase:
+                net_buying += value
+            elif is_sale:
+                net_buying -= value
+                
+    return jsonify({
+        'symbol': symbol,
+        'trades': trades,
+        'insider_net_buying_6m': net_buying
+    })
+
+
 @app.route('/api/stock/<symbol>/outlook', methods=['GET'])
 def get_stock_outlook(symbol):
     """

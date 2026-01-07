@@ -826,12 +826,13 @@ class LynchAnalyst:
         # Format the prompt
         final_prompt = prompt_template.format(**template_vars)
 
-        # Generate response
+        # Generate response with higher token limit to avoid truncation
         response = self.client.models.generate_content(
             model=model_version,
             contents=final_prompt,
             config=GenerateContentConfig(
-                response_mime_type="application/json"
+                response_mime_type="application/json",
+                max_output_tokens=8192  # Increased to allow full reasoning
             )
         )
 

@@ -26,26 +26,10 @@ export default function LoginModal() {
   };
 
   return (
-    <div style={{
-      position: 'fixed',
-      top: 0,
-      left: 0,
-      right: 0,
-      bottom: 0,
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'center'
-    }}>
+    <div className="fixed inset-0 flex items-center justify-center">
       <div
         onClick={loading ? undefined : handleGoogleLogin}
-        style={{
-          fontSize: '40px',
-          color: '#e2e8f0',
-          cursor: 'pointer',
-          userSelect: 'none'
-        }}
-        onMouseEnter={(e) => e.target.style.opacity = '0.7'}
-        onMouseLeave={(e) => e.target.style.opacity = '1'}
+        className={`text-[40px] text-slate-200 cursor-pointer select-none transition-opacity hover:opacity-70 ${loading ? '' : 'active:opacity-100'}`}
       >
         {loading ? 'Signing in...' : 'Sign In'}
       </div>

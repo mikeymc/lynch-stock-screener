@@ -1,5 +1,7 @@
 // ABOUTME: Component to generate and display unified chart analysis for all three sections
 import { useState, useEffect } from 'react'
+import { Sparkles, RefreshCw } from 'lucide-react'
+import { Button } from '@/components/ui/button'
 
 export default function UnifiedChartAnalysis({ symbol, onAnalysisGenerated }) {
     const [sections, setSections] = useState({ growth: null, cash: null, valuation: null })
@@ -74,52 +76,37 @@ export default function UnifiedChartAnalysis({ symbol, onAnalysisGenerated }) {
     const hasAnyAnalysis = sections.growth || sections.cash || sections.valuation
 
     return (
-        <div style={{ marginBottom: '2rem' }}>
-            <div style={{ display: 'flex', justifyContent: 'flex-start', alignItems: 'center', gap: '1rem', marginBottom: '1rem' }}>
+        <div className="mb-8">
+            <div className="flex justify-start items-center gap-4 mb-4">
                 {!loading && (
-                    <button
+                    <Button
                         onClick={() => generateAnalysis(hasAnyAnalysis)}
-                        style={{
-                            padding: '0.5rem 1rem',
-                            backgroundColor: '#3b82f6',
-                            color: 'white',
-                            border: 'none',
-                            borderRadius: '0.375rem',
-                            cursor: 'pointer',
-                            fontSize: '1rem',
-                            fontWeight: '500',
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '0.5rem'
-                        }}
+                        className="gap-2"
+                        size="sm"
                     >
-                        {hasAnyAnalysis ? '🔄 Re-Analyze' : '✨ Analyze'}
-                    </button>
+                        {hasAnyAnalysis ? (
+                            <>
+                                <RefreshCw className="h-4 w-4" />
+                                Re-Analyze
+                            </>
+                        ) : (
+                            <>
+                                <Sparkles className="h-4 w-4" />
+                                Analyze
+                            </>
+                        )}
+                    </Button>
                 )}
             </div>
 
             {loading && (
-                <div style={{
-                    padding: '2rem',
-                    backgroundColor: '#1e293b',
-                    borderRadius: '0.5rem',
-                    border: '1px solid #334155',
-                    color: '#94a3b8',
-                    fontStyle: 'italic',
-                    textAlign: 'center'
-                }}>
+                <div className="p-8 bg-muted rounded-lg border border-border text-muted-foreground italic text-center animate-pulse">
                     Generating analysis. Please wait. This could take up to a minute...
                 </div>
             )}
 
             {error && (
-                <div style={{
-                    padding: '1rem',
-                    backgroundColor: '#7f1d1d',
-                    borderRadius: '0.5rem',
-                    border: '1px solid #991b1b',
-                    color: '#fecaca'
-                }}>
+                <div className="p-4 bg-destructive/10 rounded-lg border border-destructive/20 text-destructive">
                     Error: {error}
                 </div>
             )}

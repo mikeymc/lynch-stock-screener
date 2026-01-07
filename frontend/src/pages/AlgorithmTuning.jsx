@@ -368,7 +368,7 @@ export default function AlgorithmTuning() {
                             {renderSlider('revenue_growth_good', 'Good Revenue Growth', 5, 20, 0.5)}
                             {renderSlider('revenue_growth_fair', 'Fair Revenue Growth', 0, 15, 0.5)}
 
-                            <h4 style={{ marginTop: '1rem' }}>Income Growth (CAGR %)</h4>
+                            <h4 className="mt-4">Income Growth (CAGR %)</h4>
                             {renderSlider('income_growth_excellent', 'Excellent Income Growth', 10, 25, 0.5)}
                             {renderSlider('income_growth_good', 'Good Income Growth', 5, 20, 0.5)}
                             {renderSlider('income_growth_fair', 'Fair Income Growth', 0, 15, 0.5)}
@@ -422,7 +422,7 @@ export default function AlgorithmTuning() {
                                 : optimizationProgress?.stage === 'clearing_cache' ? '🔄 Clearing cache...'
                                     : optimizationProgress?.stage === 'revalidating' ? '🔄 Running validation...'
                                         : '🔄 Starting...')
-                            : '✨ Auto-Optimize'}
+                            : <><Sparkles className="mr-2 h-4 w-4" /> Auto-Optimize</>}
                     </button>
 
                     {/* Live Optimization Progress */}
@@ -458,12 +458,12 @@ export default function AlgorithmTuning() {
                                             {renderLiveSlider('weight_debt', 'Debt Weight', 0, 1, 0.01, true)}
                                             {renderLiveSlider('weight_ownership', 'Ownership', 0, 1, 0.01, true)}
 
-                                            <h5 style={{ marginTop: '1.5rem' }}>PEG Thresholds</h5>
+                                            <h5 className="mt-6">PEG Thresholds</h5>
                                             {renderLiveSlider('peg_excellent', 'PEG Excellent', 0.5, 1.5, 0.05)}
                                             {renderLiveSlider('peg_good', 'PEG Good', 1.0, 2.5, 0.05)}
                                             {renderLiveSlider('peg_fair', 'PEG Fair', 1.5, 3.0, 0.05)}
 
-                                            <h5 style={{ marginTop: '1.5rem' }}>Debt Thresholds</h5>
+                                            <h5 className="mt-6">Debt Thresholds</h5>
                                             {renderLiveSlider('debt_excellent', 'Debt Excellent', 0.2, 1.0, 0.05)}
                                             {renderLiveSlider('debt_good', 'Debt Good', 0.5, 1.5, 0.05)}
                                             {renderLiveSlider('debt_moderate', 'Debt Moderate', 1.0, 3.0, 0.05)}
@@ -474,12 +474,12 @@ export default function AlgorithmTuning() {
                                             {renderLiveSlider('revenue_growth_good', 'Rev Good', 5, 20, 0.5)}
                                             {renderLiveSlider('revenue_growth_fair', 'Rev Fair', 0, 15, 0.5)}
 
-                                            <div style={{ height: '0.5rem' }}></div>
+                                            <div className="h-2"></div>
                                             {renderLiveSlider('income_growth_excellent', 'Inc Excellent', 10, 25, 0.5)}
                                             {renderLiveSlider('income_growth_good', 'Inc Good', 5, 20, 0.5)}
                                             {renderLiveSlider('income_growth_fair', 'Inc Fair', 0, 15, 0.5)}
 
-                                            <h5 style={{ marginTop: '1.5rem' }}>Ownership</h5>
+                                            <h5 className="mt-6">Ownership</h5>
                                             {renderLiveSlider('inst_own_min', 'Min Ownership', 0, 0.6, 0.01, true)}
                                             {renderLiveSlider('inst_own_max', 'Max Ownership', 0.5, 1.1, 0.01, true)}
                                         </div>
@@ -626,10 +626,9 @@ export default function AlgorithmTuning() {
                                     <span className="component-name">{component.replace('_score', '').toUpperCase()}</span>
                                     <div className="bar-container">
                                         <div
-                                            className="bar-fill"
+                                            className={`bar-fill ${corr.coefficient > 0 ? 'bg-green-400' : 'bg-red-400'}`}
                                             style={{
-                                                width: `${Math.abs(corr.coefficient || 0) * 100}%`,
-                                                backgroundColor: (corr.coefficient || 0) > 0 ? '#4ade80' : '#ef4444'
+                                                width: `${Math.abs(corr.coefficient || 0) * 100}%`
                                             }}
                                         />
                                     </div>

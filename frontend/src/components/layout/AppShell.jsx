@@ -1,0 +1,484 @@
+// ABOUTME: Main app shell layout with dual sidebars
+// ABOUTME: Left sidebar for navigation, right sidebar for chat
+
+import { useState, useEffect } from 'react'
+import { Outlet, useLocation, useNavigate, useParams } from 'react-router-dom'
+import { MessageSquare } from 'lucide-react'
+import AnalysisChat from '@/components/AnalysisChat'
+import SearchPopover from '@/components/SearchPopover'
+import UserAvatar from '@/components/UserAvatar'
+import {
+    Sidebar,
+    SidebarContent,
+    SidebarGroup,
+    SidebarGroupContent,
+    SidebarGroupLabel,
+    SidebarHeader,
+    SidebarMenu,
+    SidebarMenuButton,
+    SidebarMenuItem,
+    SidebarProvider,
+    SidebarTrigger,
+    SidebarInset,
+} from '@/components/ui/sidebar'
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
+import { Button } from '@/components/ui/button'
+import { ScrollArea } from '@/components/ui/scroll-area'
+import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet'
+
+// Icons
+const ChevronDown = () => <span className="text-xs">▼</span>
+const ChevronRight = () => <span className="text-xs">▶</span>
+const TrendingUp = () => <span>📈</span>
+
+export default function AppShell({
+    filter, setFilter,
+    algorithm, setAlgorithm,
+    algorithms = {},
+    summary = {},
+    watchlistCount = 0,
+    showAdvancedFilters, setShowAdvancedFilters
+}) {
+    const location = useLocation()
+    const navigate = useNavigate()
+    const { symbol } = useParams()
+    const [chatOpen, setChatOpen] = useState(false)
+    const [screenerOpen, setScreenerOpen] = useState(true)
+    const [scoringOpen, setScoringOpen] = useState(false)
+    const [filterOpen, setFilterOpen] = useState(true)
+    const [analysisOpen, setAnalysisOpen] = useState(true)
+    const [isLargeScreen, setIsLargeScreen] = useState(false)
+
+    // Detect screen size for responsive chat sidebar
+    useEffect(() => {
+        const mediaQuery = window.matchMedia('(min-width: 1024px)')
+        setIsLargeScreen(mediaQuery.matches)
+
+        const handler = (e) => setIsLargeScreen(e.matches)
+        mediaQuery.addEventListener('change', handler)
+        return () => mediaQuery.removeEventListener('change', handler)
+    }, [])
+
+    const isStockDetail = location.pathname.startsWith('/stock/')
+
+    const getCount = (statusKey) => {
+        if (!summary) return 0
+        const map = {
+            'PASS': 'passCount',
+            'CLOSE': 'closeCount',
+            'FAIL': 'failCount',
+            'STRONG_BUY': 'strong_buy_count',
+            'BUY': 'buy_count',
+            'HOLD': 'hold_count',
+            'CAUTION': 'caution_count',
+            'AVOID': 'avoid_count'
+        }
+        return summary[map[statusKey]] || 0
+    }
+
+    // Determine chat context
+    const chatSymbol = isStockDetail ? symbol : null
+    const chatContext = isStockDetail ? 'general' : 'market' // 'market' context for main page
+    const chatTitle = chatSymbol ? `AI Assistant - ${chatSymbol}` : 'Analyst'
+
+    return (
+        <SidebarProvider>
+            <div className="flex h-screen w-full overflow-hidden">
+                {/* Left Sidebar - Navigation */}
+                <Sidebar className="border-r">
+                    <SidebarHeader className="p-4">
+                        <div className="flex items-center gap-2">
+                            <img src="/papertree_icon.svg" className="h-6 w-6" alt="Logo" />
+                            <span className="font-semibold text-lg tracking-tight">papertree.ai</span>
+                        </div>
+                    </SidebarHeader>
+
+                    <SidebarContent>
+                        <ScrollArea className="h-full">
+
+                            {/* Primary Navigation - Always Visible */}
+                            <SidebarGroup>
+                                <SidebarGroupContent>
+                                    <SidebarMenu>
+                                        <SidebarMenuItem>
+                                            <SidebarMenuButton
+                                                onClick={() => {
+                                                    navigate('/')
+                                                    setFilter('all')
+                                                }}
+                                                isActive={location.pathname === '/' && filter === 'all'}
+                                                className="pl-4 font-normal text-muted-foreground data-[active=true]:font-medium data-[active=true]:text-primary"
+                                            >
+                                                <span>All Stocks</span>
+                                            </SidebarMenuButton>
+                                        </SidebarMenuItem>
+                                    </SidebarMenu>
+                                </SidebarGroupContent>
+                            </SidebarGroup>
+
+                            {/* Filter Section - Hidden on Detail Page */}
+                            {!isStockDetail && (
+                                <Collapsible open={filterOpen} onOpenChange={setFilterOpen}>
+                                    <SidebarGroup>
+                                        <CollapsibleTrigger asChild>
+                                            <SidebarGroupLabel className="cursor-pointer hover:bg-accent flex items-center justify-between px-4 py-2">
+                                                <span>Filter</span>
+                                                {filterOpen ? <ChevronDown /> : <ChevronRight />}
+                                            </SidebarGroupLabel>
+                                        </CollapsibleTrigger>
+                                        <CollapsibleContent>
+                                            <SidebarGroupContent>
+                                                <SidebarMenu>
+                                                    <SidebarMenuItem>
+                                                        <SidebarMenuButton
+                                                            onClick={() => {
+                                                                navigate('/')
+                                                                setFilter('watchlist')
+                                                            }}
+                                                            isActive={filter === 'watchlist'}
+                                                            className="pl-6 font-normal text-muted-foreground data-[active=true]:font-medium data-[active=true]:text-primary"
+                                                        >
+                                                            <span className="flex-1">Watchlist</span>
+                                                            {watchlistCount > 0 && (
+                                                                <span className="text-xs text-muted-foreground opacity-50">{watchlistCount}</span>
+                                                            )}
+                                                        </SidebarMenuButton>
+                                                    </SidebarMenuItem>
+
+                                                    <div className="my-2 border-t mx-2 opacity-50" />
+
+                                                    {algorithm === 'classic' ? (
+                                                        <>
+                                                            <SidebarMenuItem>
+                                                                <SidebarMenuButton
+                                                                    onClick={() => setFilter('PASS')}
+                                                                    isActive={filter === 'PASS'}
+                                                                    className="pl-6 font-normal text-muted-foreground data-[active=true]:font-medium data-[active=true]:text-primary"
+                                                                >
+                                                                    <span className="flex-1">Pass</span>
+                                                                    <span className="text-xs text-muted-foreground opacity-50">{getCount('PASS')}</span>
+                                                                </SidebarMenuButton>
+                                                            </SidebarMenuItem>
+                                                            <SidebarMenuItem>
+                                                                <SidebarMenuButton
+                                                                    onClick={() => setFilter('CLOSE')}
+                                                                    isActive={filter === 'CLOSE'}
+                                                                    className="pl-6 font-normal text-muted-foreground data-[active=true]:font-medium data-[active=true]:text-primary"
+                                                                >
+                                                                    <span className="flex-1">Close</span>
+                                                                    <span className="text-xs text-muted-foreground opacity-50">{getCount('CLOSE')}</span>
+                                                                </SidebarMenuButton>
+                                                            </SidebarMenuItem>
+                                                            <SidebarMenuItem>
+                                                                <SidebarMenuButton
+                                                                    onClick={() => setFilter('FAIL')}
+                                                                    isActive={filter === 'FAIL'}
+                                                                    className="pl-6 font-normal text-muted-foreground data-[active=true]:font-medium data-[active=true]:text-primary"
+                                                                >
+                                                                    <span className="flex-1">Fail</span>
+                                                                    <span className="text-xs text-muted-foreground opacity-50">{getCount('FAIL')}</span>
+                                                                </SidebarMenuButton>
+                                                            </SidebarMenuItem>
+                                                        </>
+                                                    ) : (
+                                                        <>
+                                                            <SidebarMenuItem>
+                                                                <SidebarMenuButton
+                                                                    onClick={() => setFilter('STRONG_BUY')}
+                                                                    isActive={filter === 'STRONG_BUY'}
+                                                                    className="pl-6 font-normal text-muted-foreground data-[active=true]:font-medium data-[active=true]:text-primary"
+                                                                >
+                                                                    <span className="flex-1">Excellent</span>
+                                                                    <span className="text-xs text-muted-foreground opacity-50">{getCount('STRONG_BUY')}</span>
+                                                                </SidebarMenuButton>
+                                                            </SidebarMenuItem>
+                                                            <SidebarMenuItem>
+                                                                <SidebarMenuButton
+                                                                    onClick={() => setFilter('BUY')}
+                                                                    isActive={filter === 'BUY'}
+                                                                    className="pl-6 font-normal text-muted-foreground data-[active=true]:font-medium data-[active=true]:text-primary"
+                                                                >
+                                                                    <span className="flex-1">Good</span>
+                                                                    <span className="text-xs text-muted-foreground opacity-50">{getCount('BUY')}</span>
+                                                                </SidebarMenuButton>
+                                                            </SidebarMenuItem>
+                                                            <SidebarMenuItem>
+                                                                <SidebarMenuButton
+                                                                    onClick={() => setFilter('HOLD')}
+                                                                    isActive={filter === 'HOLD'}
+                                                                    className="pl-6 font-normal text-muted-foreground data-[active=true]:font-medium data-[active=true]:text-primary"
+                                                                >
+                                                                    <span className="flex-1">Neutral</span>
+                                                                    <span className="text-xs text-muted-foreground opacity-50">{getCount('HOLD')}</span>
+                                                                </SidebarMenuButton>
+                                                            </SidebarMenuItem>
+                                                            <SidebarMenuItem>
+                                                                <SidebarMenuButton
+                                                                    onClick={() => setFilter('CAUTION')}
+                                                                    isActive={filter === 'CAUTION'}
+                                                                    className="pl-6 font-normal text-muted-foreground data-[active=true]:font-medium data-[active=true]:text-primary"
+                                                                >
+                                                                    <span className="flex-1">Weak</span>
+                                                                    <span className="text-xs text-muted-foreground opacity-50">{getCount('CAUTION')}</span>
+                                                                </SidebarMenuButton>
+                                                            </SidebarMenuItem>
+                                                            <SidebarMenuItem>
+                                                                <SidebarMenuButton
+                                                                    onClick={() => setFilter('AVOID')}
+                                                                    isActive={filter === 'AVOID'}
+                                                                    className="pl-6 font-normal text-muted-foreground data-[active=true]:font-medium data-[active=true]:text-primary"
+                                                                >
+                                                                    <span className="flex-1">Poor</span>
+                                                                    <span className="text-xs text-muted-foreground opacity-50">{getCount('AVOID')}</span>
+                                                                </SidebarMenuButton>
+                                                            </SidebarMenuItem>
+                                                        </>
+                                                    )}
+                                                </SidebarMenu>
+                                            </SidebarGroupContent>
+                                        </CollapsibleContent>
+                                    </SidebarGroup>
+                                </Collapsible>
+                            )}
+
+                            {/* Scoring Algorithm Section - Hidden on Detail Page, Collapsed by Default */}
+                            {!isStockDetail && (
+                                <Collapsible open={scoringOpen} onOpenChange={setScoringOpen}>
+                                    <SidebarGroup>
+                                        <CollapsibleTrigger asChild>
+                                            <SidebarGroupLabel className="cursor-pointer hover:bg-accent flex items-center justify-between px-4 py-2">
+                                                <span>Scoring Algorithm</span>
+                                                {scoringOpen ? <ChevronDown /> : <ChevronRight />}
+                                            </SidebarGroupLabel>
+                                        </CollapsibleTrigger>
+                                        <CollapsibleContent>
+                                            <SidebarGroupContent>
+                                                <SidebarMenu>
+                                                    {Object.entries(algorithms)
+                                                        .sort(([keyA], [keyB]) => {
+                                                            if (keyA === 'weighted') return -1;
+                                                            if (keyB === 'weighted') return 1;
+                                                            return keyA.localeCompare(keyB);
+                                                        })
+                                                        .map(([key, algo]) => (
+                                                            <SidebarMenuItem key={key}>
+                                                                <SidebarMenuButton
+                                                                    onClick={() => setAlgorithm(key)}
+                                                                    isActive={algorithm === key}
+                                                                    title={algo.description}
+                                                                    className="pl-6 font-normal text-muted-foreground data-[active=true]:font-medium data-[active=true]:text-primary"
+                                                                >
+                                                                    <span>{algo.name}</span>
+                                                                </SidebarMenuButton>
+                                                            </SidebarMenuItem>
+                                                        ))}
+                                                    {/* Fallback if no algorithms loaded yet */}
+                                                    {Object.keys(algorithms).length === 0 && (
+                                                        <SidebarMenuItem>
+                                                            <SidebarMenuButton disabled>
+                                                                <span className="text-muted-foreground">Loading...</span>
+                                                            </SidebarMenuButton>
+                                                        </SidebarMenuItem>
+                                                    )}
+                                                </SidebarMenu>
+                                            </SidebarGroupContent>
+                                        </CollapsibleContent>
+                                    </SidebarGroup>
+                                </Collapsible>
+                            )}
+
+                            {/* Analysis Section - Only show when stock is selected */}
+                            {isStockDetail && symbol && (
+                                <Collapsible open={analysisOpen} onOpenChange={setAnalysisOpen}>
+                                    <SidebarGroup>
+                                        <CollapsibleTrigger asChild>
+                                            <SidebarGroupLabel className="cursor-pointer hover:bg-accent flex items-center justify-between px-4 py-2">
+                                                <span>{symbol}</span>
+                                                {analysisOpen ? <ChevronDown /> : <ChevronRight />}
+                                            </SidebarGroupLabel>
+                                        </CollapsibleTrigger>
+                                        <CollapsibleContent>
+                                            <SidebarGroupContent>
+                                                <SidebarMenu>
+                                                    <SidebarMenuItem>
+                                                        <SidebarMenuButton
+                                                            onClick={() => navigate(`/stock/${symbol}?tab=overview`)}
+                                                            isActive={location.search.includes('tab=overview') || (!location.search && location.pathname === `/stock/${symbol}`)}
+                                                            className="pl-6 font-normal text-muted-foreground data-[active=true]:font-medium data-[active=true]:text-primary"
+                                                        >
+                                                            <span>Overview</span>
+                                                        </SidebarMenuButton>
+                                                    </SidebarMenuItem>
+                                                    <SidebarMenuItem>
+                                                        <SidebarMenuButton
+                                                            onClick={() => navigate(`/stock/${symbol}?tab=analysis`)}
+                                                            isActive={location.search.includes('tab=analysis')}
+                                                            className="pl-6 font-normal text-muted-foreground data-[active=true]:font-medium data-[active=true]:text-primary"
+                                                        >
+                                                            <span>Brief</span>
+                                                        </SidebarMenuButton>
+                                                    </SidebarMenuItem>
+                                                    <SidebarMenuItem>
+                                                        <SidebarMenuButton
+                                                            onClick={() => navigate(`/stock/${symbol}?tab=charts`)}
+                                                            isActive={location.search.includes('tab=charts')}
+                                                            className="pl-6 font-normal text-muted-foreground data-[active=true]:font-medium data-[active=true]:text-primary"
+                                                        >
+                                                            <span>Financials</span>
+                                                        </SidebarMenuButton>
+                                                    </SidebarMenuItem>
+                                                    <SidebarMenuItem>
+                                                        <SidebarMenuButton
+                                                            onClick={() => navigate(`/stock/${symbol}?tab=sentiment`)}
+                                                            isActive={location.search.includes('tab=sentiment')}
+                                                            className="pl-6 font-normal text-muted-foreground data-[active=true]:font-medium data-[active=true]:text-primary"
+                                                        >
+                                                            <span>Wall Street Sentiment</span>
+                                                        </SidebarMenuButton>
+                                                    </SidebarMenuItem>
+                                                    <SidebarMenuItem>
+                                                        <SidebarMenuButton
+                                                            onClick={() => navigate(`/stock/${symbol}?tab=health`)}
+                                                            isActive={location.search.includes('tab=health')}
+                                                            className="pl-6 font-normal text-muted-foreground data-[active=true]:font-medium data-[active=true]:text-primary"
+                                                        >
+                                                            <span>Business Health Indicators</span>
+                                                        </SidebarMenuButton>
+                                                    </SidebarMenuItem>
+                                                    <SidebarMenuItem>
+                                                        <SidebarMenuButton
+                                                            onClick={() => navigate(`/stock/${symbol}?tab=dcf`)}
+                                                            isActive={location.search.includes('tab=dcf')}
+                                                            className="pl-6 font-normal text-muted-foreground data-[active=true]:font-medium data-[active=true]:text-primary"
+                                                        >
+                                                            <span>DCF Analysis</span>
+                                                        </SidebarMenuButton>
+                                                    </SidebarMenuItem>
+                                                    <SidebarMenuItem>
+                                                        <SidebarMenuButton
+                                                            onClick={() => navigate(`/stock/${symbol}?tab=news`)}
+                                                            isActive={location.search.includes('tab=news')}
+                                                            className="pl-6 font-normal text-muted-foreground data-[active=true]:font-medium data-[active=true]:text-primary"
+                                                        >
+                                                            <span>News</span>
+                                                        </SidebarMenuButton>
+                                                    </SidebarMenuItem>
+                                                    <SidebarMenuItem>
+                                                        <SidebarMenuButton
+                                                            onClick={() => navigate(`/stock/${symbol}?tab=transcripts`)}
+                                                            isActive={location.search.includes('tab=transcripts')}
+                                                            className="pl-6 font-normal text-muted-foreground data-[active=true]:font-medium data-[active=true]:text-primary"
+                                                        >
+                                                            <span>Earnings Transcript</span>
+                                                        </SidebarMenuButton>
+                                                    </SidebarMenuItem>
+                                                    <SidebarMenuItem>
+                                                        <SidebarMenuButton
+                                                            onClick={() => navigate(`/stock/${symbol}?tab=reddit`)}
+                                                            isActive={location.search.includes('tab=reddit')}
+                                                            className="pl-6 font-normal text-muted-foreground data-[active=true]:font-medium data-[active=true]:text-primary"
+                                                        >
+                                                            <span>Reddit</span>
+                                                        </SidebarMenuButton>
+                                                    </SidebarMenuItem>
+                                                </SidebarMenu>
+                                            </SidebarGroupContent>
+                                        </CollapsibleContent>
+                                    </SidebarGroup>
+                                </Collapsible>
+                            )}
+                        </ScrollArea>
+                    </SidebarContent>
+
+                    {/* Settings at bottom */}
+                    <div className="mt-auto border-t p-2">
+                        <SidebarMenu>
+                            <SidebarMenuItem>
+                                <SidebarMenuButton onClick={() => navigate('/settings')}>
+                                    <span>Settings</span>
+                                </SidebarMenuButton>
+                            </SidebarMenuItem>
+                        </SidebarMenu>
+                    </div>
+                </Sidebar>
+
+                {/* Main Content */}
+                <SidebarInset className="flex-1 flex flex-col min-w-0 overflow-hidden">
+                    {/* Top bar with triggers */}
+                    <header className="flex h-12 items-center justify-between border-b px-4 shrink-0">
+                        {/* Left side - Sidebar trigger and Search */}
+                        <div className="flex items-center gap-4">
+                            <SidebarTrigger />
+                            <SearchPopover onSelect={(sym) => navigate(`/stock/${sym}`)} />
+                        </div>
+
+                        {/* Right side - Avatar (and Chat on small screens) */}
+                        <div className="flex items-center gap-2">
+                            {/* Advanced Filter Button */}
+                            <Button
+                                variant="ghost"
+                                size="sm"
+                                className={`text-muted-foreground hover:text-foreground ${showAdvancedFilters ? 'bg-accent text-accent-foreground' : ''}`}
+                                onClick={() => setShowAdvancedFilters(!showAdvancedFilters)}
+                            >
+                                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                    <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"></polygon>
+                                </svg>
+                            </Button>
+
+                            {/* Chat toggle - only show on small screens */}
+                            {!isLargeScreen && (
+                                <Sheet open={chatOpen} onOpenChange={setChatOpen}>
+                                    <SheetTrigger asChild>
+                                        <Button variant="ghost" size="icon">
+                                            <MessageSquare className="h-5 w-5" />
+                                        </Button>
+                                    </SheetTrigger>
+                                    <SheetContent side="right" className="w-[400px] sm:w-[540px] p-0">
+                                        <SheetHeader className="px-4 py-3 border-b">
+                                            <SheetTitle>{chatTitle}</SheetTitle>
+                                        </SheetHeader>
+                                        <div className="flex flex-col h-[calc(100%-60px)]">
+                                            <AnalysisChat
+                                                symbol={chatSymbol}
+                                                chatOnly={true}
+                                                contextType={chatContext}
+                                            />
+                                        </div>
+                                    </SheetContent>
+                                </Sheet>
+                            )}
+                            <UserAvatar />
+                        </div>
+                    </header>
+
+                    {/* Page content - with flex layout for sidebar on large screens */}
+                    <div className="flex-1 flex overflow-hidden">
+                        {/* Main content */}
+                        <main className="flex-1 overflow-auto p-4 min-w-0">
+                            <div className="max-w-screen-lg mx-auto">
+                                <Outlet />
+                            </div>
+                        </main>
+
+                        {/* Right Chat Sidebar - persistent on large screens */}
+                        {isLargeScreen && (
+                            <aside className="w-[360px] border-l bg-background flex flex-col shrink-0">
+                                <div className="px-4 py-3 border-b">
+                                    <h2 className="font-semibold">{chatTitle}</h2>
+                                </div>
+                                <div className="flex-1 overflow-hidden">
+                                    <AnalysisChat
+                                        symbol={chatSymbol}
+                                        chatOnly={true}
+                                        contextType={chatContext}
+                                    />
+                                </div>
+                            </aside>
+                        )}
+                    </div>
+                </SidebarInset>
+            </div>
+        </SidebarProvider>
+    )
+}

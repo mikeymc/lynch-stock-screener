@@ -1,15 +1,18 @@
 // ABOUTME: News component for displaying stock news articles
 // ABOUTME: Two-column layout: news list left (2/3), chat sidebar right (1/3)
 
-import { useRef } from 'react'
-import AnalysisChat from './AnalysisChat'
+import {
+    Card,
+    CardContent,
+    CardHeader,
+    CardTitle,
+} from "@/components/ui/card"
 
 export default function StockNews({ newsData, loading, symbol }) {
-    const chatRef = useRef(null)
 
     if (loading) {
         return (
-            <div className="loading" style={{ padding: '40px', textAlign: 'center' }}>
+            <div className="loading p-10 text-center">
                 Loading news articles...
             </div>
         )
@@ -19,77 +22,66 @@ export default function StockNews({ newsData, loading, symbol }) {
 
     if (articles.length === 0) {
         return (
-            <div style={{ padding: '40px', textAlign: 'center', color: '#888' }}>
+            <div className="p-10 text-center text-[#888]">
                 <p>No news articles available for this stock.</p>
             </div>
         )
     }
 
     return (
-        <div className="reports-layout">
-            {/* Left Column - News Content (2/3) */}
-            <div className="reports-main-column">
-                <div className="section-item">
-                    <div className="section-header-simple">
-                        <span className="section-title">{articles.length} Articles</span>
-                    </div>
-                    <div className="section-content">
-                        <div className="section-summary">
-                            <div className="news-list">
-                                {articles.map((article, index) => {
-                                    const publishedDate = article.published_date
-                                        ? new Date(article.published_date).toLocaleDateString('en-US', {
-                                            year: 'numeric',
-                                            month: 'short',
-                                            day: 'numeric'
-                                        })
-                                        : 'Unknown date'
+        <div className="w-full">
+            <div className="section-item">
+                <div className="section-header-simple">
+                    <span className="section-title">{articles.length} Articles</span>
+                </div>
+                <div className="section-content">
+                    <div className="section-summary">
+                        <div className="news-list space-y-4">
+                            {articles.map((article, index) => {
+                                const publishedDate = article.published_date
+                                    ? new Date(article.published_date).toLocaleDateString('en-US', {
+                                        year: 'numeric',
+                                        month: 'short',
+                                        day: 'numeric'
+                                    })
+                                    : 'Unknown date'
 
-                                    return (
-                                        <div key={article.id || index} className="news-article" style={{
-                                            borderBottom: '1px solid rgba(71, 85, 105, 0.5)',
-                                            paddingBottom: '12px',
-                                            marginBottom: '12px'
-                                        }}>
-                                            <div style={{ marginBottom: '4px', fontSize: '13px', color: '#94a3b8' }}>
-                                                <span style={{ fontWeight: '600' }}>{article.source || 'Unknown source'}</span>
-                                                {' • '}
+                                return (
+                                    <Card key={article.id || index}>
+                                        <CardHeader className="pb-3">
+                                            <div className="flex items-center gap-2 mb-1 text-sm text-muted-foreground">
+                                                <span className="font-semibold text-foreground">{article.source || 'Unknown source'}</span>
+                                                <span>•</span>
                                                 <span>{publishedDate}</span>
                                             </div>
-
-                                            <h3 style={{ margin: '0 0 6px 0', fontSize: '16px', lineHeight: '1.3', fontWeight: '600' }}>
+                                            <CardTitle className="text-base leading-snug">
                                                 {article.url ? (
                                                     <a
                                                         href={article.url}
                                                         target="_blank"
                                                         rel="noopener noreferrer"
-                                                        style={{ color: '#60a5fa', textDecoration: 'none' }}
+                                                        className="text-blue-400 hover:underline hover:text-blue-300"
                                                     >
                                                         {article.headline || 'No headline'}
                                                     </a>
                                                 ) : (
-                                                    <span style={{ color: '#f1f5f9' }}>{article.headline || 'No headline'}</span>
+                                                    <span className="text-foreground">{article.headline || 'No headline'}</span>
                                                 )}
-                                            </h3>
+                                            </CardTitle>
+                                        </CardHeader>
 
-                                            {article.summary && (
-                                                <p style={{ margin: '0', lineHeight: '1.5', color: '#e2e8f0', fontSize: '14px' }}>
+                                        {article.summary && (
+                                            <CardContent>
+                                                <p className="text-sm leading-relaxed text-muted-foreground">
                                                     {article.summary}
                                                 </p>
-                                            )}
-                                        </div>
-                                    )
-                                })}
-                            </div>
+                                            </CardContent>
+                                        )}
+                                    </Card>
+                                )
+                            })}
                         </div>
                     </div>
-                </div>
-            </div>
-
-            {/* Right Column - Chat Sidebar (1/3) */}
-            <div className="reports-chat-sidebar">
-                <div className="chat-sidebar-content">
-                    <AnalysisChat ref={chatRef} symbol={symbol} chatOnly={true} contextType="news" />
                 </div>
             </div>
         </div>
