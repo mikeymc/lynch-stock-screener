@@ -4245,7 +4245,7 @@ class Database:
     def update_conversation_title(self, conversation_id: int, title: str):
         """
         Update conversation title (called after first message).
-        
+
         Args:
             conversation_id: Conversation ID
             title: Conversation title (truncated from first message)
@@ -4259,5 +4259,30 @@ class Database:
                 WHERE id = %s
             """, (title[:50], conversation_id))  # Truncate to 50 chars
             conn.commit()
+        finally:
+            self.return_connection(conn)
+
+    def delete_agent_conversation(self, conversation_id: int, user_id: int) -> bool:
+        """
+        Delete an agent conversation (with ownership verification).
+
+        Args:
+            conversation_id: Conversation ID to delete
+            user_id: User ID (for ownership check)
+
+        Returns:
+            True if deleted, False if not found or not owned by user
+        """
+        conn = self.get_connection()
+        try:
+            cursor = conn.cursor()
+            # Delete only if owned by user (CASCADE will delete messages)
+            cursor.execute("""
+                DELETE FROM agent_conversations
+                WHERE id = %s AND user_id = %s
+            """, (conversation_id, user_id))
+            deleted = cursor.rowcount > 0
+            conn.commit()
+            return deleted
         finally:
             self.return_connection(conn)

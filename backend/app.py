@@ -40,6 +40,7 @@ from fly_machines import get_fly_manager
 from auth import init_oauth_client, require_user_auth
 
 from algorithm_optimizer import AlgorithmOptimizer
+from google import genai
 import logging
 
 # Available AI models for analysis generation
@@ -204,6 +205,31 @@ def clean_nan_values(obj):
         return clean_nan_values(obj.tolist())
     return obj
 
+
+def generate_conversation_title(message: str) -> str:
+    """Generate a concise title for a conversation using Gemini Flash."""
+    try:
+        client = genai.Client()
+        response = client.models.generate_content(
+            model="gemini-2.0-flash",
+            contents=f"""Generate a very concise title (3-6 words) for a conversation that starts with this message.
+Return ONLY the title, no quotes, no explanation.
+
+Message: {message[:500]}
+
+Title:"""
+        )
+        title = response.text.strip()
+        # Remove any quotes that might be in the response
+        title = title.strip('"\'')
+        # Limit to 60 chars max
+        if len(title) > 60:
+            title = title[:57] + "..."
+        return title
+    except Exception as e:
+        logger.warning(f"Failed to generate title with LLM: {e}")
+        # Fallback to truncation
+        return message[:50] if len(message) <= 50 else message[:47] + "..."
 
 
 @app.route('/api/health', methods=['GET'])
@@ -2777,17 +2803,33 @@ def save_agent_conversation_message(conversation_id, user_id):
             data['content'],
             data.get('tool_calls')
         )
-        
-        # Auto-generate title from first user message
+
+        # Auto-generate title from first user message using LLM
+        title = None
         if data['role'] == 'user':
             messages = db.get_agent_messages(conversation_id)
             if len(messages) == 1:  # This is the first message
-                title = data['content'][:50]  # Truncate to 50 chars
+                title = generate_conversation_title(data['content'])
                 db.update_conversation_title(conversation_id, title)
-        
-        return jsonify({'success': True})
+
+        return jsonify({'success': True, 'title': title})
     except Exception as e:
         logger.error(f"Error saving agent message: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/agent/conversation/<int:conversation_id>', methods=['DELETE'])
+@require_user_auth
+def delete_agent_conversation(conversation_id, user_id):
+    """Delete an agent conversation (verifies ownership)."""
+    try:
+        deleted = db.delete_agent_conversation(conversation_id, user_id)
+        if deleted:
+            return jsonify({'success': True})
+        else:
+            return jsonify({'error': 'Conversation not found or not owned by user'}), 404
+    except Exception as e:
+        logger.error(f"Error deleting agent conversation: {e}")
         return jsonify({'error': str(e)}), 500
 
 

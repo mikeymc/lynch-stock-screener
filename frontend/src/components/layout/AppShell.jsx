@@ -1,12 +1,11 @@
-// ABOUTME: Main app shell layout with dual sidebars
-// ABOUTME: Left sidebar for navigation, right sidebar for chat
-
 import { useState, useEffect } from 'react'
 import { Outlet, useLocation, useNavigate, useParams } from 'react-router-dom'
-import { MessageSquare } from 'lucide-react'
+import { MessageSquare, Plus } from 'lucide-react'
 import AnalysisChat from '@/components/AnalysisChat'
+import ChatHistory from '@/components/ChatHistory'
 import SearchPopover from '@/components/SearchPopover'
 import UserAvatar from '@/components/UserAvatar'
+import { useChatContext } from '@/context/ChatContext'
 import {
     Sidebar,
     SidebarContent,
@@ -41,6 +40,38 @@ function AppShellContent({
     showAdvancedFilters, setShowAdvancedFilters
 }) {
     const { isMobile, setOpenMobile } = useSidebar()
+    const { agentMode, conversations, removeConversation, activeConversationId, setActiveConversationId } = useChatContext()
+    const [chatsOpen, setChatsOpen] = useState(true)
+
+    const handleNewChat = () => {
+        // Setting activeConversationId to null triggers AnalysisChat to create a new conversation
+        setActiveConversationId(null)
+    }
+
+    const handleDeleteConversation = async (conversationId) => {
+        if (!confirm('Delete this conversation? This cannot be undone.')) {
+            return
+        }
+
+        try {
+            const response = await fetch(`/api/agent/conversation/${conversationId}`, {
+                method: 'DELETE',
+                credentials: 'include'
+            })
+
+            if (response.ok) {
+                removeConversation(conversationId)
+                // If deleting the active conversation, clear it
+                if (activeConversationId === conversationId) {
+                    setActiveConversationId(null)
+                }
+            } else {
+                console.error('Failed to delete conversation')
+            }
+        } catch (error) {
+            console.error('Error deleting conversation:', error)
+        }
+    }
 
     const onNavClick = () => {
         if (isMobile) {
@@ -123,6 +154,28 @@ function AppShellContent({
                                 </SidebarMenu>
                             </SidebarGroupContent>
                         </SidebarGroup>
+
+                        {/* Chat History Section - Only show when agent mode is enabled */}
+                        {agentMode && (
+                            <Collapsible open={chatsOpen} onOpenChange={setChatsOpen}>
+                                <SidebarGroup>
+                                    <CollapsibleTrigger asChild>
+                                        <SidebarGroupLabel className="cursor-pointer hover:bg-accent flex items-center justify-between px-4 py-2">
+                                            <span>Chats</span>
+                                            {chatsOpen ? <ChevronDown /> : <ChevronRight />}
+                                        </SidebarGroupLabel>
+                                    </CollapsibleTrigger>
+                                    <CollapsibleContent>
+                                        <SidebarGroupContent>
+                                            <ChatHistory
+                                                onSelectConversation={onNavClick}
+                                                onDeleteConversation={handleDeleteConversation}
+                                            />
+                                        </SidebarGroupContent>
+                                    </CollapsibleContent>
+                                </SidebarGroup>
+                            </Collapsible>
+                        )}
 
                         {/* Filter Section - Hidden on Detail Page */}
                         {!isStockDetail && (
@@ -530,8 +583,17 @@ function AppShellContent({
                     {/* Right Chat Sidebar - persistent on large screens */}
                     {isLargeScreen && (
                         <aside className="w-[360px] border-l bg-background flex flex-col shrink-0">
-                            <div className="px-4 py-3 border-b">
+                            <div className="px-4 py-3 border-b flex items-center justify-between">
                                 <h2 className="font-semibold">{chatTitle}</h2>
+                                <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    className="h-7 w-7"
+                                    onClick={handleNewChat}
+                                    title="New conversation"
+                                >
+                                    <Plus className="h-4 w-4" />
+                                </Button>
                             </div>
                             <div className="flex-1 overflow-hidden">
                                 <AnalysisChat

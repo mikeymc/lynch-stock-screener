@@ -11,6 +11,7 @@ import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { Switch } from '@/components/ui/switch'
 import { Card } from '@/components/ui/card'
+import { useChatContext } from '@/context/ChatContext'
 
 const API_BASE = '/api'
 
@@ -179,6 +180,18 @@ const AnalysisChat = forwardRef(function AnalysisChat({ symbol, stockName, chatO
   const navigate = useNavigate()
   const components = MarkdownComponents({ navigate })
 
+  // Shared chat context for sidebar integration
+  const {
+    agentMode,
+    setAgentMode,
+    conversations,
+    setConversations,
+    addConversation,
+    updateConversationTitle,
+    activeConversationId,
+    setActiveConversationId
+  } = useChatContext()
+
   // Analysis state
   const [analysis, setAnalysis] = useState(null)
   const [analysisLoading, setAnalysisLoading] = useState(true)
@@ -193,32 +206,114 @@ const AnalysisChat = forwardRef(function AnalysisChat({ symbol, stockName, chatO
   const [messages, setMessages] = useState([])
   // Note: inputMessage removed - using uncontrolled textarea via ref for performance
   const [chatLoading, setChatLoading] = useState(false)
+  // Local conversationId syncs with activeConversationId from context
   const [conversationId, setConversationId] = useState(null)
   const [streamingMessage, setStreamingMessage] = useState('')
   const [streamingSources, setStreamingSources] = useState([])
   const [loadingHistory, setLoadingHistory] = useState(true)
   const [showScrollIndicator, setShowScrollIndicator] = useState(false)
   const [loadingMessageIndex, setLoadingMessageIndex] = useState(0)
-  const [agentMode, setAgentMode] = useState(() => {
-    // Persist agent mode toggle across page navigations
-    const saved = localStorage.getItem('agentModeEnabled')
-    return saved === 'true'
-  })
   const [agentThinking, setAgentThinking] = useState('')
   const [agentModeEnabled, setAgentModeEnabled] = useState(false)
   const [showScrollDown, setShowScrollDown] = useState(false)
   const [isNearBottom, setIsNearBottom] = useState(true)
 
-  // Start a new chat session (clears messages and resets conversation)
-  const startNewChat = useCallback(() => {
-    setMessages([])
-    setConversationId(null)
-    setStreamingMessage('')
-    setStreamingSources([])
-    setAgentThinking('')
-    // Focus input after reset
-    setTimeout(() => inputRef.current?.focus(), 100)
-  }, [])
+  // Start a new chat session - creates a new conversation on the backend
+  const startNewChat = useCallback(async () => {
+    try {
+      // Create new conversation on backend
+      const response = await fetch(`${API_BASE}/agent/conversations`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include'
+      })
+
+      if (!response.ok) {
+        console.error('Failed to create new conversation')
+        return
+      }
+
+      const data = await response.json()
+      const newConversationId = data.conversation_id
+
+      // Update local state
+      setConversationId(newConversationId)
+      setMessages([])
+      setStreamingMessage('')
+      setStreamingSources([])
+      setAgentThinking('')
+
+      // Update context state
+      setActiveConversationId(newConversationId)
+      addConversation({
+        id: newConversationId,
+        title: 'New Chat',
+        created_at: new Date().toISOString(),
+        last_message_at: new Date().toISOString()
+      })
+
+      // Focus input after reset
+      setTimeout(() => inputRef.current?.focus(), 100)
+    } catch (error) {
+      console.error('Error creating new chat:', error)
+    }
+  }, [addConversation, setActiveConversationId])
+
+  // Switch to a different conversation
+  const switchConversation = useCallback(async (targetConversationId) => {
+    if (targetConversationId === conversationId) return
+    if (chatLoading) return  // Don't switch while streaming
+
+    try {
+      // Fetch messages for the selected conversation
+      const response = await fetch(`${API_BASE}/agent/conversation/${targetConversationId}/messages`, {
+        credentials: 'include'
+      })
+
+      if (!response.ok) {
+        console.error('Failed to load conversation messages')
+        return
+      }
+
+      const data = await response.json()
+
+      // Update local state
+      setConversationId(targetConversationId)
+      setMessages(data.messages || [])
+      setStreamingMessage('')
+      setStreamingSources([])
+      setAgentThinking('')
+
+      // Update context state
+      setActiveConversationId(targetConversationId)
+
+      // Scroll to bottom after messages load
+      setTimeout(() => {
+        const container = messagesContainerRef.current
+        if (container) {
+          container.scrollTop = container.scrollHeight
+        }
+      }, 100)
+
+      // Focus input
+      setTimeout(() => inputRef.current?.focus(), 100)
+    } catch (error) {
+      console.error('Error switching conversation:', error)
+    }
+  }, [conversationId, chatLoading, setActiveConversationId])
+
+  // Respond to conversation selection from sidebar (or deletion)
+  useEffect(() => {
+    if (!agentMode) return
+
+    if (activeConversationId === null && conversationId !== null) {
+      // Active conversation was deleted - start a new chat
+      startNewChat()
+    } else if (activeConversationId && activeConversationId !== conversationId) {
+      // Switch to selected conversation
+      switchConversation(activeConversationId)
+    }
+  }, [activeConversationId])  // Intentionally limited deps to avoid loops
 
   const messagesEndRef = useRef(null)
   const messagesContainerRef = useRef(null)
@@ -315,13 +410,13 @@ const AnalysisChat = forwardRef(function AnalysisChat({ symbol, stockName, chatO
     fetchAgentModeFlag()
   }, [])
 
-  // Load agent conversation when agent mode is active
+  // Load agent conversations when agent mode is active
   useEffect(() => {
     if (!agentMode) return
 
-    const loadAgentConversation = async () => {
+    const loadAgentConversations = async () => {
       try {
-        // Fetch recent agent conversations
+        // Fetch all recent agent conversations
         const response = await fetch(`${API_BASE}/agent/conversations`, { credentials: 'include' })
         if (!response.ok) {
           console.error('Failed to fetch agent conversations')
@@ -331,11 +426,15 @@ const AnalysisChat = forwardRef(function AnalysisChat({ symbol, stockName, chatO
         const data = await response.json()
 
         if (data.conversations && data.conversations.length > 0) {
+          // Store all conversations for the chat history (via context)
+          setConversations(data.conversations)
+
           // Load most recent conversation
           const conv = data.conversations[0]
           setConversationId(conv.id)
+          setActiveConversationId(conv.id)
 
-          // Load messages
+          // Load messages for the most recent conversation
           const msgResponse = await fetch(`${API_BASE}/agent/conversation/${conv.id}/messages`, { credentials: 'include' })
           if (msgResponse.ok) {
             const msgData = await msgResponse.json()
@@ -350,7 +449,8 @@ const AnalysisChat = forwardRef(function AnalysisChat({ symbol, stockName, chatO
             }, 100)
           }
         } else {
-          // Create new conversation
+          // No conversations exist - create a new one
+          setConversations([])
           const createResponse = await fetch(`${API_BASE}/agent/conversations`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -359,16 +459,24 @@ const AnalysisChat = forwardRef(function AnalysisChat({ symbol, stockName, chatO
 
           if (createResponse.ok) {
             const createData = await createResponse.json()
+            const newConv = {
+              id: createData.conversation_id,
+              title: 'New Chat',
+              created_at: new Date().toISOString(),
+              last_message_at: new Date().toISOString()
+            }
             setConversationId(createData.conversation_id)
-            setMessages([])  // Start with empty messages
+            setActiveConversationId(createData.conversation_id)
+            setConversations([newConv])
+            setMessages([])
           }
         }
       } catch (error) {
-        console.error('Error loading agent conversation:', error)
+        console.error('Error loading agent conversations:', error)
       }
     }
 
-    loadAgentConversation()
+    loadAgentConversations()
   }, [agentMode])  // Only re-run when agentMode changes
 
   // Cycle loading messages during brief generation with random timing
@@ -588,7 +696,13 @@ const AnalysisChat = forwardRef(function AnalysisChat({ symbol, stockName, chatO
       if (!response.ok) {
         console.error('[Agent] Failed to save message:', await response.text())
       } else {
+        const data = await response.json()
         console.log('[Agent] Message saved successfully:', role)
+
+        // If backend generated a title, update the conversation in context
+        if (data.title) {
+          updateConversationTitle(conversationId, data.title)
+        }
       }
     } catch (error) {
       console.error('Error saving agent message:', error)
@@ -917,10 +1031,7 @@ const AnalysisChat = forwardRef(function AnalysisChat({ symbol, stockName, chatO
               <Switch
                 id="agent-mode"
                 checked={agentMode}
-                onCheckedChange={(checked) => {
-                  setAgentMode(checked)
-                  localStorage.setItem('agentModeEnabled', checked.toString())
-                }}
+                onCheckedChange={setAgentMode}
                 disabled={chatLoading}
               />
               <label htmlFor="agent-mode" className="text-sm text-muted-foreground cursor-pointer">
