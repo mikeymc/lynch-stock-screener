@@ -574,7 +574,7 @@ function AppShellContent({
                 {/* Page content - with flex layout for sidebar on large screens */}
                 <div className="flex-1 flex overflow-hidden">
                     {/* Main content */}
-                    <main className="flex-1 overflow-auto p-4 min-w-0">
+                    <main className="flex-1 overflow-auto p-4 min-w-0 scrollbar-hide">
                         <div className="max-w-screen-lg mx-auto">
                             <Outlet />
                         </div>
