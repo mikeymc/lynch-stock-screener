@@ -119,11 +119,9 @@ export default function StockCharts({ historyData, loading, symbol }) {
   const handleHover = useCallback((event, elements) => {
     if (elements && elements.length > 0) {
       const index = elements[0].index;
-      if (index !== activeIndex) {
-        setActiveIndex(index);
-      }
+      setActiveIndex(index);
     }
-  }, [activeIndex]);
+  }, []);
 
   const handleMouseLeave = useCallback(() => {
     setActiveIndex(null);
