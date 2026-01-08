@@ -155,28 +155,6 @@ function AppShellContent({
                             </SidebarGroupContent>
                         </SidebarGroup>
 
-                        {/* Chat History Section - Only show when agent mode is enabled */}
-                        {agentMode && (
-                            <Collapsible open={chatsOpen} onOpenChange={setChatsOpen}>
-                                <SidebarGroup>
-                                    <CollapsibleTrigger asChild>
-                                        <SidebarGroupLabel className="cursor-pointer hover:bg-accent flex items-center justify-between px-4 py-2">
-                                            <span>Chats</span>
-                                            {chatsOpen ? <ChevronDown /> : <ChevronRight />}
-                                        </SidebarGroupLabel>
-                                    </CollapsibleTrigger>
-                                    <CollapsibleContent>
-                                        <SidebarGroupContent>
-                                            <ChatHistory
-                                                onSelectConversation={onNavClick}
-                                                onDeleteConversation={handleDeleteConversation}
-                                            />
-                                        </SidebarGroupContent>
-                                    </CollapsibleContent>
-                                </SidebarGroup>
-                            </Collapsible>
-                        )}
-
                         {/* Filter Section - Hidden on Detail Page */}
                         {!isStockDetail && (
                             <Collapsible open={filterOpen} onOpenChange={setFilterOpen}>
@@ -498,6 +476,28 @@ function AppShellContent({
                                                     </SidebarMenuButton>
                                                 </SidebarMenuItem>
                                             </SidebarMenu>
+                                        </SidebarGroupContent>
+                                    </CollapsibleContent>
+                                </SidebarGroup>
+                            </Collapsible>
+                        )}
+
+                        {/* Chat History Section - Only show when agent mode is enabled */}
+                        {agentMode && (
+                            <Collapsible open={chatsOpen} onOpenChange={setChatsOpen}>
+                                <SidebarGroup>
+                                    <CollapsibleTrigger asChild>
+                                        <SidebarGroupLabel className="cursor-pointer hover:bg-accent flex items-center justify-between px-4 py-2">
+                                            <span>Chats</span>
+                                            {chatsOpen ? <ChevronDown /> : <ChevronRight />}
+                                        </SidebarGroupLabel>
+                                    </CollapsibleTrigger>
+                                    <CollapsibleContent>
+                                        <SidebarGroupContent>
+                                            <ChatHistory
+                                                onSelectConversation={onNavClick}
+                                                onDeleteConversation={handleDeleteConversation}
+                                            />
                                         </SidebarGroupContent>
                                     </CollapsibleContent>
                                 </SidebarGroup>

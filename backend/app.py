@@ -212,7 +212,7 @@ def generate_conversation_title(message: str) -> str:
         client = genai.Client()
         response = client.models.generate_content(
             model="gemini-2.0-flash",
-            contents=f"""Generate a very concise title (3-6 words) for a conversation that starts with this message.
+            contents=f"""Generate a very concise title (3-4 words) for a conversation that starts with this message.
 Return ONLY the title, no quotes, no explanation.
 
 Message: {message[:500]}

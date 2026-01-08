@@ -14,14 +14,14 @@ import {
 } from 'chart.js'
 import StockDetail from './pages/StockDetail'
 import StockHeader from './components/StockHeader'
+import StockListCard from './components/StockListCard'
 
 
 import AlgorithmTuning from './pages/AlgorithmTuning'
-import StatusBar from './components/StatusBar'
+import LoginModal from './components/LoginModal'
 import AdvancedFilter from './components/AdvancedFilter'
 import SearchPopover from './components/SearchPopover'
 import { useAuth } from './context/AuthContext'
-import LoginModal from './components/LoginModal'
 import UserAvatar from './components/UserAvatar'
 // import './App.css' // Disabled for shadcn migration
 
@@ -415,6 +415,7 @@ function StockListView({
     }
     // If switching FROM watchlist back to other filters, reload session data
     else if (prevFilter === 'watchlist' && filter !== 'watchlist') {
+      setStocks([]) // Clear stale watchlist items immediately
       fetchStocks({ page: 1 })
       setCurrentPage(1)
     }
@@ -1012,13 +1013,11 @@ function StockListView({
             </div>
 
             {filteredStocks.map(stock => (
-              <StockHeader
+              <StockListCard
                 key={stock.symbol}
                 stock={stock}
                 toggleWatchlist={toggleWatchlist}
                 watchlist={watchlist}
-                className="mb-3"
-                onClick={() => navigate(`/stock/${stock.symbol}`)}
               />
             ))}
           </div>
