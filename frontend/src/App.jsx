@@ -1004,14 +1004,6 @@ function StockListView({
       {filteredStocks.length > 0 && (
         <>
           <div className="space-y-3 pb-4">
-            {/* Sort controls could go here if needed, or rely on sidebar/header filters */}
-            <div className="flex justify-end gap-2 text-sm text-muted-foreground mb-2 px-1">
-              <span>Sorted by {sortBy.replace('_', ' ')} ({sortDir})</span>
-              <button onClick={() => toggleSort(sortBy)} className="text-primary hover:underline">
-                Toggle Order
-              </button>
-            </div>
-
             {filteredStocks.map(stock => (
               <StockListCard
                 key={stock.symbol}
