@@ -526,32 +526,9 @@ class LynchAnalyst:
         if not analysis_text or not analysis_text.strip():
             raise Exception("Gemini API returned empty text content")
 
-        # Parse the response into three sections
-        # Look for markdown headers to split sections
-        sections = {'growth': '', 'cash': '', 'valuation': ''}
-        
-        # Split by section headers (allow 1-3 # for flexibility with AI output)
-        import re
-        growth_match = re.search(r'#{1,3}\s*Growth\s*&\s*Profitability\s*\n(.*?)(?=#{1,3}\s|$)', analysis_text, re.DOTALL | re.IGNORECASE)
-        cash_match = re.search(r'#{1,3}\s*Cash\s*Flow\s*\n(.*?)(?=#{1,3}\s|$)', analysis_text, re.DOTALL | re.IGNORECASE)
-        valuation_match = re.search(r'#{1,3}\s*Valuation\s*\n(.*?)(?=#{1,3}\s|$)', analysis_text, re.DOTALL | re.IGNORECASE)
-        
-        if growth_match:
-            sections['growth'] = growth_match.group(1).strip()
-        if cash_match:
-            sections['cash'] = cash_match.group(1).strip()
-        if valuation_match:
-            sections['valuation'] = valuation_match.group(1).strip()
-
-        # Validate that we parsed at least some content
-        if not any(sections.values()):
-            raise Exception(
-                f"Failed to parse chart analysis sections from AI response. "
-                f"Expected headers: '### Growth & Profitability', '### Cash Flow', '### Valuation'. "
-                f"Response preview: {analysis_text[:500]}..."
-            )
-
-        return sections
+        # Return the full narrative with embedded chart placeholders
+        # The frontend will parse {{CHART:x}} placeholders and render charts inline
+        return {'narrative': analysis_text.strip()}
 
     def get_or_generate_analysis(
         self,

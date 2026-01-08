@@ -4,6 +4,7 @@
 import { useState, useCallback } from 'react'
 import { Line } from 'react-chartjs-2'
 import UnifiedChartAnalysis from './UnifiedChartAnalysis'
+import ChartNarrativeRenderer from './ChartNarrativeRenderer'
 import ReactMarkdown from 'react-markdown'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import {
@@ -115,6 +116,7 @@ const yearTickCallback = function (value, index, values) {
 export default function StockCharts({ historyData, loading, symbol }) {
   const [activeIndex, setActiveIndex] = useState(null)
   const [analyses, setAnalyses] = useState({ growth: null, cash: null, valuation: null })
+  const [narrative, setNarrative] = useState(null)
 
   const handleHover = useCallback((event, elements) => {
     if (elements && elements.length > 0) {
@@ -299,10 +301,24 @@ export default function StockCharts({ historyData, loading, symbol }) {
           <div className="stock-charts" onMouseLeave={handleMouseLeave}>
             <UnifiedChartAnalysis
               symbol={symbol}
-              onAnalysisGenerated={(sections) => setAnalyses(sections)}
+              onAnalysisGenerated={(result) => {
+                if (result.narrative) {
+                  setNarrative(result.narrative)
+                  setAnalyses({ growth: null, cash: null, valuation: null })
+                } else if (result.sections) {
+                  setAnalyses(result.sections)
+                  setNarrative(null)
+                }
+              }}
             />
 
-            {loading ? (
+            {/* Narrative mode: render ChartNarrativeRenderer */}
+            {narrative && historyData && (
+              <ChartNarrativeRenderer narrative={narrative} historyData={historyData} />
+            )}
+
+            {/* Legacy mode: render traditional chart sections */}
+            {!narrative && (loading ? (
               <div className="loading">Loading historical data...</div>
             ) : !historyData ? (
               <div className="no-data">No historical data available</div>
@@ -712,7 +728,7 @@ export default function StockCharts({ historyData, loading, symbol }) {
                   </CardContent>
                 </Card>
               </>
-            )}
+            ))}
           </div>
         </div>
       </div>

@@ -2292,14 +2292,25 @@ def get_unified_chart_analysis(symbol, user_id):
     force_refresh = data.get('force_refresh', False)
     only_cached = data.get('only_cached', False)
 
-    # Check if all three sections are cached for this user
+    # Check for cached unified narrative first (new format)
+    cached_narrative = db.get_chart_analysis(user_id, symbol, 'narrative')
+    
+    if cached_narrative and not force_refresh:
+        return jsonify({
+            'narrative': cached_narrative['analysis_text'],
+            'cached': True,
+            'generated_at': cached_narrative['generated_at']
+        })
+    
+    # Fallback: check for legacy 3-section format
     cached_growth = db.get_chart_analysis(user_id, symbol, 'growth')
     cached_cash = db.get_chart_analysis(user_id, symbol, 'cash')
     cached_valuation = db.get_chart_analysis(user_id, symbol, 'valuation')
-
-    all_cached = cached_growth and cached_cash and cached_valuation
-
-    if all_cached and not force_refresh:
+    
+    all_legacy_cached = cached_growth and cached_cash and cached_valuation
+    
+    if all_legacy_cached and not force_refresh:
+        # Return legacy sections format for backward compatibility
         return jsonify({
             'sections': {
                 'growth': cached_growth['analysis_text'],
@@ -2310,7 +2321,7 @@ def get_unified_chart_analysis(symbol, user_id):
             'generated_at': cached_growth['generated_at']
         })
 
-    # If only_cached is True and not all sections are cached, return empty
+    # If only_cached is True and nothing is cached, return empty
     if only_cached:
         return jsonify({})
 
@@ -2334,7 +2345,7 @@ def get_unified_chart_analysis(symbol, user_id):
         lynch_brief_text = lynch_brief['analysis_text'] if lynch_brief else None
 
         # Generate unified analysis with full context
-        sections = lynch_analyst.generate_unified_chart_analysis(
+        result = lynch_analyst.generate_unified_chart_analysis(
             stock_data,
             history,
             sections=sections_data,
@@ -2345,13 +2356,12 @@ def get_unified_chart_analysis(symbol, user_id):
             model_version=model
         )
 
-
-        # Save each section to cache for this user
-        for section_name, analysis_text in sections.items():
-            db.set_chart_analysis(user_id, symbol, section_name, analysis_text, model)
+        # Save unified narrative to cache (using 'narrative' as section name)
+        narrative = result.get('narrative', '')
+        db.set_chart_analysis(user_id, symbol, 'narrative', narrative, model)
 
         return jsonify({
-            'sections': sections,
+            'narrative': narrative,
             'cached': False,
             'generated_at': datetime.now().isoformat()
         })

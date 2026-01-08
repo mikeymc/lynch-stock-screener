@@ -1,10 +1,12 @@
-// ABOUTME: Component to generate and display unified chart analysis for all three sections
+// ABOUTME: Component to generate and display unified chart analysis
+// ABOUTME: Handles both new narrative format and legacy 3-section format
 import { useState, useEffect } from 'react'
 import { Sparkles, RefreshCw } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 
 export default function UnifiedChartAnalysis({ symbol, onAnalysisGenerated }) {
-    const [sections, setSections] = useState({ growth: null, cash: null, valuation: null })
+    const [narrative, setNarrative] = useState(null)
+    const [legacySections, setLegacySections] = useState(null)
     const [loading, setLoading] = useState(false)
     const [error, setError] = useState(null)
     const [selectedModel, setSelectedModel] = useState('gemini-2.5-flash')
@@ -26,10 +28,19 @@ export default function UnifiedChartAnalysis({ symbol, onAnalysisGenerated }) {
         })
             .then(response => response.json())
             .then(data => {
-                if (data.sections) {
-                    setSections(data.sections)
+                if (data.narrative) {
+                    // New narrative format
+                    setNarrative(data.narrative)
+                    setLegacySections(null)
                     if (onAnalysisGenerated) {
-                        onAnalysisGenerated(data.sections)
+                        onAnalysisGenerated({ narrative: data.narrative })
+                    }
+                } else if (data.sections) {
+                    // Legacy 3-section format
+                    setLegacySections(data.sections)
+                    setNarrative(null)
+                    if (onAnalysisGenerated) {
+                        onAnalysisGenerated({ sections: data.sections })
                     }
                 }
             })
@@ -62,9 +73,19 @@ export default function UnifiedChartAnalysis({ symbol, onAnalysisGenerated }) {
             }
 
             const data = await response.json()
-            setSections(data.sections)
-            if (onAnalysisGenerated) {
-                onAnalysisGenerated(data.sections)
+
+            if (data.narrative) {
+                setNarrative(data.narrative)
+                setLegacySections(null)
+                if (onAnalysisGenerated) {
+                    onAnalysisGenerated({ narrative: data.narrative })
+                }
+            } else if (data.sections) {
+                setLegacySections(data.sections)
+                setNarrative(null)
+                if (onAnalysisGenerated) {
+                    onAnalysisGenerated({ sections: data.sections })
+                }
             }
         } catch (err) {
             setError(err.message)
@@ -73,7 +94,7 @@ export default function UnifiedChartAnalysis({ symbol, onAnalysisGenerated }) {
         }
     }
 
-    const hasAnyAnalysis = sections.growth || sections.cash || sections.valuation
+    const hasAnyAnalysis = narrative || (legacySections && (legacySections.growth || legacySections.cash || legacySections.valuation))
 
     return (
         <div className="mb-8">
@@ -113,3 +134,4 @@ export default function UnifiedChartAnalysis({ symbol, onAnalysisGenerated }) {
         </div>
     )
 }
+
