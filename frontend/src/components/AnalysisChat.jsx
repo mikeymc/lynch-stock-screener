@@ -5,13 +5,14 @@ import { useState, useEffect, useRef, forwardRef, useImperativeHandle, memo, use
 import { useNavigate } from 'react-router-dom'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
-import { RefreshCw, Sparkles } from 'lucide-react'
+import { RefreshCw, Sparkles, Bot } from 'lucide-react'
 import ChatChart from './ChatChart'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { Switch } from '@/components/ui/switch'
 import { Card } from '@/components/ui/card'
 import { useChatContext } from '@/context/ChatContext'
+import { useAuth } from '@/context/AuthContext'
 
 const API_BASE = '/api'
 
@@ -150,26 +151,51 @@ const MarkdownComponents = ({ navigate }) => useMemo(() => ({
 
 // Memoized ChatMessage component - only re-renders when content changes
 const ChatMessage = memo(function ChatMessage({ role, content, sources, components }) {
+  const { user } = useAuth()
   const isUser = role === 'user'
   const isError = role === 'error'
+  const isAssistant = role === 'assistant'
 
   return (
-    <div className={`flex flex-col gap-1 mb-4 ${isUser ? 'items-end' : 'items-start'}`}>
-      <div className="text-xs text-muted-foreground px-2">
-        {isUser ? '👤 You' : isError ? '⚠️ Error' : '📊 Analyst'}
+    <div className={`flex gap-3 mb-6 ${isUser ? 'flex-row-reverse' : 'flex-row'}`}>
+      {/* Avatar/Icon */}
+      <div className="flex-shrink-0 mt-1">
+        {isUser ? (
+          <div className="h-8 w-8 rounded-full border border-border overflow-hidden bg-muted">
+            {user?.picture ? (
+              <img src={user.picture} alt="User" className="h-full w-full object-cover" />
+            ) : (
+              <div className="h-full w-full flex items-center justify-center text-xs font-medium text-muted-foreground">
+                {(user?.name?.[0] || user?.email?.[0] || 'U').toUpperCase()}
+              </div>
+            )}
+          </div>
+        ) : (
+          <div className="h-8 w-8 flex items-center justify-center rounded-lg border border-border bg-background shadow-sm">
+            {isError ? (
+              <div className="text-destructive font-bold">!</div>
+            ) : (
+              <Bot className="h-5 w-5 text-primary" />
+            )}
+          </div>
+        )}
       </div>
-      <div className={`rounded-lg px-4 py-3 max-w-[85%] ${isUser
-        ? 'bg-primary text-primary-foreground'
-        : isError
-          ? 'bg-destructive/10 text-destructive border border-destructive/20'
-          : 'bg-muted'
-        }`}>
-        <div className="text-sm">
-          <ReactMarkdown remarkPlugins={[remarkGfm]} components={components}>
-            {content}
-          </ReactMarkdown>
+
+      {/* Message Bubble */}
+      <div className={`flex flex-col max-w-[85%] ${isUser ? 'items-end' : 'items-start'}`}>
+        <div className={`rounded-lg px-4 py-3 ${isUser
+          ? 'bg-primary text-primary-foreground'
+          : isError
+            ? 'bg-destructive/10 text-destructive border border-destructive/20'
+            : 'bg-muted'
+          }`}>
+          <div className="text-sm">
+            <ReactMarkdown remarkPlugins={[remarkGfm]} components={components}>
+              {content}
+            </ReactMarkdown>
+          </div>
+          {isAssistant && <SourceCitation sources={sources} />}
         </div>
-        {role === 'assistant' && <SourceCitation sources={sources} />}
       </div>
     </div>
   )
