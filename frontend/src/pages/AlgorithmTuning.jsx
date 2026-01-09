@@ -692,7 +692,7 @@ export default function AlgorithmTuning() {
                     </div>
 
                     <div className="guide-footer">
-                        <strong>💡 Timeframe Selection:</strong> We recommend <strong>5 years</strong> for most analysis. For an even longer-term view that smooths out market cycles, try <strong>10 years</strong> - though be aware of survivorship bias (only companies that "survived" are in today's S&P 500).
+                        <strong>Timeframe Selection:</strong> We recommend <strong>5 years</strong> for most analysis. For an even longer-term view that smooths out market cycles, try <strong>10 years</strong> - though be aware of survivorship bias (only companies that "survived" are in today's S&P 500).
                     </div>
                 </div>
             </div>

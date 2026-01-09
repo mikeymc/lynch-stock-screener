@@ -276,27 +276,35 @@ export default function OptimizationTab() {
         </div>
     )
 
-    const renderLiveSlider = (key, label, min, max, step, isPercentage = false) => (
-        <div key={key} className="space-y-1">
-            <div className="flex justify-between text-xs">
-                <span className="text-green-600">{label}</span>
-                <span className="font-medium text-green-600">
-                    {isPercentage
-                        ? `${((optimizationProgress?.best_config?.[key] || 0) * 100).toFixed(0)}%`
-                        : (optimizationProgress?.best_config?.[key] || 0).toFixed(2)}
-                </span>
+    const renderLiveSlider = (key, label, min, max, step, isPercentage = false) => {
+        const val = optimizationProgress?.current_config?.[key] ?? optimizationProgress?.best_config?.[key] ?? config[key] ?? 0
+
+        return (
+            <div key={key} className="space-y-2">
+                <div className="flex justify-between">
+                    <Label className="text-sm">{label}</Label>
+                    <span className={cn(
+                        "text-sm font-medium transition-colors",
+                        optimizationProgress?.best_config ? "text-green-600" : "text-muted-foreground"
+                    )}>
+                        {isPercentage ? (val * 100).toFixed(1) + '%' : val.toFixed(2)}
+                    </span>
+                </div>
+                <input
+                    type="range"
+                    min={min}
+                    max={max}
+                    step={step}
+                    value={val}
+                    disabled
+                    className={cn(
+                        "w-full h-2 rounded-lg appearance-none cursor-not-allowed",
+                        optimizationProgress?.best_config ? "bg-green-100 accent-green-600" : "bg-muted"
+                    )}
+                />
             </div>
-            <input
-                type="range"
-                min={min}
-                max={max}
-                step={step}
-                value={optimizationProgress?.best_config?.[key] || 0}
-                disabled
-                className="w-full h-1.5 bg-green-100 rounded-lg appearance-none cursor-not-allowed accent-green-600"
-            />
-        </div>
-    )
+        )
+    }
 
 
 
@@ -312,8 +320,8 @@ export default function OptimizationTab() {
 
             <Tabs defaultValue="manual" className="w-full">
                 <TabsList className="grid w-full grid-cols-2">
-                    <TabsTrigger value="manual">Manual Tuning</TabsTrigger>
-                    <TabsTrigger value="auto">Auto-Optimization</TabsTrigger>
+                    <TabsTrigger value="manual">Manual</TabsTrigger>
+                    <TabsTrigger value="auto">Auto</TabsTrigger>
                 </TabsList>
 
                 <TabsContent value="manual" className="mt-6">
@@ -321,7 +329,7 @@ export default function OptimizationTab() {
                     <Card>
                         <CardHeader>
                             <CardTitle className="flex items-center gap-2">
-                                Manual Tuning
+                                Manual
                             </CardTitle>
                             <CardDescription>
                                 Adjust algorithm parameters manually
@@ -343,7 +351,6 @@ export default function OptimizationTab() {
                                             className="flex flex-col items-center justify-between rounded-md border-2 border-muted bg-popover p-4 hover:bg-accent hover:text-accent-foreground peer-data-[state=checked]:border-primary [&:has([data-state=checked])]:border-primary"
                                         >
                                             <span className="font-semibold">5 Years</span>
-                                            <span className="text-xs text-muted-foreground">Standard (Recommended)</span>
                                         </Label>
                                     </div>
                                     <div>
@@ -353,7 +360,6 @@ export default function OptimizationTab() {
                                             className="flex flex-col items-center justify-between rounded-md border-2 border-muted bg-popover p-4 hover:bg-accent hover:text-accent-foreground peer-data-[state=checked]:border-primary [&:has([data-state=checked])]:border-primary"
                                         >
                                             <span className="font-semibold">10 Years</span>
-                                            <span className="text-xs text-muted-foreground">Long-term (Slower)</span>
                                         </Label>
                                     </div>
                                 </RadioGroup>
@@ -467,105 +473,199 @@ export default function OptimizationTab() {
                 <TabsContent value="auto" className="mt-6">
                     {/* Auto-Optimization Card */}
                     <Card>
-                        <CardHeader>
-                            <CardTitle className="flex items-center gap-2">
-                                Auto-Optimization
-                            </CardTitle>
-                            <CardDescription>
-                                Let the algorithm find optimal weights using Bayesian optimization
-                            </CardDescription>
-                        </CardHeader>
-                        <CardContent className="space-y-4">
+                        <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-7">
+                            <div className="space-y-1.5">
+                                <CardTitle className="flex items-center gap-2">
+                                    Auto
+                                </CardTitle>
+                                <CardDescription>
+                                    Automatically find optimal algorithm configuration
+                                </CardDescription>
+                            </div>
                             <Button
                                 onClick={runOptimization}
                                 disabled={optimizationRunning}
-                                className="w-full bg-amber-500 hover:bg-amber-600 text-white"
+                                size="sm"
+                                className="shadow-sm"
                             >
                                 {optimizationRunning ? (
-                                    optimizationProgress?.stage === 'optimizing' ? `Optimizing... Iteration ${optimizationProgress.progress}`
-                                        : optimizationProgress?.stage === 'clearing_cache' ? 'Clearing cache...'
-                                            : optimizationProgress?.stage === 'revalidating' ? 'Running validation...'
-                                                : 'Starting...'
+                                    <><Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" /> Running...</>
                                 ) : (
-                                    <><Sparkles className="mr-2 h-4 w-4" /> Auto-Optimize</>
+                                    <><Sparkles className="mr-2 h-3.5 w-3.5" /> Start</>
                                 )}
                             </Button>
+                        </CardHeader>
+                        <CardContent className="space-y-6">
 
-                            {/* Optimization Settings */}
-                            <div className="grid grid-cols-2 gap-4 pt-2">
-                                <div className="space-y-2">
-                                    <Label className="text-xs">Method</Label>
-                                    <Select value={optimizationMethod} onValueChange={setOptimizationMethod}>
-                                        <SelectTrigger className="h-8 text-xs">
-                                            <SelectValue />
-                                        </SelectTrigger>
-                                        <SelectContent>
-                                            <SelectItem value="bayesian">Bayesian (Recommended)</SelectItem>
-                                            <SelectItem value="gradient_descent">Gradient Descent</SelectItem>
-                                            <SelectItem value="grid_search">Grid Search</SelectItem>
-                                        </SelectContent>
-                                    </Select>
+                            {/* Control Group */}
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pb-6 border-b">
+                                <div className="space-y-3">
+                                    <Label>Optimization Method</Label>
+                                    <RadioGroup
+                                        value={optimizationMethod}
+                                        onValueChange={setOptimizationMethod}
+                                        className="flex gap-2"
+                                    >
+                                        <div className="flex-1">
+                                            <RadioGroupItem value="bayesian" id="meth_bayes" className="peer sr-only" />
+                                            <Label
+                                                htmlFor="meth_bayes"
+                                                className="flex flex-col items-center justify-center rounded-md border-2 border-muted bg-popover p-2 hover:bg-accent hover:text-accent-foreground peer-data-[state=checked]:border-amber-500 [&:has([data-state=checked])]:border-amber-500 h-16 text-center cursor-pointer"
+                                            >
+                                                <span className="font-semibold text-sm">Bayesian</span>
+                                                <span className="text-[10px] text-muted-foreground">Smart Search</span>
+                                            </Label>
+                                        </div>
+                                        <div className="flex-1">
+                                            <RadioGroupItem value="gradient_descent" id="meth_grad" className="peer sr-only" />
+                                            <Label
+                                                htmlFor="meth_grad"
+                                                className="flex flex-col items-center justify-center rounded-md border-2 border-muted bg-popover p-2 hover:bg-accent hover:text-accent-foreground peer-data-[state=checked]:border-amber-500 [&:has([data-state=checked])]:border-amber-500 h-16 text-center cursor-pointer"
+                                            >
+                                                <span className="font-semibold text-sm">Gradient</span>
+                                                <span className="text-[10px] text-muted-foreground">Local Descent</span>
+                                            </Label>
+                                        </div>
+                                        <div className="flex-1">
+                                            <RadioGroupItem value="grid_search" id="meth_grid" className="peer sr-only" />
+                                            <Label
+                                                htmlFor="meth_grid"
+                                                className="flex flex-col items-center justify-center rounded-md border-2 border-muted bg-popover p-2 hover:bg-accent hover:text-accent-foreground peer-data-[state=checked]:border-amber-500 [&:has([data-state=checked])]:border-amber-500 h-16 text-center cursor-pointer"
+                                            >
+                                                <span className="font-semibold text-sm">Grid</span>
+                                                <span className="text-[10px] text-muted-foreground">Exhaustive</span>
+                                            </Label>
+                                        </div>
+                                    </RadioGroup>
                                 </div>
-                                <div className="space-y-2">
-                                    <Label className="text-xs">Iterations</Label>
-                                    <Select value={maxIterations} onValueChange={setMaxIterations}>
-                                        <SelectTrigger className="h-8 text-xs">
-                                            <SelectValue />
-                                        </SelectTrigger>
-                                        <SelectContent>
-                                            <SelectItem value="50">50 (Fast)</SelectItem>
-                                            <SelectItem value="100">100 (Standard)</SelectItem>
-                                            <SelectItem value="200">200 (Thorough)</SelectItem>
-                                            <SelectItem value="500">500 (Extensive)</SelectItem>
-                                        </SelectContent>
-                                    </Select>
+
+                                <div className="space-y-3">
+                                    <Label>Max Iterations</Label>
+                                    <RadioGroup
+                                        value={maxIterations}
+                                        onValueChange={setMaxIterations}
+                                        className="flex gap-2"
+                                    >
+                                        {['50', '100', '200', '500'].map((iter) => (
+                                            <div key={iter} className="flex-1">
+                                                <RadioGroupItem value={iter} id={`iter_${iter}`} className="peer sr-only" />
+                                                <Label
+                                                    htmlFor={`iter_${iter}`}
+                                                    className="flex flex-col items-center justify-center rounded-md border-2 border-muted bg-popover p-2 hover:bg-accent hover:text-accent-foreground peer-data-[state=checked]:border-amber-500 [&:has([data-state=checked])]:border-amber-500 h-16 text-center cursor-pointer"
+                                                >
+                                                    <span className="font-semibold text-sm">{iter}</span>
+                                                    <span className="text-[10px] text-muted-foreground">Steps</span>
+                                                </Label>
+                                            </div>
+                                        ))}
+                                    </RadioGroup>
                                 </div>
                             </div>
 
-                            {/* Live Optimization Progress */}
+                            {/* Live Progress Bar */}
                             {optimizationRunning && optimizationProgress && (
-                                <div className="space-y-4 pt-4 border-t">
-                                    <div className="text-sm font-medium text-green-600">🚀 Optimization in Progress</div>
-
-                                    <div className="w-full bg-muted rounded-full h-3">
+                                <div className="space-y-2">
+                                    <div className="flex justify-between text-sm">
+                                        <span className="font-medium text-amber-600 flex items-center gap-2">
+                                            <Loader2 className="h-3 w-3 animate-spin" />
+                                            {optimizationProgress?.stage === 'optimizing' ? `Optimizing... Iteration ${optimizationProgress.progress}/${optimizationProgress.total}`
+                                                : optimizationProgress?.stage === 'clearing_cache' ? 'Clearing cache...'
+                                                    : optimizationProgress?.stage === 'revalidating' ? 'Finalizing validation...'
+                                                        : 'Starting...'}
+                                        </span>
+                                        <span className="font-bold text-green-600">
+                                            Best: {(optimizationProgress.best_score || 0).toFixed(4)}
+                                        </span>
+                                    </div>
+                                    <div className="w-full bg-muted rounded-full h-2 overflow-hidden">
                                         <div
-                                            className="bg-green-500 h-3 rounded-full transition-all"
+                                            className="bg-amber-500 h-full transition-all duration-300 ease-out"
                                             style={{ width: `${((optimizationProgress.progress || 0) / (optimizationProgress.total || 100)) * 100}%` }}
                                         />
                                     </div>
-                                    <div className="text-right text-sm text-muted-foreground">
-                                        Iteration {optimizationProgress.progress || 0} / {optimizationProgress.total || maxIterations}
-                                    </div>
-
-                                    <div className="bg-green-50 dark:bg-green-950 p-4 rounded-lg text-center">
-                                        <div className="text-sm text-muted-foreground">Current Best Correlation</div>
-                                        <div className="text-2xl font-bold text-green-600">
-                                            {optimizationProgress.best_score?.toFixed(4) || '...'}
-                                        </div>
-                                    </div>
-
-                                    {optimizationProgress.best_config && (
-                                        <div className="space-y-3 bg-muted/50 p-4 rounded-lg">
-                                            <div className="text-sm font-medium">Current Best Configuration</div>
-                                            <div className="grid grid-cols-2 gap-x-4 gap-y-2">
-                                                <div className="space-y-2">
-                                                    <div className="text-xs font-medium text-muted-foreground">Weights</div>
-                                                    {renderLiveSlider('weight_peg', 'PEG', 0, 1, 0.01, true)}
-                                                    {renderLiveSlider('weight_consistency', 'Consistency', 0, 1, 0.01, true)}
-                                                    {renderLiveSlider('weight_debt', 'Debt', 0, 1, 0.01, true)}
-                                                    {renderLiveSlider('weight_ownership', 'Ownership', 0, 1, 0.01, true)}
-                                                </div>
-                                                <div className="space-y-2">
-                                                    <div className="text-xs font-medium text-muted-foreground">PEG Thresholds</div>
-                                                    {renderLiveSlider('peg_excellent', 'Excellent', 0.5, 1.5, 0.05)}
-                                                    {renderLiveSlider('peg_good', 'Good', 1.0, 2.5, 0.05)}
-                                                    {renderLiveSlider('peg_fair', 'Fair', 1.5, 3.0, 0.05)}
-                                                </div>
-                                            </div>
-                                        </div>
-                                    )}
                                 </div>
                             )}
+
+                            {/* Live Visualization Masonry Layout */}
+                            <div className="columns-1 md:columns-2 lg:columns-3 gap-6 space-y-6">
+                                {/* Algorithm Weights */}
+                                <div className="break-inside-avoid space-y-4">
+                                    <div className="font-medium text-sm text-foreground mb-2 flex items-center gap-2">
+                                        <div className={cn("w-1 h-4 rounded-full", optimizationRunning ? "bg-amber-500" : "bg-primary")}></div>
+                                        Algorithm Weights
+                                    </div>
+                                    <div className={cn("space-y-4 p-4 rounded-lg border", optimizationRunning ? "bg-amber-50/50 dark:bg-amber-950/20 border-amber-200 dark:border-amber-900" : "bg-muted/30")}>
+                                        {renderLiveSlider('weight_peg', 'PEG Score', 0, 1, 0.01, true)}
+                                        {renderLiveSlider('weight_consistency', 'Consistency', 0, 1, 0.01, true)}
+                                        {renderLiveSlider('weight_debt', 'Debt Score', 0, 1, 0.01, true)}
+                                        {renderLiveSlider('weight_ownership', 'Ownership', 0, 1, 0.01, true)}
+                                    </div>
+                                </div>
+
+                                {/* PEG Thresholds */}
+                                <div className="break-inside-avoid space-y-4">
+                                    <div className="font-medium text-sm text-foreground mb-2 flex items-center gap-2">
+                                        <div className={cn("w-1 h-4 rounded-full", optimizationRunning ? "bg-amber-500" : "bg-blue-500")}></div>
+                                        PEG Thresholds
+                                    </div>
+                                    <div className={cn("space-y-4 p-4 rounded-lg border", optimizationRunning ? "bg-amber-50/50 dark:bg-amber-950/20 border-amber-200 dark:border-amber-900" : "bg-muted/30")}>
+                                        {renderLiveSlider('peg_excellent', 'Excellent (Upper)', 0.5, 1.5, 0.05)}
+                                        {renderLiveSlider('peg_good', 'Good (Upper)', 1.0, 2.5, 0.05)}
+                                        {renderLiveSlider('peg_fair', 'Fair (Upper)', 1.5, 3.0, 0.05)}
+                                    </div>
+                                </div>
+
+                                {/* Revenue Thresholds */}
+                                <div className="break-inside-avoid space-y-4">
+                                    <div className="font-medium text-sm text-foreground mb-2 flex items-center gap-2">
+                                        <div className={cn("w-1 h-4 rounded-full", optimizationRunning ? "bg-amber-500" : "bg-green-500")}></div>
+                                        Revenue Thresholds
+                                    </div>
+                                    <div className={cn("space-y-4 p-4 rounded-lg border", optimizationRunning ? "bg-amber-50/50 dark:bg-amber-950/20 border-amber-200 dark:border-amber-900" : "bg-muted/30")}>
+                                        {renderLiveSlider('revenue_growth_excellent', 'Excellent (CAGR %)', 10, 25, 0.5)}
+                                        {renderLiveSlider('revenue_growth_good', 'Good (CAGR %)', 5, 20, 0.5)}
+                                        {renderLiveSlider('revenue_growth_fair', 'Fair (CAGR %)', 0, 15, 0.5)}
+                                    </div>
+                                </div>
+
+                                {/* Net Income Thresholds */}
+                                <div className="break-inside-avoid space-y-4">
+                                    <div className="font-medium text-sm text-foreground mb-2 flex items-center gap-2">
+                                        <div className={cn("w-1 h-4 rounded-full", optimizationRunning ? "bg-amber-500" : "bg-emerald-500")}></div>
+                                        Net Income Thresholds
+                                    </div>
+                                    <div className={cn("space-y-4 p-4 rounded-lg border", optimizationRunning ? "bg-amber-50/50 dark:bg-amber-950/20 border-amber-200 dark:border-amber-900" : "bg-muted/30")}>
+                                        {renderLiveSlider('income_growth_excellent', 'Excellent (CAGR %)', 10, 25, 0.5)}
+                                        {renderLiveSlider('income_growth_good', 'Good (CAGR %)', 5, 20, 0.5)}
+                                        {renderLiveSlider('income_growth_fair', 'Fair (CAGR %)', 0, 15, 0.5)}
+                                    </div>
+                                </div>
+
+                                {/* D/E Thresholds */}
+                                <div className="break-inside-avoid space-y-4">
+                                    <div className="font-medium text-sm text-foreground mb-2 flex items-center gap-2">
+                                        <div className={cn("w-1 h-4 rounded-full", optimizationRunning ? "bg-amber-500" : "bg-red-500")}></div>
+                                        D/E Thresholds
+                                    </div>
+                                    <div className={cn("space-y-4 p-4 rounded-lg border", optimizationRunning ? "bg-amber-50/50 dark:bg-amber-950/20 border-amber-200 dark:border-amber-900" : "bg-muted/30")}>
+                                        {renderLiveSlider('debt_excellent', 'Excellent D/E', 0.2, 1.0, 0.05)}
+                                        {renderLiveSlider('debt_good', 'Good D/E', 0.5, 1.5, 0.05)}
+                                        {renderLiveSlider('debt_moderate', 'Moderate D/E', 1.0, 3.0, 0.05)}
+                                    </div>
+                                </div>
+
+                                {/* Institutional Ownership */}
+                                <div className="break-inside-avoid space-y-4">
+                                    <div className="font-medium text-sm text-foreground mb-2 flex items-center gap-2">
+                                        <div className={cn("w-1 h-4 rounded-full", optimizationRunning ? "bg-amber-500" : "bg-purple-500")}></div>
+                                        Institutional Ownership
+                                    </div>
+                                    <div className={cn("space-y-4 p-4 rounded-lg border", optimizationRunning ? "bg-amber-50/50 dark:bg-amber-950/20 border-amber-200 dark:border-amber-900" : "bg-muted/30")}>
+                                        {renderLiveSlider('inst_own_min', 'Minimum Ideal', 0, 0.6, 0.01, true)}
+                                        {renderLiveSlider('inst_own_max', 'Maximum Ideal', 0.5, 1.1, 0.01, true)}
+                                    </div>
+                                </div>
+                            </div>
 
                             {/* Optimization Results */}
                             {optimizationResult && !optimizationResult.error && (
@@ -759,7 +859,7 @@ export default function OptimizationTab() {
                         ))}
                     </div>
                     <div className="mt-4 bg-blue-50 dark:bg-blue-950 p-3 rounded-lg text-sm">
-                        <strong>💡 Timeframe Selection:</strong> We recommend <strong>5 years</strong> for most analysis.
+                        <strong>Timeframe Selection:</strong> We recommend <strong>5 years</strong> for most analysis.
                         For a longer-term view, try <strong>10 years</strong> (but beware of survivorship bias).
                     </div>
                 </CardContent>

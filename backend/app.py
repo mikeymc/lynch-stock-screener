@@ -2986,7 +2986,8 @@ def start_optimization():
                         'progress': data['iteration'],
                         'total': max_iterations,
                         'best_score': data['best_score'],
-                        'best_config': data['best_config']
+                        'best_config': data['best_config'],
+                        'current_config': data.get('current_config')
                     })
 
                 # Run optimization

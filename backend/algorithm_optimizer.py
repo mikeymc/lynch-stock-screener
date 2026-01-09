@@ -519,13 +519,25 @@ class AlgorithmOptimizer:
                     # Map parameters to config
                     current_best_params = {dim.name: val for dim, val in zip(space, res.x)}
                     
-                    # Calculate derived weight
+                    # Calculate derived weight for best
                     w_peg = current_best_params['weight_peg']
                     w_cons = current_best_params['weight_consistency']
                     w_debt = current_best_params['weight_debt']
                     w_own = 1.0 - (w_peg + w_cons + w_debt)
                     current_best_params['weight_ownership'] = w_own
                     
+                    # Calculate derived weights for CURRENT (just evaluated)
+                    current_params = {}
+                    if len(res.x_iters) > 0:
+                        last_point = res.x_iters[-1]
+                        current_params = {dim.name: val for dim, val in zip(space, last_point)}
+                        
+                        cw_peg = current_params['weight_peg']
+                        cw_cons = current_params['weight_consistency']
+                        cw_debt = current_params['weight_debt']
+                        cw_own = 1.0 - (cw_peg + cw_cons + cw_debt)
+                        current_params['weight_ownership'] = cw_own
+
                     # len(res.x_iters) = total evaluations (initial + optimization)
                     total_evals = len(res.x_iters)
                     # Optimization iterations = total minus initial sampling
@@ -535,7 +547,8 @@ class AlgorithmOptimizer:
                         'iteration': opt_iteration,
                         'total_evals': total_evals,
                         'best_score': -res.fun, # We minimized negative correlation
-                        'best_config': current_best_params
+                        'best_config': current_best_params,
+                        'current_config': current_params  # Include the config currently being tested
                     })
                 except Exception as e:
                     logger.error(f"Error in progress callback: {e}")
