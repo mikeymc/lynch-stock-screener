@@ -93,9 +93,12 @@ export default function OptimizationTab() {
         }
     }
 
-    const runValidation = async () => {
+    const runValidation = async (configOverride = null) => {
         setValidationRunning(true)
         setAnalysis(null)
+
+        // If an override is provided (and it's not a click event), use it
+        const configToUse = (configOverride && !configOverride.nativeEvent) ? configOverride : config
 
         try {
             const response = await fetch('/api/validate/run', {
@@ -104,7 +107,7 @@ export default function OptimizationTab() {
                 body: JSON.stringify({
                     years_back: parseInt(yearsBack),
                     limit: null,
-                    config: config
+                    config: configToUse
                 })
             })
 
@@ -202,15 +205,36 @@ export default function OptimizationTab() {
         }
     }
 
-    const saveConfiguration = async () => {
+    const saveConfiguration = async (configOverride = null) => {
         try {
             setRescoringRunning(true)
             setRescoringProgress(null)
 
+            // If an override is provided (and it's not a click event), use it
+            const configToUse = (configOverride && !configOverride.nativeEvent) ? configOverride : config
+
+            // Try to find the correlation associated with this config
+            let correlation = null
+
+            // 1. If we have an optimization result and we are saving THAT config
+            if (optimizationResult?.result?.best_score &&
+                JSON.stringify(configToUse) === JSON.stringify(optimizationResult.result.best_config)) {
+                correlation = optimizationResult.result.best_score
+            }
+            // 2. Fallback: use current analysis if available
+            else if (analysis?.overall_correlation?.coefficient) {
+                correlation = analysis.overall_correlation.coefficient
+            }
+
+            const configToSave = {
+                ...configToUse,
+                [`correlation_${yearsBack}yr`]: correlation
+            }
+
             const response = await fetch('/api/algorithm/config', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ config })
+                body: JSON.stringify({ config: configToSave })
             })
 
             const data = await response.json()
@@ -337,33 +361,7 @@ export default function OptimizationTab() {
                         </CardHeader>
                         <CardContent className="space-y-6">
                             {/* Timeframe Selector */}
-                            <div className="space-y-3">
-                                <Label>Backtest Timeframe</Label>
-                                <RadioGroup
-                                    value={yearsBack}
-                                    onValueChange={setYearsBack}
-                                    className="grid grid-cols-2 gap-4"
-                                >
-                                    <div>
-                                        <RadioGroupItem value="5" id="5y" className="peer sr-only" />
-                                        <Label
-                                            htmlFor="5y"
-                                            className="flex flex-col items-center justify-between rounded-md border-2 border-muted bg-popover p-4 hover:bg-accent hover:text-accent-foreground peer-data-[state=checked]:border-primary [&:has([data-state=checked])]:border-primary"
-                                        >
-                                            <span className="font-semibold">5 Years</span>
-                                        </Label>
-                                    </div>
-                                    <div>
-                                        <RadioGroupItem value="10" id="10y" className="peer sr-only" />
-                                        <Label
-                                            htmlFor="10y"
-                                            className="flex flex-col items-center justify-between rounded-md border-2 border-muted bg-popover p-4 hover:bg-accent hover:text-accent-foreground peer-data-[state=checked]:border-primary [&:has([data-state=checked])]:border-primary"
-                                        >
-                                            <span className="font-semibold">10 Years</span>
-                                        </Label>
-                                    </div>
-                                </RadioGroup>
-                            </div>
+
 
                             <div className="border-t" />
 
@@ -447,6 +445,36 @@ export default function OptimizationTab() {
                                         {renderSlider('inst_own_max', 'Maximum Ideal', 0.5, 1.1, 0.01, true)}
                                     </div>
                                 </div>
+                            </div>
+
+
+                            {/* Timeframe Selector */}
+                            <div className="space-y-3 pt-6 border-t">
+                                <Label>Backtest Timeframe</Label>
+                                <RadioGroup
+                                    value={yearsBack}
+                                    onValueChange={setYearsBack}
+                                    className="grid grid-cols-2 gap-4"
+                                >
+                                    <div>
+                                        <RadioGroupItem value="5" id="5y-manual" className="peer sr-only" />
+                                        <Label
+                                            htmlFor="5y-manual"
+                                            className="flex flex-col items-center justify-between rounded-md border-2 border-muted bg-popover p-4 hover:bg-accent hover:text-accent-foreground peer-data-[state=checked]:border-primary [&:has([data-state=checked])]:border-primary"
+                                        >
+                                            <span className="font-semibold">5 Years</span>
+                                        </Label>
+                                    </div>
+                                    <div>
+                                        <RadioGroupItem value="10" id="10y-manual" className="peer sr-only" />
+                                        <Label
+                                            htmlFor="10y-manual"
+                                            className="flex flex-col items-center justify-between rounded-md border-2 border-muted bg-popover p-4 hover:bg-accent hover:text-accent-foreground peer-data-[state=checked]:border-primary [&:has([data-state=checked])]:border-primary"
+                                        >
+                                            <span className="font-semibold">10 Years</span>
+                                        </Label>
+                                    </div>
+                                </RadioGroup>
                             </div>
 
                             {/* Action Buttons */}
@@ -546,7 +574,7 @@ export default function OptimizationTab() {
                                         onValueChange={setMaxIterations}
                                         className="flex gap-2"
                                     >
-                                        {['50', '100', '200', '500'].map((iter) => (
+                                        {['100', '200', '500'].map((iter) => (
                                             <div key={iter} className="flex-1">
                                                 <RadioGroupItem value={iter} id={`iter_${iter}`} className="peer sr-only" />
                                                 <Label
@@ -667,10 +695,12 @@ export default function OptimizationTab() {
                                 </div>
                             </div>
 
-                            {/* Optimization Results */}
+
+                            {/* Timeframe Selector for Auto Tab */}
+                            {/* Preliminary Results */}
                             {optimizationResult && !optimizationResult.error && (
-                                <div className="space-y-4 pt-4 border-t">
-                                    <div className="text-sm font-medium">🎯 Optimization Results</div>
+                                <div className="space-y-4 pt-6 border-t">
+                                    <div className="text-sm font-medium">Preliminary Results</div>
 
                                     {optimizationResult.baseline_analysis && optimizationResult.optimized_analysis ? (
                                         <div className="grid grid-cols-3 gap-2 text-center">
@@ -696,12 +726,75 @@ export default function OptimizationTab() {
                                             </div>
                                         </div>
                                     )}
-
-                                    <Button onClick={applyOptimizedConfig} className="w-full" variant="outline">
-                                        ✅ Apply Optimized Config
-                                    </Button>
                                 </div>
                             )}
+
+                            {/* Timeframe Selector & Actions */}
+                            <div className="space-y-4 pt-6 border-t">
+                                <Label>Backtest Timeframe</Label>
+                                <RadioGroup
+                                    value={yearsBack}
+                                    onValueChange={setYearsBack}
+                                    className="grid grid-cols-2 gap-4"
+                                >
+                                    <div>
+                                        <RadioGroupItem value="5" id="5y-auto" className="peer sr-only" />
+                                        <Label
+                                            htmlFor="5y-auto"
+                                            className="flex flex-col items-center justify-between rounded-md border-2 border-muted bg-popover p-4 hover:bg-accent hover:text-accent-foreground peer-data-[state=checked]:border-primary [&:has([data-state=checked])]:border-primary"
+                                        >
+                                            <span className="font-semibold">5 Years</span>
+                                        </Label>
+                                    </div>
+                                    <div>
+                                        <RadioGroupItem value="10" id="10y-auto" className="peer sr-only" />
+                                        <Label
+                                            htmlFor="10y-auto"
+                                            className="flex flex-col items-center justify-between rounded-md border-2 border-muted bg-popover p-4 hover:bg-accent hover:text-accent-foreground peer-data-[state=checked]:border-primary [&:has([data-state=checked])]:border-primary"
+                                        >
+                                            <span className="font-semibold">10 Years</span>
+                                        </Label>
+                                    </div>
+                                </RadioGroup>
+
+                                {optimizationResult && !optimizationResult.error && (
+                                    <div className="flex gap-4 pt-2">
+                                        <Button
+                                            onClick={() => {
+                                                const optimizedConfig = optimizationResult.result.best_config;
+                                                setConfig(optimizedConfig);
+                                                runValidation(optimizedConfig);
+                                            }}
+                                            size="lg"
+                                            disabled={validationRunning}
+                                            className="flex-1"
+                                        >
+                                            {validationRunning ? (
+                                                <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Running Backtest...</>
+                                            ) : (
+                                                <><Play className="mr-2 h-4 w-4" /> Run Backtest</>
+                                            )}
+                                        </Button>
+                                        <Button
+                                            onClick={() => {
+                                                const optimizedConfig = optimizationResult.result.best_config;
+                                                setConfig(optimizedConfig);
+                                                saveConfiguration(optimizedConfig);
+                                            }}
+                                            size="lg"
+                                            variant="secondary"
+                                            disabled={rescoringRunning}
+                                            className="flex-1"
+                                        >
+                                            {rescoringRunning ? (
+                                                <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Saving... {rescoringProgress?.progress || 0}/{rescoringProgress?.total || 0}</>
+                                            ) : (
+                                                <><Save className="mr-2 h-4 w-4" /> Save Configuration</>
+                                            )}
+                                        </Button>
+                                    </div>
+                                )}
+                            </div>
                         </CardContent>
                     </Card>
                 </TabsContent>
@@ -709,123 +802,125 @@ export default function OptimizationTab() {
 
             {/* Analysis Results */}
             {/* Analysis Results */}
-            {analysis && (
-                <Card className="overflow-hidden border-2">
-                    <CardHeader className="bg-muted/50 border-b pb-4">
-                        <CardTitle className="flex items-center gap-2">
-                            <TrendingUp className="h-5 w-5 text-primary" />
-                            Analysis Results
-                        </CardTitle>
-                    </CardHeader>
-                    <CardContent className="p-6">
-                        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-                            {/* Overall Correlation */}
-                            <div className="flex flex-col items-center justify-center p-4 rounded-xl border bg-card shadow-sm">
-                                <span className="text-sm font-medium text-muted-foreground mb-1">Overall Correlation</span>
-                                <div className={cn(
-                                    "text-3xl font-bold mb-1",
-                                    (analysis.overall_correlation?.coefficient || 0) > 0.1 ? "text-green-600" :
-                                        (analysis.overall_correlation?.coefficient || 0) > 0.05 ? "text-blue-600" : "text-muted-foreground"
-                                )}>
-                                    {analysis.overall_correlation?.coefficient?.toFixed(4)}
+            {
+                analysis && (
+                    <Card className="overflow-hidden border-2">
+                        <CardHeader className="bg-muted/50 border-b pb-4">
+                            <CardTitle className="flex items-center gap-2">
+                                <TrendingUp className="h-5 w-5 text-primary" />
+                                Analysis Results
+                            </CardTitle>
+                        </CardHeader>
+                        <CardContent className="p-6">
+                            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+                                {/* Overall Correlation */}
+                                <div className="flex flex-col items-center justify-center p-4 rounded-xl border bg-card shadow-sm">
+                                    <span className="text-sm font-medium text-muted-foreground mb-1">Overall Correlation</span>
+                                    <div className={cn(
+                                        "text-3xl font-bold mb-1",
+                                        (analysis.overall_correlation?.coefficient || 0) > 0.1 ? "text-green-600" :
+                                            (analysis.overall_correlation?.coefficient || 0) > 0.05 ? "text-blue-600" : "text-muted-foreground"
+                                    )}>
+                                        {analysis.overall_correlation?.coefficient?.toFixed(4)}
+                                    </div>
+                                    <span className="text-xs px-2 py-0.5 rounded-full bg-muted font-medium uppercase tracking-wide">
+                                        {analysis.overall_correlation?.interpretation}
+                                    </span>
                                 </div>
-                                <span className="text-xs px-2 py-0.5 rounded-full bg-muted font-medium uppercase tracking-wide">
-                                    {analysis.overall_correlation?.interpretation}
-                                </span>
-                            </div>
 
-                            {/* Stocks Analyzed */}
-                            <div className="flex flex-col items-center justify-center p-4 rounded-xl border bg-card shadow-sm">
-                                <span className="text-sm font-medium text-muted-foreground mb-1">Stocks Analyzed</span>
-                                <div className="text-3xl font-bold text-foreground mb-1">
-                                    {analysis.total_stocks}
+                                {/* Stocks Analyzed */}
+                                <div className="flex flex-col items-center justify-center p-4 rounded-xl border bg-card shadow-sm">
+                                    <span className="text-sm font-medium text-muted-foreground mb-1">Stocks Analyzed</span>
+                                    <div className="text-3xl font-bold text-foreground mb-1">
+                                        {analysis.total_stocks}
+                                    </div>
+                                    <span className="text-xs text-muted-foreground">
+                                        Unique tickers
+                                    </span>
                                 </div>
-                                <span className="text-xs text-muted-foreground">
-                                    Unique tickers
-                                </span>
-                            </div>
 
-                            {/* Significance */}
-                            <div className="flex flex-col items-center justify-center p-4 rounded-xl border bg-card shadow-sm">
-                                <span className="text-sm font-medium text-muted-foreground mb-1">Significance</span>
-                                <div className="flex items-center gap-2 mb-1">
-                                    {analysis.overall_correlation?.significant ? (
-                                        <>
-                                            <CheckCircle2 className="h-6 w-6 text-green-600" />
-                                            <span className="text-2xl font-bold text-green-600">Yes</span>
-                                        </>
-                                    ) : (
-                                        <>
-                                            <XCircle className="h-6 w-6 text-muted-foreground" />
-                                            <span className="text-2xl font-bold text-muted-foreground">No</span>
-                                        </>
-                                    )}
+                                {/* Significance */}
+                                <div className="flex flex-col items-center justify-center p-4 rounded-xl border bg-card shadow-sm">
+                                    <span className="text-sm font-medium text-muted-foreground mb-1">Significance</span>
+                                    <div className="flex items-center gap-2 mb-1">
+                                        {analysis.overall_correlation?.significant ? (
+                                            <>
+                                                <CheckCircle2 className="h-6 w-6 text-green-600" />
+                                                <span className="text-2xl font-bold text-green-600">Yes</span>
+                                            </>
+                                        ) : (
+                                            <>
+                                                <XCircle className="h-6 w-6 text-muted-foreground" />
+                                                <span className="text-2xl font-bold text-muted-foreground">No</span>
+                                            </>
+                                        )}
+                                    </div>
+                                    <span className="text-xs text-muted-foreground font-mono">
+                                        p = {analysis.overall_correlation?.p_value?.toFixed(4)}
+                                    </span>
                                 </div>
-                                <span className="text-xs text-muted-foreground font-mono">
-                                    p = {analysis.overall_correlation?.p_value?.toFixed(4)}
-                                </span>
                             </div>
-                        </div>
 
-                        {/* Component Correlations */}
-                        <div className="mb-8">
-                            <h4 className="text-sm font-semibold mb-4 flex items-center gap-2">
-                                <BarChart3 className="h-4 w-4" /> Component Correlations
-                            </h4>
-                            <div className="space-y-4">
-                                {Object.entries(analysis.component_correlations || {})
-                                    .sort(([, a], [, b]) => Math.abs(b.coefficient) - Math.abs(a.coefficient))
-                                    .map(([component, corr]) => (
-                                        <div key={component} className="group">
-                                            <div className="flex items-center justify-between text-sm mb-1.5">
-                                                <span className="font-medium text-muted-foreground group-hover:text-foreground transition-colors">
-                                                    {component.replace('_score', '').replace(/_/g, ' ').toUpperCase()}
-                                                </span>
-                                                <span className="font-mono font-medium">
-                                                    {(corr.coefficient || 0).toFixed(3)}
-                                                </span>
-                                            </div>
-                                            <div className="h-2 w-full bg-secondary rounded-full overflow-hidden">
-                                                <div
-                                                    className={cn("h-full rounded-full transition-all duration-500",
-                                                        corr.coefficient > 0 ? "bg-primary" : "bg-destructive"
-                                                    )}
-                                                    style={{ width: `${Math.min(Math.abs(corr.coefficient || 0) * 100 * 3, 100)}%` }} // Scaled specifically for visibility
-                                                />
-                                            </div>
-                                        </div>
-                                    ))}
-                            </div>
-                        </div>
-
-                        {/* Insights */}
-                        {analysis.insights?.length > 0 && (
-                            <div className="rounded-lg border bg-muted/30 p-4">
-                                <h4 className="text-sm font-semibold mb-3 flex items-center gap-2">
-                                    <Sparkles className="h-4 w-4 text-amber-500" /> Key Insights
+                            {/* Component Correlations */}
+                            <div className="mb-8">
+                                <h4 className="text-sm font-semibold mb-4 flex items-center gap-2">
+                                    <BarChart3 className="h-4 w-4" /> Component Correlations
                                 </h4>
-                                <div className="space-y-3">
-                                    {analysis.insights.map((insight, idx) => {
-                                        // Simple heuristic to strip potential leading emojis and assign icons
-                                        const cleanText = insight.replace(/^[\u{1F300}-\u{1F9FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}]\s*/u, '');
-                                        let Icon = Info;
-                                        if (insight.includes('Best predictor')) Icon = Target;
-                                        if (insight.includes('Best performing')) Icon = TrendingUp;
-                                        if (insight.toLowerCase().includes('significant')) Icon = CheckCircle2;
-
-                                        return (
-                                            <div key={idx} className="flex gap-3 text-sm">
-                                                <Icon className="h-4 w-4 text-muted-foreground shrink-0 mt-0.5" />
-                                                <span className="text-muted-foreground leading-relaxed">{cleanText}</span>
+                                <div className="space-y-4">
+                                    {Object.entries(analysis.component_correlations || {})
+                                        .sort(([, a], [, b]) => Math.abs(b.coefficient) - Math.abs(a.coefficient))
+                                        .map(([component, corr]) => (
+                                            <div key={component} className="group">
+                                                <div className="flex items-center justify-between text-sm mb-1.5">
+                                                    <span className="font-medium text-muted-foreground group-hover:text-foreground transition-colors">
+                                                        {component.replace('_score', '').replace(/_/g, ' ').toUpperCase()}
+                                                    </span>
+                                                    <span className="font-mono font-medium">
+                                                        {(corr.coefficient || 0).toFixed(3)}
+                                                    </span>
+                                                </div>
+                                                <div className="h-2 w-full bg-secondary rounded-full overflow-hidden">
+                                                    <div
+                                                        className={cn("h-full rounded-full transition-all duration-500",
+                                                            corr.coefficient > 0 ? "bg-primary" : "bg-destructive"
+                                                        )}
+                                                        style={{ width: `${Math.min(Math.abs(corr.coefficient || 0) * 100 * 3, 100)}%` }} // Scaled specifically for visibility
+                                                    />
+                                                </div>
                                             </div>
-                                        );
-                                    })}
+                                        ))}
                                 </div>
                             </div>
-                        )}
-                    </CardContent>
-                </Card>
-            )}
+
+                            {/* Insights */}
+                            {analysis.insights?.length > 0 && (
+                                <div className="rounded-lg border bg-muted/30 p-4">
+                                    <h4 className="text-sm font-semibold mb-3 flex items-center gap-2">
+                                        <Sparkles className="h-4 w-4 text-amber-500" /> Key Insights
+                                    </h4>
+                                    <div className="space-y-3">
+                                        {analysis.insights.map((insight, idx) => {
+                                            // Simple heuristic to strip potential leading emojis and assign icons
+                                            const cleanText = insight.replace(/^[\u{1F300}-\u{1F9FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}]\s*/u, '');
+                                            let Icon = Info;
+                                            if (insight.includes('Best predictor')) Icon = Target;
+                                            if (insight.includes('Best performing')) Icon = TrendingUp;
+                                            if (insight.toLowerCase().includes('significant')) Icon = CheckCircle2;
+
+                                            return (
+                                                <div key={idx} className="flex gap-3 text-sm">
+                                                    <Icon className="h-4 w-4 text-muted-foreground shrink-0 mt-0.5" />
+                                                    <span className="text-muted-foreground leading-relaxed">{cleanText}</span>
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                </div>
+                            )}
+                        </CardContent>
+                    </Card>
+                )
+            }
 
             {/* Correlation Guide Card */}
             <Card className="border-l-4 border-l-primary">
@@ -864,6 +959,6 @@ export default function OptimizationTab() {
                     </div>
                 </CardContent>
             </Card>
-        </div>
+        </div >
     )
 }
