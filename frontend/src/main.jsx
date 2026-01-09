@@ -5,13 +5,16 @@ import './index.css'
 import App from './App.jsx'
 import { AuthProvider } from './context/AuthContext'
 import { ChatProvider } from './context/ChatContext'
+import { ThemeProvider } from './components/theme-provider'
 
 createRoot(document.getElementById('root')).render(
   <StrictMode>
     <BrowserRouter>
       <AuthProvider>
         <ChatProvider>
-          <App />
+          <ThemeProvider defaultTheme="dark" storageKey="vite-ui-theme">
+            <App />
+          </ThemeProvider>
         </ChatProvider>
       </AuthProvider>
     </BrowserRouter>
