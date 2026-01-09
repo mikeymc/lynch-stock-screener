@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button"
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
 import { Label } from "@/components/ui/label"
 import { cn } from "@/lib/utils"
+import OptimizationTab from "@/components/settings/OptimizationTab"
 
 export default function Settings() {
     const [activeTab, setActiveTab] = useState("appearance")
@@ -18,7 +19,7 @@ export default function Settings() {
         },
         {
             id: "item2",
-            title: "Item 2",
+            title: "Algorithm Tuning",
         },
         {
             id: "item3",
@@ -53,7 +54,7 @@ export default function Settings() {
                         ))}
                     </nav>
                 </aside>
-                <div className="flex-1 lg:max-w-2xl">
+                <div className="flex-1 lg:max-w-4xl">
                     {activeTab === "appearance" && (
                         <div className="space-y-6">
                             <div>
@@ -95,18 +96,7 @@ export default function Settings() {
                     )}
 
                     {activeTab === "item2" && (
-                        <div className="space-y-6">
-                            <div>
-                                <h3 className="text-lg font-medium">Item 2</h3>
-                                <p className="text-sm text-muted-foreground">
-                                    This is a placeholder for Item 2 settings.
-                                </p>
-                            </div>
-                            <div className="border-t" />
-                            <div className="flex items-center justify-center h-40 border-2 border-dashed rounded-lg text-muted-foreground">
-                                Content for Item 2
-                            </div>
-                        </div>
+                        <OptimizationTab />
                     )}
 
                     {activeTab === "item3" && (
@@ -128,3 +118,4 @@ export default function Settings() {
         </div>
     )
 }
+

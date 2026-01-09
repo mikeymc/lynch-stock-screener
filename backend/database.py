@@ -3490,40 +3490,14 @@ class Database:
         return settings
 
     def init_default_settings(self):
-        """Initialize default settings if they don't exist."""
+        """Initialize default settings if they don't exist.
+        
+        NOTE: Algorithm weights and thresholds are stored in algorithm_configurations table,
+        NOT here. This only stores feature flags and other app settings.
+        """
         logger.info("Initializing default settings (only adds missing settings, does not overwrite existing)")
         defaults = {
-            # PEG thresholds (existing)
-            'peg_excellent': {'value': 1.0, 'desc': 'Upper limit for Excellent PEG ratio'},
-            'peg_good': {'value': 1.5, 'desc': 'Upper limit for Good PEG ratio'},
-            'peg_fair': {'value': 2.0, 'desc': 'Upper limit for Fair PEG ratio'},
-            
-            # Debt thresholds (existing)
-            'debt_excellent': {'value': 0.5, 'desc': 'Upper limit for Excellent Debt/Equity'},
-            'debt_good': {'value': 1.0, 'desc': 'Upper limit for Good Debt/Equity'},
-            'debt_moderate': {'value': 2.0, 'desc': 'Upper limit for Moderate Debt/Equity'},
-            
-            # Institutional ownership thresholds (existing)
-            'inst_own_min': {'value': 0.20, 'desc': 'Minimum ideal institutional ownership'},
-            'inst_own_max': {'value': 0.60, 'desc': 'Maximum ideal institutional ownership'},
-            
-            # Revenue growth thresholds (NEW)
-            'revenue_growth_excellent': {'value': 15.0, 'desc': 'Excellent revenue growth % (CAGR)'},
-            'revenue_growth_good': {'value': 10.0, 'desc': 'Good revenue growth % (CAGR)'},
-            'revenue_growth_fair': {'value': 5.0, 'desc': 'Fair revenue growth % (CAGR)'},
-            
-            # Income growth thresholds (NEW)
-            'income_growth_excellent': {'value': 15.0, 'desc': 'Excellent income growth % (CAGR)'},
-            'income_growth_good': {'value': 10.0, 'desc': 'Good income growth % (CAGR)'},
-            'income_growth_fair': {'value': 5.0, 'desc': 'Fair income growth % (CAGR)'},
-            
-            # Algorithm weights (existing)
-            'weight_peg': {'value': 0.50, 'desc': 'Weight for PEG Score in Weighted Algo'},
-            'weight_consistency': {'value': 0.25, 'desc': 'Weight for Consistency in Weighted Algo'},
-            'weight_debt': {'value': 0.15, 'desc': 'Weight for Debt Score in Weighted Algo'},
-            'weight_ownership': {'value': 0.10, 'desc': 'Weight for Ownership in Weighted Algo'},
-            
-            # Feature flags
+            # Feature flags only - weights/thresholds are in algorithm_configurations
             'feature_reddit_enabled': {'value': False, 'desc': 'Enable Reddit social sentiment tab (experimental)'},
             'feature_agent_mode_enabled': {'value': False, 'desc': 'Enable Agent Mode toggle in chat (experimental)'},
         }
@@ -3536,7 +3510,27 @@ class Database:
                 self.set_setting(key, data['value'], data['desc'])
                 added_count += 1
 
-        logger.info(f"Default settings initialization complete: {added_count} new settings added")
+        # Migration: Remove weight/threshold entries from app_settings (they belong in algorithm_configurations)
+        weight_keys_to_remove = [
+            'weight_peg', 'weight_consistency', 'weight_debt', 'weight_ownership',
+            'peg_excellent', 'peg_good', 'peg_fair',
+            'debt_excellent', 'debt_good', 'debt_moderate',
+            'inst_own_min', 'inst_own_max',
+            'revenue_growth_excellent', 'revenue_growth_good', 'revenue_growth_fair',
+            'income_growth_excellent', 'income_growth_good', 'income_growth_fair',
+        ]
+        removed_count = 0
+        for key in weight_keys_to_remove:
+            if key in current_settings:
+                conn = self.get_connection()
+                cursor = conn.cursor()
+                cursor.execute("DELETE FROM app_settings WHERE key = %s", (key,))
+                conn.commit()
+                self.return_connection(conn)
+                removed_count += 1
+                logger.info(f"Migrated: removed '{key}' from app_settings (now in algorithm_configurations)")
+
+        logger.info(f"Default settings initialization complete: {added_count} new settings added, {removed_count} weight entries migrated out")
     # Backtest Results Methods
     def save_backtest_result(self, result: Dict[str, Any]):
         """Save a backtest result"""

@@ -224,13 +224,12 @@ class Backtester:
     def run_backtest(self, symbol: str, years_back: int = 1, overrides: Dict[str, float] = None) -> Dict[str, Any]:
         """
         Run a backtest for a single stock.
+        
+        NOTE: Assumes weekly price data is already cached via the price_history worker job.
         """
         end_date = datetime.now()
         start_date = end_date - timedelta(days=365 * years_back)
         start_date_str = start_date.strftime('%Y-%m-%d')
-        
-        # 1. Ensure we have price history
-        self.fetch_historical_prices(symbol, start_date_str, end_date.strftime('%Y-%m-%d'))
         
         # 3. Calculate Historical Score (at start date)
         # This returns the full scoring result including the score

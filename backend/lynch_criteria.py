@@ -101,9 +101,61 @@ class LynchCriteria:
         self.reload_settings()
 
     def reload_settings(self):
-        """Reload settings from database."""
+        """Reload settings from database.
+        
+        Source of truth: algorithm_configurations table (highest id = current config)
+        """
         logger.info("Reloading Lynch criteria settings from database")
-        self.settings = self.db.get_all_settings()
+        
+        # Load from algorithm_configurations table - always use highest ID
+        configs = self.db.get_algorithm_configs()
+        algo_config = configs[0] if configs else None
+        
+        # Build settings dict from algorithm_configurations or use defaults
+        if algo_config:
+            logger.info(f"Using algorithm config: {algo_config.get('name', 'unnamed')} (id={algo_config.get('id')})")
+            self.settings = {
+                'peg_excellent': {'value': algo_config.get('peg_excellent', 1.0)},
+                'peg_good': {'value': algo_config.get('peg_good', 1.5)},
+                'peg_fair': {'value': algo_config.get('peg_fair', 2.0)},
+                'debt_excellent': {'value': algo_config.get('debt_excellent', 0.5)},
+                'debt_good': {'value': algo_config.get('debt_good', 1.0)},
+                'debt_moderate': {'value': algo_config.get('debt_moderate', 2.0)},
+                'inst_own_min': {'value': algo_config.get('inst_own_min', 0.20)},
+                'inst_own_max': {'value': algo_config.get('inst_own_max', 0.60)},
+                'revenue_growth_excellent': {'value': algo_config.get('revenue_growth_excellent', 15.0)},
+                'revenue_growth_good': {'value': algo_config.get('revenue_growth_good', 10.0)},
+                'revenue_growth_fair': {'value': algo_config.get('revenue_growth_fair', 5.0)},
+                'income_growth_excellent': {'value': algo_config.get('income_growth_excellent', 15.0)},
+                'income_growth_good': {'value': algo_config.get('income_growth_good', 10.0)},
+                'income_growth_fair': {'value': algo_config.get('income_growth_fair', 5.0)},
+                'weight_peg': {'value': algo_config.get('weight_peg', 0.50)},
+                'weight_consistency': {'value': algo_config.get('weight_consistency', 0.25)},
+                'weight_debt': {'value': algo_config.get('weight_debt', 0.15)},
+                'weight_ownership': {'value': algo_config.get('weight_ownership', 0.10)},
+            }
+        else:
+            logger.warning("No algorithm configuration found - using hardcoded defaults")
+            self.settings = {
+                'peg_excellent': {'value': 1.0},
+                'peg_good': {'value': 1.5},
+                'peg_fair': {'value': 2.0},
+                'debt_excellent': {'value': 0.5},
+                'debt_good': {'value': 1.0},
+                'debt_moderate': {'value': 2.0},
+                'inst_own_min': {'value': 0.20},
+                'inst_own_max': {'value': 0.60},
+                'revenue_growth_excellent': {'value': 15.0},
+                'revenue_growth_good': {'value': 10.0},
+                'revenue_growth_fair': {'value': 5.0},
+                'income_growth_excellent': {'value': 15.0},
+                'income_growth_good': {'value': 10.0},
+                'income_growth_fair': {'value': 5.0},
+                'weight_peg': {'value': 0.50},
+                'weight_consistency': {'value': 0.25},
+                'weight_debt': {'value': 0.15},
+                'weight_ownership': {'value': 0.10},
+            }
         
         # Cache values for easy access
         self.peg_excellent = self.settings['peg_excellent']['value']
@@ -117,7 +169,7 @@ class LynchCriteria:
         self.inst_own_min = self.settings['inst_own_min']['value']
         self.inst_own_max = self.settings['inst_own_max']['value']
         
-        # Cache new growth thresholds
+        # Cache growth thresholds
         self.revenue_growth_excellent = self.settings['revenue_growth_excellent']['value']
         self.revenue_growth_good = self.settings['revenue_growth_good']['value']
         self.revenue_growth_fair = self.settings['revenue_growth_fair']['value']

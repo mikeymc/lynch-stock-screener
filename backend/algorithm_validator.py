@@ -34,8 +34,8 @@ class AlgorithmValidator:
                 sp500_table = tables[0]
                 symbols = sp500_table['Symbol'].tolist()
 
-                # Clean symbols (remove dots for BRK.B -> BRK-B format)
-                symbols = [s.replace('.', '-') for s in symbols]
+                # Keep symbols as-is (BRK.B format matches our database)
+                # yfinance accepts both BRK.B and BRK-B
 
                 logger.info(f"Fetched {len(symbols)} S&P 500 symbols from Wikipedia")
                 return symbols
@@ -44,7 +44,7 @@ class AlgorithmValidator:
             # Fallback to a static list of major stocks if fetch fails
             logger.warning("Using fallback list of 36 major stocks")
             return [
-                'AAPL', 'MSFT', 'GOOGL', 'AMZN', 'META', 'NVDA', 'TSLA', 'BRK-B',
+                'AAPL', 'MSFT', 'GOOGL', 'AMZN', 'META', 'NVDA', 'TSLA', 'BRK.B',
                 'UNH', 'JNJ', 'JPM', 'V', 'XOM', 'PG', 'MA', 'HD', 'CVX', 'LLY',
                 'ABBV', 'MRK', 'PEP', 'KO', 'COST', 'AVGO', 'WMT', 'ADBE', 'MCD',
                 'NKE', 'DIS', 'CRM', 'CSCO', 'ACN', 'TMO', 'VZ', 'ABT', 'NFLX'

@@ -62,27 +62,8 @@ class AlgorithmOptimizer:
         
         logger.info(f"Optimization complete. Final correlation: {final_correlation:.4f}, Improvement: {improvement:.4f}")
         
-        # Save configuration to database
-        config_data = {
-            'name': f'Optimized ({years_back}yr)',
-            'weight_peg': best_config['weight_peg'],
-            'weight_consistency': best_config['weight_consistency'],
-            'weight_debt': best_config['weight_debt'],
-            'weight_ownership': best_config['weight_ownership'],
-            f'correlation_{years_back}yr': final_correlation
-        }
-        config_id = self.db.save_algorithm_config(config_data)
-        
-        # Save optimization run
-        conn = self.db.get_connection()
-        cursor = conn.cursor()
-        cursor.execute("""
-            INSERT INTO optimization_runs
-            (years_back, iterations, initial_correlation, final_correlation, improvement, best_config_id)
-            VALUES (%s, %s, %s, %s, %s, %s)
-        """, (years_back, len(history), initial_correlation, final_correlation, improvement, config_id))
-        conn.commit()
-        self.db.return_connection(conn)
+        # NOTE: Config is NOT auto-saved here. User must explicitly click "Save" 
+        # to persist the optimized config to algorithm_configurations table.
         
         return {
             'initial_config': current_config,
@@ -92,41 +73,60 @@ class AlgorithmOptimizer:
             'improvement': improvement,
             'iterations': len(history),
             'history': history[-10:],  # Last 10 iterations for display
-            'config_id': config_id
         }
     
     def _get_current_config(self) -> Dict[str, float]:
-        """Get current algorithm weights and thresholds from settings"""
+        """Get current algorithm weights and thresholds from database.
+        
+        Source of truth: algorithm_configurations table (highest id = current config)
+        """
+        configs = self.db.get_algorithm_configs()
+        algo_config = configs[0] if configs else None
+        
+        if algo_config:
+            logger.info(f"Using algorithm config: {algo_config.get('name', 'unnamed')} (id={algo_config.get('id')})")
+            return {
+                'weight_peg': algo_config.get('weight_peg', 0.50),
+                'weight_consistency': algo_config.get('weight_consistency', 0.25),
+                'weight_debt': algo_config.get('weight_debt', 0.15),
+                'weight_ownership': algo_config.get('weight_ownership', 0.10),
+                'peg_excellent': algo_config.get('peg_excellent', 1.0),
+                'peg_good': algo_config.get('peg_good', 1.5),
+                'peg_fair': algo_config.get('peg_fair', 2.0),
+                'debt_excellent': algo_config.get('debt_excellent', 0.5),
+                'debt_good': algo_config.get('debt_good', 1.0),
+                'debt_moderate': algo_config.get('debt_moderate', 2.0),
+                'inst_own_min': algo_config.get('inst_own_min', 0.20),
+                'inst_own_max': algo_config.get('inst_own_max', 0.60),
+                'revenue_growth_excellent': algo_config.get('revenue_growth_excellent', 15.0),
+                'revenue_growth_good': algo_config.get('revenue_growth_good', 10.0),
+                'revenue_growth_fair': algo_config.get('revenue_growth_fair', 5.0),
+                'income_growth_excellent': algo_config.get('income_growth_excellent', 15.0),
+                'income_growth_good': algo_config.get('income_growth_good', 10.0),
+                'income_growth_fair': algo_config.get('income_growth_fair', 5.0),
+            }
+        
+        # No config exists - use hardcoded defaults
+        logger.warning("No algorithm configuration found - using hardcoded defaults")
         return {
-            # Weights
-            'weight_peg': self.db.get_setting('weight_peg', 0.50),
-            'weight_consistency': self.db.get_setting('weight_consistency', 0.25),
-            'weight_debt': self.db.get_setting('weight_debt', 0.15),
-            'weight_ownership': self.db.get_setting('weight_ownership', 0.10),
-            
-            # PEG thresholds
-            'peg_excellent': self.db.get_setting('peg_excellent', 1.0),
-            'peg_good': self.db.get_setting('peg_good', 1.5),
-            'peg_fair': self.db.get_setting('peg_fair', 2.0),
-            
-            # Debt thresholds
-            'debt_excellent': self.db.get_setting('debt_excellent', 0.5),
-            'debt_good': self.db.get_setting('debt_good', 1.0),
-            'debt_moderate': self.db.get_setting('debt_moderate', 2.0),
-            
-            # Institutional ownership thresholds
-            'inst_own_min': self.db.get_setting('inst_own_min', 0.20),
-            'inst_own_max': self.db.get_setting('inst_own_max', 0.60),
-            
-            # Revenue growth thresholds
-            'revenue_growth_excellent': self.db.get_setting('revenue_growth_excellent', 15.0),
-            'revenue_growth_good': self.db.get_setting('revenue_growth_good', 10.0),
-            'revenue_growth_fair': self.db.get_setting('revenue_growth_fair', 5.0),
-            
-            # Income growth thresholds
-            'income_growth_excellent': self.db.get_setting('income_growth_excellent', 15.0),
-            'income_growth_good': self.db.get_setting('income_growth_good', 10.0),
-            'income_growth_fair': self.db.get_setting('income_growth_fair', 5.0),
+            'weight_peg': 0.50,
+            'weight_consistency': 0.25,
+            'weight_debt': 0.15,
+            'weight_ownership': 0.10,
+            'peg_excellent': 1.0,
+            'peg_good': 1.5,
+            'peg_fair': 2.0,
+            'debt_excellent': 0.5,
+            'debt_good': 1.0,
+            'debt_moderate': 2.0,
+            'inst_own_min': 0.20,
+            'inst_own_max': 0.60,
+            'revenue_growth_excellent': 15.0,
+            'revenue_growth_good': 10.0,
+            'revenue_growth_fair': 5.0,
+            'income_growth_excellent': 15.0,
+            'income_growth_good': 10.0,
+            'income_growth_fair': 5.0,
         }
     
     def _calculate_correlation_with_config(self, results: List[Dict[str, Any]], 

@@ -3120,104 +3120,143 @@ def get_rescoring_progress(job_id):
 
 @app.route('/api/algorithm/config', methods=['GET', 'POST'])
 def algorithm_config():
-    """Get or update algorithm configuration"""
+    """Get or update algorithm configuration.
+    
+    Source of truth: algorithm_configurations table (highest id = current config)
+    """
     if request.method == 'GET':
-        # Get current configuration from settings table (includes all thresholds)
-        config = {
-            # Weights
-            'weight_peg': db.get_setting('weight_peg', 0.50),
-            'weight_consistency': db.get_setting('weight_consistency', 0.25),
-            'weight_debt': db.get_setting('weight_debt', 0.15),
-            'weight_ownership': db.get_setting('weight_ownership', 0.10),
-            
-            # PEG Thresholds
-            'peg_excellent': db.get_setting('peg_excellent', 1.0),
-            'peg_good': db.get_setting('peg_good', 1.5),
-            'peg_fair': db.get_setting('peg_fair', 2.0),
-            
-            # Debt Thresholds
-            'debt_excellent': db.get_setting('debt_excellent', 0.5),
-            'debt_good': db.get_setting('debt_good', 1.0),
-            'debt_moderate': db.get_setting('debt_moderate', 2.0),
-            
-            # Institutional Ownership Thresholds
-            'inst_own_min': db.get_setting('inst_own_min', 0.20),
-            'inst_own_max': db.get_setting('inst_own_max', 0.60),
-            
-            # Revenue Growth Thresholds
-            'revenue_growth_excellent': db.get_setting('revenue_growth_excellent', 15.0),
-            'revenue_growth_good': db.get_setting('revenue_growth_good', 10.0),
-            'revenue_growth_fair': db.get_setting('revenue_growth_fair', 5.0),
-            
-            # Income Growth Thresholds
-            'income_growth_excellent': db.get_setting('income_growth_excellent', 15.0),
-            'income_growth_good': db.get_setting('income_growth_good', 10.0),
-            'income_growth_fair': db.get_setting('income_growth_fair', 5.0),
-        }
+        # Load from algorithm_configurations table - always use highest ID
+        configs = db.get_algorithm_configs()
+        latest_config = configs[0] if configs else None
+        
+        if latest_config:
+            config = {
+                'weight_peg': latest_config.get('weight_peg', 0.50),
+                'weight_consistency': latest_config.get('weight_consistency', 0.25),
+                'weight_debt': latest_config.get('weight_debt', 0.15),
+                'weight_ownership': latest_config.get('weight_ownership', 0.10),
+                'peg_excellent': latest_config.get('peg_excellent', 1.0),
+                'peg_good': latest_config.get('peg_good', 1.5),
+                'peg_fair': latest_config.get('peg_fair', 2.0),
+                'debt_excellent': latest_config.get('debt_excellent', 0.5),
+                'debt_good': latest_config.get('debt_good', 1.0),
+                'debt_moderate': latest_config.get('debt_moderate', 2.0),
+                'inst_own_min': latest_config.get('inst_own_min', 0.20),
+                'inst_own_max': latest_config.get('inst_own_max', 0.60),
+                'revenue_growth_excellent': latest_config.get('revenue_growth_excellent', 15.0),
+                'revenue_growth_good': latest_config.get('revenue_growth_good', 10.0),
+                'revenue_growth_fair': latest_config.get('revenue_growth_fair', 5.0),
+                'income_growth_excellent': latest_config.get('income_growth_excellent', 15.0),
+                'income_growth_good': latest_config.get('income_growth_good', 10.0),
+                'income_growth_fair': latest_config.get('income_growth_fair', 5.0),
+            }
+        else:
+            # No configs exist - return hardcoded defaults
+            config = {
+                'weight_peg': 0.50,
+                'weight_consistency': 0.25,
+                'weight_debt': 0.15,
+                'weight_ownership': 0.10,
+                'peg_excellent': 1.0,
+                'peg_good': 1.5,
+                'peg_fair': 2.0,
+                'debt_excellent': 0.5,
+                'debt_good': 1.0,
+                'debt_moderate': 2.0,
+                'inst_own_min': 0.20,
+                'inst_own_max': 0.60,
+                'revenue_growth_excellent': 15.0,
+                'revenue_growth_good': 10.0,
+                'revenue_growth_fair': 5.0,
+                'income_growth_excellent': 15.0,
+                'income_growth_good': 10.0,
+                'income_growth_fair': 5.0,
+            }
         
         return jsonify({'current': config})
     
     elif request.method == 'POST':
-        # Update configuration - save all provided parameters to settings table
+        # Save new config - INSERT new row into algorithm_configurations
         data = request.get_json()
         
-        if 'config' in data:
-            config = data['config']
-            
-            # Save all parameters that are provided
-            for key, value in config.items():
-                db.set_setting(key, value)
-
-            # Reload settings in LynchCriteria to pick up new thresholds
-            criteria.reload_settings()
-
-            # Start async rescoring job
-            import uuid
-            job_id = str(uuid.uuid4())
-            
-            def run_rescoring_background():
-                try:
-                    rescoring_jobs[job_id] = {
-                        'status': 'running',
-                        'progress': 0,
-                        'total': 0
-                    }
-                    
-                    # Progress callback
-                    def on_progress(current, total):
-                        rescoring_jobs[job_id].update({
-                            'progress': current,
-                            'total': total
-                        })
-                    
-                    # Run rescoring
-                    rescorer = StockRescorer(db, criteria)
-                    summary = rescorer.rescore_saved_stocks(
-                        algorithm='weighted',
-                        progress_callback=on_progress
-                    )
-                    
-                    rescoring_jobs[job_id] = {
-                        'status': 'complete',
-                        'summary': summary
-                    }
-                except Exception as e:
-                    logger.error(f"Rescoring failed: {e}", exc_info=True)
-                    rescoring_jobs[job_id] = {
-                        'status': 'error',
-                        'error': str(e)
-                    }
-            
-            thread = threading.Thread(target=run_rescoring_background, daemon=True)
-            thread.start()
-
-            return jsonify({
-                'status': 'updated',
-                'config': config,
-                'rescore_job_id': job_id
-            })
-        else:
+        if 'config' not in data:
             return jsonify({'error': 'No config provided'}), 400
+        
+        config = data['config']
+        
+        # Create new algorithm configuration row
+        config_data = {
+            'name': config.get('name', 'Manual Save'),
+            'weight_peg': config.get('weight_peg', 0.50),
+            'weight_consistency': config.get('weight_consistency', 0.25),
+            'weight_debt': config.get('weight_debt', 0.15),
+            'weight_ownership': config.get('weight_ownership', 0.10),
+            'peg_excellent': config.get('peg_excellent', 1.0),
+            'peg_good': config.get('peg_good', 1.5),
+            'peg_fair': config.get('peg_fair', 2.0),
+            'debt_excellent': config.get('debt_excellent', 0.5),
+            'debt_good': config.get('debt_good', 1.0),
+            'debt_moderate': config.get('debt_moderate', 2.0),
+            'inst_own_min': config.get('inst_own_min', 0.20),
+            'inst_own_max': config.get('inst_own_max', 0.60),
+            'revenue_growth_excellent': config.get('revenue_growth_excellent', 15.0),
+            'revenue_growth_good': config.get('revenue_growth_good', 10.0),
+            'revenue_growth_fair': config.get('revenue_growth_fair', 5.0),
+            'income_growth_excellent': config.get('income_growth_excellent', 15.0),
+            'income_growth_good': config.get('income_growth_good', 10.0),
+            'income_growth_fair': config.get('income_growth_fair', 5.0),
+        }
+        
+        config_id = db.save_algorithm_config(config_data)
+        logger.info(f"Saved new algorithm configuration with id={config_id}")
+
+        # Reload settings in LynchCriteria to pick up new config
+        criteria.reload_settings()
+
+        # Start async rescoring job
+        import uuid
+        job_id = str(uuid.uuid4())
+        
+        def run_rescoring_background():
+            try:
+                rescoring_jobs[job_id] = {
+                    'status': 'running',
+                    'progress': 0,
+                    'total': 0
+                }
+                
+                def on_progress(current, total):
+                    rescoring_jobs[job_id].update({
+                        'progress': current,
+                        'total': total
+                    })
+                
+                rescorer = StockRescorer(db, criteria)
+                summary = rescorer.rescore_saved_stocks(
+                    algorithm='weighted',
+                    progress_callback=on_progress
+                )
+                
+                rescoring_jobs[job_id] = {
+                    'status': 'complete',
+                    'summary': summary
+                }
+            except Exception as e:
+                logger.error(f"Rescoring failed: {e}", exc_info=True)
+                rescoring_jobs[job_id] = {
+                    'status': 'error',
+                    'error': str(e)
+                }
+        
+        thread = threading.Thread(target=run_rescoring_background, daemon=True)
+        thread.start()
+
+        return jsonify({
+            'status': 'saved',
+            'config_id': config_id,
+            'config': config_data,
+            'rescore_job_id': job_id
+        })
 
 
 @app.route('/api/backtest/results', methods=['GET'])
