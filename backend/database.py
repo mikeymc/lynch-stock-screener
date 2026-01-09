@@ -905,9 +905,8 @@ class Database:
                 income_growth_excellent REAL DEFAULT 15.0,
                 income_growth_good REAL DEFAULT 10.0,
                 income_growth_fair REAL DEFAULT 5.0,
-                correlation_1yr REAL,
-                correlation_3yr REAL,
                 correlation_5yr REAL,
+                correlation_10yr REAL,
                 is_active BOOLEAN DEFAULT FALSE,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
@@ -930,7 +929,9 @@ class Database:
                 ('revenue_growth_fair', 'REAL DEFAULT 5.0'),
                 ('income_growth_excellent', 'REAL DEFAULT 15.0'),
                 ('income_growth_good', 'REAL DEFAULT 10.0'),
-                ('income_growth_fair', 'REAL DEFAULT 5.0')
+                ('income_growth_fair', 'REAL DEFAULT 5.0'),
+                ('correlation_5yr', 'REAL'),
+                ('correlation_10yr', 'REAL'),
             ]
             
             for col_name, col_def in new_columns:
@@ -943,6 +944,12 @@ class Database:
                             WHEN duplicate_column THEN NULL;
                         END;
                     END $$;
+                """)
+            
+            # Drop old correlation columns
+            for old_col in ['correlation_1yr', 'correlation_3yr']:
+                cursor.execute(f"""
+                    ALTER TABLE algorithm_configurations DROP COLUMN IF EXISTS {old_col};
                 """)
         except Exception as e:
             print(f"Migration warning: {e}")
@@ -3634,14 +3641,14 @@ class Database:
              inst_own_min, inst_own_max,
              revenue_growth_excellent, revenue_growth_good, revenue_growth_fair,
              income_growth_excellent, income_growth_good, income_growth_fair,
-             correlation_1yr, correlation_3yr, correlation_5yr, is_active)
+             correlation_5yr, correlation_10yr, is_active)
             VALUES (%s, %s, %s, %s, %s, 
                     %s, %s, %s, 
                     %s, %s, %s, 
                     %s, %s, 
                     %s, %s, %s, 
                     %s, %s, %s, 
-                    %s, %s, %s, %s)
+                    %s, %s, %s)
             RETURNING id
         """, (
             config.get('name', 'Unnamed'),
@@ -3663,9 +3670,8 @@ class Database:
             config.get('income_growth_excellent', 15.0),
             config.get('income_growth_good', 10.0),
             config.get('income_growth_fair', 5.0),
-            config.get('correlation_1yr'),
-            config.get('correlation_3yr'),
             config.get('correlation_5yr'),
+            config.get('correlation_10yr'),
             config.get('is_active', False)
         ))
         
