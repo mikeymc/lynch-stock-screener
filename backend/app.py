@@ -3204,6 +3204,8 @@ def algorithm_config():
             'revenue_growth_excellent': config.get('revenue_growth_excellent', 15.0),
             'revenue_growth_good': config.get('revenue_growth_good', 10.0),
             'revenue_growth_fair': config.get('revenue_growth_fair', 5.0),
+            'income_growth_excellent': config.get('income_growth_excellent', 15.0),
+            'income_growth_good': config.get('income_growth_good', 10.0),
             'income_growth_fair': config.get('income_growth_fair', 5.0),
             'correlation_5yr': config.get('correlation_5yr'),
             'correlation_10yr': config.get('correlation_10yr'),
