@@ -511,8 +511,10 @@ class AlgorithmOptimizer:
             # Return negative correlation (we're minimizing, but want to maximize correlation)
             return -correlation
 
+        # n_initial_points is for exploration, n_calls is the user's requested optimization iterations
+        n_initial_points = 50
+        
         # Callback for progress reporting
-        n_initial = 50  # Same as n_initial_points below
         def on_step(res):
             if progress_callback:
                 try:
@@ -541,7 +543,7 @@ class AlgorithmOptimizer:
                     # len(res.x_iters) = total evaluations (initial + optimization)
                     total_evals = len(res.x_iters)
                     # Optimization iterations = total minus initial sampling
-                    opt_iteration = max(0, total_evals - n_initial)
+                    opt_iteration = max(0, total_evals - n_initial_points)
                     
                     progress_callback({
                         'iteration': opt_iteration,
@@ -553,15 +555,17 @@ class AlgorithmOptimizer:
                 except Exception as e:
                     logger.error(f"Error in progress callback: {e}")
 
-        # Run Enhanced Bayesian optimization
-        logger.info(f"Starting Enhanced Bayesian optimization with {n_calls} evaluations")
+        # Total calls = n_initial_points + n_calls (user's requested iterations)
+        total_calls = n_calls + n_initial_points
+        
+        logger.info(f"Starting Enhanced Bayesian optimization: {n_initial_points} initial + {n_calls} optimization = {total_calls} total evaluations")
         logger.info("Enhancements: gp_hedge acquisition, LHS initial sampling, warm starting")
         
         result = gp_minimize(
             objective,
             space,
-            n_calls=n_calls,
-            n_initial_points=50,  # More initial samples for better exploration
+            n_calls=total_calls,
+            n_initial_points=n_initial_points,
             initial_point_generator='lhs',  # Latin Hypercube Sampling
             acq_func='gp_hedge',  # Adaptive acquisition function
             x0=x0,  # Warm start from previous best configs

@@ -456,24 +456,20 @@ export default function OptimizationTab() {
                                     onValueChange={setYearsBack}
                                     className="grid grid-cols-2 gap-4"
                                 >
-                                    <div>
-                                        <RadioGroupItem value="5" id="5y-manual" className="peer sr-only" />
-                                        <Label
-                                            htmlFor="5y-manual"
-                                            className="flex flex-col items-center justify-between rounded-md border-2 border-muted bg-popover p-4 hover:bg-accent hover:text-accent-foreground peer-data-[state=checked]:border-primary [&:has([data-state=checked])]:border-primary"
-                                        >
-                                            <span className="font-semibold">5 Years</span>
-                                        </Label>
-                                    </div>
-                                    <div>
-                                        <RadioGroupItem value="10" id="10y-manual" className="peer sr-only" />
-                                        <Label
-                                            htmlFor="10y-manual"
-                                            className="flex flex-col items-center justify-between rounded-md border-2 border-muted bg-popover p-4 hover:bg-accent hover:text-accent-foreground peer-data-[state=checked]:border-primary [&:has([data-state=checked])]:border-primary"
-                                        >
-                                            <span className="font-semibold">10 Years</span>
-                                        </Label>
-                                    </div>
+                                    <Label
+                                        htmlFor="5y-manual"
+                                        className="relative flex flex-col items-center justify-between rounded-md border-2 border-muted bg-popover p-4 hover:bg-accent hover:text-accent-foreground cursor-pointer has-[[data-state=checked]]:border-primary"
+                                    >
+                                        <RadioGroupItem value="5" id="5y-manual" className="absolute inset-0 opacity-0" />
+                                        <span className="font-semibold">5 Years</span>
+                                    </Label>
+                                    <Label
+                                        htmlFor="10y-manual"
+                                        className="relative flex flex-col items-center justify-between rounded-md border-2 border-muted bg-popover p-4 hover:bg-accent hover:text-accent-foreground cursor-pointer has-[[data-state=checked]]:border-primary"
+                                    >
+                                        <RadioGroupItem value="10" id="10y-manual" className="absolute inset-0 opacity-0" />
+                                        <span className="font-semibold">10 Years</span>
+                                    </Label>
                                 </RadioGroup>
                             </div>
 
@@ -737,24 +733,20 @@ export default function OptimizationTab() {
                                     onValueChange={setYearsBack}
                                     className="grid grid-cols-2 gap-4"
                                 >
-                                    <div>
-                                        <RadioGroupItem value="5" id="5y-auto" className="peer sr-only" />
-                                        <Label
-                                            htmlFor="5y-auto"
-                                            className="flex flex-col items-center justify-between rounded-md border-2 border-muted bg-popover p-4 hover:bg-accent hover:text-accent-foreground peer-data-[state=checked]:border-primary [&:has([data-state=checked])]:border-primary"
-                                        >
-                                            <span className="font-semibold">5 Years</span>
-                                        </Label>
-                                    </div>
-                                    <div>
-                                        <RadioGroupItem value="10" id="10y-auto" className="peer sr-only" />
-                                        <Label
-                                            htmlFor="10y-auto"
-                                            className="flex flex-col items-center justify-between rounded-md border-2 border-muted bg-popover p-4 hover:bg-accent hover:text-accent-foreground peer-data-[state=checked]:border-primary [&:has([data-state=checked])]:border-primary"
-                                        >
-                                            <span className="font-semibold">10 Years</span>
-                                        </Label>
-                                    </div>
+                                    <Label
+                                        htmlFor="5y-auto"
+                                        className="relative flex flex-col items-center justify-between rounded-md border-2 border-muted bg-popover p-4 hover:bg-accent hover:text-accent-foreground cursor-pointer has-[[data-state=checked]]:border-primary"
+                                    >
+                                        <RadioGroupItem value="5" id="5y-auto" className="absolute inset-0 opacity-0" />
+                                        <span className="font-semibold">5 Years</span>
+                                    </Label>
+                                    <Label
+                                        htmlFor="10y-auto"
+                                        className="relative flex flex-col items-center justify-between rounded-md border-2 border-muted bg-popover p-4 hover:bg-accent hover:text-accent-foreground cursor-pointer has-[[data-state=checked]]:border-primary"
+                                    >
+                                        <RadioGroupItem value="10" id="10y-auto" className="absolute inset-0 opacity-0" />
+                                        <span className="font-semibold">10 Years</span>
+                                    </Label>
                                 </RadioGroup>
 
                                 {optimizationResult && !optimizationResult.error && (
@@ -959,6 +951,6 @@ export default function OptimizationTab() {
                     </div>
                 </CardContent>
             </Card>
-        </div >
+        </div>
     )
 }

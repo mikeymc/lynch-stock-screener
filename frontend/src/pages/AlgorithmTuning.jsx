@@ -696,6 +696,6 @@ export default function AlgorithmTuning() {
                     </div>
                 </div>
             </div>
-        </div >
+        </div>
     );
 }
