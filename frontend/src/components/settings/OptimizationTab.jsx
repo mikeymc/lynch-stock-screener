@@ -1,10 +1,11 @@
 import { useState, useEffect } from 'react'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible"
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
 import { Label } from "@/components/ui/label"
-import { Sparkles, ChevronDown, Play, Save, Loader2 } from 'lucide-react'
+import { Sparkles, Play, Save, Loader2, TrendingUp, CheckCircle2, XCircle, Target, BarChart3, Info, AlertCircle } from 'lucide-react'
 import { cn } from "@/lib/utils"
 
 export default function OptimizationTab() {
@@ -52,13 +53,7 @@ export default function OptimizationTab() {
     const [optimizationMethod, setOptimizationMethod] = useState("bayesian")
     const [maxIterations, setMaxIterations] = useState("100")
 
-    const [openSections, setOpenSections] = useState({
-        weights: true,
-        peg: false,
-        growth: false,
-        debt: false,
-        ownership: false
-    })
+
 
     // Load current configuration on mount
     useEffect(() => {
@@ -259,9 +254,7 @@ export default function OptimizationTab() {
         }, 1000)
     }
 
-    const toggleSection = (section) => {
-        setOpenSections(prev => ({ ...prev, [section]: !prev[section] }))
-    }
+
 
     const renderSlider = (key, label, min, max, step, isPercentage = false) => (
         <div key={key} className="space-y-2">
@@ -305,6 +298,8 @@ export default function OptimizationTab() {
         </div>
     )
 
+
+
     return (
         <div className="space-y-6">
             <div>
@@ -315,320 +310,417 @@ export default function OptimizationTab() {
             </div>
             <div className="border-t" />
 
-            <div className="grid gap-6 lg:grid-cols-2">
-                {/* Manual Tuning Card */}
-                <Card>
-                    <CardHeader>
-                        <CardTitle className="flex items-center gap-2">
-                            Manual Tuning
-                        </CardTitle>
-                        <CardDescription>
-                            Adjust algorithm parameters manually
-                        </CardDescription>
-                    </CardHeader>
-                    <CardContent className="space-y-4">
-                        {/* Timeframe Selector */}
-                        <div className="space-y-2">
-                            <Label>Backtest Timeframe</Label>
-                            <Select value={yearsBack} onValueChange={setYearsBack}>
-                                <SelectTrigger>
-                                    <SelectValue />
-                                </SelectTrigger>
-                                <SelectContent>
-                                    <SelectItem value="5">5 Years (Recommended)</SelectItem>
-                                    <SelectItem value="10">10 Years (Long-term)</SelectItem>
-                                </SelectContent>
-                            </Select>
-                        </div>
+            <Tabs defaultValue="manual" className="w-full">
+                <TabsList className="grid w-full grid-cols-2">
+                    <TabsTrigger value="manual">Manual Tuning</TabsTrigger>
+                    <TabsTrigger value="auto">Auto-Optimization</TabsTrigger>
+                </TabsList>
 
-                        {/* Collapsible Sections */}
-                        <div className="space-y-2">
-                            {/* Algorithm Weights */}
-                            <Collapsible open={openSections.weights} onOpenChange={() => toggleSection('weights')}>
-                                <CollapsibleTrigger className="flex w-full items-center justify-between rounded-lg border bg-muted/50 px-4 py-3 font-medium hover:bg-muted">
-                                    <span>Algorithm Weights</span>
-                                    <ChevronDown className={cn("h-4 w-4 transition-transform", openSections.weights && "rotate-180")} />
-                                </CollapsibleTrigger>
-                                <CollapsibleContent className="px-4 pt-4 space-y-4">
-                                    {renderSlider('weight_peg', 'PEG Score Weight', 0, 1, 0.01, true)}
-                                    {renderSlider('weight_consistency', 'Consistency Weight', 0, 1, 0.01, true)}
-                                    {renderSlider('weight_debt', 'Debt Score Weight', 0, 1, 0.01, true)}
-                                    {renderSlider('weight_ownership', 'Ownership Weight', 0, 1, 0.01, true)}
-                                </CollapsibleContent>
-                            </Collapsible>
-
-                            {/* PEG Thresholds */}
-                            <Collapsible open={openSections.peg} onOpenChange={() => toggleSection('peg')}>
-                                <CollapsibleTrigger className="flex w-full items-center justify-between rounded-lg border bg-muted/50 px-4 py-3 font-medium hover:bg-muted">
-                                    <span>PEG Thresholds</span>
-                                    <ChevronDown className={cn("h-4 w-4 transition-transform", openSections.peg && "rotate-180")} />
-                                </CollapsibleTrigger>
-                                <CollapsibleContent className="px-4 pt-4 space-y-4">
-                                    {renderSlider('peg_excellent', 'Excellent PEG (Upper Limit)', 0.5, 1.5, 0.05)}
-                                    {renderSlider('peg_good', 'Good PEG (Upper Limit)', 1.0, 2.5, 0.05)}
-                                    {renderSlider('peg_fair', 'Fair PEG (Upper Limit)', 1.5, 3.0, 0.05)}
-                                </CollapsibleContent>
-                            </Collapsible>
-
-                            {/* Growth Thresholds */}
-                            <Collapsible open={openSections.growth} onOpenChange={() => toggleSection('growth')}>
-                                <CollapsibleTrigger className="flex w-full items-center justify-between rounded-lg border bg-muted/50 px-4 py-3 font-medium hover:bg-muted">
-                                    <span>Growth Thresholds</span>
-                                    <ChevronDown className={cn("h-4 w-4 transition-transform", openSections.growth && "rotate-180")} />
-                                </CollapsibleTrigger>
-                                <CollapsibleContent className="px-4 pt-4 space-y-4">
-                                    <div className="text-sm font-medium text-muted-foreground">Revenue Growth (CAGR %)</div>
-                                    {renderSlider('revenue_growth_excellent', 'Excellent Revenue Growth', 10, 25, 0.5)}
-                                    {renderSlider('revenue_growth_good', 'Good Revenue Growth', 5, 20, 0.5)}
-                                    {renderSlider('revenue_growth_fair', 'Fair Revenue Growth', 0, 15, 0.5)}
-                                    <div className="text-sm font-medium text-muted-foreground pt-2">Income Growth (CAGR %)</div>
-                                    {renderSlider('income_growth_excellent', 'Excellent Income Growth', 10, 25, 0.5)}
-                                    {renderSlider('income_growth_good', 'Good Income Growth', 5, 20, 0.5)}
-                                    {renderSlider('income_growth_fair', 'Fair Income Growth', 0, 15, 0.5)}
-                                </CollapsibleContent>
-                            </Collapsible>
-
-                            {/* Debt Thresholds */}
-                            <Collapsible open={openSections.debt} onOpenChange={() => toggleSection('debt')}>
-                                <CollapsibleTrigger className="flex w-full items-center justify-between rounded-lg border bg-muted/50 px-4 py-3 font-medium hover:bg-muted">
-                                    <span>Debt Thresholds</span>
-                                    <ChevronDown className={cn("h-4 w-4 transition-transform", openSections.debt && "rotate-180")} />
-                                </CollapsibleTrigger>
-                                <CollapsibleContent className="px-4 pt-4 space-y-4">
-                                    {renderSlider('debt_excellent', 'Excellent Debt/Equity', 0.2, 1.0, 0.05)}
-                                    {renderSlider('debt_good', 'Good Debt/Equity', 0.5, 1.5, 0.05)}
-                                    {renderSlider('debt_moderate', 'Moderate Debt/Equity', 1.0, 3.0, 0.05)}
-                                </CollapsibleContent>
-                            </Collapsible>
-
-                            {/* Institutional Ownership */}
-                            <Collapsible open={openSections.ownership} onOpenChange={() => toggleSection('ownership')}>
-                                <CollapsibleTrigger className="flex w-full items-center justify-between rounded-lg border bg-muted/50 px-4 py-3 font-medium hover:bg-muted">
-                                    <span>Institutional Ownership</span>
-                                    <ChevronDown className={cn("h-4 w-4 transition-transform", openSections.ownership && "rotate-180")} />
-                                </CollapsibleTrigger>
-                                <CollapsibleContent className="px-4 pt-4 space-y-4">
-                                    {renderSlider('inst_own_min', 'Minimum Ideal Ownership', 0, 0.6, 0.01, true)}
-                                    {renderSlider('inst_own_max', 'Maximum Ideal Ownership', 0.5, 1.1, 0.01, true)}
-                                </CollapsibleContent>
-                            </Collapsible>
-                        </div>
-
-                        {/* Action Buttons */}
-                        <div className="flex gap-2 pt-4">
-                            <Button onClick={runValidation} disabled={validationRunning} className="flex-1">
-                                {validationRunning ? (
-                                    <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Running...</>
-                                ) : (
-                                    <><Play className="mr-2 h-4 w-4" /> Backtest</>
-                                )}
-                            </Button>
-                            <Button onClick={saveConfiguration} variant="secondary" disabled={rescoringRunning}>
-                                {rescoringRunning ? (
-                                    <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> {rescoringProgress?.progress || 0}/{rescoringProgress?.total || 0}</>
-                                ) : (
-                                    <><Save className="mr-2 h-4 w-4" /> Save</>
-                                )}
-                            </Button>
-                        </div>
-                    </CardContent>
-                </Card>
-
-                {/* Auto-Optimization Card */}
-                <Card>
-                    <CardHeader>
-                        <CardTitle className="flex items-center gap-2">
-                            Auto-Optimization
-                        </CardTitle>
-                        <CardDescription>
-                            Let the algorithm find optimal weights using Bayesian optimization
-                        </CardDescription>
-                    </CardHeader>
-                    <CardContent className="space-y-4">
-                        <Button
-                            onClick={runOptimization}
-                            disabled={optimizationRunning}
-                            className="w-full bg-amber-500 hover:bg-amber-600 text-white"
-                        >
-                            {optimizationRunning ? (
-                                optimizationProgress?.stage === 'optimizing' ? `Optimizing... Iteration ${optimizationProgress.progress}`
-                                    : optimizationProgress?.stage === 'clearing_cache' ? 'Clearing cache...'
-                                        : optimizationProgress?.stage === 'revalidating' ? 'Running validation...'
-                                            : 'Starting...'
-                            ) : (
-                                <><Sparkles className="mr-2 h-4 w-4" /> Auto-Optimize</>
-                            )}
-                        </Button>
-
-                        {/* Optimization Settings */}
-                        <div className="grid grid-cols-2 gap-4 pt-2">
-                            <div className="space-y-2">
-                                <Label className="text-xs">Method</Label>
-                                <Select value={optimizationMethod} onValueChange={setOptimizationMethod}>
-                                    <SelectTrigger className="h-8 text-xs">
-                                        <SelectValue />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                        <SelectItem value="bayesian">Bayesian (Recommended)</SelectItem>
-                                        <SelectItem value="gradient_descent">Gradient Descent</SelectItem>
-                                        <SelectItem value="grid_search">Grid Search</SelectItem>
-                                    </SelectContent>
-                                </Select>
+                <TabsContent value="manual" className="mt-6">
+                    {/* Manual Tuning Card */}
+                    <Card>
+                        <CardHeader>
+                            <CardTitle className="flex items-center gap-2">
+                                Manual Tuning
+                            </CardTitle>
+                            <CardDescription>
+                                Adjust algorithm parameters manually
+                            </CardDescription>
+                        </CardHeader>
+                        <CardContent className="space-y-6">
+                            {/* Timeframe Selector */}
+                            <div className="space-y-3">
+                                <Label>Backtest Timeframe</Label>
+                                <RadioGroup
+                                    value={yearsBack}
+                                    onValueChange={setYearsBack}
+                                    className="grid grid-cols-2 gap-4"
+                                >
+                                    <div>
+                                        <RadioGroupItem value="5" id="5y" className="peer sr-only" />
+                                        <Label
+                                            htmlFor="5y"
+                                            className="flex flex-col items-center justify-between rounded-md border-2 border-muted bg-popover p-4 hover:bg-accent hover:text-accent-foreground peer-data-[state=checked]:border-primary [&:has([data-state=checked])]:border-primary"
+                                        >
+                                            <span className="font-semibold">5 Years</span>
+                                            <span className="text-xs text-muted-foreground">Standard (Recommended)</span>
+                                        </Label>
+                                    </div>
+                                    <div>
+                                        <RadioGroupItem value="10" id="10y" className="peer sr-only" />
+                                        <Label
+                                            htmlFor="10y"
+                                            className="flex flex-col items-center justify-between rounded-md border-2 border-muted bg-popover p-4 hover:bg-accent hover:text-accent-foreground peer-data-[state=checked]:border-primary [&:has([data-state=checked])]:border-primary"
+                                        >
+                                            <span className="font-semibold">10 Years</span>
+                                            <span className="text-xs text-muted-foreground">Long-term (Slower)</span>
+                                        </Label>
+                                    </div>
+                                </RadioGroup>
                             </div>
-                            <div className="space-y-2">
-                                <Label className="text-xs">Iterations</Label>
-                                <Select value={maxIterations} onValueChange={setMaxIterations}>
-                                    <SelectTrigger className="h-8 text-xs">
-                                        <SelectValue />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                        <SelectItem value="50">50 (Fast)</SelectItem>
-                                        <SelectItem value="100">100 (Standard)</SelectItem>
-                                        <SelectItem value="200">200 (Thorough)</SelectItem>
-                                        <SelectItem value="500">500 (Extensive)</SelectItem>
-                                    </SelectContent>
-                                </Select>
-                            </div>
-                        </div>
 
-                        {/* Live Optimization Progress */}
-                        {optimizationRunning && optimizationProgress && (
-                            <div className="space-y-4 pt-4 border-t">
-                                <div className="text-sm font-medium text-green-600">🚀 Optimization in Progress</div>
+                            <div className="border-t" />
 
-                                <div className="w-full bg-muted rounded-full h-3">
-                                    <div
-                                        className="bg-green-500 h-3 rounded-full transition-all"
-                                        style={{ width: `${((optimizationProgress.progress || 0) / (optimizationProgress.total || 100)) * 100}%` }}
-                                    />
-                                </div>
-                                <div className="text-right text-sm text-muted-foreground">
-                                    Iteration {optimizationProgress.progress || 0} / {optimizationProgress.total || maxIterations}
-                                </div>
-
-                                <div className="bg-green-50 dark:bg-green-950 p-4 rounded-lg text-center">
-                                    <div className="text-sm text-muted-foreground">Current Best Correlation</div>
-                                    <div className="text-2xl font-bold text-green-600">
-                                        {optimizationProgress.best_score?.toFixed(4) || '...'}
+                            {/* Settings Grid */}
+                            {/* Settings Masonry Layout */}
+                            <div className="columns-1 md:columns-2 lg:columns-3 gap-6 space-y-6">
+                                {/* Algorithm Weights */}
+                                <div className="break-inside-avoid space-y-4">
+                                    <div className="font-medium text-sm text-foreground mb-2 flex items-center gap-2">
+                                        <div className="w-1 h-4 bg-primary rounded-full"></div>
+                                        Algorithm Weights
+                                    </div>
+                                    <div className="space-y-4 p-4 bg-muted/30 rounded-lg border">
+                                        {renderSlider('weight_peg', 'PEG Score', 0, 1, 0.01, true)}
+                                        {renderSlider('weight_consistency', 'Consistency', 0, 1, 0.01, true)}
+                                        {renderSlider('weight_debt', 'Debt Score', 0, 1, 0.01, true)}
+                                        {renderSlider('weight_ownership', 'Ownership', 0, 1, 0.01, true)}
                                     </div>
                                 </div>
 
-                                {optimizationProgress.best_config && (
-                                    <div className="space-y-3 bg-muted/50 p-4 rounded-lg">
-                                        <div className="text-sm font-medium">Current Best Configuration</div>
-                                        <div className="grid grid-cols-2 gap-x-4 gap-y-2">
-                                            <div className="space-y-2">
-                                                <div className="text-xs font-medium text-muted-foreground">Weights</div>
-                                                {renderLiveSlider('weight_peg', 'PEG', 0, 1, 0.01, true)}
-                                                {renderLiveSlider('weight_consistency', 'Consistency', 0, 1, 0.01, true)}
-                                                {renderLiveSlider('weight_debt', 'Debt', 0, 1, 0.01, true)}
-                                                {renderLiveSlider('weight_ownership', 'Ownership', 0, 1, 0.01, true)}
-                                            </div>
-                                            <div className="space-y-2">
-                                                <div className="text-xs font-medium text-muted-foreground">PEG Thresholds</div>
-                                                {renderLiveSlider('peg_excellent', 'Excellent', 0.5, 1.5, 0.05)}
-                                                {renderLiveSlider('peg_good', 'Good', 1.0, 2.5, 0.05)}
-                                                {renderLiveSlider('peg_fair', 'Fair', 1.5, 3.0, 0.05)}
-                                            </div>
-                                        </div>
+                                {/* PEG Thresholds */}
+                                <div className="break-inside-avoid space-y-4">
+                                    <div className="font-medium text-sm text-foreground mb-2 flex items-center gap-2">
+                                        <div className="w-1 h-4 bg-blue-500 rounded-full"></div>
+                                        PEG Thresholds
                                     </div>
-                                )}
+                                    <div className="space-y-4 p-4 bg-muted/30 rounded-lg border">
+                                        {renderSlider('peg_excellent', 'Excellent (Upper)', 0.5, 1.5, 0.05)}
+                                        {renderSlider('peg_good', 'Good (Upper)', 1.0, 2.5, 0.05)}
+                                        {renderSlider('peg_fair', 'Fair (Upper)', 1.5, 3.0, 0.05)}
+                                    </div>
+                                </div>
+
+                                {/* Revenue Thresholds */}
+                                <div className="break-inside-avoid space-y-4">
+                                    <div className="font-medium text-sm text-foreground mb-2 flex items-center gap-2">
+                                        <div className="w-1 h-4 bg-green-500 rounded-full"></div>
+                                        Revenue Thresholds
+                                    </div>
+                                    <div className="space-y-4 p-4 bg-muted/30 rounded-lg border">
+                                        {renderSlider('revenue_growth_excellent', 'Excellent (CAGR %)', 10, 25, 0.5)}
+                                        {renderSlider('revenue_growth_good', 'Good (CAGR %)', 5, 20, 0.5)}
+                                        {renderSlider('revenue_growth_fair', 'Fair (CAGR %)', 0, 15, 0.5)}
+                                    </div>
+                                </div>
+
+                                {/* Net Income Thresholds */}
+                                <div className="break-inside-avoid space-y-4">
+                                    <div className="font-medium text-sm text-foreground mb-2 flex items-center gap-2">
+                                        <div className="w-1 h-4 bg-emerald-500 rounded-full"></div>
+                                        Net Income Thresholds
+                                    </div>
+                                    <div className="space-y-4 p-4 bg-muted/30 rounded-lg border">
+                                        {renderSlider('income_growth_excellent', 'Excellent (CAGR %)', 10, 25, 0.5)}
+                                        {renderSlider('income_growth_good', 'Good (CAGR %)', 5, 20, 0.5)}
+                                        {renderSlider('income_growth_fair', 'Fair (CAGR %)', 0, 15, 0.5)}
+                                    </div>
+                                </div>
+
+                                {/* Debt Thresholds */}
+                                <div className="break-inside-avoid space-y-4">
+                                    <div className="font-medium text-sm text-foreground mb-2 flex items-center gap-2">
+                                        <div className="w-1 h-4 bg-red-500 rounded-full"></div>
+                                        D/E Thresholds
+                                    </div>
+                                    <div className="space-y-4 p-4 bg-muted/30 rounded-lg border">
+                                        {renderSlider('debt_excellent', 'Excellent D/E', 0.2, 1.0, 0.05)}
+                                        {renderSlider('debt_good', 'Good D/E', 0.5, 1.5, 0.05)}
+                                        {renderSlider('debt_moderate', 'Moderate D/E', 1.0, 3.0, 0.05)}
+                                    </div>
+                                </div>
+
+                                {/* Institutional Ownership */}
+                                <div className="break-inside-avoid space-y-4">
+                                    <div className="font-medium text-sm text-foreground mb-2 flex items-center gap-2">
+                                        <div className="w-1 h-4 bg-purple-500 rounded-full"></div>
+                                        Institutional Ownership
+                                    </div>
+                                    <div className="space-y-4 p-4 bg-muted/30 rounded-lg border">
+                                        {renderSlider('inst_own_min', 'Minimum Ideal', 0, 0.6, 0.01, true)}
+                                        {renderSlider('inst_own_max', 'Maximum Ideal', 0.5, 1.1, 0.01, true)}
+                                    </div>
+                                </div>
                             </div>
-                        )}
 
-                        {/* Optimization Results */}
-                        {optimizationResult && !optimizationResult.error && (
-                            <div className="space-y-4 pt-4 border-t">
-                                <div className="text-sm font-medium">🎯 Optimization Results</div>
-
-                                {optimizationResult.baseline_analysis && optimizationResult.optimized_analysis ? (
-                                    <div className="grid grid-cols-3 gap-2 text-center">
-                                        <div className="bg-muted p-3 rounded-lg">
-                                            <div className="text-xs text-muted-foreground">Before</div>
-                                            <div className="font-bold">{optimizationResult.baseline_analysis.overall_correlation?.coefficient?.toFixed(4)}</div>
-                                        </div>
-                                        <div className="flex items-center justify-center text-green-500">→</div>
-                                        <div className="bg-green-100 dark:bg-green-950 p-3 rounded-lg border border-green-500">
-                                            <div className="text-xs text-muted-foreground">After</div>
-                                            <div className="font-bold text-green-600">{optimizationResult.optimized_analysis.overall_correlation?.coefficient?.toFixed(4)}</div>
-                                        </div>
-                                    </div>
-                                ) : (
-                                    <div className="grid grid-cols-2 gap-4 text-center">
-                                        <div className="bg-muted p-3 rounded-lg">
-                                            <div className="text-xs text-muted-foreground">Initial</div>
-                                            <div className="font-bold">{optimizationResult.result?.initial_correlation?.toFixed(4)}</div>
-                                        </div>
-                                        <div className="bg-green-100 dark:bg-green-950 p-3 rounded-lg">
-                                            <div className="text-xs text-muted-foreground">Optimized</div>
-                                            <div className="font-bold text-green-600">{optimizationResult.result?.final_correlation?.toFixed(4)}</div>
-                                        </div>
-                                    </div>
-                                )}
-
-                                <Button onClick={applyOptimizedConfig} className="w-full" variant="outline">
-                                    ✅ Apply Optimized Config
+                            {/* Action Buttons */}
+                            <div className="flex gap-4 pt-4">
+                                <Button onClick={runValidation} size="lg" disabled={validationRunning} className="flex-1">
+                                    {validationRunning ? (
+                                        <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Running Backtest...</>
+                                    ) : (
+                                        <><Play className="mr-2 h-4 w-4" /> Run Backtest</>
+                                    )}
+                                </Button>
+                                <Button onClick={saveConfiguration} size="lg" variant="secondary" disabled={rescoringRunning} className="flex-1">
+                                    {rescoringRunning ? (
+                                        <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Saving... {rescoringProgress?.progress || 0}/{rescoringProgress?.total || 0}</>
+                                    ) : (
+                                        <><Save className="mr-2 h-4 w-4" /> Save Configuration</>
+                                    )}
                                 </Button>
                             </div>
-                        )}
-                    </CardContent>
-                </Card>
-            </div>
+                        </CardContent>
+                    </Card>
+                </TabsContent>
+
+                <TabsContent value="auto" className="mt-6">
+                    {/* Auto-Optimization Card */}
+                    <Card>
+                        <CardHeader>
+                            <CardTitle className="flex items-center gap-2">
+                                Auto-Optimization
+                            </CardTitle>
+                            <CardDescription>
+                                Let the algorithm find optimal weights using Bayesian optimization
+                            </CardDescription>
+                        </CardHeader>
+                        <CardContent className="space-y-4">
+                            <Button
+                                onClick={runOptimization}
+                                disabled={optimizationRunning}
+                                className="w-full bg-amber-500 hover:bg-amber-600 text-white"
+                            >
+                                {optimizationRunning ? (
+                                    optimizationProgress?.stage === 'optimizing' ? `Optimizing... Iteration ${optimizationProgress.progress}`
+                                        : optimizationProgress?.stage === 'clearing_cache' ? 'Clearing cache...'
+                                            : optimizationProgress?.stage === 'revalidating' ? 'Running validation...'
+                                                : 'Starting...'
+                                ) : (
+                                    <><Sparkles className="mr-2 h-4 w-4" /> Auto-Optimize</>
+                                )}
+                            </Button>
+
+                            {/* Optimization Settings */}
+                            <div className="grid grid-cols-2 gap-4 pt-2">
+                                <div className="space-y-2">
+                                    <Label className="text-xs">Method</Label>
+                                    <Select value={optimizationMethod} onValueChange={setOptimizationMethod}>
+                                        <SelectTrigger className="h-8 text-xs">
+                                            <SelectValue />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                            <SelectItem value="bayesian">Bayesian (Recommended)</SelectItem>
+                                            <SelectItem value="gradient_descent">Gradient Descent</SelectItem>
+                                            <SelectItem value="grid_search">Grid Search</SelectItem>
+                                        </SelectContent>
+                                    </Select>
+                                </div>
+                                <div className="space-y-2">
+                                    <Label className="text-xs">Iterations</Label>
+                                    <Select value={maxIterations} onValueChange={setMaxIterations}>
+                                        <SelectTrigger className="h-8 text-xs">
+                                            <SelectValue />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                            <SelectItem value="50">50 (Fast)</SelectItem>
+                                            <SelectItem value="100">100 (Standard)</SelectItem>
+                                            <SelectItem value="200">200 (Thorough)</SelectItem>
+                                            <SelectItem value="500">500 (Extensive)</SelectItem>
+                                        </SelectContent>
+                                    </Select>
+                                </div>
+                            </div>
+
+                            {/* Live Optimization Progress */}
+                            {optimizationRunning && optimizationProgress && (
+                                <div className="space-y-4 pt-4 border-t">
+                                    <div className="text-sm font-medium text-green-600">🚀 Optimization in Progress</div>
+
+                                    <div className="w-full bg-muted rounded-full h-3">
+                                        <div
+                                            className="bg-green-500 h-3 rounded-full transition-all"
+                                            style={{ width: `${((optimizationProgress.progress || 0) / (optimizationProgress.total || 100)) * 100}%` }}
+                                        />
+                                    </div>
+                                    <div className="text-right text-sm text-muted-foreground">
+                                        Iteration {optimizationProgress.progress || 0} / {optimizationProgress.total || maxIterations}
+                                    </div>
+
+                                    <div className="bg-green-50 dark:bg-green-950 p-4 rounded-lg text-center">
+                                        <div className="text-sm text-muted-foreground">Current Best Correlation</div>
+                                        <div className="text-2xl font-bold text-green-600">
+                                            {optimizationProgress.best_score?.toFixed(4) || '...'}
+                                        </div>
+                                    </div>
+
+                                    {optimizationProgress.best_config && (
+                                        <div className="space-y-3 bg-muted/50 p-4 rounded-lg">
+                                            <div className="text-sm font-medium">Current Best Configuration</div>
+                                            <div className="grid grid-cols-2 gap-x-4 gap-y-2">
+                                                <div className="space-y-2">
+                                                    <div className="text-xs font-medium text-muted-foreground">Weights</div>
+                                                    {renderLiveSlider('weight_peg', 'PEG', 0, 1, 0.01, true)}
+                                                    {renderLiveSlider('weight_consistency', 'Consistency', 0, 1, 0.01, true)}
+                                                    {renderLiveSlider('weight_debt', 'Debt', 0, 1, 0.01, true)}
+                                                    {renderLiveSlider('weight_ownership', 'Ownership', 0, 1, 0.01, true)}
+                                                </div>
+                                                <div className="space-y-2">
+                                                    <div className="text-xs font-medium text-muted-foreground">PEG Thresholds</div>
+                                                    {renderLiveSlider('peg_excellent', 'Excellent', 0.5, 1.5, 0.05)}
+                                                    {renderLiveSlider('peg_good', 'Good', 1.0, 2.5, 0.05)}
+                                                    {renderLiveSlider('peg_fair', 'Fair', 1.5, 3.0, 0.05)}
+                                                </div>
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
+                            )}
+
+                            {/* Optimization Results */}
+                            {optimizationResult && !optimizationResult.error && (
+                                <div className="space-y-4 pt-4 border-t">
+                                    <div className="text-sm font-medium">🎯 Optimization Results</div>
+
+                                    {optimizationResult.baseline_analysis && optimizationResult.optimized_analysis ? (
+                                        <div className="grid grid-cols-3 gap-2 text-center">
+                                            <div className="bg-muted p-3 rounded-lg">
+                                                <div className="text-xs text-muted-foreground">Before</div>
+                                                <div className="font-bold">{optimizationResult.baseline_analysis.overall_correlation?.coefficient?.toFixed(4)}</div>
+                                            </div>
+                                            <div className="flex items-center justify-center text-green-500">→</div>
+                                            <div className="bg-green-100 dark:bg-green-950 p-3 rounded-lg border border-green-500">
+                                                <div className="text-xs text-muted-foreground">After</div>
+                                                <div className="font-bold text-green-600">{optimizationResult.optimized_analysis.overall_correlation?.coefficient?.toFixed(4)}</div>
+                                            </div>
+                                        </div>
+                                    ) : (
+                                        <div className="grid grid-cols-2 gap-4 text-center">
+                                            <div className="bg-muted p-3 rounded-lg">
+                                                <div className="text-xs text-muted-foreground">Initial</div>
+                                                <div className="font-bold">{optimizationResult.result?.initial_correlation?.toFixed(4)}</div>
+                                            </div>
+                                            <div className="bg-green-100 dark:bg-green-950 p-3 rounded-lg">
+                                                <div className="text-xs text-muted-foreground">Optimized</div>
+                                                <div className="font-bold text-green-600">{optimizationResult.result?.final_correlation?.toFixed(4)}</div>
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    <Button onClick={applyOptimizedConfig} className="w-full" variant="outline">
+                                        ✅ Apply Optimized Config
+                                    </Button>
+                                </div>
+                            )}
+                        </CardContent>
+                    </Card>
+                </TabsContent>
+            </Tabs>
 
             {/* Analysis Results */}
+            {/* Analysis Results */}
             {analysis && (
-                <Card>
-                    <CardHeader>
-                        <CardTitle>📊 Analysis Results</CardTitle>
+                <Card className="overflow-hidden border-2">
+                    <CardHeader className="bg-muted/50 border-b pb-4">
+                        <CardTitle className="flex items-center gap-2">
+                            <TrendingUp className="h-5 w-5 text-primary" />
+                            Analysis Results
+                        </CardTitle>
                     </CardHeader>
-                    <CardContent>
-                        <div className="grid grid-cols-3 gap-4 mb-6">
-                            <div className="bg-blue-50 dark:bg-blue-950 p-4 rounded-lg text-center">
-                                <div className="text-sm text-muted-foreground">Overall Correlation</div>
-                                <div className="text-2xl font-bold text-blue-600">{analysis.overall_correlation?.coefficient?.toFixed(4)}</div>
-                                <div className="text-xs text-muted-foreground">{analysis.overall_correlation?.interpretation}</div>
-                            </div>
-                            <div className="bg-blue-50 dark:bg-blue-950 p-4 rounded-lg text-center">
-                                <div className="text-sm text-muted-foreground">Stocks Analyzed</div>
-                                <div className="text-2xl font-bold text-blue-600">{analysis.total_stocks}</div>
-                            </div>
-                            <div className="bg-blue-50 dark:bg-blue-950 p-4 rounded-lg text-center">
-                                <div className="text-sm text-muted-foreground">Significance</div>
-                                <div className="text-2xl font-bold text-blue-600">
-                                    {analysis.overall_correlation?.significant ? '✅ Yes' : '❌ No'}
+                    <CardContent className="p-6">
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+                            {/* Overall Correlation */}
+                            <div className="flex flex-col items-center justify-center p-4 rounded-xl border bg-card shadow-sm">
+                                <span className="text-sm font-medium text-muted-foreground mb-1">Overall Correlation</span>
+                                <div className={cn(
+                                    "text-3xl font-bold mb-1",
+                                    (analysis.overall_correlation?.coefficient || 0) > 0.1 ? "text-green-600" :
+                                        (analysis.overall_correlation?.coefficient || 0) > 0.05 ? "text-blue-600" : "text-muted-foreground"
+                                )}>
+                                    {analysis.overall_correlation?.coefficient?.toFixed(4)}
                                 </div>
-                                <div className="text-xs text-muted-foreground">p = {analysis.overall_correlation?.p_value?.toFixed(4)}</div>
+                                <span className="text-xs px-2 py-0.5 rounded-full bg-muted font-medium uppercase tracking-wide">
+                                    {analysis.overall_correlation?.interpretation}
+                                </span>
+                            </div>
+
+                            {/* Stocks Analyzed */}
+                            <div className="flex flex-col items-center justify-center p-4 rounded-xl border bg-card shadow-sm">
+                                <span className="text-sm font-medium text-muted-foreground mb-1">Stocks Analyzed</span>
+                                <div className="text-3xl font-bold text-foreground mb-1">
+                                    {analysis.total_stocks}
+                                </div>
+                                <span className="text-xs text-muted-foreground">
+                                    Unique tickers
+                                </span>
+                            </div>
+
+                            {/* Significance */}
+                            <div className="flex flex-col items-center justify-center p-4 rounded-xl border bg-card shadow-sm">
+                                <span className="text-sm font-medium text-muted-foreground mb-1">Significance</span>
+                                <div className="flex items-center gap-2 mb-1">
+                                    {analysis.overall_correlation?.significant ? (
+                                        <>
+                                            <CheckCircle2 className="h-6 w-6 text-green-600" />
+                                            <span className="text-2xl font-bold text-green-600">Yes</span>
+                                        </>
+                                    ) : (
+                                        <>
+                                            <XCircle className="h-6 w-6 text-muted-foreground" />
+                                            <span className="text-2xl font-bold text-muted-foreground">No</span>
+                                        </>
+                                    )}
+                                </div>
+                                <span className="text-xs text-muted-foreground font-mono">
+                                    p = {analysis.overall_correlation?.p_value?.toFixed(4)}
+                                </span>
                             </div>
                         </div>
 
                         {/* Component Correlations */}
-                        <div className="space-y-3">
-                            <div className="text-sm font-medium">Component Correlations</div>
-                            {Object.entries(analysis.component_correlations || {}).map(([component, corr]) => (
-                                <div key={component} className="flex items-center gap-4">
-                                    <span className="text-sm w-24 text-muted-foreground">
-                                        {component.replace('_score', '').toUpperCase()}
-                                    </span>
-                                    <div className="flex-1 bg-muted h-4 rounded-full overflow-hidden">
-                                        <div
-                                            className={cn("h-full", corr.coefficient > 0 ? "bg-green-500" : "bg-red-500")}
-                                            style={{ width: `${Math.abs(corr.coefficient || 0) * 100}%` }}
-                                        />
-                                    </div>
-                                    <span className="text-sm font-medium w-16 text-right">
-                                        {(corr.coefficient || 0).toFixed(3)}
-                                    </span>
-                                </div>
-                            ))}
+                        <div className="mb-8">
+                            <h4 className="text-sm font-semibold mb-4 flex items-center gap-2">
+                                <BarChart3 className="h-4 w-4" /> Component Correlations
+                            </h4>
+                            <div className="space-y-4">
+                                {Object.entries(analysis.component_correlations || {})
+                                    .sort(([, a], [, b]) => Math.abs(b.coefficient) - Math.abs(a.coefficient))
+                                    .map(([component, corr]) => (
+                                        <div key={component} className="group">
+                                            <div className="flex items-center justify-between text-sm mb-1.5">
+                                                <span className="font-medium text-muted-foreground group-hover:text-foreground transition-colors">
+                                                    {component.replace('_score', '').replace(/_/g, ' ').toUpperCase()}
+                                                </span>
+                                                <span className="font-mono font-medium">
+                                                    {(corr.coefficient || 0).toFixed(3)}
+                                                </span>
+                                            </div>
+                                            <div className="h-2 w-full bg-secondary rounded-full overflow-hidden">
+                                                <div
+                                                    className={cn("h-full rounded-full transition-all duration-500",
+                                                        corr.coefficient > 0 ? "bg-primary" : "bg-destructive"
+                                                    )}
+                                                    style={{ width: `${Math.min(Math.abs(corr.coefficient || 0) * 100 * 3, 100)}%` }} // Scaled specifically for visibility
+                                                />
+                                            </div>
+                                        </div>
+                                    ))}
+                            </div>
                         </div>
 
                         {/* Insights */}
                         {analysis.insights?.length > 0 && (
-                            <div className="mt-6 bg-amber-50 dark:bg-amber-950 p-4 rounded-lg">
-                                <div className="text-sm font-medium mb-2">💡 Key Insights</div>
-                                {analysis.insights.map((insight, idx) => (
-                                    <div key={idx} className="text-sm py-1">{insight}</div>
-                                ))}
+                            <div className="rounded-lg border bg-muted/30 p-4">
+                                <h4 className="text-sm font-semibold mb-3 flex items-center gap-2">
+                                    <Sparkles className="h-4 w-4 text-amber-500" /> Key Insights
+                                </h4>
+                                <div className="space-y-3">
+                                    {analysis.insights.map((insight, idx) => {
+                                        // Simple heuristic to strip potential leading emojis and assign icons
+                                        const cleanText = insight.replace(/^[\u{1F300}-\u{1F9FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}]\s*/u, '');
+                                        let Icon = Info;
+                                        if (insight.includes('Best predictor')) Icon = Target;
+                                        if (insight.includes('Best performing')) Icon = TrendingUp;
+                                        if (insight.toLowerCase().includes('significant')) Icon = CheckCircle2;
+
+                                        return (
+                                            <div key={idx} className="flex gap-3 text-sm">
+                                                <Icon className="h-4 w-4 text-muted-foreground shrink-0 mt-0.5" />
+                                                <span className="text-muted-foreground leading-relaxed">{cleanText}</span>
+                                            </div>
+                                        );
+                                    })}
+                                </div>
                             </div>
                         )}
                     </CardContent>
