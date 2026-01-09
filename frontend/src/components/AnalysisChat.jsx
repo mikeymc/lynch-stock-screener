@@ -968,63 +968,65 @@ const AnalysisChat = forwardRef(function AnalysisChat({ symbol, stockName, chatO
   // Chat content (for right column or standalone)
   const chatContent = (
     <div className="flex flex-col h-full bg-background">
-      <div
-        className="flex-1 overflow-y-auto p-4 space-y-2"
-        ref={messagesContainerRef}
-        onScroll={handleScroll}
-      >
-        {/* Loading history indicator */}
-        {loadingHistory && (
-          <div className="flex items-center justify-center py-4">
-            <div className="text-sm text-muted-foreground">Loading conversation history...</div>
-          </div>
-        )}
-
-        {/* Chat messages - using memoized component for performance */}
-        {messages.map((msg, idx) => (
-          <ChatMessage
-            key={msg.message_id || idx}
-            role={msg.role}
-            content={msg.content}
-            sources={msg.sources}
-            components={components}
-          />
-        ))}
-
-        {/* Streaming message */}
-        {chatLoading && (
-          <div className="flex flex-col gap-1 mb-4 items-start">
-            <div className="text-xs text-muted-foreground px-2">
-              {agentMode ? '🤖 Agent' : '📊 Analyst'}{agentThinking ? ` - ${agentThinking}` : ' Thinking...'}
+      {/* Messages area wrapper - relative for scroll indicator positioning */}
+      <div className="flex-1 relative overflow-hidden">
+        <div
+          className="absolute inset-0 overflow-y-auto p-4 space-y-2"
+          ref={messagesContainerRef}
+          onScroll={handleScroll}
+        >
+          {/* Loading history indicator */}
+          {loadingHistory && (
+            <div className="flex items-center justify-center py-4">
+              <div className="text-sm text-muted-foreground">Loading conversation history...</div>
             </div>
-            <div className="rounded-lg px-4 py-3 max-w-[85%] bg-muted">
-              {streamingMessage ? (
-                <div className="prose prose-sm max-w-none">
-                  <ReactMarkdown remarkPlugins={[remarkGfm]} components={components}>{streamingMessage}</ReactMarkdown>
-                </div>
-              ) : (
-                <div className="flex gap-1">
-                  <span className="animate-pulse">●</span>
-                  <span className="animate-pulse delay-100">●</span>
-                  <span className="animate-pulse delay-200">●</span>
-                </div>
-              )}
-              {streamingMessage && (
-                <span className="inline-block animate-pulse">▊</span>
-              )}
+          )}
+
+          {/* Chat messages - using memoized component for performance */}
+          {messages.map((msg, idx) => (
+            <ChatMessage
+              key={msg.message_id || idx}
+              role={msg.role}
+              content={msg.content}
+              sources={msg.sources}
+              components={components}
+            />
+          ))}
+
+          {/* Streaming message */}
+          {chatLoading && (
+            <div className="flex flex-col gap-1 mb-4 items-start">
+              <div className="text-xs text-muted-foreground px-2">
+                {agentMode ? '🤖 Agent' : '📊 Analyst'}{agentThinking ? ` - ${agentThinking}` : ' Thinking...'}
+              </div>
+              <div className="rounded-lg px-4 py-3 max-w-[85%] bg-muted">
+                {streamingMessage ? (
+                  <div className="prose prose-sm max-w-none">
+                    <ReactMarkdown remarkPlugins={[remarkGfm]} components={components}>{streamingMessage}</ReactMarkdown>
+                  </div>
+                ) : (
+                  <div className="flex gap-1">
+                    <span className="animate-pulse">●</span>
+                    <span className="animate-pulse delay-100">●</span>
+                    <span className="animate-pulse delay-200">●</span>
+                  </div>
+                )}
+                {streamingMessage && (
+                  <span className="inline-block animate-pulse">▊</span>
+                )}
+              </div>
             </div>
-          </div>
-        )}
+          )}
 
-        <div ref={messagesEndRef} />
-      </div>
+          <div ref={messagesEndRef} />
+        </div>
 
-      {/* Scroll indicator arrow - shows when not at bottom */}
-      {(showScrollIndicator || showScrollDown) && (
-        <button
-          className="absolute bottom-20 left-1/2 -translate-x-1/2 w-8 h-8 rounded-full bg-primary text-primary-foreground shadow-lg flex items-center justify-center hover:scale-110 transition-transform"
-          onClick={() => {
-            const container = messagesContainerRef.current
+        {/* Scroll indicator arrow - shows when not at bottom */}
+        {(showScrollIndicator || showScrollDown) && (
+          <button
+            className="absolute bottom-4 left-1/2 -translate-x-1/2 w-8 h-8 rounded-full bg-primary text-primary-foreground shadow-lg flex items-center justify-center hover:scale-110 transition-transform z-10"
+            onClick={() => {
+              const container = messagesContainerRef.current
             if (container) {
               container.scrollTo({ top: container.scrollHeight, behavior: 'smooth' })
             }
@@ -1032,7 +1034,8 @@ const AnalysisChat = forwardRef(function AnalysisChat({ symbol, stockName, chatO
         >
           <span>↓</span>
         </button>
-      )}
+        )}
+      </div>
 
       {/* Chat input - always visible at bottom */}
       <div className="p-4 border-t bg-background">
