@@ -336,7 +336,7 @@ export default function StockCharts({ historyData, loading, symbol }) {
                       {/* Revenue */}
                       {/* Revenue */}
                       <div>
-                        <div className="h-64">
+                        <div className="h-64 chart-container">
                           <Line plugins={[zeroLinePlugin, crosshairPlugin]}
                             data={{
                               labels: getExtendedLabels(),
@@ -381,7 +381,7 @@ export default function StockCharts({ historyData, loading, symbol }) {
                       </div>
 
                       {/* Net Income */}
-                      <div className="h-64">
+                      <div className="h-64 chart-container">
                         <Line plugins={[zeroLinePlugin, crosshairPlugin]}
                           data={{
                             labels: labels,
@@ -406,7 +406,7 @@ export default function StockCharts({ historyData, loading, symbol }) {
                       {/* EPS */}
                       {/* EPS */}
                       <div>
-                        <div className="h-64">
+                        <div className="h-64 chart-container">
                           <Line plugins={[zeroLinePlugin, crosshairPlugin]}
                             data={{
                               labels: getExtendedLabels(),
@@ -451,7 +451,7 @@ export default function StockCharts({ historyData, loading, symbol }) {
                       </div>
 
                       {/* Dividend Yield - Uses weekly data for granular display */}
-                      <div className="h-64">
+                      <div className="h-64 chart-container">
                         <Line plugins={[zeroLinePlugin, crosshairPlugin]}
                           data={{
                             labels: historyData.weekly_dividend_yields?.dates || [],
@@ -501,7 +501,7 @@ export default function StockCharts({ historyData, loading, symbol }) {
                     {/* Row 1: Operating Cash Flow + Free Cash Flow */}
                     <div className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,350px),1fr))] gap-4 mb-4">
                       {/* Operating Cash Flow */}
-                      <div className="h-64">
+                      <div className="h-64 chart-container">
                         <Line plugins={[zeroLinePlugin, crosshairPlugin]}
                           data={{
                             labels: labels,
@@ -521,7 +521,7 @@ export default function StockCharts({ historyData, loading, symbol }) {
                       </div>
 
                       {/* Free Cash Flow */}
-                      <div className="h-64">
+                      <div className="h-64 chart-container">
                         <Line plugins={[zeroLinePlugin, crosshairPlugin]}
                           data={{
                             labels: labels,
@@ -544,7 +544,7 @@ export default function StockCharts({ historyData, loading, symbol }) {
                     {/* Row 2: Capital Expenditures + Debt-to-Equity */}
                     <div className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,350px),1fr))] gap-4 mb-4">
                       {/* Capital Expenditures */}
-                      <div className="h-64">
+                      <div className="h-64 chart-container">
                         <Line plugins={[zeroLinePlugin, crosshairPlugin]}
                           data={{
                             labels: labels,
@@ -564,7 +564,7 @@ export default function StockCharts({ historyData, loading, symbol }) {
                       </div>
 
                       {/* Debt-to-Equity */}
-                      <div className="h-64">
+                      <div className="h-64 chart-container">
                         <Line plugins={[zeroLinePlugin, crosshairPlugin]}
                           data={{
                             labels: labels,
@@ -598,7 +598,7 @@ export default function StockCharts({ historyData, loading, symbol }) {
                       {/* Stock Price - Uses weekly data for granular display */}
                       {/* Stock Price - Uses weekly data for granular display */}
                       <div>
-                        <div className="h-64">
+                        <div className="h-64 chart-container">
                           <Line plugins={[zeroLinePlugin, crosshairPlugin]}
                             data={{
                               labels: historyData.weekly_prices?.dates?.length > 0
@@ -684,7 +684,7 @@ export default function StockCharts({ historyData, loading, symbol }) {
                       </div>
 
                       {/* P/E Ratio - Uses weekly data for granular display */}
-                      <div className="h-64">
+                      <div className="h-64 chart-container">
                         <Line plugins={[zeroLinePlugin, crosshairPlugin]}
                           data={{
                             labels: historyData.weekly_pe_ratios?.dates?.length > 0

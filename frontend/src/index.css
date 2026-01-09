@@ -122,3 +122,9 @@
   display: none;
   /* Chrome, Safari and Opera */
 }
+
+@layer components {
+  .chart-container {
+    @apply w-full max-w-4xl mx-auto;
+  }
+}

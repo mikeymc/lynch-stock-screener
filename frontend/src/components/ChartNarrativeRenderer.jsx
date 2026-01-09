@@ -668,7 +668,7 @@ export default function ChartNarrativeRenderer({ narrative, historyData }) {
                                         <ReactMarkdown>{item.content}</ReactMarkdown>
                                     </div>
                                 ) : (
-                                    <div className="chart-wrapper bg-background rounded-xl p-4 border border-border shadow-inner">
+                                    <div className="chart-wrapper chart-container bg-background rounded-xl p-4 border border-border shadow-inner">
                                         {chartRegistry[item.name]?.()}
                                     </div>
                                 )}
