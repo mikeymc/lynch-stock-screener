@@ -68,10 +68,36 @@ export default function OptimizationTab() {
             const data = await response.json()
             if (data.current) {
                 setConfig(data.current)
+                // Auto-run validation to show analysis for current config
+                runValidationForConfig(data.current, signal)
             }
         } catch (error) {
             if (error.name !== 'AbortError') {
                 console.error('Error loading config:', error)
+            }
+        }
+    }
+
+    // Separate function to run validation with a specific config (used on load)
+    const runValidationForConfig = async (configToValidate, signal) => {
+        try {
+            const response = await fetch('/api/validate/run', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    years_back: parseInt(yearsBack),
+                    limit: null,
+                    config: configToValidate
+                }),
+                signal
+            })
+            const data = await response.json()
+            if (data.job_id) {
+                pollValidationProgress(data.job_id)
+            }
+        } catch (error) {
+            if (error.name !== 'AbortError') {
+                console.error('Error running initial validation:', error)
             }
         }
     }
@@ -183,6 +209,10 @@ export default function OptimizationTab() {
                         setOptimizationResult(statusData)
                         setOptimizationRunning(false)
                         setOptimizationProgress(null)
+                        // Update sliders to show the winning configuration
+                        if (statusData.result?.best_config) {
+                            setConfig(statusData.result.best_config)
+                        }
                     } else if (statusData.status === 'error') {
                         clearInterval(pollInterval)
                         setOptimizationRunning(false)
