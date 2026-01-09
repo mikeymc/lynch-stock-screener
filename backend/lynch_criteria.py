@@ -419,8 +419,12 @@ class LynchCriteria:
         return result
 
     def _evaluate_weighted(self, symbol: str, base_data: Dict[str, Any], overrides: Dict[str, float] = None) -> Dict[str, Any]:
-        """Weighted scoring: PEG 50%, Consistency 25%, Debt 15%, Ownership 10%."""
-        # Calculate weighted score
+        """Weighted scoring: PEG 50%, Consistency 25%, Debt 15%, Ownership 10%.
+        
+        When overrides are provided with threshold values, component scores are
+        recalculated from raw metrics to ensure consistency with optimizer.
+        """
+        # Get weights (from overrides or defaults)
         if overrides:
             peg_weight = overrides.get('weight_peg', self.settings['weight_peg']['value'])
             consistency_weight = overrides.get('weight_consistency', self.settings['weight_consistency']['value'])
@@ -435,12 +439,48 @@ class LynchCriteria:
         # Get consistency score (0-100), default to 50 if not available
         consistency_score = base_data.get('consistency_score', 50) if base_data.get('consistency_score') is not None else 50
 
+        # Check if threshold overrides are provided - if so, recalculate component scores
+        has_threshold_overrides = overrides and any(
+            k in overrides for k in ['peg_excellent', 'peg_good', 'peg_fair', 
+                                      'debt_excellent', 'debt_good', 'debt_moderate',
+                                      'inst_own_min', 'inst_own_max']
+        )
+
+        if has_threshold_overrides:
+            # Recalculate component scores from raw metrics using threshold overrides
+            # This matches what the optimizer does in _recalculate_score
+            
+            # PEG score with threshold overrides
+            peg_ratio = base_data.get('peg_ratio')
+            peg_excellent = overrides.get('peg_excellent', self.peg_excellent)
+            peg_good = overrides.get('peg_good', self.peg_good)
+            peg_fair = overrides.get('peg_fair', self.peg_fair)
+            peg_score = self._calculate_peg_score_with_thresholds(peg_ratio, peg_excellent, peg_good, peg_fair)
+            
+            # Debt score with threshold overrides
+            debt_to_equity = base_data.get('debt_to_equity')
+            debt_excellent = overrides.get('debt_excellent', self.debt_excellent)
+            debt_good = overrides.get('debt_good', self.debt_good)
+            debt_moderate = overrides.get('debt_moderate', self.debt_moderate)
+            debt_score = self._calculate_debt_score_with_thresholds(debt_to_equity, debt_excellent, debt_good, debt_moderate)
+            
+            # Institutional ownership score with threshold overrides
+            inst_own = base_data.get('institutional_ownership')
+            inst_own_min = overrides.get('inst_own_min', self.inst_own_min)
+            inst_own_max = overrides.get('inst_own_max', self.inst_own_max)
+            ownership_score = self._calculate_ownership_score_with_thresholds(inst_own, inst_own_min, inst_own_max)
+        else:
+            # Use pre-calculated component scores from base_data
+            peg_score = base_data['peg_score']
+            debt_score = base_data['debt_score']
+            ownership_score = base_data['institutional_ownership_score']
+
         # Calculate weighted overall score
         overall_score = (
-            base_data['peg_score'] * peg_weight +
+            peg_score * peg_weight +
             consistency_score * consistency_weight +
-            base_data['debt_score'] * debt_weight +
-            base_data['institutional_ownership_score'] * ownership_weight
+            debt_score * debt_weight +
+            ownership_score * ownership_weight
         )
 
         # Determine rating based on score
@@ -465,11 +505,16 @@ class LynchCriteria:
         result['overall_score'] = round(overall_score, 1)
         result['overall_status'] = overall_status
         result['rating_label'] = rating_label
+        # Update component scores in result if recalculated
+        if has_threshold_overrides:
+            result['peg_score'] = peg_score
+            result['debt_score'] = debt_score
+            result['institutional_ownership_score'] = ownership_score
         result['breakdown'] = {
-            'peg_contribution': round(base_data['peg_score'] * peg_weight, 1),
+            'peg_contribution': round(peg_score * peg_weight, 1),
             'consistency_contribution': round(consistency_score * consistency_weight, 1),
-            'debt_contribution': round(base_data['debt_score'] * debt_weight, 1),
-            'ownership_contribution': round(base_data['institutional_ownership_score'] * ownership_weight, 1)
+            'debt_contribution': round(debt_score * debt_weight, 1),
+            'ownership_contribution': round(ownership_score * ownership_weight, 1)
         }
         return result
 
@@ -940,3 +985,73 @@ class LynchCriteria:
                 return 0.0
             position = value / self.income_growth_fair
             return 25.0 * position
+
+    # ========== Threshold-aware scoring methods (for optimizer overrides) ==========
+    
+    def _calculate_peg_score_with_thresholds(self, value: float, excellent: float, good: float, fair: float) -> float:
+        """Calculate PEG score using custom thresholds (for optimizer overrides)"""
+        if value is None:
+            return 0.0
+        if value <= excellent:
+            return 100.0
+        elif value <= good:
+            range_size = good - excellent
+            position = (good - value) / range_size
+            return 75.0 + (25.0 * position)
+        elif value <= fair:
+            range_size = fair - good
+            position = (fair - value) / range_size
+            return 25.0 + (50.0 * position)
+        else:
+            max_poor = 4.0
+            if value >= max_poor:
+                return 0.0
+            range_size = max_poor - fair
+            position = (max_poor - value) / range_size
+            return 25.0 * position
+
+    def _calculate_debt_score_with_thresholds(self, value: float, excellent: float, good: float, moderate: float) -> float:
+        """Calculate debt score using custom thresholds (for optimizer overrides)"""
+        if value is None:
+            return 0.0
+        if value <= excellent:
+            return 100.0
+        elif value <= good:
+            range_size = good - excellent
+            position = (good - value) / range_size
+            return 75.0 + (25.0 * position)
+        elif value <= moderate:
+            range_size = moderate - good
+            position = (moderate - value) / range_size
+            return 25.0 + (50.0 * position)
+        else:
+            max_high = 5.0
+            if value >= max_high:
+                return 0.0
+            range_size = max_high - moderate
+            position = (max_high - value) / range_size
+            return 25.0 * position
+
+    def _calculate_ownership_score_with_thresholds(self, value: float, min_threshold: float, max_threshold: float) -> float:
+        """Calculate institutional ownership score using custom thresholds (for optimizer overrides)"""
+        if value is None:
+            return 0.0
+        
+        ideal_center = (min_threshold + max_threshold) / 2
+        
+        if min_threshold <= value <= max_threshold:
+            distance_from_center = abs(value - ideal_center)
+            max_distance = ideal_center - min_threshold
+            position = 1.0 - (distance_from_center / max_distance)
+            return 75.0 + (25.0 * position)
+        elif value < min_threshold:
+            if value <= 0:
+                return 0.0
+            position = value / min_threshold
+            return 75.0 * position
+        else:
+            if value >= 1.0:
+                return 0.0
+            range_size = 1.0 - max_threshold
+            position = (1.0 - value) / range_size
+            return 75.0 * position

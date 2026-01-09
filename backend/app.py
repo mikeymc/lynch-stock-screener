@@ -2975,7 +2975,7 @@ def start_optimization():
         # Start optimization in background thread
         def run_optimization_background():
             try:
-                optimization_jobs[job_id] = {'status': 'running', 'progress': 0, 'stage': 'optimizing'}
+                optimization_jobs[job_id] = {'status': 'running', 'progress': 0, 'total': max_iterations, 'stage': 'optimizing'}
 
                 # Get baseline analysis
                 baseline_analysis = analyzer_corr.analyze_results(years_back=years_back)
@@ -2984,6 +2984,7 @@ def start_optimization():
                 def on_progress(data):
                     optimization_jobs[job_id].update({
                         'progress': data['iteration'],
+                        'total': max_iterations,
                         'best_score': data['best_score'],
                         'best_config': data['best_config']
                     })

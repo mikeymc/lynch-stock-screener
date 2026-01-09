@@ -49,6 +49,8 @@ export default function OptimizationTab() {
     const [optimizationProgress, setOptimizationProgress] = useState(null)
     const [rescoringProgress, setRescoringProgress] = useState(null)
     const [yearsBack, setYearsBack] = useState("5")
+    const [optimizationMethod, setOptimizationMethod] = useState("bayesian")
+    const [maxIterations, setMaxIterations] = useState("100")
 
     const [openSections, setOpenSections] = useState({
         weights: true,
@@ -151,8 +153,8 @@ export default function OptimizationTab() {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     years_back: parseInt(yearsBack),
-                    method: 'bayesian',
-                    max_iterations: 100,
+                    method: optimizationMethod,
+                    max_iterations: parseInt(maxIterations),
                     limit: null
                 })
             })
@@ -318,7 +320,7 @@ export default function OptimizationTab() {
                 <Card>
                     <CardHeader>
                         <CardTitle className="flex items-center gap-2">
-                            ⚙️ Manual Tuning
+                            Manual Tuning
                         </CardTitle>
                         <CardDescription>
                             Adjust algorithm parameters manually
@@ -418,7 +420,7 @@ export default function OptimizationTab() {
                                 {validationRunning ? (
                                     <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Running...</>
                                 ) : (
-                                    <><Play className="mr-2 h-4 w-4" /> Run Validation</>
+                                    <><Play className="mr-2 h-4 w-4" /> Backtest</>
                                 )}
                             </Button>
                             <Button onClick={saveConfiguration} variant="secondary" disabled={rescoringRunning}>
@@ -436,7 +438,7 @@ export default function OptimizationTab() {
                 <Card>
                     <CardHeader>
                         <CardTitle className="flex items-center gap-2">
-                            🤖 Auto-Optimization
+                            Auto-Optimization
                         </CardTitle>
                         <CardDescription>
                             Let the algorithm find optimal weights using Bayesian optimization
@@ -458,6 +460,37 @@ export default function OptimizationTab() {
                             )}
                         </Button>
 
+                        {/* Optimization Settings */}
+                        <div className="grid grid-cols-2 gap-4 pt-2">
+                            <div className="space-y-2">
+                                <Label className="text-xs">Method</Label>
+                                <Select value={optimizationMethod} onValueChange={setOptimizationMethod}>
+                                    <SelectTrigger className="h-8 text-xs">
+                                        <SelectValue />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        <SelectItem value="bayesian">Bayesian (Recommended)</SelectItem>
+                                        <SelectItem value="gradient_descent">Gradient Descent</SelectItem>
+                                        <SelectItem value="grid_search">Grid Search</SelectItem>
+                                    </SelectContent>
+                                </Select>
+                            </div>
+                            <div className="space-y-2">
+                                <Label className="text-xs">Iterations</Label>
+                                <Select value={maxIterations} onValueChange={setMaxIterations}>
+                                    <SelectTrigger className="h-8 text-xs">
+                                        <SelectValue />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        <SelectItem value="50">50 (Fast)</SelectItem>
+                                        <SelectItem value="100">100 (Standard)</SelectItem>
+                                        <SelectItem value="200">200 (Thorough)</SelectItem>
+                                        <SelectItem value="500">500 (Extensive)</SelectItem>
+                                    </SelectContent>
+                                </Select>
+                            </div>
+                        </div>
+
                         {/* Live Optimization Progress */}
                         {optimizationRunning && optimizationProgress && (
                             <div className="space-y-4 pt-4 border-t">
@@ -466,11 +499,11 @@ export default function OptimizationTab() {
                                 <div className="w-full bg-muted rounded-full h-3">
                                     <div
                                         className="bg-green-500 h-3 rounded-full transition-all"
-                                        style={{ width: `${(optimizationProgress.progress / 100) * 100}%` }}
+                                        style={{ width: `${((optimizationProgress.progress || 0) / (optimizationProgress.total || 100)) * 100}%` }}
                                     />
                                 </div>
                                 <div className="text-right text-sm text-muted-foreground">
-                                    Iteration {optimizationProgress.progress} / 100
+                                    Iteration {optimizationProgress.progress || 0} / {optimizationProgress.total || maxIterations}
                                 </div>
 
                                 <div className="bg-green-50 dark:bg-green-950 p-4 rounded-lg text-center">
@@ -605,9 +638,17 @@ export default function OptimizationTab() {
             {/* Correlation Guide Card */}
             <Card className="border-l-4 border-l-primary">
                 <CardHeader>
-                    <CardTitle>ℹ️ Understanding Correlation</CardTitle>
+                    <CardTitle>Understanding Correlation</CardTitle>
                 </CardHeader>
                 <CardContent>
+                    <div className="mb-4 text-sm text-muted-foreground space-y-2">
+                        <p>
+                            <strong>What we're measuring:</strong> We backtest our algorithm by calculating what each stock's <strong>Overall Score</strong> would have been in the past, then comparing those scores to the stock's <strong>actual price performance</strong> over that time period.
+                        </p>
+                        <p>
+                            <strong>What correlation means:</strong> A value from 0 to 1 measuring how strongly two things are related. A correlation of <strong>0</strong> means no relationship (random). A correlation of <strong>1</strong> means perfect relationship (higher scores always meant higher returns). In finance, even small positive correlations are valuable.
+                        </p>
+                    </div>
                     <div className="space-y-3">
                         {[
                             { range: '0.00 - 0.05', label: 'Noise (Random)', desc: 'No predictive power' },

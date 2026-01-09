@@ -512,6 +512,7 @@ class AlgorithmOptimizer:
             return -correlation
 
         # Callback for progress reporting
+        n_initial = 50  # Same as n_initial_points below
         def on_step(res):
             if progress_callback:
                 try:
@@ -525,8 +526,14 @@ class AlgorithmOptimizer:
                     w_own = 1.0 - (w_peg + w_cons + w_debt)
                     current_best_params['weight_ownership'] = w_own
                     
+                    # len(res.x_iters) = total evaluations (initial + optimization)
+                    total_evals = len(res.x_iters)
+                    # Optimization iterations = total minus initial sampling
+                    opt_iteration = max(0, total_evals - n_initial)
+                    
                     progress_callback({
-                        'iteration': len(res.x_iters),
+                        'iteration': opt_iteration,
+                        'total_evals': total_evals,
                         'best_score': -res.fun, # We minimized negative correlation
                         'best_config': current_best_params
                     })
@@ -593,7 +600,24 @@ class AlgorithmOptimizer:
             'income_growth_fair': best_income_growth_fair,
         }
 
-        best_correlation = -result.fun  # Negate since we minimized negative correlation
+        gp_best_correlation = -result.fun  # Negate since we minimized negative correlation
+        logger.info(f"Bayesian gp_minimize reports best correlation: {gp_best_correlation:.4f}")
+
+        # Also check history for the actual best - gp_minimize's result.x may not be the true max
+        if history:
+            history_best = max(history, key=lambda h: h['correlation'])
+            history_best_corr = history_best['correlation']
+            logger.info(f"History shows best correlation: {history_best_corr:.4f}")
+            
+            if history_best_corr > gp_best_correlation:
+                logger.info(f"Using history best (higher than gp_minimize result)")
+                best_config = history_best['config'].copy()
+                best_correlation = history_best_corr
+            else:
+                best_correlation = gp_best_correlation
+        else:
+            best_correlation = gp_best_correlation
+
         logger.info(f"Bayesian optimization complete. Best correlation: {best_correlation:.4f}")
 
         return best_config, history
