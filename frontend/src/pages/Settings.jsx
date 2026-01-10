@@ -1,4 +1,4 @@
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { useTheme } from "@/components/theme-provider"
 import { ModeToggle } from "@/components/mode-toggle"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -11,6 +11,40 @@ import OptimizationTab from "@/components/settings/OptimizationTab"
 export default function Settings() {
     const [activeTab, setActiveTab] = useState("appearance")
     const { theme, setTheme } = useTheme()
+    const [characters, setCharacters] = useState([])
+    const [activeCharacter, setActiveCharacter] = useState("lynch")
+    const [characterLoading, setCharacterLoading] = useState(true)
+
+    useEffect(() => {
+        // Fetch available characters and current setting
+        Promise.all([
+            fetch("/api/characters").then(res => res.json()),
+            fetch("/api/settings/character", { credentials: 'include' }).then(res => res.json())
+        ]).then(([charsData, settingData]) => {
+            setCharacters(charsData.characters || [])
+            setActiveCharacter(settingData.active_character || "lynch")
+            setCharacterLoading(false)
+        }).catch(err => {
+            console.error("Failed to load characters:", err)
+            setCharacterLoading(false)
+        })
+    }, [])
+
+    const handleCharacterChange = async (characterId) => {
+        try {
+            const response = await fetch("/api/settings/character", {
+                method: "PUT",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ character_id: characterId }),
+                credentials: 'include'
+            })
+            if (response.ok) {
+                setActiveCharacter(characterId)
+            }
+        } catch (err) {
+            console.error("Failed to update character:", err)
+        }
+    }
 
     const sidebarItems = [
         {
@@ -18,12 +52,12 @@ export default function Settings() {
             title: "Appearance",
         },
         {
-            id: "item2",
-            title: "Algorithm Tuning",
+            id: "character",
+            title: "Investment Style",
         },
         {
-            id: "item3",
-            title: "Item 3",
+            id: "item2",
+            title: "Algorithm Tuning",
         },
     ]
 
@@ -99,18 +133,48 @@ export default function Settings() {
                         <OptimizationTab />
                     )}
 
-                    {activeTab === "item3" && (
+                    {activeTab === "character" && (
                         <div className="space-y-6">
                             <div>
-                                <h3 className="text-lg font-medium">Item 3</h3>
+                                <h3 className="text-lg font-medium">Investment Style</h3>
                                 <p className="text-sm text-muted-foreground">
-                                    This is a placeholder for Item 3 settings.
+                                    Choose your investment philosophy. This affects how stocks are analyzed, scored, and discussed.
                                 </p>
                             </div>
                             <div className="border-t" />
-                            <div className="flex items-center justify-center h-40 border-2 border-dashed rounded-lg text-muted-foreground">
-                                Content for Item 3
-                            </div>
+                            <Card>
+                                <CardHeader>
+                                    <CardTitle>Investment Character</CardTitle>
+                                    <CardDescription>
+                                        Each character has a unique approach to evaluating stocks.
+                                    </CardDescription>
+                                </CardHeader>
+                                <CardContent>
+                                    {characterLoading ? (
+                                        <div className="text-muted-foreground">Loading...</div>
+                                    ) : (
+                                        <RadioGroup
+                                            value={activeCharacter}
+                                            onValueChange={handleCharacterChange}
+                                            className="gap-4"
+                                        >
+                                            {characters.map((char) => (
+                                                <div key={char.id} className="flex items-start gap-3 space-x-0">
+                                                    <RadioGroupItem value={char.id} id={char.id} className="mt-1" />
+                                                    <div className="flex flex-col">
+                                                        <Label htmlFor={char.id} className="font-medium cursor-pointer">
+                                                            {char.name}
+                                                        </Label>
+                                                        <span className="text-sm text-muted-foreground">
+                                                            {char.description}
+                                                        </span>
+                                                    </div>
+                                                </div>
+                                            ))}
+                                        </RadioGroup>
+                                    )}
+                                </CardContent>
+                            </Card>
                         </div>
                     )}
                 </div>

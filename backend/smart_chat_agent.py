@@ -56,20 +56,30 @@ class SmartChatAgent:
                 self._client = genai.Client()
         return self._client
     
-    def _build_system_prompt(self, primary_symbol: str) -> str:
+    def _build_system_prompt(self, primary_symbol: str, user_id: Optional[int] = None) -> str:
         """Build the system prompt for the agent."""
         current_date_str = datetime.now().strftime('%Y-%m-%d')
-        
+
         # Determine paths
         import os
         base_dir = os.path.dirname(os.path.abspath(__file__))
         prompts_dir = os.path.join(base_dir, 'prompts')
-        
-        # Load persona (default to Lynch)
-        # Future: Make this configurable
+
+        # Load persona based on active character setting
         persona_content = "You are a pragmatic, data-driven investment analyst."
         try:
-            persona_path = os.path.join(prompts_dir, 'agent', 'personas', 'lynch.md')
+            from characters import get_character
+            if user_id is not None:
+                character_id = self.db.get_user_character(user_id)
+            else:
+                # Fallback to global setting for backwards compatibility
+                character_id = self.db.get_setting('active_character', 'lynch')
+            character = get_character(character_id)
+            if character:
+                persona_path = os.path.join(prompts_dir, character.persona_prompt)
+            else:
+                persona_path = os.path.join(prompts_dir, 'agent', 'personas', 'lynch.md')
+
             if os.path.exists(persona_path):
                 with open(persona_path, 'r') as f:
                     persona_content = f.read()
@@ -104,26 +114,28 @@ class SmartChatAgent:
 
 
     def chat(
-        self, 
-        primary_symbol: str, 
+        self,
+        primary_symbol: str,
         user_message: str,
-        conversation_history: Optional[List[Dict[str, str]]] = None
+        conversation_history: Optional[List[Dict[str, str]]] = None,
+        user_id: Optional[int] = None
     ) -> Dict[str, Any]:
         """
         Process a user message and return an agent response.
-        
+
         Args:
             primary_symbol: The stock symbol for context (e.g., 'NVDA')
             user_message: The user's question
             conversation_history: Optional list of previous messages
-            
+            user_id: Optional user ID for personalized character
+
         Returns:
             Dict with 'response', 'tool_calls', and 'iterations'
         """
         primary_symbol = primary_symbol.upper()
-        
+
         # Build initial contents
-        system_prompt = self._build_system_prompt(primary_symbol)
+        system_prompt = self._build_system_prompt(primary_symbol, user_id)
         
         # Start with system instruction and user message
         contents = []
@@ -230,14 +242,15 @@ class SmartChatAgent:
         }
     
     def chat_stream(
-        self, 
-        primary_symbol: str, 
+        self,
+        primary_symbol: str,
         user_message: str,
-        conversation_history: Optional[List[Dict[str, str]]] = None
+        conversation_history: Optional[List[Dict[str, str]]] = None,
+        user_id: Optional[int] = None
     ) -> Generator[Dict[str, Any], None, None]:
         """
         Stream a chat response with real-time token yield.
-        
+
         Yields dicts with 'type' and 'data':
         - {'type': 'thinking', 'data': 'Calling get_peers...'}
         - {'type': 'token', 'data': 'NVDA...'}
@@ -245,8 +258,8 @@ class SmartChatAgent:
         - {'type': 'done', 'data': {'tool_calls': [...], 'iterations': N}}
         """
         primary_symbol = primary_symbol.upper()
-        
-        system_prompt = self._build_system_prompt(primary_symbol)
+
+        system_prompt = self._build_system_prompt(primary_symbol, user_id)
         
         contents = []
         if conversation_history:

@@ -25,7 +25,7 @@ from data_fetcher import DataFetcher
 from earnings_analyzer import EarningsAnalyzer
 from lynch_criteria import LynchCriteria, ALGORITHM_METADATA
 from yfinance_price_client import YFinancePriceClient
-from lynch_analyst import LynchAnalyst
+from stock_analyst import StockAnalyst
 from conversation_manager import ConversationManager
 from wacc_calculator import calculate_wacc
 from backtester import Backtester
@@ -38,6 +38,7 @@ from sec_8k_client import SEC8KClient
 from material_event_summarizer import MaterialEventSummarizer, SUMMARIZABLE_ITEM_CODES
 from fly_machines import get_fly_manager
 from auth import init_oauth_client, require_user_auth
+from characters import get_character, list_characters
 
 from algorithm_optimizer import AlgorithmOptimizer
 from google import genai
@@ -163,7 +164,7 @@ analyzer = EarningsAnalyzer(db)
 criteria = LynchCriteria(db, analyzer)
 # Historical price provider - using TradingView (replaces Schwab)
 price_client = YFinancePriceClient()
-lynch_analyst = LynchAnalyst(db)
+stock_analyst = StockAnalyst(db)
 conversation_manager = ConversationManager(db)
 backtester = Backtester(db)
 validator = AlgorithmValidator(db)
@@ -539,20 +540,138 @@ def update_settings():
         data = request.get_json()
         if not data:
             return jsonify({'error': 'No data provided'}), 400
-            
+
         for key, item in data.items():
             value = item.get('value')
             description = item.get('description')
-            
+
             # Update setting in DB
             db.set_setting(key, value, description)
-            
+
         # Reload settings in criteria object
         criteria.reload_settings()
-        
+
         return jsonify({'success': True})
     except Exception as e:
         print(f"Error updating settings: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/characters', methods=['GET'])
+def get_characters():
+    """Get list of available investment characters."""
+    try:
+        characters = list_characters()
+        return jsonify({
+            'characters': [
+                {
+                    'id': c.id,
+                    'name': c.name,
+                    'description': c.short_description,
+                    'primary_metrics': c.primary_metrics,
+                }
+                for c in characters
+            ]
+        })
+    except Exception as e:
+        logger.error(f"Error getting characters: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/settings/character', methods=['GET'])
+@require_user_auth
+def get_active_character(user_id):
+    """Get the currently active investment character for the logged-in user."""
+    try:
+        character_id = db.get_user_character(user_id)
+
+        character = get_character(character_id)
+        if not character:
+            character = get_character('lynch')
+            character_id = 'lynch'
+
+        return jsonify({
+            'active_character': character_id,
+            'character': {
+                'id': character.id,
+                'name': character.name,
+                'description': character.short_description,
+                'primary_metrics': character.primary_metrics,
+                'hidden_metrics': character.hidden_metrics,
+            }
+        })
+    except Exception as e:
+        logger.error(f"Error getting active character: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/settings/character', methods=['PUT'])
+@require_user_auth
+def set_active_character(user_id):
+    """Set the active investment character for the logged-in user."""
+    try:
+        data = request.get_json()
+        if not data or 'character_id' not in data:
+            return jsonify({'error': 'character_id is required'}), 400
+
+        character_id = data['character_id']
+
+        # Validate character exists
+        character = get_character(character_id)
+        if not character:
+            return jsonify({'error': f'Unknown character: {character_id}'}), 400
+
+        # Save to user's settings
+        db.set_user_character(user_id, character_id)
+        db.flush()  # Ensure write is committed
+
+        return jsonify({
+            'success': True,
+            'active_character': character_id,
+            'character': {
+                'id': character.id,
+                'name': character.name,
+                'description': character.short_description,
+            }
+        })
+    except Exception as e:
+        logger.error(f"Error setting active character: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/settings/theme', methods=['GET'])
+@require_user_auth
+def get_user_theme_endpoint(user_id):
+    """Get the user's active theme."""
+    try:
+        theme = db.get_user_theme(user_id)
+        return jsonify({'theme': theme})
+    except Exception as e:
+        logger.error(f"Error getting user theme: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/settings/theme', methods=['PUT'])
+@require_user_auth
+def set_user_theme_endpoint(user_id):
+    """Set the user's active theme."""
+    try:
+        data = request.get_json()
+        if not data or 'theme' not in data:
+            return jsonify({'error': 'theme is required'}), 400
+
+        theme = data['theme']
+
+        # Validate theme value
+        if theme not in ['light', 'dark', 'system']:
+            return jsonify({'error': f'Invalid theme: {theme}. Must be light, dark, or system'}), 400
+
+        db.set_user_theme(user_id, theme)
+        db.flush()  # Ensure write is committed
+
+        return jsonify({'success': True, 'theme': theme})
+    except Exception as e:
+        logger.error(f"Error setting user theme: {e}")
         return jsonify({'error': str(e)}), 500
 
 
@@ -777,7 +896,7 @@ def generate_transcript_summary(symbol):
         stock = db.get_stock_metrics(symbol)
         company_name = stock.get('company_name', symbol) if stock else symbol
         
-        summary = lynch_analyst.generate_transcript_summary(
+        summary = stock_analyst.generate_transcript_summary(
             transcript_text=transcript['transcript_text'],
             company_name=company_name,
             quarter=transcript['quarter'],
@@ -1782,7 +1901,7 @@ def get_section_summaries(symbol):
                     continue
                 
                 # Generate summary using AI
-                summary = lynch_analyst.generate_filing_section_summary(
+                summary = stock_analyst.generate_filing_section_summary(
                     section_name=section_name,
                     section_content=content,
                     company_name=company_name,
@@ -2139,7 +2258,7 @@ def get_lynch_analysis(symbol, user_id):
                     yield f"data: {json.dumps({'type': 'metadata', 'cached': was_cached, 'generated_at': gen_at})}\n\n"
 
                     # Get iterator
-                    iterator = lynch_analyst.get_or_generate_analysis(
+                    iterator = stock_analyst.get_or_generate_analysis(
                         user_id, symbol, stock_data, history,
                         sections=sections, news=news_articles, material_events=material_events,
                         use_cache=True, model_version=model
@@ -2157,7 +2276,7 @@ def get_lynch_analysis(symbol, user_id):
 
         # Normal synchronous response
         # Normal synchronous response
-        analysis_generator = lynch_analyst.get_or_generate_analysis(
+        analysis_generator = stock_analyst.get_or_generate_analysis(
             user_id,
             symbol,
             stock_data,
@@ -2239,7 +2358,7 @@ def refresh_lynch_analysis(symbol, user_id):
                     yield f"data: {json.dumps({'type': 'metadata', 'cached': False, 'generated_at': datetime.now().isoformat()})}\n\n"
 
                     # Get iterator
-                    iterator = lynch_analyst.get_or_generate_analysis(
+                    iterator = stock_analyst.get_or_generate_analysis(
                         user_id, symbol, stock_data, history,
                         sections=sections, news=news_articles, material_events=material_events,
                         use_cache=False, model_version=model
@@ -2255,7 +2374,7 @@ def refresh_lynch_analysis(symbol, user_id):
 
             return Response(stream_with_context(generate()), mimetype='text/event-stream')
 
-        analysis_generator = lynch_analyst.get_or_generate_analysis(
+        analysis_generator = stock_analyst.get_or_generate_analysis(
             user_id,
             symbol,
             stock_data,
@@ -2371,7 +2490,7 @@ def get_unified_chart_analysis(symbol, user_id):
         lynch_brief_text = lynch_brief['analysis_text'] if lynch_brief else None
 
         # Generate unified analysis with full context
-        result = lynch_analyst.generate_unified_chart_analysis(
+        result = stock_analyst.generate_unified_chart_analysis(
             stock_data,
             history,
             sections=sections_data,
@@ -2379,7 +2498,8 @@ def get_unified_chart_analysis(symbol, user_id):
             material_events=material_events,
             transcripts=transcripts,
             lynch_brief=lynch_brief_text,
-            model_version=model
+            model_version=model,
+            user_id=user_id
         )
 
         # Save unified narrative to cache (using 'narrative' as section name)
@@ -2463,7 +2583,7 @@ def get_dcf_recommendations(symbol, user_id):
         news_articles = db.get_news_articles(symbol, limit=20)
 
         # Generate DCF recommendations
-        result = lynch_analyst.generate_dcf_recommendations(
+        result = stock_analyst.generate_dcf_recommendations(
             stock_data,
             history,
             wacc_data=wacc_data,
@@ -2698,7 +2818,7 @@ def agent_chat(symbol, user_id):
         def generate():
             """Generate Server-Sent Events for agent response."""
             try:
-                for event in agent.chat_stream(symbol.upper(), user_message, conversation_history):
+                for event in agent.chat_stream(symbol.upper(), user_message, conversation_history, user_id):
                     yield f"data: {json.dumps(event)}\n\n"
             except Exception as e:
                 logger.error(f"Agent chat stream error: {e}")
@@ -2737,7 +2857,7 @@ def agent_chat_sync(symbol, user_id):
         conversation_history = data.get('history', [])
 
         agent = get_smart_chat_agent()
-        result = agent.chat(symbol.upper(), user_message, conversation_history)
+        result = agent.chat(symbol.upper(), user_message, conversation_history, user_id)
 
         return jsonify(clean_nan_values(result))
 

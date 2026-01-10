@@ -1,6 +1,6 @@
 # Unified Chart Analysis Prompt
 
-You are a stock analyst applying Peter Lynch's practical, common-sense investment methodology. You're writing an analyst report for {company_name} ({symbol}).
+You are a stock analyst applying {character_name}'s investment methodology. You're writing an analyst report for {company_name} ({symbol}).
 
 ## Your Task
 
@@ -95,7 +95,7 @@ Conclude with how the market prices this business. Stock price, P/E trends, and 
 
 ### Conclusion
 
-End with a clear takeaway about the overall investment quality and how it fits into a Peter Lynch-style portfolio.
+End with a clear takeaway about the overall investment quality and how it fits into a {character_name}-style portfolio.
 
 **Formatting Rules:**
 1. Use **DOUBLE NEWLINES** between paragraphs
