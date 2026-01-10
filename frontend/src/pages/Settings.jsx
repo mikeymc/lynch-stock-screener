@@ -19,7 +19,7 @@ export default function Settings() {
         // Fetch available characters and current setting
         Promise.all([
             fetch("/api/characters").then(res => res.json()),
-            fetch("/api/settings/character").then(res => res.json())
+            fetch("/api/settings/character", { credentials: 'include' }).then(res => res.json())
         ]).then(([charsData, settingData]) => {
             setCharacters(charsData.characters || [])
             setActiveCharacter(settingData.active_character || "lynch")
@@ -35,7 +35,8 @@ export default function Settings() {
             const response = await fetch("/api/settings/character", {
                 method: "PUT",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ character_id: characterId })
+                body: JSON.stringify({ character_id: characterId }),
+                credentials: 'include'
             })
             if (response.ok) {
                 setActiveCharacter(characterId)

@@ -58,9 +58,14 @@ class StockAnalyst:
         character = self._get_active_character()
         return self._get_prompt_template(character)
 
-    def _get_active_character(self) -> CharacterConfig:
-        """Get the currently active character from settings."""
-        character_id = self.db.get_setting('active_character', 'lynch')
+    def _get_active_character(self, user_id: Optional[int] = None) -> CharacterConfig:
+        """Get the currently active character from user settings or global settings."""
+        if user_id is not None:
+            character_id = self.db.get_user_character(user_id)
+        else:
+            # Fallback to global setting (for backwards compatibility)
+            character_id = self.db.get_setting('active_character', 'lynch')
+
         character = get_character(character_id)
         if not character:
             character = get_character('lynch')
@@ -87,11 +92,11 @@ class StockAnalyst:
         self._prompt_cache[character.id] = full_template
         return full_template
 
-    def _prepare_template_vars(self, stock_data: Dict[str, Any], history: List[Dict[str, Any]], character: Optional[CharacterConfig] = None) -> Dict[str, Any]:
+    def _prepare_template_vars(self, stock_data: Dict[str, Any], history: List[Dict[str, Any]], character: Optional[CharacterConfig] = None, user_id: Optional[int] = None) -> Dict[str, Any]:
         """Prepare template variables from stock data and history."""
         # If no character provided, use active character
         if character is None:
-            character = self._get_active_character()
+            character = self._get_active_character(user_id)
 
         # Format historical data
         history_lines = []
@@ -200,9 +205,10 @@ class StockAnalyst:
     def format_prompt(self, stock_data: Dict[str, Any], history: List[Dict[str, Any]],
                       sections: Optional[Dict[str, Any]] = None,
                       news: Optional[List[Dict[str, Any]]] = None,
-                      material_events: Optional[List[Dict[str, Any]]] = None) -> str:
+                      material_events: Optional[List[Dict[str, Any]]] = None,
+                      user_id: Optional[int] = None) -> str:
         """Format a prompt using the active character's template."""
-        character = self._get_active_character()
+        character = self._get_active_character(user_id)
         template = self._get_prompt_template(character)
         template_vars = self._prepare_template_vars(stock_data, history, character)
 
@@ -272,12 +278,13 @@ class StockAnalyst:
                                   sections: Optional[Dict[str, Any]] = None,
                                   news: Optional[List[Dict[str, Any]]] = None,
                                   material_events: Optional[List[Dict[str, Any]]] = None,
-                                  model_version: str = DEFAULT_MODEL):
+                                  model_version: str = DEFAULT_MODEL,
+                                  user_id: Optional[int] = None):
         """Stream a new analysis using the active character's voice."""
         if model_version not in AVAILABLE_MODELS:
             raise ValueError(f"Invalid model: {model_version}. Must be one of {AVAILABLE_MODELS}")
 
-        prompt = self.format_prompt(stock_data, history, sections, news, material_events)
+        prompt = self.format_prompt(stock_data, history, sections, news, material_events, user_id)
 
         response = self.client.models.generate_content_stream(
             model=model_version,
@@ -316,7 +323,7 @@ class StockAnalyst:
 
         # Generate new analysis
         full_text_parts = []
-        for chunk in self.generate_analysis_stream(stock_data, history, sections, news, material_events, model_version):
+        for chunk in self.generate_analysis_stream(stock_data, history, sections, news, material_events, model_version, user_id):
             full_text_parts.append(chunk)
             yield chunk
 
@@ -334,7 +341,8 @@ class StockAnalyst:
         material_events: Optional[List[Dict[str, Any]]] = None,
         transcripts: Optional[List[Dict[str, Any]]] = None,
         lynch_brief: Optional[str] = None,
-        model_version: str = DEFAULT_MODEL
+        model_version: str = DEFAULT_MODEL,
+        user_id: Optional[int] = None
     ) -> Dict[str, str]:
         """
         Generate a unified analysis for chart sections using the active character.
@@ -351,7 +359,7 @@ class StockAnalyst:
             prompt_template = f.read()
 
         # Prepare template variables (includes character_name)
-        template_vars = self._prepare_template_vars(stock_data, history)
+        template_vars = self._prepare_template_vars(stock_data, history, user_id=user_id)
 
         # Format the prompt
         final_prompt = prompt_template.format(**template_vars)

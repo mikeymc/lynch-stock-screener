@@ -579,10 +579,11 @@ def get_characters():
 
 
 @app.route('/api/settings/character', methods=['GET'])
-def get_active_character():
-    """Get the currently active investment character."""
+@require_user_auth
+def get_active_character(user_id):
+    """Get the currently active investment character for the logged-in user."""
     try:
-        character_id = db.get_setting('active_character', 'lynch')
+        character_id = db.get_user_character(user_id)
 
         character = get_character(character_id)
         if not character:
@@ -605,8 +606,9 @@ def get_active_character():
 
 
 @app.route('/api/settings/character', methods=['PUT'])
-def set_active_character():
-    """Set the active investment character."""
+@require_user_auth
+def set_active_character(user_id):
+    """Set the active investment character for the logged-in user."""
     try:
         data = request.get_json()
         if not data or 'character_id' not in data:
@@ -619,8 +621,9 @@ def set_active_character():
         if not character:
             return jsonify({'error': f'Unknown character: {character_id}'}), 400
 
-        # Save to settings
-        db.set_setting('active_character', character_id, 'Active investment philosophy character')
+        # Save to user's settings
+        db.set_user_character(user_id, character_id)
+        db.flush()  # Ensure write is committed
 
         return jsonify({
             'success': True,
@@ -2459,7 +2462,8 @@ def get_unified_chart_analysis(symbol, user_id):
             material_events=material_events,
             transcripts=transcripts,
             lynch_brief=lynch_brief_text,
-            model_version=model
+            model_version=model,
+            user_id=user_id
         )
 
         # Save unified narrative to cache (using 'narrative' as section name)
@@ -2778,7 +2782,7 @@ def agent_chat(symbol, user_id):
         def generate():
             """Generate Server-Sent Events for agent response."""
             try:
-                for event in agent.chat_stream(symbol.upper(), user_message, conversation_history):
+                for event in agent.chat_stream(symbol.upper(), user_message, conversation_history, user_id):
                     yield f"data: {json.dumps(event)}\n\n"
             except Exception as e:
                 logger.error(f"Agent chat stream error: {e}")
@@ -2817,7 +2821,7 @@ def agent_chat_sync(symbol, user_id):
         conversation_history = data.get('history', [])
 
         agent = get_smart_chat_agent()
-        result = agent.chat(symbol.upper(), user_message, conversation_history)
+        result = agent.chat(symbol.upper(), user_message, conversation_history, user_id)
 
         return jsonify(clean_nan_values(result))
 
