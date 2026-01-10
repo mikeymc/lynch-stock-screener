@@ -2,6 +2,8 @@
 # ABOUTME: Flags stocks as PASS, CLOSE, or FAIL based on PEG ratio, debt, growth, and ownership
 
 import logging
+import numpy as np
+import pandas as pd
 from typing import Dict, Any, Optional
 from database import Database
 from earnings_analyzer import EarningsAnalyzer
@@ -1055,3 +1057,258 @@ class LynchCriteria:
             range_size = 1.0 - max_threshold
             position = (1.0 - value) / range_size
             return 75.0 * position
+
+    # =========================================================================
+    # VECTORIZED BATCH SCORING
+    # =========================================================================
+    
+    def evaluate_batch(self, df: pd.DataFrame, config: Dict[str, Any]) -> pd.DataFrame:
+        """
+        Vectorized scoring for entire stock universe.
+        
+        This method mirrors _evaluate_weighted() but operates on a DataFrame
+        for O(1) batch scoring instead of O(n) per-stock evaluation.
+        
+        Args:
+            df: DataFrame with columns [symbol, peg_ratio, debt_to_equity, 
+                institutional_ownership, income_consistency_score, ...]
+            config: User's algorithm configuration (weights + thresholds)
+        
+        Returns:
+            DataFrame with [symbol, overall_score, overall_status, ...] sorted by score desc
+        """
+        # Extract thresholds from config (with defaults)
+        peg_excellent = config.get('peg_excellent', 1.0)
+        peg_good = config.get('peg_good', 1.5)
+        peg_fair = config.get('peg_fair', 2.0)
+        
+        debt_excellent = config.get('debt_excellent', 0.5)
+        debt_good = config.get('debt_good', 1.0)
+        debt_moderate = config.get('debt_moderate', 2.0)
+        
+        inst_own_min = config.get('inst_own_min', 0.20)
+        inst_own_max = config.get('inst_own_max', 0.60)
+        
+        # Extract weights
+        weight_peg = config.get('weight_peg', 0.50)
+        weight_consistency = config.get('weight_consistency', 0.25)
+        weight_debt = config.get('weight_debt', 0.15)
+        weight_ownership = config.get('weight_ownership', 0.10)
+        
+        # Calculate component scores using vectorized methods
+        peg_score = self._vectorized_peg_score(
+            df['peg_ratio'], peg_excellent, peg_good, peg_fair
+        )
+        
+        debt_score = self._vectorized_debt_score(
+            df['debt_to_equity'], debt_excellent, debt_good, debt_moderate
+        )
+        
+        ownership_score = self._vectorized_ownership_score(
+            df['institutional_ownership'], inst_own_min, inst_own_max
+        )
+        
+        # Consistency score is already 0-100 normalized, use directly
+        # Default to 50 (neutral) for missing values
+        consistency_score = df['income_consistency_score'].fillna(50.0)
+        
+        # Calculate overall score (weighted sum)
+        overall_score = (
+            peg_score * weight_peg +
+            consistency_score * weight_consistency +
+            debt_score * weight_debt +
+            ownership_score * weight_ownership
+        )
+        
+        # Assign overall status using np.select (matches _evaluate_weighted)
+        conditions = [
+            overall_score >= 80,
+            overall_score >= 60,
+            overall_score >= 40,
+            overall_score >= 20,
+        ]
+        choices = ['STRONG_BUY', 'BUY', 'HOLD', 'CAUTION']
+        overall_status = np.select(conditions, choices, default='AVOID')
+        
+        # Determine PEG status (Legacy PASS/CLOSE/FAIL logic)
+        peg_conditions = [
+            df['peg_ratio'].isna(),
+            df['peg_ratio'] <= peg_excellent,
+            df['peg_ratio'] <= peg_good,
+        ]
+        peg_choices = ['FAIL', 'PASS', 'CLOSE']
+        peg_status = np.select(peg_conditions, peg_choices, default='FAIL')
+        
+        # Determine debt status (Legacy PASS/CLOSE/FAIL logic)
+        debt_conditions = [
+            df['debt_to_equity'].isna(),
+            df['debt_to_equity'] <= debt_excellent,
+            df['debt_to_equity'] <= debt_good,
+        ]
+        debt_choices = ['FAIL', 'PASS', 'CLOSE']
+        debt_status = np.select(debt_conditions, debt_choices, default='FAIL')
+        
+        # Determine institutional ownership status (Legacy PASS/CLOSE/FAIL logic)
+        # PASS: Inside the sweet spot (min-max)
+        inst_pass = (df['institutional_ownership'] >= inst_own_min) & (df['institutional_ownership'] <= inst_own_max)
+        
+        # CLOSE: Within 5% of boundaries (only if not passing)
+        dist_min = (df['institutional_ownership'] - inst_own_min).abs()
+        dist_max = (df['institutional_ownership'] - inst_own_max).abs()
+        inst_close = (~inst_pass) & ((dist_min <= 0.05) | (dist_max <= 0.05))
+        
+        inst_conditions = [
+            df['institutional_ownership'].isna(),
+            inst_pass,
+            inst_close,
+        ]
+        inst_choices = ['FAIL', 'PASS', 'CLOSE']
+        inst_status = np.select(inst_conditions, inst_choices, default='FAIL')
+        
+        # Build result DataFrame with all display fields
+        result = df[['symbol', 'company_name', 'country', 'sector', 'ipo_year',
+                     'price', 'market_cap', 'pe_ratio', 'peg_ratio', 
+                     'debt_to_equity', 'institutional_ownership', 'dividend_yield',
+                     'earnings_cagr', 'revenue_cagr', 
+                     'income_consistency_score', 'revenue_consistency_score']].copy()
+        
+        # Add scoring columns
+        result['overall_score'] = overall_score.round(1)
+        result['overall_status'] = overall_status
+        result['peg_score'] = peg_score.round(1)
+        result['peg_status'] = peg_status
+        result['debt_score'] = debt_score.round(1)
+        result['debt_status'] = debt_status
+        result['institutional_ownership_score'] = ownership_score.round(1)
+        result['institutional_ownership_status'] = inst_status
+        result['consistency_score'] = consistency_score.round(1)
+        
+        # Sort by overall_score descending
+        result = result.sort_values('overall_score', ascending=False)
+        
+        return result
+    
+    def _vectorized_peg_score(self, peg: pd.Series, excellent: float, good: float, fair: float) -> pd.Series:
+        """
+        Vectorized version of calculate_peg_score().
+        
+        Mirrors the exact interpolation logic from lines 800-829.
+        """
+        result = pd.Series(0.0, index=peg.index)
+        
+        # Excellent: 100
+        mask_excellent = peg <= excellent
+        result[mask_excellent] = 100.0
+        
+        # Good: 75-100 (interpolate)
+        mask_good = (peg > excellent) & (peg <= good)
+        if mask_good.any():
+            range_size = good - excellent
+            position = (good - peg[mask_good]) / range_size
+            result[mask_good] = 75.0 + (25.0 * position)
+        
+        # Fair: 25-75 (interpolate)
+        mask_fair = (peg > good) & (peg <= fair)
+        if mask_fair.any():
+            range_size = fair - good
+            position = (fair - peg[mask_fair]) / range_size
+            result[mask_fair] = 25.0 + (50.0 * position)
+        
+        # Poor: 0-25 (interpolate up to max of 4.0)
+        max_poor = 4.0
+        mask_poor = (peg > fair) & (peg < max_poor)
+        if mask_poor.any():
+            range_size = max_poor - fair
+            position = (max_poor - peg[mask_poor]) / range_size
+            result[mask_poor] = 25.0 * position
+        
+        # Very poor: 0
+        result[peg >= max_poor] = 0.0
+        
+        # Handle None/NaN - score is 0 for missing PEG
+        result[peg.isna()] = 0.0
+        
+        return result
+    
+    def _vectorized_debt_score(self, debt: pd.Series, excellent: float, good: float, moderate: float) -> pd.Series:
+        """
+        Vectorized version of calculate_debt_score().
+        
+        Mirrors the exact interpolation logic from lines 842-871.
+        """
+        result = pd.Series(50.0, index=debt.index)  # Default for None
+        
+        # Excellent: 100
+        mask_excellent = debt <= excellent
+        result[mask_excellent] = 100.0
+        
+        # Good: 75-100 (interpolate)
+        mask_good = (debt > excellent) & (debt <= good)
+        if mask_good.any():
+            range_size = good - excellent
+            position = (good - debt[mask_good]) / range_size
+            result[mask_good] = 75.0 + (25.0 * position)
+        
+        # Moderate: 25-75 (interpolate)
+        mask_moderate = (debt > good) & (debt <= moderate)
+        if mask_moderate.any():
+            range_size = moderate - good
+            position = (moderate - debt[mask_moderate]) / range_size
+            result[mask_moderate] = 25.0 + (50.0 * position)
+        
+        # High: 0-25 (interpolate up to max of 5.0)
+        max_high = 5.0
+        mask_high = (debt > moderate) & (debt < max_high)
+        if mask_high.any():
+            range_size = max_high - moderate
+            position = (max_high - debt[mask_high]) / range_size
+            result[mask_high] = 25.0 * position
+        
+        # Very high: 0
+        result[debt >= max_high] = 0.0
+        
+        # None/NaN gets neutral score
+        result[debt.isna()] = 50.0
+        
+        return result
+    
+    def _vectorized_ownership_score(self, ownership: pd.Series, min_thresh: float, max_thresh: float) -> pd.Series:
+        """
+        Vectorized version of calculate_institutional_ownership_score().
+        
+        Mirrors the exact interpolation logic from lines 887-919.
+        Sweet spot is between min_thresh and max_thresh.
+        """
+        result = pd.Series(0.0, index=ownership.index)
+        
+        ideal_center = (min_thresh + max_thresh) / 2
+        
+        # Ideal range: 75-100 (interpolate based on distance from center)
+        mask_ideal = (ownership >= min_thresh) & (ownership <= max_thresh)
+        if mask_ideal.any():
+            distance_from_center = (ownership[mask_ideal] - ideal_center).abs()
+            max_distance = ideal_center - min_thresh
+            position = 1.0 - (distance_from_center / max_distance)
+            result[mask_ideal] = 75.0 + (25.0 * position)
+        
+        # Below minimum: 0-75 (interpolate)
+        mask_low = (ownership < min_thresh) & (ownership > 0)
+        if mask_low.any():
+            position = ownership[mask_low] / min_thresh
+            result[mask_low] = 75.0 * position
+        
+        # Above maximum: 0-75 (interpolate up to 1.0)
+        mask_high = (ownership > max_thresh) & (ownership < 1.0)
+        if mask_high.any():
+            range_size = 1.0 - max_thresh
+            position = (1.0 - ownership[mask_high]) / range_size
+            result[mask_high] = 75.0 * position
+        
+        # At extremes: 0
+        result[ownership <= 0] = 0.0
+        result[ownership >= 1.0] = 0.0
+        
+        # None/NaN gets 0
+        result[ownership.isna()] = 0.0
+        
+        return result
