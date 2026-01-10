@@ -1,3 +1,6 @@
+// ABOUTME: Main app shell layout with dual sidebars
+// ABOUTME: Left sidebar for navigation, right sidebar for chat
+
 import { useState, useEffect } from 'react'
 import { Outlet, useLocation, useNavigate, useParams } from 'react-router-dom'
 import { MessageSquare, Plus } from 'lucide-react'
@@ -131,7 +134,7 @@ function AppShellContent({
                     </div>
                 </SidebarHeader>
 
-                <SidebarContent>
+                <SidebarContent className="overflow-x-hidden">
                     <ScrollArea className="h-full">
 
                         {/* Primary Navigation - Always Visible */}
@@ -154,6 +157,26 @@ function AppShellContent({
                                 </SidebarMenu>
                             </SidebarGroupContent>
                         </SidebarGroup>
+
+                        {/* Chat History Section - Only show when agent mode is enabled */}
+                        {agentMode && (
+                            <Collapsible open={chatsOpen} onOpenChange={setChatsOpen} style={{ maxWidth: '100%', overflow: 'hidden' }}>
+                                <SidebarGroup className="overflow-x-hidden">
+                                    <CollapsibleTrigger asChild>
+                                        <SidebarGroupLabel className="cursor-pointer hover:bg-accent flex items-center justify-between px-4 py-2">
+                                            <span>Chats</span>
+                                            {chatsOpen ? <ChevronDown /> : <ChevronRight />}
+                                        </SidebarGroupLabel>
+                                    </CollapsibleTrigger>
+                                    <CollapsibleContent>
+                                        <ChatHistory
+                                            onSelectConversation={onNavClick}
+                                            onDeleteConversation={handleDeleteConversation}
+                                        />
+                                    </CollapsibleContent>
+                                </SidebarGroup>
+                            </Collapsible>
+                        )}
 
                         {/* Filter Section - Hidden on Detail Page */}
                         {!isStockDetail && (
@@ -476,28 +499,6 @@ function AppShellContent({
                                                     </SidebarMenuButton>
                                                 </SidebarMenuItem>
                                             </SidebarMenu>
-                                        </SidebarGroupContent>
-                                    </CollapsibleContent>
-                                </SidebarGroup>
-                            </Collapsible>
-                        )}
-
-                        {/* Chat History Section - Only show when agent mode is enabled */}
-                        {agentMode && (
-                            <Collapsible open={chatsOpen} onOpenChange={setChatsOpen}>
-                                <SidebarGroup>
-                                    <CollapsibleTrigger asChild>
-                                        <SidebarGroupLabel className="cursor-pointer hover:bg-accent flex items-center justify-between px-4 py-2">
-                                            <span>Chats</span>
-                                            {chatsOpen ? <ChevronDown /> : <ChevronRight />}
-                                        </SidebarGroupLabel>
-                                    </CollapsibleTrigger>
-                                    <CollapsibleContent>
-                                        <SidebarGroupContent>
-                                            <ChatHistory
-                                                onSelectConversation={onNavClick}
-                                                onDeleteConversation={handleDeleteConversation}
-                                            />
                                         </SidebarGroupContent>
                                     </CollapsibleContent>
                                 </SidebarGroup>
