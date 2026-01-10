@@ -59,17 +59,23 @@ class SmartChatAgent:
     def _build_system_prompt(self, primary_symbol: str) -> str:
         """Build the system prompt for the agent."""
         current_date_str = datetime.now().strftime('%Y-%m-%d')
-        
+
         # Determine paths
         import os
         base_dir = os.path.dirname(os.path.abspath(__file__))
         prompts_dir = os.path.join(base_dir, 'prompts')
-        
-        # Load persona (default to Lynch)
-        # Future: Make this configurable
+
+        # Load persona based on active character setting
         persona_content = "You are a pragmatic, data-driven investment analyst."
         try:
-            persona_path = os.path.join(prompts_dir, 'agent', 'personas', 'lynch.md')
+            from characters import get_character
+            character_id = self.db.get_setting('active_character', 'lynch')
+            character = get_character(character_id)
+            if character:
+                persona_path = os.path.join(prompts_dir, character.persona_prompt)
+            else:
+                persona_path = os.path.join(prompts_dir, 'agent', 'personas', 'lynch.md')
+
             if os.path.exists(persona_path):
                 with open(persona_path, 'r') as f:
                     persona_content = f.read()

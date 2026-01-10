@@ -1,5 +1,5 @@
-# ABOUTME: Evaluates stocks against Peter Lynch investment criteria
-# ABOUTME: Flags stocks as PASS, CLOSE, or FAIL based on PEG ratio, debt, growth, and ownership
+# ABOUTME: Evaluates stocks against investment criteria (Lynch, Buffett, etc.)
+# ABOUTME: Routes to character-specific scoring based on active character setting
 
 import logging
 from typing import Dict, Any, Optional
@@ -182,6 +182,9 @@ class LynchCriteria:
         """
         Evaluate a stock using the specified algorithm.
 
+        Checks the active character setting and routes to character-specific
+        evaluation when appropriate.
+
         Args:
             symbol: Stock ticker symbol
             algorithm: One of 'weighted', 'two_tier', 'category_based', 'critical_factors', 'classic'
@@ -189,12 +192,18 @@ class LynchCriteria:
         Returns:
             Dictionary with evaluation results including algorithm-specific scoring
         """
+        # Check active character - delegate to StockEvaluator for non-Lynch characters
+        active_character = self._get_active_character()
+        if active_character != 'lynch':
+            return self._evaluate_with_character(symbol, active_character)
+
+        # Lynch evaluation (original logic)
         # Get base metrics and growth data
         if custom_metrics:
             base_data = custom_metrics
         else:
             base_data = self._get_base_metrics(symbol)
-            
+
         if not base_data:
             return None
 
@@ -212,6 +221,31 @@ class LynchCriteria:
         else:
             # Default to weighted if unknown algorithm
             return self._evaluate_weighted(symbol, base_data, overrides)
+
+    def _get_active_character(self) -> str:
+        """Get the currently active investment character from settings."""
+        try:
+            setting = self.db.get_setting('active_character')
+            return setting['value'] if setting else 'lynch'
+        except Exception:
+            return 'lynch'
+
+    def _evaluate_with_character(self, symbol: str, character_id: str) -> Optional[Dict[str, Any]]:
+        """Evaluate a stock using a non-Lynch character via StockEvaluator."""
+        try:
+            from stock_evaluator import StockEvaluator
+            from characters import get_character
+
+            character = get_character(character_id)
+            if not character:
+                logger.warning(f"Character not found: {character_id}, falling back to Lynch")
+                return None
+
+            evaluator = StockEvaluator(self.db, self.analyzer, character)
+            return evaluator.evaluate_stock(symbol)
+        except Exception as e:
+            logger.error(f"Error evaluating with character {character_id}: {e}")
+            return None
 
     def _calculate_pe_52_week_range(self, symbol: str, current_pe: float) -> Dict[str, Any]:
         """
