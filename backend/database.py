@@ -698,6 +698,17 @@ class Database:
             END $$;
         """)
 
+        # Migration: Add theme column to users table
+        cursor.execute("""
+            DO $$
+            BEGIN
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                               WHERE table_name = 'users' AND column_name = 'theme') THEN
+                    ALTER TABLE users ADD COLUMN theme TEXT DEFAULT 'light';
+                END IF;
+            END $$;
+        """)
+
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS watchlist (
                 symbol TEXT PRIMARY KEY,
@@ -2465,6 +2476,23 @@ class Database:
         """Set user's active investment character"""
         sql = "UPDATE users SET active_character = %s WHERE id = %s"
         args = (character_id, user_id)
+        self.write_queue.put((sql, args))
+
+    def get_user_theme(self, user_id: int) -> str:
+        """Get user's active theme"""
+        conn = self.get_connection()
+        try:
+            cursor = conn.cursor()
+            cursor.execute("SELECT theme FROM users WHERE id = %s", (user_id,))
+            row = cursor.fetchone()
+            return row[0] if row and row[0] else 'light'
+        finally:
+            self.return_connection(conn)
+
+    def set_user_theme(self, user_id: int, theme: str):
+        """Set user's active theme"""
+        sql = "UPDATE users SET theme = %s WHERE id = %s"
+        args = (theme, user_id)
         self.write_queue.put((sql, args))
 
     def add_to_watchlist(self, user_id: int, symbol: str):

@@ -639,6 +639,42 @@ def set_active_character(user_id):
         return jsonify({'error': str(e)}), 500
 
 
+@app.route('/api/settings/theme', methods=['GET'])
+@require_user_auth
+def get_user_theme_endpoint(user_id):
+    """Get the user's active theme."""
+    try:
+        theme = db.get_user_theme(user_id)
+        return jsonify({'theme': theme})
+    except Exception as e:
+        logger.error(f"Error getting user theme: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/settings/theme', methods=['PUT'])
+@require_user_auth
+def set_user_theme_endpoint(user_id):
+    """Set the user's active theme."""
+    try:
+        data = request.get_json()
+        if not data or 'theme' not in data:
+            return jsonify({'error': 'theme is required'}), 400
+
+        theme = data['theme']
+
+        # Validate theme value
+        if theme not in ['light', 'dark', 'system']:
+            return jsonify({'error': f'Invalid theme: {theme}. Must be light, dark, or system'}), 400
+
+        db.set_user_theme(user_id, theme)
+        db.flush()  # Ensure write is committed
+
+        return jsonify({'success': True, 'theme': theme})
+    except Exception as e:
+        logger.error(f"Error setting user theme: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
 @app.route('/api/stock/<symbol>', methods=['GET'])
 def get_stock(symbol):
     force_refresh = request.args.get('refresh', 'false').lower() == 'true'

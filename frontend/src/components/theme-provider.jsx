@@ -7,13 +7,40 @@ const ThemeProviderContext = createContext({
 
 export function ThemeProvider({
     children,
-    defaultTheme = "system",
+    defaultTheme = "light",
     storageKey = "vite-ui-theme",
     ...props
 }) {
     const [theme, setTheme] = useState(
         () => localStorage.getItem(storageKey) || defaultTheme
     )
+    const [isLoading, setIsLoading] = useState(true)
+
+    // Fetch user's theme from backend on mount
+    useEffect(() => {
+        fetch('/api/settings/theme', { credentials: 'include' })
+            .then(res => {
+                if (res.ok) {
+                    return res.json()
+                }
+                // If not authenticated, use localStorage
+                throw new Error('Not authenticated')
+            })
+            .then(data => {
+                if (data.theme) {
+                    setTheme(data.theme)
+                    localStorage.setItem(storageKey, data.theme)
+                }
+            })
+            .catch(() => {
+                // Fallback to localStorage if not authenticated
+                const localTheme = localStorage.getItem(storageKey) || defaultTheme
+                setTheme(localTheme)
+            })
+            .finally(() => {
+                setIsLoading(false)
+            })
+    }, [storageKey, defaultTheme])
 
     useEffect(() => {
         const root = window.document.documentElement
@@ -35,9 +62,20 @@ export function ThemeProvider({
 
     const value = {
         theme,
-        setTheme: (theme) => {
-            localStorage.setItem(storageKey, theme)
-            setTheme(theme)
+        setTheme: (newTheme) => {
+            localStorage.setItem(storageKey, newTheme)
+            setTheme(newTheme)
+
+            // Persist to backend if authenticated
+            fetch('/api/settings/theme', {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ theme: newTheme }),
+                credentials: 'include'
+            }).catch(err => {
+                console.error('Failed to save theme to backend:', err)
+                // Still works locally even if backend save fails
+            })
         },
     }
 
