@@ -256,33 +256,42 @@ class StockVectors:
     
     def _compute_pe_ranges(self, df: pd.DataFrame) -> pd.DataFrame:
         """
-        Compute 52-week P/E range metrics using historical EPS for parity.
+        Compute 52-week P/E range metrics using Quarterly TTM EPS (Vectorized).
         
-        Matches LynchCriteria logic:
-        1. For each week's price, find the corresponding Annual EPS (current year or prev year).
-        2. Calculate P/E for that week.
-        3. Find min/max P/E over the 52-week period.
-        4. Use the most recent calculated P/E for position.
+        Logic:
+        1. Fetch all weekly prices (last 52 weeks).
+        2. Fetch all quarterly net income.
+        3. Compute Rolling TTM Net Income (Sum of last 4 quarters) for each symbol-date.
+        4. Merge TTM NI onto Weekly Prices using merge_asof (backward fill).
+        5. Calculate Shares Outstanding from current MarketCap/Price (assumed valid for Adjusted Prices).
+        6. Calculate Weekly PE = WeeklyPrice / (TTM_NI / Shares).
+        7. Agg Min/Max.
+        8. Compare against Live P/E (pe_ratio column) for position.
         """
         conn = self.db.get_connection()
         try:
-            # 1. Load Weekly Prices (last 52 weeks)
-            cutoff_date = (datetime.now() - pd.Timedelta(days=365)).strftime('%Y-%m-%d')
+            # 1. Load Weekly Prices (last 52 weeks) 
+            cutoff_date = (datetime.now() - pd.Timedelta(weeks=52)).strftime('%Y-%m-%d')
             prices_query = """
-                SELECT symbol, week_ending, price as close_price, 
-                       EXTRACT(YEAR FROM week_ending)::INT as year
+                SELECT symbol, week_ending, price as close_price
                 FROM weekly_prices 
                 WHERE week_ending >= %s
+                ORDER BY symbol, week_ending
             """
             prices_df = pd.read_sql_query(prices_query, conn, params=(cutoff_date,))
             
-            # 2. Load Earnings History (Annual EPS)
+            # 2. Load Quarterly Net Income (fetch enough history for rolling sum)
+            # Fetching last 4 years to ensure we have 4 quarters prior to 52 weeks ago
+            cutoff_earnings = (datetime.now() - pd.Timedelta(weeks=4*52)).strftime('%Y-%m-%d')
             earnings_query = """
-                SELECT symbol, year, earnings_per_share as eps
+                SELECT symbol, fiscal_end, net_income
                 FROM earnings_history
-                WHERE period = 'annual' AND earnings_per_share IS NOT NULL AND earnings_per_share > 0
+                WHERE period IN ('Q1', 'Q2', 'Q3', 'Q4') 
+                  AND net_income IS NOT NULL
+                  AND fiscal_end >= %s
+                ORDER BY symbol, fiscal_end
             """
-            earnings_df = pd.read_sql_query(earnings_query, conn)
+            earnings_df = pd.read_sql_query(earnings_query, conn, params=(cutoff_earnings,))
             
         finally:
             self.db.return_connection(conn)
@@ -292,92 +301,109 @@ class StockVectors:
             df['pe_52_week_max'] = None
             df['pe_52_week_position'] = None
             return df
+            
+        # 3. Compute TTM Net Income
+        # Needs to be sorted by symbol, fiscal_end
+        earnings_df['fiscal_end'] = pd.to_datetime(earnings_df['fiscal_end'])
         
-        # 3. Merge Prices with Earnings
-        # We need to match Price Year -> Earnings Year. 
-        # Fallback: If no earnings for Year, use Year-1.
-        
-        # Merge for Current Year
-        merged = prices_df.merge(
-            earnings_df.rename(columns={'eps': 'eps_curr'}), 
-            on=['symbol', 'year'], 
-            how='left'
+        # Calculate Rolling 4Q Sum
+        # Groupby preserves order if sort=False, but we already sorted in SQL
+        earnings_df['ttm_net_income'] = (
+            earnings_df.groupby('symbol')['net_income']
+            .rolling(4, min_periods=4)
+            .sum()
+            .reset_index(0, drop=True)
         )
         
-        # Merge for Previous Year (Fallback)
-        # To match [price_year] with [earnings_year = price_year - 1]
-        # We join where earnings_year = price_year - 1
-        earnings_prev = earnings_df.copy()
-        earnings_prev['join_year'] = earnings_prev['year'] + 1
+        # Drop rows with NaN TTM (first 3 quarters)
+        ttm_df = earnings_df.dropna(subset=['ttm_net_income']).copy()
         
-        merged = merged.merge(
-            earnings_prev[['symbol', 'join_year', 'eps']].rename(columns={'eps': 'eps_prev'}),
-            left_on=['symbol', 'year'],
-            right_on=['symbol', 'join_year'],
-            how='left'
+        # 4. Merge TTM NI onto Weekly Prices
+        # Ensure key types match
+        prices_df['week_ending'] = pd.to_datetime(prices_df['week_ending'])
+        
+        # merge_asof requires sorting
+        prices_df = prices_df.sort_values(['week_ending'])
+        ttm_df = ttm_df.sort_values(['fiscal_end'])
+        
+        # Perform merge_asof
+        # For each price date, find the latest TTM NI on or before that date
+        merged = pd.merge_asof(
+            prices_df,
+            ttm_df[['symbol', 'fiscal_end', 'ttm_net_income']],
+            left_on='week_ending',
+            right_on='fiscal_end',
+            by='symbol',
+            direction='backward'
         )
         
-        # Coalesce EPS: Current -> Prev
-        merged['eps_final'] = merged['eps_curr'].fillna(merged['eps_prev'])
+        # 5. Calculate Shares Outstanding (Current)
+        # Using current MarketCap / Price. Assume df has these columns.
+        # Create a mapping dataframe
+        shares_map = df[['symbol', 'market_cap', 'price']].copy()
+        shares_map['shares'] = shares_map['market_cap'] / shares_map['price']
         
-        # 4. Calculate P/E per week
-        # Filter valid EPS and Price
-        valid_rows = (merged['eps_final'] > 0) & (merged['close_price'] > 0)
-        merged = merged[valid_rows].copy()
+        # Fill Inf/NaN
+        shares_map['shares'] = shares_map['shares'].replace([np.inf, -np.inf], np.nan)
         
-        merged['weekly_pe'] = merged['close_price'] / merged['eps_final']
+        # Merge Shares onto Merged Data
+        merged = merged.merge(shares_map[['symbol', 'shares']], on='symbol', how='inner')
         
-        # Filter outliers (pe < 1000) as per legacy logic
-        merged = merged[merged['weekly_pe'] < 1000]
+        # 6. Calculate Weekly PE
+        # Avoid division by zero
+        valid_rows = (merged['shares'] > 0) & (merged['ttm_net_income'] > 0) & (merged['close_price'] > 0)
+        calc_df = merged[valid_rows].copy()
         
-        if merged.empty:
+        calc_df['ttm_eps'] = calc_df['ttm_net_income'] / calc_df['shares']
+        calc_df['weekly_pe'] = calc_df['close_price'] / calc_df['ttm_eps']
+        
+        # Filter Outliers (< 1000)
+        calc_df = calc_df[calc_df['weekly_pe'] < 1000]
+        
+        if calc_df.empty:
             df['pe_52_week_min'] = None
             df['pe_52_week_max'] = None
             df['pe_52_week_position'] = None
             return df
             
-        # 5. Aggregate logic
-        # Need Min, Max, and "Latest" P/E per symbol
+        # 7. Aggregate Min/Max
+        stats = calc_df.groupby('symbol')['weekly_pe'].agg(['min', 'max'])
+        stats.rename(columns={'min': 'pe_min', 'max': 'pe_max'}, inplace=True)
         
-        # Group by symbol
-        grouped = merged.groupby('symbol')['weekly_pe']
-        
-        stats = grouped.agg(['min', 'max', 'last'])
-        stats.rename(columns={'min': 'pe_min', 'max': 'pe_max', 'last': 'pe_latest'}, inplace=True)
-        
-        # Merge stats back to main DF
+        # Merge back to Main DF
         df = df.merge(stats, left_on='symbol', right_index=True, how='left')
         
-        # 6. Calculate Position
-        # position = (latest - min) / (max - min) * 100
-        
-        # Initialize
-        if 'pe_min' not in df.columns: # If merge added nothing
-             df['pe_52_week_min'] = None
-             df['pe_52_week_max'] = None
-             df['pe_52_week_position'] = None
-             return df
-             
+        # 8. Calculate Position
         df['pe_52_week_min'] = df['pe_min']
         df['pe_52_week_max'] = df['pe_max']
         df['pe_52_week_position'] = None
         
         pe_range = df['pe_max'] - df['pe_min']
-        
-        # Avoid division by zero, check for valid Live PE and Range
         has_range = (pe_range > 0) & df['pe_min'].notna() & df['pe_ratio'].notna()
         
-        # Vectorized calc using Live PE
-        positions = (df.loc[has_range, 'pe_ratio'] - df.loc[has_range, 'pe_min']) / pe_range.loc[has_range]
-        df.loc[has_range, 'pe_52_week_position'] = (positions * 100.0).clip(0.0, 100.0)
-        
-        # Handle single-point data (min == max) -> 50.0 default
+        # Vectorized Position Check
+        if has_range.any():
+            current_pe = df.loc[has_range, 'pe_ratio']
+            pe_min = df.loc[has_range, 'pe_min']
+            pe_max = df.loc[has_range, 'pe_max']
+            
+            # Cases: < Min (0), > Max (100), Inside
+            # We can calculate raw percent and clamp
+            raw_pos = (current_pe - pe_min) / (pe_max - pe_min) * 100.0
+            
+            # Apply clamp logic:
+            # If current < min -> 0
+            # If current > max -> 100
+            # Implicitly handled by clip(0, 100)
+            df.loc[has_range, 'pe_52_week_position'] = raw_pos.clip(0.0, 100.0)
+            
+        # Zero range case
         zero_range = (pe_range == 0) & df['pe_min'].notna()
         df.loc[zero_range, 'pe_52_week_position'] = 50.0
         
         # Cleanup
-        df.drop(columns=['pe_min', 'pe_max', 'pe_latest'], errors='ignore', inplace=True)
-        
+        df.drop(columns=['pe_min', 'pe_max'], inplace=True, errors='ignore')
+
         return df
 
     def get_dataframe(self) -> Optional[pd.DataFrame]:
