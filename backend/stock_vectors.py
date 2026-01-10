@@ -137,11 +137,8 @@ class StockVectors:
     def _compute_growth_metrics(self, df: pd.DataFrame) -> pd.DataFrame:
         """
         Compute 5Y CAGRs and consistency scores from earnings_history.
-        
-        Uses same formulas as EarningsAnalyzer.calculate_earnings_growth()
-        to ensure parity with evaluate_stock().
+        Optimized with groupby().apply() to avoid slow loops.
         """
-        # Bulk load all earnings history
         conn = self.db.get_connection()
         try:
             earnings_query = """
@@ -154,67 +151,55 @@ class StockVectors:
         finally:
             self.db.return_connection(conn)
         
-        # Initialize new columns
-        df['earnings_cagr'] = None
-        df['revenue_cagr'] = None
-        df['income_consistency_score'] = None
-        df['revenue_consistency_score'] = None
+        # Pre-filter for valid inputs slightly speeds up groups
+        mask_valid = earnings_df['net_income'].notna() & earnings_df['revenue'].notna()
+        valid_df = earnings_df[mask_valid].copy()
         
-        # Group earnings by symbol and compute metrics
-        for symbol in df['symbol'].unique():
-            symbol_earnings = earnings_df[earnings_df['symbol'] == symbol].copy()
+        # Calculate Metrics by Group
+        # We need to process each symbol's history
+        
+        # 1. Take last 5 years per symbol
+        # sort is guaranteed by SQL, but ensure stable
+        grouped_hist = valid_df.groupby('symbol').tail(5)
+        
+        # Define helper to apply per group (receives DataFrame chunk for one symbol)
+        def calc_group_metrics(group):
+            if len(group) < 3:
+                return pd.Series([None, None, None, None], 
+                               index=['earnings_cagr', 'revenue_cagr', 'income_consistency_score', 'revenue_consistency_score'])
             
-            if len(symbol_earnings) < 3:
-                continue
+            # Extract lists
+            net_income_values = group['net_income'].tolist()
+            revenue_values = group['revenue'].tolist()
+            years = len(group) - 1
             
-            # Filter to valid rows (non-null net_income and revenue)
-            valid_earnings = symbol_earnings[
-                symbol_earnings['net_income'].notna() & 
-                symbol_earnings['revenue'].notna()
-            ].copy()
+            # CAGR
+            e_cagr = self._calculate_cagr(net_income_values[0], net_income_values[-1], years)
+            r_cagr = self._calculate_cagr(revenue_values[0], revenue_values[-1], years)
             
-            if len(valid_earnings) < 3:
-                continue
+            # Consistency
+            inc_const = self._calculate_consistency(net_income_values)
+            rev_const = self._calculate_consistency(revenue_values)
             
-            # Limit to most recent 5 years
-            valid_earnings = valid_earnings.sort_values('year').tail(5)
+            # Normalize scores
+            inc_score = max(0.0, 100.0 - (inc_const * 2.0)) if inc_const is not None else None
+            rev_score = max(0.0, 100.0 - (rev_const * 2.0)) if rev_const is not None else None
             
-            net_income_values = valid_earnings['net_income'].tolist()
-            revenue_values = valid_earnings['revenue'].tolist()
-            years = len(valid_earnings) - 1
-            
-            # Calculate CAGRs using same formula as EarningsAnalyzer
-            earnings_cagr = self._calculate_cagr(
-                net_income_values[0], net_income_values[-1], years
-            )
-            revenue_cagr = self._calculate_cagr(
-                revenue_values[0], revenue_values[-1], years
-            )
-            
-            # Calculate consistency scores
-            income_consistency = self._calculate_consistency(net_income_values)
-            revenue_consistency = self._calculate_consistency(revenue_values)
-            
-            # Normalize consistency to 0-100 scale (100 = best)
-            # Formula: 100 - (std_dev * 2), capped at 0
-            income_consistency_score = max(0.0, 100.0 - (income_consistency * 2.0)) if income_consistency is not None else None
-            revenue_consistency_score = max(0.0, 100.0 - (revenue_consistency * 2.0)) if revenue_consistency is not None else None
-            
-            # Update DataFrame
-            mask = df['symbol'] == symbol
-            df.loc[mask, 'earnings_cagr'] = earnings_cagr
-            df.loc[mask, 'revenue_cagr'] = revenue_cagr
-            df.loc[mask, 'income_consistency_score'] = income_consistency_score
-            df.loc[mask, 'revenue_consistency_score'] = revenue_consistency_score
+            return pd.Series([e_cagr, r_cagr, inc_score, rev_score], 
+                           index=['earnings_cagr', 'revenue_cagr', 'income_consistency_score', 'revenue_consistency_score'])
+
+        # Apply calculation (this is much faster than iterating df.loc)
+        metrics_df = grouped_hist.groupby('symbol').apply(calc_group_metrics)
+        
+        # Merge back to original DF
+        # metrics_df has symbol as index
+        df = df.merge(metrics_df, left_on='symbol', right_index=True, how='left')
         
         return df
-    
+
     def _calculate_cagr(self, start_value: float, end_value: float, years: int) -> Optional[float]:
         """
         Calculate average annual growth rate.
-        
-        Formula: ((end - start) / |start|) / years × 100
-        
         Matches EarningsAnalyzer.calculate_cagr() exactly.
         """
         if start_value is None or end_value is None or years is None:
@@ -224,15 +209,16 @@ class StockVectors:
         if start_value == 0:
             return None
         
-        annual_growth_rate = ((end_value - start_value) / abs(start_value)) / years * 100
-        return annual_growth_rate
+        try:
+            annual_growth_rate = ((end_value - start_value) / abs(start_value)) / years * 100
+            return annual_growth_rate
+        except ZeroDivisionError:
+            return None
     
     def _calculate_consistency(self, values: List[float]) -> Optional[float]:
         """
         Calculate growth consistency as standard deviation of YoY growth rates.
-        
         Matches EarningsAnalyzer.calculate_growth_consistency() exactly.
-        Returns raw std_dev (lower = more consistent).
         """
         if len(values) < 2:
             return None
@@ -244,11 +230,14 @@ class StockVectors:
         has_negative_years = False
         
         for i in range(1, len(values)):
-            if values[i] is not None and values[i-1] is not None and values[i-1] > 0:
-                growth_rate = ((values[i] - values[i-1]) / values[i-1]) * 100
+            v_curr = values[i]
+            v_prev = values[i-1]
+            
+            if v_curr is not None and v_prev is not None and v_prev > 0:
+                growth_rate = ((v_curr - v_prev) / v_prev) * 100
                 growth_rates.append(growth_rate)
             
-            if values[i] is not None and values[i] < 0:
+            if v_curr is not None and v_curr < 0:
                 negative_year_penalty += 10
                 has_negative_years = True
         
@@ -258,6 +247,7 @@ class StockVectors:
         if len(growth_rates) < 3:
             return None
         
+        # Population variance to match legacy logic
         mean = sum(growth_rates) / len(growth_rates)
         variance = sum((x - mean) ** 2 for x in growth_rates) / len(growth_rates)
         std_dev = variance ** 0.5
@@ -266,75 +256,127 @@ class StockVectors:
     
     def _compute_pe_ranges(self, df: pd.DataFrame) -> pd.DataFrame:
         """
-        Compute 52-week P/E range metrics.
+        Compute 52-week P/E range metrics using historical EPS for parity.
         
-        Mirrors LynchCriteria._calculate_pe_52_week_range logic.
-        Uses weekly_prices to find min/max price over last year.
+        Matches LynchCriteria logic:
+        1. For each week's price, find the corresponding Annual EPS (current year or prev year).
+        2. Calculate P/E for that week.
+        3. Find min/max P/E over the 52-week period.
+        4. Use the most recent calculated P/E for position.
         """
         conn = self.db.get_connection()
         try:
-            # Load last 52 weeks of prices (approx 1 year)
+            # 1. Load Weekly Prices (last 52 weeks)
             cutoff_date = (datetime.now() - pd.Timedelta(days=365)).strftime('%Y-%m-%d')
-            query = """
-                SELECT symbol, price as close_price 
+            prices_query = """
+                SELECT symbol, week_ending, price as close_price, 
+                       EXTRACT(YEAR FROM week_ending)::INT as year
                 FROM weekly_prices 
                 WHERE week_ending >= %s
             """
-            prices_df = pd.read_sql_query(query, conn, params=(cutoff_date,))
+            prices_df = pd.read_sql_query(prices_query, conn, params=(cutoff_date,))
+            
+            # 2. Load Earnings History (Annual EPS)
+            earnings_query = """
+                SELECT symbol, year, earnings_per_share as eps
+                FROM earnings_history
+                WHERE period = 'annual' AND earnings_per_share IS NOT NULL AND earnings_per_share > 0
+            """
+            earnings_df = pd.read_sql_query(earnings_query, conn)
+            
         finally:
             self.db.return_connection(conn)
             
-        if prices_df.empty:
+        if prices_df.empty or earnings_df.empty:
             df['pe_52_week_min'] = None
             df['pe_52_week_max'] = None
             df['pe_52_week_position'] = None
             return df
         
-        # Compute min/max price per symbol
-        stats = prices_df.groupby('symbol')['close_price'].agg(['min', 'max']).reset_index()
-        stats.rename(columns={'min': 'min_52w', 'max': 'max_52w'}, inplace=True)
+        # 3. Merge Prices with Earnings
+        # We need to match Price Year -> Earnings Year. 
+        # Fallback: If no earnings for Year, use Year-1.
         
-        # Merge stats into main df
-        df = df.merge(stats, on='symbol', how='left')
+        # Merge for Current Year
+        merged = prices_df.merge(
+            earnings_df.rename(columns={'eps': 'eps_curr'}), 
+            on=['symbol', 'year'], 
+            how='left'
+        )
         
-        # Calculate implied EPS and P/E ranges
-        # implied_eps = price / pe_ratio
+        # Merge for Previous Year (Fallback)
+        # To match [price_year] with [earnings_year = price_year - 1]
+        # We join where earnings_year = price_year - 1
+        earnings_prev = earnings_df.copy()
+        earnings_prev['join_year'] = earnings_prev['year'] + 1
         
-        def calculate_range_metrics(row):
-            price = row.get('price')
-            pe = row.get('pe_ratio')
-            min_price = row.get('min_52w')
-            max_price = row.get('max_52w')
+        merged = merged.merge(
+            earnings_prev[['symbol', 'join_year', 'eps']].rename(columns={'eps': 'eps_prev'}),
+            left_on=['symbol', 'year'],
+            right_on=['symbol', 'join_year'],
+            how='left'
+        )
+        
+        # Coalesce EPS: Current -> Prev
+        merged['eps_final'] = merged['eps_curr'].fillna(merged['eps_prev'])
+        
+        # 4. Calculate P/E per week
+        # Filter valid EPS and Price
+        valid_rows = (merged['eps_final'] > 0) & (merged['close_price'] > 0)
+        merged = merged[valid_rows].copy()
+        
+        merged['weekly_pe'] = merged['close_price'] / merged['eps_final']
+        
+        # Filter outliers (pe < 1000) as per legacy logic
+        merged = merged[merged['weekly_pe'] < 1000]
+        
+        if merged.empty:
+            df['pe_52_week_min'] = None
+            df['pe_52_week_max'] = None
+            df['pe_52_week_position'] = None
+            return df
             
-            if pd.isna(price) or pd.isna(pe) or pd.isna(min_price) or pd.isna(max_price):
-                return pd.Series([None, None, None], index=['min_pe', 'max_pe', 'position'])
-                
-            if pe <= 0 or price <= 0:
-                 return pd.Series([None, None, None], index=['min_pe', 'max_pe', 'position'])
-            
-            implied_eps = price / pe
-            
-            pe_min = min_price / implied_eps
-            pe_max = max_price / implied_eps
-            
-            # Position (0.0 to 1.0)
-            if pe_max > pe_min:
-                position = (pe - pe_min) / (pe_max - pe_min)
-                # Clamp to 0-1
-                position = max(0.0, min(1.0, position))
-            else:
-                position = None
-                
-            return pd.Series([pe_min, pe_max, position], index=['min_pe', 'max_pe', 'position'])
-
-        range_metrics = df.apply(calculate_range_metrics, axis=1)
+        # 5. Aggregate logic
+        # Need Min, Max, and "Latest" P/E per symbol
         
-        df['pe_52_week_min'] = range_metrics['min_pe']
-        df['pe_52_week_max'] = range_metrics['max_pe']
-        df['pe_52_week_position'] = range_metrics['position']
+        # Group by symbol
+        grouped = merged.groupby('symbol')['weekly_pe']
         
-        # Drop temp columns
-        df.drop(columns=['min_52w', 'max_52w'], errors='ignore', inplace=True)
+        stats = grouped.agg(['min', 'max', 'last'])
+        stats.rename(columns={'min': 'pe_min', 'max': 'pe_max', 'last': 'pe_latest'}, inplace=True)
+        
+        # Merge stats back to main DF
+        df = df.merge(stats, left_on='symbol', right_index=True, how='left')
+        
+        # 6. Calculate Position
+        # position = (latest - min) / (max - min) * 100
+        
+        # Initialize
+        if 'pe_min' not in df.columns: # If merge added nothing
+             df['pe_52_week_min'] = None
+             df['pe_52_week_max'] = None
+             df['pe_52_week_position'] = None
+             return df
+             
+        df['pe_52_week_min'] = df['pe_min']
+        df['pe_52_week_max'] = df['pe_max']
+        df['pe_52_week_position'] = None
+        
+        pe_range = df['pe_max'] - df['pe_min']
+        
+        # Avoid division by zero, check for valid Live PE and Range
+        has_range = (pe_range > 0) & df['pe_min'].notna() & df['pe_ratio'].notna()
+        
+        # Vectorized calc using Live PE
+        positions = (df.loc[has_range, 'pe_ratio'] - df.loc[has_range, 'pe_min']) / pe_range.loc[has_range]
+        df.loc[has_range, 'pe_52_week_position'] = (positions * 100.0).clip(0.0, 100.0)
+        
+        # Handle single-point data (min == max) -> 50.0 default
+        zero_range = (pe_range == 0) & df['pe_min'].notna()
+        df.loc[zero_range, 'pe_52_week_position'] = 50.0
+        
+        # Cleanup
+        df.drop(columns=['pe_min', 'pe_max', 'pe_latest'], errors='ignore', inplace=True)
         
         return df
 

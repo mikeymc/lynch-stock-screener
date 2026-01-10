@@ -1170,7 +1170,8 @@ class LynchCriteria:
                      'price', 'market_cap', 'pe_ratio', 'peg_ratio', 
                      'debt_to_equity', 'institutional_ownership', 'dividend_yield',
                      'earnings_cagr', 'revenue_cagr', 
-                     'income_consistency_score', 'revenue_consistency_score']].copy()
+                     'income_consistency_score', 'revenue_consistency_score',
+                     'pe_52_week_min', 'pe_52_week_max', 'pe_52_week_position']].copy()
         
         # Add scoring columns
         result['overall_score'] = overall_score.round(1)
