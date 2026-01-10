@@ -2,6 +2,8 @@
 # ABOUTME: Routes to character-specific scoring based on active character setting
 
 import logging
+import numpy as np
+import pandas as pd
 from typing import Dict, Any, Optional
 from database import Database
 from earnings_analyzer import EarningsAnalyzer
@@ -247,17 +249,14 @@ class LynchCriteria:
             logger.error(f"Error evaluating with character {character_id}: {e}")
             return None
 
-    def _calculate_pe_52_week_range(self, symbol: str, current_pe: float) -> Dict[str, Any]:
+    def _calculate_pe_52_week_range(self, symbol: str, stock: Dict[str, Any]) -> Dict[str, Any]:
         """
-        Calculate where current P/E sits within its 52-week range.
+        Calculate the 52-week P/E range (min, max, current position).
+        Uses Quarterly TTM EPS (Rolling 4-Quarter Sum) for accuracy.
         
-        Uses consistent EPS (fiscal year) for all P/E calculations to ensure
-        apples-to-apples comparison. The current P/E in stock_metrics uses TTM EPS
-        which can differ from fiscal year EPS.
-        
-        Returns:
-            Dictionary with pe_52_week_min, pe_52_week_max, pe_52_week_position (0-100)
-            Position 0 = at 52-week low, Position 100 = at 52-week high
+        Args:
+            symbol: Stock symbol
+            stock: Dictionary containing current stock metrics (price, pe_ratio, etc.)
         """
         from datetime import datetime, timedelta
         
@@ -268,77 +267,93 @@ class LynchCriteria:
         }
         
         try:
-            # Get weekly prices from cache
             weekly_prices = self.db.get_weekly_prices(symbol)
+            shares_outstanding = stock.get('shares_outstanding')
             
+            # If standard shares calculation fails, try stock_metrics if available
+            if not shares_outstanding and stock.get('market_cap') and stock.get('price'):
+                shares_outstanding = stock.get('market_cap') / stock.get('price')
+
             if not weekly_prices or not weekly_prices.get('dates') or not weekly_prices.get('prices'):
                 return result
             
-            # Get earnings history to calculate P/E for each week
-            earnings_history = self.db.get_earnings_history(symbol)
+            if not shares_outstanding:
+                return result
+                
+            # Get earnings history
+            earnings_history = self.db.get_earnings_history(symbol, period_type='quarterly')
             if not earnings_history:
                 return result
             
-            # Build EPS by year map (annual EPS values)
-            eps_by_year = {}
-            for entry in earnings_history:
-                if entry.get('eps') and entry.get('eps') > 0:
-                    eps_by_year[entry['year']] = entry['eps']
+            # Filter for quarterly net_income
+            quarterly_data = [e for e in earnings_history if e.get('period') in ['Q1', 'Q2', 'Q3', 'Q4'] and e.get('net_income') is not None]
+            # Sort by fiscal_end
+            quarterly_data.sort(key=lambda x: x.get('fiscal_end') or '')
             
-            if not eps_by_year:
+            if len(quarterly_data) < 4:
                 return result
-            
+
             # Calculate cutoff date for 52 weeks ago
             cutoff_date = datetime.now() - timedelta(weeks=52)
             cutoff_str = cutoff_date.strftime('%Y-%m-%d')
             
-            # Calculate P/E for each week in the last 52 weeks
             pe_values = []
-            latest_pe = None  # Track the most recent P/E calculated with consistent EPS
             
             for i, date_str in enumerate(weekly_prices['dates']):
                 # Only include last 52 weeks
-                if date_str < cutoff_str:
+                ds = str(date_str)
+                if ds < cutoff_str:
+                    continue
+                
+                price = weekly_prices['prices'][i]
+                if not price or price <= 0:
                     continue
                     
-                year = int(date_str[:4])
-                price = weekly_prices['prices'][i]
+                # Find valid quarters (fiscal_end <= current_week)
+                # Ensure date comparison is string-safe
+                valid_quarters = [q for q in quarterly_data if q.get('fiscal_end') and str(q['fiscal_end']) <= ds]
                 
-                # Use EPS from the current year, or fall back to previous year
-                eps = eps_by_year.get(year) or eps_by_year.get(year - 1)
-                
-                if eps and eps > 0 and price and price > 0:
-                    pe = price / eps
-                    # Filter out extreme outliers (e.g., P/E > 1000)
-                    if pe < 1000:
-                        pe_values.append(pe)
-                        latest_pe = pe  # Keep track of the most recent valid P/E
-            
-            if len(pe_values) < 4:  # Need at least 4 weeks of data
+                if len(valid_quarters) >= 4:
+                    last_4 = valid_quarters[-4:]
+                    ttm_net_income = sum(q['net_income'] for q in last_4)
+                    
+                    if ttm_net_income > 0:
+                        # TTM EPS = TTM Net Income / Current Shares
+                        # Usage of Current Shares is valid because Prices are Split-Adjusted (from yfinance)
+                        ttm_eps = ttm_net_income / shares_outstanding
+                        
+                        if ttm_eps > 0:
+                            pe = price / ttm_eps
+                            if pe < 1000: # Filter outliers
+                                pe_values.append(pe)
+
+            if not pe_values:
                 return result
                 
             pe_min = min(pe_values)
             pe_max = max(pe_values)
             
-            # Use the most recent P/E calculated with consistent EPS for position
-            # This ensures we're comparing apples to apples
-            current_pe_consistent = latest_pe if latest_pe is not None else current_pe
+            # Current Position Logic
+            # Compare LIVE P/E against the TTM Range we just built
+            current_pe = stock.get('pe_ratio')
             
-            # Calculate position (0-100 scale)
-            if pe_max > pe_min and current_pe_consistent is not None:
-                # Position 0 = at min (best), 100 = at max (worst for P/E)
-                position = ((current_pe_consistent - pe_min) / (pe_max - pe_min)) * 100
-                position = max(0, min(100, position))  # Clamp to 0-100
-            else:
-                position = 50  # No range, put in middle
+            position = 50.0 
+            
+            if pe_max > pe_min and current_pe is not None:
+                if current_pe < pe_min:
+                    position = 0.0
+                elif current_pe > pe_max:
+                    position = 100.0
+                else:
+                    position = ((current_pe - pe_min) / (pe_max - pe_min)) * 100
             
             result['pe_52_week_min'] = round(pe_min, 2)
             result['pe_52_week_max'] = round(pe_max, 2)
             result['pe_52_week_position'] = round(position, 1)
             
         except Exception as e:
-            logger.debug(f"Error calculating 52-week P/E range for {symbol}: {e}")
-        
+            print(f"Error calculating P/E range for {symbol}: {e}")
+            
         return result
 
     def _get_base_metrics(self, symbol: str) -> Optional[Dict[str, Any]]:
@@ -398,7 +413,7 @@ class LynchCriteria:
         income_growth_score = self.calculate_income_growth_score(earnings_cagr)
         
         # Calculate 52-week P/E range
-        pe_range_data = self._calculate_pe_52_week_range(symbol, pe_ratio)
+        pe_range_data = self._calculate_pe_52_week_range(symbol, metrics)
 
         # Return base data that all algorithms can use
         return {
@@ -1089,3 +1104,259 @@ class LynchCriteria:
             range_size = 1.0 - max_threshold
             position = (1.0 - value) / range_size
             return 75.0 * position
+
+    # =========================================================================
+    # VECTORIZED BATCH SCORING
+    # =========================================================================
+    
+    def evaluate_batch(self, df: pd.DataFrame, config: Dict[str, Any]) -> pd.DataFrame:
+        """
+        Vectorized scoring for entire stock universe.
+        
+        This method mirrors _evaluate_weighted() but operates on a DataFrame
+        for O(1) batch scoring instead of O(n) per-stock evaluation.
+        
+        Args:
+            df: DataFrame with columns [symbol, peg_ratio, debt_to_equity, 
+                institutional_ownership, income_consistency_score, ...]
+            config: User's algorithm configuration (weights + thresholds)
+        
+        Returns:
+            DataFrame with [symbol, overall_score, overall_status, ...] sorted by score desc
+        """
+        # Extract thresholds from config (with defaults)
+        peg_excellent = config.get('peg_excellent', 1.0)
+        peg_good = config.get('peg_good', 1.5)
+        peg_fair = config.get('peg_fair', 2.0)
+        
+        debt_excellent = config.get('debt_excellent', 0.5)
+        debt_good = config.get('debt_good', 1.0)
+        debt_moderate = config.get('debt_moderate', 2.0)
+        
+        inst_own_min = config.get('inst_own_min', 0.20)
+        inst_own_max = config.get('inst_own_max', 0.60)
+        
+        # Extract weights
+        weight_peg = config.get('weight_peg', 0.50)
+        weight_consistency = config.get('weight_consistency', 0.25)
+        weight_debt = config.get('weight_debt', 0.15)
+        weight_ownership = config.get('weight_ownership', 0.10)
+        
+        # Calculate component scores using vectorized methods
+        peg_score = self._vectorized_peg_score(
+            df['peg_ratio'], peg_excellent, peg_good, peg_fair
+        )
+        
+        debt_score = self._vectorized_debt_score(
+            df['debt_to_equity'], debt_excellent, debt_good, debt_moderate
+        )
+        
+        ownership_score = self._vectorized_ownership_score(
+            df['institutional_ownership'], inst_own_min, inst_own_max
+        )
+        
+        # Consistency score is already 0-100 normalized, use directly
+        # Default to 50 (neutral) for missing values
+        consistency_score = df['income_consistency_score'].fillna(50.0)
+        
+        # Calculate overall score (weighted sum)
+        overall_score = (
+            peg_score * weight_peg +
+            consistency_score * weight_consistency +
+            debt_score * weight_debt +
+            ownership_score * weight_ownership
+        )
+        
+        # Assign overall status using np.select (matches _evaluate_weighted)
+        conditions = [
+            overall_score >= 80,
+            overall_score >= 60,
+            overall_score >= 40,
+            overall_score >= 20,
+        ]
+        choices = ['STRONG_BUY', 'BUY', 'HOLD', 'CAUTION']
+        overall_status = np.select(conditions, choices, default='AVOID')
+        
+        # Determine PEG status (Legacy PASS/CLOSE/FAIL logic)
+        peg_conditions = [
+            df['peg_ratio'].isna(),
+            df['peg_ratio'] <= peg_excellent,
+            df['peg_ratio'] <= peg_good,
+        ]
+        peg_choices = ['FAIL', 'PASS', 'CLOSE']
+        peg_status = np.select(peg_conditions, peg_choices, default='FAIL')
+        
+        # Determine debt status (Legacy PASS/CLOSE/FAIL logic)
+        debt_conditions = [
+            df['debt_to_equity'].isna(),
+            df['debt_to_equity'] <= debt_excellent,
+            df['debt_to_equity'] <= debt_good,
+        ]
+        debt_choices = ['FAIL', 'PASS', 'CLOSE']
+        debt_status = np.select(debt_conditions, debt_choices, default='FAIL')
+        
+        # Determine institutional ownership status (Legacy PASS/CLOSE/FAIL logic)
+        # PASS: Inside the sweet spot (min-max)
+        inst_pass = (df['institutional_ownership'] >= inst_own_min) & (df['institutional_ownership'] <= inst_own_max)
+        
+        # CLOSE: Within 5% of boundaries (only if not passing)
+        dist_min = (df['institutional_ownership'] - inst_own_min).abs()
+        dist_max = (df['institutional_ownership'] - inst_own_max).abs()
+        inst_close = (~inst_pass) & ((dist_min <= 0.05) | (dist_max <= 0.05))
+        
+        inst_conditions = [
+            df['institutional_ownership'].isna(),
+            inst_pass,
+            inst_close,
+        ]
+        inst_choices = ['FAIL', 'PASS', 'CLOSE']
+        inst_status = np.select(inst_conditions, inst_choices, default='FAIL')
+        
+        # Build result DataFrame with all display fields
+        result = df[['symbol', 'company_name', 'country', 'sector', 'ipo_year',
+                     'price', 'market_cap', 'pe_ratio', 'peg_ratio', 
+                     'debt_to_equity', 'institutional_ownership', 'dividend_yield',
+                     'earnings_cagr', 'revenue_cagr', 
+                     'income_consistency_score', 'revenue_consistency_score',
+                     'pe_52_week_min', 'pe_52_week_max', 'pe_52_week_position']].copy()
+        
+        # Add scoring columns
+        result['overall_score'] = overall_score.round(1)
+        result['overall_status'] = overall_status
+        result['peg_score'] = peg_score.round(1)
+        result['peg_status'] = peg_status
+        result['debt_score'] = debt_score.round(1)
+        result['debt_status'] = debt_status
+        result['institutional_ownership_score'] = ownership_score.round(1)
+        result['institutional_ownership_status'] = inst_status
+        result['consistency_score'] = consistency_score.round(1)
+        
+        # Sort by overall_score descending
+        result = result.sort_values('overall_score', ascending=False)
+        
+        return result
+    
+    def _vectorized_peg_score(self, peg: pd.Series, excellent: float, good: float, fair: float) -> pd.Series:
+        """
+        Vectorized version of calculate_peg_score().
+        
+        Mirrors the exact interpolation logic from lines 800-829.
+        """
+        result = pd.Series(0.0, index=peg.index)
+        
+        # Excellent: 100
+        mask_excellent = peg <= excellent
+        result[mask_excellent] = 100.0
+        
+        # Good: 75-100 (interpolate)
+        mask_good = (peg > excellent) & (peg <= good)
+        if mask_good.any():
+            range_size = good - excellent
+            position = (good - peg[mask_good]) / range_size
+            result[mask_good] = 75.0 + (25.0 * position)
+        
+        # Fair: 25-75 (interpolate)
+        mask_fair = (peg > good) & (peg <= fair)
+        if mask_fair.any():
+            range_size = fair - good
+            position = (fair - peg[mask_fair]) / range_size
+            result[mask_fair] = 25.0 + (50.0 * position)
+        
+        # Poor: 0-25 (interpolate up to max of 4.0)
+        max_poor = 4.0
+        mask_poor = (peg > fair) & (peg < max_poor)
+        if mask_poor.any():
+            range_size = max_poor - fair
+            position = (max_poor - peg[mask_poor]) / range_size
+            result[mask_poor] = 25.0 * position
+        
+        # Very poor: 0
+        result[peg >= max_poor] = 0.0
+        
+        # Handle None/NaN - score is 0 for missing PEG
+        result[peg.isna()] = 0.0
+        
+        return result
+    
+    def _vectorized_debt_score(self, debt: pd.Series, excellent: float, good: float, moderate: float) -> pd.Series:
+        """
+        Vectorized version of calculate_debt_score().
+        
+        Mirrors the exact interpolation logic from lines 842-871.
+        """
+        result = pd.Series(50.0, index=debt.index)  # Default for None
+        
+        # Excellent: 100
+        mask_excellent = debt <= excellent
+        result[mask_excellent] = 100.0
+        
+        # Good: 75-100 (interpolate)
+        mask_good = (debt > excellent) & (debt <= good)
+        if mask_good.any():
+            range_size = good - excellent
+            position = (good - debt[mask_good]) / range_size
+            result[mask_good] = 75.0 + (25.0 * position)
+        
+        # Moderate: 25-75 (interpolate)
+        mask_moderate = (debt > good) & (debt <= moderate)
+        if mask_moderate.any():
+            range_size = moderate - good
+            position = (moderate - debt[mask_moderate]) / range_size
+            result[mask_moderate] = 25.0 + (50.0 * position)
+        
+        # High: 0-25 (interpolate up to max of 5.0)
+        max_high = 5.0
+        mask_high = (debt > moderate) & (debt < max_high)
+        if mask_high.any():
+            range_size = max_high - moderate
+            position = (max_high - debt[mask_high]) / range_size
+            result[mask_high] = 25.0 * position
+        
+        # Very high: 0
+        result[debt >= max_high] = 0.0
+        
+        # None/NaN gets neutral score
+        result[debt.isna()] = 50.0
+        
+        return result
+    
+    def _vectorized_ownership_score(self, ownership: pd.Series, min_thresh: float, max_thresh: float) -> pd.Series:
+        """
+        Vectorized version of calculate_institutional_ownership_score().
+        
+        Mirrors the exact interpolation logic from lines 887-919.
+        Sweet spot is between min_thresh and max_thresh.
+        """
+        result = pd.Series(0.0, index=ownership.index)
+        
+        ideal_center = (min_thresh + max_thresh) / 2
+        
+        # Ideal range: 75-100 (interpolate based on distance from center)
+        mask_ideal = (ownership >= min_thresh) & (ownership <= max_thresh)
+        if mask_ideal.any():
+            distance_from_center = (ownership[mask_ideal] - ideal_center).abs()
+            max_distance = ideal_center - min_thresh
+            position = 1.0 - (distance_from_center / max_distance)
+            result[mask_ideal] = 75.0 + (25.0 * position)
+        
+        # Below minimum: 0-75 (interpolate)
+        mask_low = (ownership < min_thresh) & (ownership > 0)
+        if mask_low.any():
+            position = ownership[mask_low] / min_thresh
+            result[mask_low] = 75.0 * position
+        
+        # Above maximum: 0-75 (interpolate up to 1.0)
+        mask_high = (ownership > max_thresh) & (ownership < 1.0)
+        if mask_high.any():
+            range_size = 1.0 - max_thresh
+            position = (1.0 - ownership[mask_high]) / range_size
+            result[mask_high] = 75.0 * position
+        
+        # At extremes: 0
+        result[ownership <= 0] = 0.0
+        result[ownership >= 1.0] = 0.0
+        
+        # None/NaN gets 0
+        result[ownership.isna()] = 0.0
+        
+        return result

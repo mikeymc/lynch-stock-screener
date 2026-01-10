@@ -34,6 +34,7 @@ from correlation_analyzer import CorrelationAnalyzer
 from algorithm_optimizer import AlgorithmOptimizer
 from finnhub_news import FinnhubNewsClient
 from stock_rescorer import StockRescorer
+from stock_vectors import StockVectors, DEFAULT_ALGORITHM_CONFIG
 from sec_8k_client import SEC8KClient
 from material_event_summarizer import MaterialEventSummarizer, SUMMARIZABLE_ITEM_CODES
 from fly_machines import get_fly_manager
@@ -171,6 +172,7 @@ validator = AlgorithmValidator(db)
 analyzer_corr = CorrelationAnalyzer(db)
 optimizer = AlgorithmOptimizer(db)
 event_summarizer = MaterialEventSummarizer()
+stock_vectors = StockVectors(db)
 
 # Initialize Finnhub client for news
 finnhub_api_key = os.environ.get('FINNHUB_API_KEY')
@@ -1020,6 +1022,131 @@ def stop_screening(session_id):
         return jsonify({'error': str(e)}), 500
 
 
+@app.route('/api/screen/v2', methods=['GET'])
+def screen_stocks_v2():
+    """
+    Vectorized stock screening endpoint.
+    
+    Loads all stocks from database, applies user-specific scoring config,
+    and returns paginated, sorted results instantly (no SSE streaming).
+    
+    Query params:
+        - page: Page number (default 1)
+        - limit: Results per page (default 100)
+        - sort_by: Column to sort by (default 'overall_score')
+        - sort_dir: Sort direction 'asc' or 'desc' (default 'desc')
+        - search: Filter by symbol or company name
+    """
+    import time
+    start_time = time.time()
+    
+    # Parse query params
+    page = request.args.get('page', 1, type=int)
+    limit = request.args.get('limit', 100, type=int)
+    sort_by = request.args.get('sort_by', 'overall_score')
+    sort_dir = request.args.get('sort_dir', 'desc')
+    search = request.args.get('search', None)
+    
+    # Check if US-only filter is enabled
+    us_stocks_only = db.get_setting('us_stocks_only', True)
+    country_filter = 'US' if us_stocks_only else None
+    
+    # Get user's algorithm config
+    # For now (pre-auth), use the most recent config from DB to match evaluate_stock() behavior
+    # Default to hardcoded values only if DB is empty
+    configs = db.get_algorithm_configs()
+    if configs and len(configs) > 0:
+        db_config = configs[0]
+        # Map DB keys to config keys (DB has flattened keys already)
+        config = {
+            'peg_excellent': db_config.get('peg_excellent', 1.0),
+            'peg_good': db_config.get('peg_good', 1.5),
+            'peg_fair': db_config.get('peg_fair', 2.0),
+            'debt_excellent': db_config.get('debt_excellent', 0.5),
+            'debt_good': db_config.get('debt_good', 1.0),
+            'debt_moderate': db_config.get('debt_moderate', 2.0),
+            'inst_own_min': db_config.get('inst_own_min', 0.20),
+            'inst_own_max': db_config.get('inst_own_max', 0.60),
+            'weight_peg': db_config.get('weight_peg', 0.50),
+            'weight_consistency': db_config.get('weight_consistency', 0.25),
+            'weight_debt': db_config.get('weight_debt', 0.15),
+            'weight_ownership': db_config.get('weight_ownership', 0.10),
+            # Growth thresholds are hardcoded in scalar version (reload_settings), so we keep them hardcoded here too
+            # unless we add them to DB schema later
+        }
+    else:
+        config = DEFAULT_ALGORITHM_CONFIG
+    
+    try:
+        # Load all stocks into DataFrame
+        df = stock_vectors.load_vectors(country_filter=country_filter)
+        load_time = time.time() - start_time
+        
+        # Score all stocks using vectorized method
+        score_start = time.time()
+        scored_df = criteria.evaluate_batch(df, config)
+        score_time = time.time() - score_start
+        
+        # Apply search filter if provided
+        if search:
+            search_lower = search.lower()
+            mask = (
+                scored_df['symbol'].str.lower().str.contains(search_lower) |
+                scored_df['company_name'].fillna('').str.lower().str.contains(search_lower)
+            )
+            scored_df = scored_df[mask]
+        
+        # Apply custom sorting (if different from default)
+        if sort_by != 'overall_score' or sort_dir != 'desc':
+            ascending = sort_dir.lower() == 'asc'
+            if sort_by in scored_df.columns:
+                scored_df = scored_df.sort_values(sort_by, ascending=ascending, na_position='last')
+        
+        # Calculate pagination
+        total_count = len(scored_df)
+        offset = (page - 1) * limit
+        paginated_df = scored_df.iloc[offset:offset + limit]
+        
+        # Convert to list of dicts for JSON response
+        results = paginated_df.to_dict(orient='records')
+        
+        # Clean NaN values
+        for result in results:
+            for key, value in result.items():
+                if pd.isna(value):
+                    result[key] = None
+                elif isinstance(value, (np.floating, np.integer)):
+                    result[key] = float(value) if np.isfinite(value) else None
+        
+        total_time = time.time() - start_time
+        
+        # Count by status for summary
+        status_counts = scored_df['overall_status'].value_counts().to_dict()
+        
+        logger.info(f"[screen/v2] Scored {total_count} stocks in {total_time*1000:.0f}ms "
+                   f"(load: {load_time*1000:.0f}ms, score: {score_time*1000:.0f}ms)")
+        
+        return jsonify({
+            'results': results,
+            'total_count': total_count,
+            'page': page,
+            'limit': limit,
+            'total_pages': (total_count + limit - 1) // limit,
+            'status_counts': status_counts,
+            'timing': {
+                'load_ms': round(load_time * 1000),
+                'score_ms': round(score_time * 1000),
+                'total_ms': round(total_time * 1000)
+            }
+        })
+        
+    except Exception as e:
+        logger.error(f"[screen/v2] Error: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+
+
 @app.route('/api/screen', methods=['GET'])
 def screen_stocks():
     limit_param = request.args.get('limit')
@@ -1254,57 +1381,106 @@ def get_cached_stocks():
 
 @app.route('/api/sessions/latest', methods=['GET'])
 def get_latest_session():
-    """Get the most recent screening session with paginated, sorted results"""
+    """Get the most recent screening session with paginated, sorted results using vectorized scoring"""
     # Get optional query parameters
     search = request.args.get('search', None)
     page = request.args.get('page', 1, type=int)
     limit = request.args.get('limit', 100, type=int)
-    sort_by = request.args.get('sort_by', 'overall_status')
-    sort_dir = request.args.get('sort_dir', 'asc')
+    sort_by = request.args.get('sort_by', 'overall_score') # Default to score, not status
+    sort_dir = request.args.get('sort_dir', 'desc')
     
-    # Check if US-only filter is enabled (default: True for production)
+    # Check if US-only filter is enabled
     us_stocks_only = db.get_setting('us_stocks_only', True)
     country_filter = 'US' if us_stocks_only else None
     
-    session_data = db.get_latest_session(
-        search=search, 
-        page=page, 
-        limit=limit, 
-        sort_by=sort_by, 
-        sort_dir=sort_dir,
-        country_filter=country_filter
-    )
+    # Get user's algorithm config
+    configs = db.get_algorithm_configs()
+    if configs and len(configs) > 0:
+        db_config = configs[0]
+        config = {
+            'peg_excellent': db_config.get('peg_excellent', 1.0),
+            'peg_good': db_config.get('peg_good', 1.5),
+            'peg_fair': db_config.get('peg_fair', 2.0),
+            'debt_excellent': db_config.get('debt_excellent', 0.5),
+            'debt_good': db_config.get('debt_good', 1.0),
+            'debt_moderate': db_config.get('debt_moderate', 2.0),
+            'inst_own_min': db_config.get('inst_own_min', 0.20),
+            'inst_own_max': db_config.get('inst_own_max', 0.60),
+            'weight_peg': db_config.get('weight_peg', 0.50),
+            'weight_consistency': db_config.get('weight_consistency', 0.25),
+            'weight_debt': db_config.get('weight_debt', 0.15),
+            'weight_ownership': db_config.get('weight_ownership', 0.10),
+        }
+    else:
+        config = DEFAULT_ALGORITHM_CONFIG
 
-    if not session_data:
-        return jsonify({'error': 'No screening sessions found'}), 404
-
-    # Enrich results with on-the-fly computed metrics
-    if 'results' in session_data:
-        for result in session_data['results']:
-            symbol = result.get('symbol')
-            
-            # Compute P/E range position from cached weekly prices
-            pe_range = criteria._calculate_pe_52_week_range(symbol, result.get('pe_ratio'))
-            result['pe_52_week_min'] = pe_range.get('pe_52_week_min')
-            result['pe_52_week_max'] = pe_range.get('pe_52_week_max')
-            result['pe_52_week_position'] = pe_range.get('pe_52_week_position')
-            
-            # Compute consistency scores from earnings history
-            growth_data = analyzer.calculate_earnings_growth(symbol)
-            if growth_data:
-                # Normalize to 0-100 scale (100 = best consistency)
-                raw_income = growth_data.get('income_consistency_score')
-                raw_revenue = growth_data.get('revenue_consistency_score')
-                result['income_consistency_score'] = max(0.0, 100.0 - (raw_income * 2.0)) if raw_income is not None else None
-                result['revenue_consistency_score'] = max(0.0, 100.0 - (raw_revenue * 2.0)) if raw_revenue is not None else None
-            else:
-                result['income_consistency_score'] = None
-                result['revenue_consistency_score'] = None
+    try:
+        # Load and score
+        df = stock_vectors.load_vectors(country_filter)
+        scored_df = criteria.evaluate_batch(df, config)
         
-        # Clean NaN values in results
-        session_data['results'] = [clean_nan_values(result) for result in session_data['results']]
+        # Apply search filter
+        if search:
+            search_lower = search.lower()
+            mask = (
+                scored_df['symbol'].str.lower().str.contains(search_lower) |
+                scored_df['company_name'].fillna('').str.lower().str.contains(search_lower)
+            )
+            scored_df = scored_df[mask]
+            
+        # Apply Sorting
+        if sort_by in scored_df.columns:
+            ascending = sort_dir.lower() == 'asc'
+            scored_df = scored_df.sort_values(sort_by, ascending=ascending, na_position='last')
+            
+        # Pagination
+        total_count = len(scored_df)
+        offset = (page - 1) * limit
+        paginated_df = scored_df.iloc[offset:offset + limit]
+        
+        # Convert to records
+        results = paginated_df.to_dict(orient='records')
+        
+        # Clean NaNs and enrich with PE metrics (already computed in stock_vectors now)
+        cleaned_results = []
+        for result in results:
+            cleaned = {}
+            for key, value in result.items():
+                if pd.isna(value):
+                    cleaned[key] = None
+                elif isinstance(value, (np.floating, np.integer)):
+                    cleaned[key] = float(value) if np.isfinite(value) else None
+                else:
+                    cleaned[key] = value
+            cleaned_results.append(cleaned)
+            
+        # Count statuses
+        status_counts = scored_df['overall_status'].value_counts().to_dict()
+        # Ensure all keys exist
+        for status in ['STRONG_BUY', 'BUY', 'HOLD', 'CAUTION', 'AVOID']:
+            if status not in status_counts:
+                status_counts[status] = 0
+                
+        return jsonify({
+            'results': cleaned_results,
+            'total_count': total_count,
+            'total_pages': (total_count + limit - 1) // limit,
+            'current_page': page,
+            'limit': limit,
+            'status_counts': status_counts,
+            'session_id': 0, # Dummy ID since this is dynamic
+            '_meta': {
+                'source': 'vectorized_engine', 
+                'timestamp': datetime.now().isoformat()
+            }
+        })
 
-    return jsonify(session_data)
+    except Exception as e:
+        logger.error(f"Error in vectorized session: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+
 
 
 @app.route('/api/stock/<symbol>/history', methods=['GET'])
