@@ -22,16 +22,9 @@ if [ ! -f "$BAG_EXE" ]; then
     exit 1
 fi
 
-# 3. Execute using 'uv run' from the Repo Root
-# We run from GIT_ROOT to ensure python path/imports work correctly.
-# But we might want to preserve the original CWD for some commands?
-# 'bag app start' finds root dynamically, so running from GIT_ROOT is safer for imports.
-# However, if we pass args that are relative paths, valid from original CWD, this `cd` breaks them.
-# BUT, `bag` commands usually don't take file args.
-# Let's try running relative to CWD but setting PYTHONPATH?
-# Actually 'uv run' usually handles project root detection if pyproject.toml is there.
-
-# Simplest reliable method: cd to root, run, but pass original CWD context if needed?
-# Most bag commands seem global or auto-detect root.
+# Execute using 'uv run' from the Repo Root
+# We export PYTHONPATH=$GIT_ROOT so that 'import cli.commands' works correctly
+# regardless of how python is invoked.
+export PYTHONPATH="$GIT_ROOT"
 
 (cd "$GIT_ROOT" && uv run cli/bag.py "$@")
