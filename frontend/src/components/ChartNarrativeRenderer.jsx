@@ -67,7 +67,7 @@ const yearTickCallback = function (value, index, values) {
     const label = this.getLabelForValue(value)
     if (!label) return label
 
-    const year = label.substring(0, 4)
+    const year = String(label).substring(0, 4)
 
     if (index === 0) return year
 
@@ -543,42 +543,53 @@ export default function ChartNarrativeRenderer({ narrative, historyData }) {
             </div>
         ),
 
-        pe_ratio: () => (
-            <div className="h-64">
-                <Line plugins={[zeroLinePlugin, crosshairPlugin]}
-                    data={{
-                        labels: historyData.weekly_pe?.dates || labels,
-                        datasets: [
-                            {
-                                label: 'P/E Ratio',
-                                data: historyData.weekly_pe?.values || historyData.pe_history || [],
-                                borderColor: 'rgb(168, 85, 247)',
-                                backgroundColor: 'rgba(168, 85, 247, 0.2)',
-                                pointRadius: historyData.weekly_pe?.dates ? 0 : (activeIndex !== null ? 3 : 0),
-                                pointHoverRadius: historyData.weekly_pe?.dates ? 3 : 5,
-                                borderWidth: historyData.weekly_pe?.dates ? 1.5 : 2,
-                                tension: 0.1
-                            }
-                        ]
-                    }}
-                    options={{
-                        ...createChartOptions('P/E Ratio', 'P/E'),
-                        scales: {
-                            ...createChartOptions('P/E Ratio', 'P/E').scales,
-                            x: {
-                                type: 'category',
-                                ticks: {
-                                    callback: historyData.weekly_pe?.dates ? yearTickCallback : undefined,
-                                    maxRotation: 45,
-                                    minRotation: 45,
-                                    autoSkip: !historyData.weekly_pe?.dates
+        pe_ratio: () => {
+            const weeklyPE = historyData?.weekly_pe_ratios
+            const useWeeklyPE = weeklyPE?.dates?.length > 0 && weeklyPE?.values?.length > 0
+            const peLabels = useWeeklyPE ? weeklyPE.dates : (historyData?.labels || labels)
+            const peData = useWeeklyPE ? weeklyPE.values : (historyData?.pe_ratio || historyData?.pe_history || [])
+
+            return (
+                <div className="h-64">
+                    <Line
+                        key={useWeeklyPE ? 'weekly' : 'annual'}
+                        plugins={[zeroLinePlugin, crosshairPlugin]}
+                        data={{
+                            labels: peLabels,
+                            datasets: [
+                                {
+                                    label: 'P/E Ratio',
+                                    data: peData,
+                                    borderColor: 'rgb(168, 85, 247)',
+                                    backgroundColor: 'rgba(168, 85, 247, 0.2)',
+                                    pointRadius: 0,
+                                    pointHoverRadius: 3,
+                                    borderWidth: 1.5,
+                                    tension: 0.1,
+                                    spanGaps: true
+                                }
+                            ]
+                        }}
+                        options={{
+                            ...createChartOptions('P/E Ratio', 'P/E'),
+                            scales: {
+                                ...createChartOptions('P/E Ratio', 'P/E').scales,
+                                x: {
+                                    type: 'category',
+                                    ticks: {
+                                        callback: yearTickCallback,
+                                        maxRotation: 45,
+                                        minRotation: 45,
+                                        autoSkip: true,
+                                        maxTicksLimit: 20
+                                    }
                                 }
                             }
-                        }
-                    }}
-                />
-            </div>
-        ),
+                        }}
+                    />
+                </div>
+            )
+        },
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }), [historyData, activeIndex, labels, hasEstimates, createChartOptions])
 

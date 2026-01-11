@@ -96,7 +96,7 @@ const yearTickCallback = function (value, index, values) {
   if (!label) return label
 
   // Extract year from date string (assumes YYYY-MM-DD format)
-  const year = label.substring(0, 4)
+  const year = String(label).substring(0, 4)
 
   // Always show first label
   if (index === 0) return year
@@ -596,7 +596,6 @@ export default function StockCharts({ historyData, loading, symbol }) {
                   <CardContent>
                     <div className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,350px),1fr))] gap-4 mb-4">
                       {/* Stock Price - Uses weekly data for granular display */}
-                      {/* Stock Price - Uses weekly data for granular display */}
                       <div>
                         <div className="h-64 chart-container">
                           <Line plugins={[zeroLinePlugin, crosshairPlugin]}
@@ -615,7 +614,8 @@ export default function StockCharts({ historyData, loading, symbol }) {
                                   pointRadius: 0,
                                   pointHoverRadius: 3,
                                   borderWidth: 1.5,
-                                  tension: 0.1
+                                  tension: 0.1,
+                                  spanGaps: true
                                 },
                                 // Price target mean line
                                 ...(historyData.price_targets?.mean ? [{
@@ -685,42 +685,51 @@ export default function StockCharts({ historyData, loading, symbol }) {
 
                       {/* P/E Ratio - Uses weekly data for granular display */}
                       <div className="h-64 chart-container">
-                        <Line plugins={[zeroLinePlugin, crosshairPlugin]}
-                          data={{
-                            labels: historyData.weekly_pe_ratios?.dates?.length > 0
-                              ? historyData.weekly_pe_ratios.dates
-                              : labels,
-                            datasets: [
-                              {
-                                label: 'P/E Ratio',
-                                data: historyData.weekly_pe_ratios?.values?.length > 0
-                                  ? historyData.weekly_pe_ratios.values
-                                  : historyData.pe_ratio,
-                                borderColor: 'rgb(201, 203, 207)',
-                                backgroundColor: 'rgba(201, 203, 207, 0.2)',
-                                pointRadius: 0,
-                                pointHoverRadius: 3,
-                                borderWidth: 1.5,
-                                tension: 0.1
-                              }
-                            ]
-                          }}
-                          options={{
-                            ...createChartOptions('P/E Ratio', 'P/E Ratio'),
-                            scales: {
-                              ...createChartOptions('P/E Ratio', 'P/E Ratio').scales,
-                              x: {
-                                type: 'category',
-                                ticks: {
-                                  callback: yearTickCallback,
-                                  maxRotation: 45,
-                                  minRotation: 45,
-                                  autoSkip: false
+                        {(() => {
+                          const weeklyPE = historyData?.weekly_pe_ratios
+                          const useWeeklyPE = weeklyPE?.dates?.length > 0 && weeklyPE?.values?.length > 0
+                          const peLabels = useWeeklyPE ? weeklyPE.dates : labels
+                          const peData = useWeeklyPE ? weeklyPE.values : historyData?.pe_ratio
+
+                          return (
+                            <Line
+                              key={useWeeklyPE ? 'weekly' : 'annual'}
+                              plugins={[zeroLinePlugin, crosshairPlugin]}
+                              data={{
+                                labels: peLabels,
+                                datasets: [
+                                  {
+                                    label: 'P/E Ratio',
+                                    data: peData,
+                                    borderColor: 'rgb(201, 203, 207)',
+                                    backgroundColor: 'rgba(201, 203, 207, 0.2)',
+                                    pointRadius: 0,
+                                    pointHoverRadius: 3,
+                                    borderWidth: 1.5,
+                                    tension: 0.1,
+                                    spanGaps: true
+                                  }
+                                ]
+                              }}
+                              options={{
+                                ...createChartOptions('P/E Ratio', 'P/E Ratio'),
+                                scales: {
+                                  ...createChartOptions('P/E Ratio', 'P/E Ratio').scales,
+                                  x: {
+                                    type: 'category',
+                                    ticks: {
+                                      callback: yearTickCallback,
+                                      maxRotation: 45,
+                                      minRotation: 45,
+                                      autoSkip: true,
+                                      maxTicksLimit: 20
+                                    }
+                                  }
                                 }
-                              }
-                            }
-                          }}
-                        />
+                              }}
+                            />
+                          )
+                        })()}
                       </div>
                     </div>
 

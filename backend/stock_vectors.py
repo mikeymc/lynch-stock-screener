@@ -281,8 +281,8 @@ class StockVectors:
             prices_df = pd.read_sql_query(prices_query, conn, params=(cutoff_date,))
             
             # 2. Load Quarterly Net Income (fetch enough history for rolling sum)
-            # Fetching last 4 years to ensure we have 4 quarters prior to 52 weeks ago
-            cutoff_earnings = (datetime.now() - pd.Timedelta(weeks=4*52)).strftime('%Y-%m-%d')
+            # Fetching last 15 years to ensure we capture stocks with stale data (e.g. RBB last updated 2019)
+            cutoff_earnings = (datetime.now() - pd.Timedelta(weeks=15*52)).strftime('%Y-%m-%d')
             earnings_query = """
                 SELECT symbol, fiscal_end, net_income
                 FROM earnings_history
