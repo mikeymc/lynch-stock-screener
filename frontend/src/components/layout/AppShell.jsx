@@ -25,6 +25,11 @@ import {
     useSidebar,
 } from '@/components/ui/sidebar'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
+import {
+    ResizableHandle,
+    ResizablePanel,
+    ResizablePanelGroup,
+} from "@/components/ui/resizable"
 import { Button } from '@/components/ui/button'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet'
@@ -89,13 +94,18 @@ function AppShellContent({
     const [scoringOpen, setScoringOpen] = useState(false)
     const [filterOpen, setFilterOpen] = useState(true)
     const [analysisOpen, setAnalysisOpen] = useState(true)
-    const [isLargeScreen, setIsLargeScreen] = useState(false)
 
-    // Detect screen size for responsive chat sidebar
+
+    // Detect screen size for responsive chat sidebar - initialize synchronously if possible
+    const [isLargeScreen, setIsLargeScreen] = useState(() => {
+        if (typeof window !== 'undefined') {
+            return window.matchMedia('(min-width: 1024px)').matches
+        }
+        return false
+    })
+
     useEffect(() => {
         const mediaQuery = window.matchMedia('(min-width: 1024px)')
-        setIsLargeScreen(mediaQuery.matches)
-
         const handler = (e) => setIsLargeScreen(e.matches)
         mediaQuery.addEventListener('change', handler)
         return () => mediaQuery.removeEventListener('change', handler)
@@ -572,40 +582,46 @@ function AppShellContent({
                     </div>
                 </header>
 
-                {/* Page content - with flex layout for sidebar on large screens */}
-                <div className="flex-1 flex overflow-hidden">
-                    {/* Main content */}
-                    <main className="flex-1 overflow-auto p-4 min-w-0 scrollbar-hide">
-                        <div className="max-w-screen-lg mx-auto">
-                            <Outlet />
-                        </div>
-                    </main>
+                {/* Page content - with resizable panels on large screens */}
+                <ResizablePanelGroup id="app-shell-layout-v8" autoSaveId="app-shell-layout-v8" direction="horizontal" className="flex-1 overflow-hidden">
+                    <ResizablePanel id="main-content-panel" defaultSize={70} order={1}>
+                        {/* Main content */}
+                        <main className="h-full overflow-auto p-4 min-w-0 scrollbar-hide">
+                            <div className="max-w-screen-lg mx-auto">
+                                <Outlet />
+                            </div>
+                        </main>
+                    </ResizablePanel>
 
-                    {/* Right Chat Sidebar - persistent on large screens */}
                     {isLargeScreen && (
-                        <aside className="w-[360px] border-l bg-background flex flex-col shrink-0">
-                            <div className="px-4 py-3 border-b flex items-center justify-between">
-                                <h2 className="font-semibold">{chatTitle}</h2>
-                                <Button
-                                    variant="ghost"
-                                    size="icon"
-                                    className="h-7 w-7"
-                                    onClick={handleNewChat}
-                                    title="New conversation"
-                                >
-                                    <Plus className="h-4 w-4" />
-                                </Button>
-                            </div>
-                            <div className="flex-1 overflow-hidden">
-                                <AnalysisChat
-                                    symbol={chatSymbol}
-                                    chatOnly={true}
-                                    contextType={chatContext}
-                                />
-                            </div>
-                        </aside>
+                        <>
+                            <ResizableHandle />
+                            <ResizablePanel id="chat-sidebar-panel" defaultSize={30} order={2}>
+                                <aside className="h-full border-l bg-background flex flex-col">
+                                    <div className="px-4 py-3 border-b flex items-center justify-between shrink-0">
+                                        <h2 className="font-semibold">{chatTitle}</h2>
+                                        <Button
+                                            variant="ghost"
+                                            size="icon"
+                                            className="h-7 w-7"
+                                            onClick={handleNewChat}
+                                            title="New conversation"
+                                        >
+                                            <Plus className="h-4 w-4" />
+                                        </Button>
+                                    </div>
+                                    <div className="flex-1 overflow-hidden">
+                                        <AnalysisChat
+                                            symbol={chatSymbol}
+                                            chatOnly={true}
+                                            contextType={chatContext}
+                                        />
+                                    </div>
+                                </aside>
+                            </ResizablePanel>
+                        </>
                     )}
-                </div>
+                </ResizablePanelGroup>
             </SidebarInset>
         </div>
     )
