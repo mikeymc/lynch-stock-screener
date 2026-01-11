@@ -7,7 +7,7 @@ from pathlib import Path
 import typer
 from rich.console import Console
 from dotenv import load_dotenv
-from cli.commands import prod, test, screen, cache, server, docs
+from cli.commands import prod, test, screen, cache, server, docs, worktree
 
 # Load .env file from project root
 project_root = Path(__file__).parent.parent
@@ -27,6 +27,8 @@ app.add_typer(screen.app, name="screen", help="Stock screening commands")
 app.add_typer(cache.app, name="cache", help="Data cache commands (prices, news, 10k, 8k)")
 app.add_typer(server.app, name="server", help="Local development server commands")
 app.add_typer(docs.app, name="docs", help="Research documentation commands")
+app.add_typer(worktree.app, name="worktree", help="Worktree configuration & setup")
+app.add_typer(worktree.app, name="worktrees", help="Alias for worktree")
 
 # Add standalone commands
 app.command()(test.ship)

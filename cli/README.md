@@ -52,6 +52,18 @@ bag sec-cache start --prod --limit 100 --force  # With options
 bag sec-cache stop --prod <job_id>              # Cancel job
 ```
 
+### Worktree Management
+```bash
+# Initialize a new worktree
+# This will:
+# 1. Create git worktree at ../<name>
+# 2. Setup uv venv and install dependencies
+# 3. Copy .env files
+# 4. Launch backend/frontend in new iTerm window with unique ports
+bag worktree initialize <name>
+
+```
+
 ### Testing & Shipping
 ```bash
 bag test                     # Run all tests
