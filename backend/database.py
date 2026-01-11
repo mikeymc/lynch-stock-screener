@@ -4087,6 +4087,20 @@ class Database:
         finally:
             self.return_connection(conn)
 
+    def update_job_heartbeat(self, job_id: int, extend_minutes: int = 10):
+        """Extend the claim expiration time for a running job"""
+        conn = self.get_connection()
+        try:
+            cursor = conn.cursor()
+            cursor.execute("""
+                UPDATE background_jobs
+                SET claim_expires_at = NOW() + INTERVAL '%s minutes'
+                WHERE id = %s
+            """, (extend_minutes, job_id))
+            conn.commit()
+        finally:
+            self.return_connection(conn)
+
     def complete_job(self, job_id: int, result: Dict[str, Any]):
         """Mark job as completed with result"""
         conn = self.get_connection()
