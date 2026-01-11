@@ -996,8 +996,9 @@ const AnalysisChat = forwardRef(function AnalysisChat({ symbol, stockName, chatO
           {/* Streaming message */}
           {chatLoading && (
             <div className="flex flex-col gap-1 mb-4 items-start">
-              <div className="text-xs text-muted-foreground px-2">
-                {agentMode ? '🤖 Agent' : '📊 Analyst'}{agentThinking ? ` - ${agentThinking}` : ' Thinking...'}
+              <div className="flex items-center gap-1.5 text-xs text-muted-foreground px-2">
+                <Bot className="h-3.5 w-3.5" />
+                <span>{agentThinking || 'Thinking...'}</span>
               </div>
               <div className="rounded-lg px-4 py-3 max-w-[85%] bg-muted">
                 {streamingMessage ? (
@@ -1027,13 +1028,13 @@ const AnalysisChat = forwardRef(function AnalysisChat({ symbol, stockName, chatO
             className="absolute bottom-4 left-1/2 -translate-x-1/2 w-8 h-8 rounded-full bg-primary text-primary-foreground shadow-lg flex items-center justify-center hover:scale-110 transition-transform z-10"
             onClick={() => {
               const container = messagesContainerRef.current
-            if (container) {
-              container.scrollTo({ top: container.scrollHeight, behavior: 'smooth' })
-            }
-          }}
-        >
-          <span>↓</span>
-        </button>
+              if (container) {
+                container.scrollTo({ top: container.scrollHeight, behavior: 'smooth' })
+              }
+            }}
+          >
+            <span>↓</span>
+          </button>
         )}
       </div>
 
