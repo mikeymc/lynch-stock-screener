@@ -22,17 +22,22 @@ const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899'
 const CustomTooltip = ({ active, payload, label }) => {
     if (active && payload && payload.length) {
         return (
-            <div className="chat-chart-tooltip">
-                <p className="tooltip-label">{label}</p>
+            <div className="bg-background/95 border border-border p-3 rounded-lg shadow-xl text-xs backdrop-blur-sm z-[100]">
+                <p className="font-semibold mb-2 text-foreground">{label}</p>
                 {payload.map((entry, index) => (
-                    <p key={index} style={{ color: entry.color }}>
-                        {entry.name}: {typeof entry.value === 'number'
-                            ? entry.value.toLocaleString('en-US', {
-                                style: entry.unit === '$' ? 'currency' : 'decimal',
-                                currency: 'USD',
-                                maximumFractionDigits: 2
-                            })
-                            : entry.value}
+                    <p key={index} style={{ color: entry.color }} className="flex items-center gap-2 mb-1">
+                        <span className="font-medium">{entry.name}:</span>
+                        <span>
+                            {typeof entry.value === 'number'
+                                ? entry.value.toLocaleString('en-US', {
+                                    style: entry.unit === '$' ? 'currency' : 'decimal',
+                                    currency: 'USD',
+                                    maximumFractionDigits: 2,
+                                    compactDisplay: 'short',
+                                    notation: entry.value > 1000000 ? 'compact' : 'standard'
+                                })
+                                : entry.value}
+                        </span>
                     </p>
                 ))}
             </div>
@@ -156,11 +161,14 @@ export default function ChatChart({ chartJson }) {
     }
 
     return (
-        <div className="chat-chart-container">
-            {title && <h4 className="chat-chart-title">{title}</h4>}
-            <ResponsiveContainer width="100%" height={300}>
-                {renderChart()}
-            </ResponsiveContainer>
+        <div className="w-full min-w-0 whitespace-normal max-w-full">
+            {title && <h4 className="text-sm font-semibold mb-2 text-center text-muted-foreground">{title}</h4>}
+            {/* Wrapper div with explicit width essential for ResponsiveContainer in flex layouts */}
+            <div className="w-full h-[300px]">
+                <ResponsiveContainer width="100%" height="100%">
+                    {renderChart()}
+                </ResponsiveContainer>
+            </div>
         </div>
     )
 }

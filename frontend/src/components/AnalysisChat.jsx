@@ -108,6 +108,9 @@ const MarkdownComponents = ({ navigate }) => useMemo(() => ({
   strong: (props) => (
     <strong className="font-bold text-foreground" {...props} />
   ),
+  pre: (props) => (
+    <pre className="overflow-x-auto w-full p-2 my-2 bg-muted/50 rounded-lg whitespace-pre-wrap break-words max-w-full" {...props} />
+  ),
   code({ node, inline, className, children, ...props }) {
     const match = /language-(\w+)/.exec(className || '')
     const language = match ? match[1] : ''
@@ -182,14 +185,14 @@ const ChatMessage = memo(function ChatMessage({ role, content, sources, componen
       </div>
 
       {/* Message Bubble */}
-      <div className={`flex flex-col max-w-[85%] ${isUser ? 'items-end' : 'items-start'}`}>
+      <div className={`flex flex-col max-w-[85%] min-w-0 ${isUser ? 'items-end' : 'items-start'}`}>
         <div className={`rounded-lg px-4 py-3 ${isUser
           ? 'bg-primary text-primary-foreground'
           : isError
             ? 'bg-destructive/10 text-destructive border border-destructive/20'
             : 'bg-muted'
           }`}>
-          <div className="text-sm">
+          <div className="text-sm break-words">
             <ReactMarkdown remarkPlugins={[remarkGfm]} components={components}>
               {content}
             </ReactMarkdown>
