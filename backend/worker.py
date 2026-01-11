@@ -207,15 +207,93 @@ class BackgroundWorker:
             self._run_outlook_cache(job_id, params)
         elif job_type == 'transcript_cache':
             self._run_transcript_cache(job_id, params)
+        elif job_type == 'check_alerts':
+            self._run_check_alerts(job_id, params)
         else:
             raise ValueError(f"Unknown job type: {job_type}")
 
     def _send_heartbeat(self, job_id: int):
         """Send heartbeat to extend job claim"""
         now = time.time()
-        if now - self.last_heartbeat >= HEARTBEAT_INTERVAL:
-            self.db.extend_job_claim(job_id)
+        if now - self.last_heartbeat > 30:  # Every 30 seconds
+            self.db.update_job_heartbeat(job_id)
             self.last_heartbeat = now
+            
+    def _run_check_alerts(self, job_id: int, params: Dict[str, Any]):
+        """Check all active alerts and trigger if conditions are met."""
+        logger.info(f"Running check_alerts job {job_id}")
+        
+        try:
+            active_alerts = self.db.get_all_active_alerts()
+            logger.info(f"Checking {len(active_alerts)} active alerts")
+            
+            triggered_count = 0
+            
+            for alert in active_alerts:
+                try:
+                    is_triggered = False
+                    trigger_message = ""
+                    
+                    symbol = alert['symbol']
+                    condition_type = alert['condition_type']
+                    condition_params = alert['condition_params']
+                    
+                    # Fetch latest stock data
+                    # We can use the DataFetcher or just get metrics from DB if we rely on cached data
+                    # Ideally we should fetch fresh data for alerts, but for now let's use what's in DB 
+                    # to avoid spamming APIs if we have many alerts. 
+                    # Assuming price_history_cache runs frequently.
+                    
+                    metrics = self.db.get_stock_metrics(symbol)
+                    if not metrics:
+                        continue
+                        
+                    current_price = metrics.get('price')
+                    current_pe = metrics.get('pe_ratio')
+                    
+                    if condition_type == 'price':
+                        threshold = condition_params.get('threshold')
+                        operator = condition_params.get('operator')
+                        
+                        if operator == 'above' and current_price and current_price >= threshold:
+                            is_triggered = True
+                            trigger_message = f"{symbol} price is ${current_price}, above target ${threshold}"
+                        elif operator == 'below' and current_price and current_price <= threshold:
+                            is_triggered = True
+                            trigger_message = f"{symbol} price is ${current_price}, below target ${threshold}"
+                            
+                    elif condition_type == 'pe_ratio':
+                        threshold = condition_params.get('threshold')
+                        operator = condition_params.get('operator')
+                        
+                        if operator == 'above' and current_pe and current_pe >= threshold:
+                            is_triggered = True
+                            trigger_message = f"{symbol} P/E is {current_pe}, above target {threshold}"
+                        elif operator == 'below' and current_pe and current_pe <= threshold:
+                            is_triggered = True
+                            trigger_message = f"{symbol} P/E is {current_pe}, below target {threshold}"
+                            
+                    # Add more condition types here as needed
+                    
+                    if is_triggered:
+                        logger.info(f"Alert {alert['id']} triggered: {trigger_message}")
+                        self.db.update_alert_status(
+                            alert['id'], 
+                            status='triggered', 
+                            triggered_at=datetime.datetime.now(), 
+                            message=trigger_message
+                        )
+                        triggered_count += 1
+                        
+                except Exception as e:
+                    logger.error(f"Error checking alert {alert['id']}: {e}")
+                    continue
+            
+            self.db.update_job_status(job_id, 'completed', result={'triggered_count': triggered_count})
+            
+        except Exception as e:
+            logger.error(f"Check alerts job failed: {e}")
+            self.db.update_job_status(job_id, 'failed', error_message=str(e))
 
     def _run_screening(self, job_id: int, params: Dict[str, Any]):
         """Execute full stock screening"""

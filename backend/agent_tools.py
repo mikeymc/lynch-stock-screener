@@ -304,6 +304,37 @@ get_earnings_history_decl = FunctionDeclaration(
 )
 
 
+manage_alerts_decl = FunctionDeclaration(
+    name="manage_alerts",
+    description="Manage user alerts for stock metrics. Use this tool to create new alerts (e.g., 'notify me when AAPL hits $200'), list existing alerts, or delete unwanted alerts.",
+    parameters=Schema(
+        type=Type.OBJECT,
+        properties={
+            "action": Schema(
+                type=Type.STRING, 
+                description="The operation to perform",
+                enum=["create", "list", "delete"]
+            ),
+            "ticker": Schema(type=Type.STRING, description="Stock ticker symbol (required for 'create')"),
+            "condition_type": Schema(
+                type=Type.STRING, 
+                description="The metric to monitor (required for 'create')",
+                enum=["price", "pe_ratio", "market_cap", "RSI"]
+            ),
+            "threshold": Schema(type=Type.NUMBER, description="The value that triggers the alert (required for 'create')"),
+            "operator": Schema(
+                type=Type.STRING, 
+                description="Direction of the trigger (required for 'create')",
+                enum=["above", "below"]
+            ),
+            "alert_id": Schema(type=Type.INTEGER, description="ID of the alert to delete (required for 'delete')"),
+            "user_id": Schema(type=Type.INTEGER, description="Internal User ID (automatically injected by system, do not prompt for this)"),
+        },
+        required=["action"],
+    ),
+)
+
+
 # =============================================================================
 # Tool Registry: Maps tool names to their declarations
 # =============================================================================
@@ -329,6 +360,7 @@ TOOL_DECLARATIONS = [
     screen_stocks_decl,
     get_sector_comparison_decl,
     get_earnings_history_decl,
+    manage_alerts_decl,
 ]
 
 # Create the Tool object for Gemini API
@@ -384,7 +416,9 @@ class ToolExecutor:
             "search_company": self._search_company,
             "screen_stocks": self._screen_stocks,
             "get_sector_comparison": self._get_sector_comparison,
+            "get_sector_comparison": self._get_sector_comparison,
             "get_earnings_history": self._get_earnings_history,
+            "manage_alerts": self._manage_alerts,
         }
         
         executor = executor_map.get(tool_name)
@@ -1673,3 +1707,75 @@ class ToolExecutor:
             }
         finally:
             self.db.return_connection(conn)
+
+    def _manage_alerts(self, action: str, ticker: str = None, condition_type: str = None, 
+                      threshold: float = None, operator: str = None, alert_id: int = None, user_id: int = None) -> Dict[str, Any]:
+        """Manage user alerts: create, list, or delete."""
+        if not user_id:
+            # If user_id is missing (e.g. testing or not passed context), we can't manage alerts
+            # For now, return an error or use a default test user if needed
+            return {"error": "Authentication required. Cannot manage alerts without a valid user session."}
+            
+        if action == "create":
+            if not ticker or not condition_type or threshold is None or not operator:
+                return {"error": "Missing required parameters for creating an alert. Need ticker, condition_type, threshold, and operator."}
+                
+            ticker = ticker.upper()
+            
+            # Create condition params dict
+            condition_params = {
+                "threshold": threshold,
+                "operator": operator
+            }
+            
+            try:
+                alert_id = self.db.create_alert(user_id, ticker, condition_type, condition_params)
+                return {
+                    "message": f"Successfully created alert for {ticker}.",
+                    "alert_details": {
+                        "id": alert_id,
+                        "ticker": ticker,
+                        "condition": f"{condition_type} {operator} {threshold}"
+                    }
+                }
+            except Exception as e:
+                return {"error": f"Failed to create alert: {str(e)}"}
+                
+        elif action == "list":
+            try:
+                alerts = self.db.get_alerts(user_id)
+                if not alerts:
+                    return {"message": "You have no active alerts."}
+                
+                # Format for display
+                formatted_alerts = []
+                for a in alerts:
+                    params = a['condition_params']
+                    condition_str = f"{a['condition_type']} {params.get('operator')} {params.get('threshold')}"
+                    formatted_alerts.append({
+                        "id": a['id'],
+                        "symbol": a['symbol'],
+                        "condition": condition_str,
+                        "status": a['status'],
+                        "created_at": a['created_at'].strftime('%Y-%m-%d')
+                    })
+                    
+                return {"alerts": formatted_alerts}
+            except Exception as e:
+                return {"error": f"Failed to list alerts: {str(e)}"}
+                
+        elif action == "delete":
+            if not alert_id:
+                return {"error": "Missing required parameter 'alert_id' for delete action."}
+                
+            try:
+                success = self.db.delete_alert(alert_id, user_id)
+                if success:
+                    return {"message": f"Successfully deleted alert {alert_id}."}
+                else:
+                    return {"error": f"Alert {alert_id} not found or could not be deleted."}
+            except Exception as e:
+                return {"error": f"Failed to delete alert: {str(e)}"}
+        
+        else:
+            return {"error": f"Unknown action: {action}"}

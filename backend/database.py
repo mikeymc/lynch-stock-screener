@@ -798,6 +798,163 @@ class Database:
             END $$;
         """)
 
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS alerts (
+                id SERIAL PRIMARY KEY,
+                user_id INTEGER REFERENCES users(id),
+                symbol TEXT REFERENCES stocks(symbol),
+                condition_type TEXT NOT NULL,
+                condition_params JSONB NOT NULL,
+                frequency TEXT DEFAULT 'daily',
+                status TEXT DEFAULT 'active',
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                last_checked TIMESTAMP,
+                triggered_at TIMESTAMP,
+                message TEXT,
+                UNIQUE(user_id, symbol, condition_type, condition_params)
+            )
+        """)
+        
+        # Initialize remaining schema (misplaced code wrapper)
+        self._init_rest_of_schema(conn)
+
+    def create_alert(self, user_id: int, symbol: str, condition_type: str, condition_params: Dict[str, Any], frequency: str = 'daily') -> int:
+        """Create a new user alert."""
+        conn = self.get_connection()
+        try:
+            cursor = conn.cursor()
+            cursor.execute("""
+                INSERT INTO alerts (user_id, symbol, condition_type, condition_params, frequency, status)
+                VALUES (%s, %s, %s, %s, %s, 'active')
+                RETURNING id
+            """, (user_id, symbol, condition_type, json.dumps(condition_params), frequency))
+            alert_id = cursor.fetchone()[0]
+            conn.commit()
+            return alert_id
+        except Exception as e:
+            conn.rollback()
+            logger.error(f"Error creating alert: {e}")
+            raise
+        finally:
+            self.return_connection(conn)
+
+    def get_alerts(self, user_id: int, status: Optional[str] = None) -> List[Dict[str, Any]]:
+        """Get alerts for a user, optionally filtered by status."""
+        conn = self.get_connection()
+        try:
+            cursor = conn.cursor()
+            query = """
+                SELECT id, symbol, condition_type, condition_params, frequency, status, 
+                       created_at, last_checked, triggered_at, message
+                FROM alerts 
+                WHERE user_id = %s
+            """
+            params = [user_id]
+            
+            if status:
+                query += " AND status = %s"
+                params.append(status)
+                
+            query += " ORDER BY created_at DESC"
+            
+            cursor.execute(query, params)
+            columns = [desc[0] for desc in cursor.description]
+            results = []
+            for row in cursor.fetchall():
+                alert = dict(zip(columns, row))
+                # Parse JSONB params if string (psycopg3 handles this automatically usually but to be safe)
+                if isinstance(alert['condition_params'], str):
+                    alert['condition_params'] = json.loads(alert['condition_params'])
+                results.append(alert)
+            return results
+        finally:
+            self.return_connection(conn)
+
+    def delete_alert(self, alert_id: int, user_id: int) -> bool:
+        """Delete an alert (soft delete or hard delete? let's do hard delete for now)."""
+        conn = self.get_connection()
+        try:
+            cursor = conn.cursor()
+            cursor.execute("DELETE FROM alerts WHERE id = %s AND user_id = %s", (alert_id, user_id))
+            conn.commit()
+            return cursor.rowcount > 0
+        except Exception as e:
+            conn.rollback()
+            logger.error(f"Error deleting alert: {e}")
+            return False
+        finally:
+            self.return_connection(conn)
+            
+    def update_alert_status(self, alert_id: int, status: str, triggered_at: Optional[datetime] = None, message: str = None):
+        """Update the status of an alert."""
+        conn = self.get_connection()
+        try:
+            cursor = conn.cursor()
+            updates = ["status = %s"]
+            params = [status]
+            
+            if triggered_at:
+                updates.append("triggered_at = %s")
+                params.append(triggered_at)
+                
+            if message:
+                updates.append("message = %s")
+                params.append(message)
+                
+            # Always update last_checked
+            updates.append("last_checked = CURRENT_TIMESTAMP")
+            
+            updates.append("WHERE id = %s") # This is wrong logic, WHERE should be outside
+            
+            sql = f"UPDATE alerts SET {', '.join(updates)} WHERE id = %s"
+            # Now append id to params
+            params.append(alert_id)
+            
+            # Correct the logic: remove the WHERE clause from updates list
+            # Actually, let's rewrite for clarity
+            
+            sql = """
+                UPDATE alerts 
+                SET status = %s, 
+                    last_checked = CURRENT_TIMESTAMP,
+                    triggered_at = COALESCE(%s, triggered_at),
+                    message = COALESCE(%s, message)
+                WHERE id = %s
+            """
+            cursor.execute(sql, (status, triggered_at, message, alert_id))
+            conn.commit()
+        except Exception as e:
+            conn.rollback()
+            logger.error(f"Error updating alert status: {e}")
+            raise
+        finally:
+            self.return_connection(conn)
+
+    def get_all_active_alerts(self) -> List[Dict[str, Any]]:
+        """Get all active alerts for processing by the worker."""
+        conn = self.get_connection()
+        try:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT id, user_id, symbol, condition_type, condition_params, frequency, status, last_checked
+                FROM alerts 
+                WHERE status = 'active'
+            """)
+            columns = [desc[0] for desc in cursor.description]
+            results = []
+            for row in cursor.fetchall():
+                alert = dict(zip(columns, row))
+                if isinstance(alert['condition_params'], str):
+                    alert['condition_params'] = json.loads(alert['condition_params'])
+                results.append(alert)
+            return results
+        finally:
+            self.return_connection(conn)
+
+    def _init_rest_of_schema(self, conn):
+        """Initialize remaining schema tables"""
+        cursor = conn.cursor()
+
         # Create dcf_recommendations table for storing AI-generated DCF scenarios
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS dcf_recommendations (
@@ -1189,6 +1346,15 @@ class Database:
             cursor.execute("ALTER TABLE app_settings ADD PRIMARY KEY (key)")
             conn.commit()
             print("Migration complete: app_settings PRIMARY KEY added")
+
+        # Initialize default settings
+        cursor.execute("SELECT 1 FROM app_settings WHERE key = 'feature_alerts_enabled'")
+        if not cursor.fetchone():
+            cursor.execute("""
+                INSERT INTO app_settings (key, value, description)
+                VALUES ('feature_alerts_enabled', 'false', 'Toggle for Alerts feature (bell icon and agent tool)')
+            """)
+            conn.commit()
 
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS news_articles (
@@ -2893,9 +3059,14 @@ class Database:
         if result is None:
             return None
         else:
+            try:
+                value = json.loads(result[0])
+            except (json.JSONDecodeError, TypeError):
+                value = result[0]
+                
             return {
                 'key': key,
-                'value': json.loads(result[0]),
+                'value': value,
                 'description': result[1]
             }
 
@@ -3543,7 +3714,7 @@ class Database:
         for row in rows:
             try:
                 value = json.loads(row[1])
-            except json.JSONDecodeError:
+            except (json.JSONDecodeError, TypeError):
                 value = row[1]
 
             settings[row[0]] = {

@@ -3,7 +3,7 @@
 
 import { useState, useEffect } from 'react'
 import { Outlet, useLocation, useNavigate, useParams } from 'react-router-dom'
-import { MessageSquare, Plus } from 'lucide-react'
+import { MessageSquare, Plus, Bell } from 'lucide-react'
 import AnalysisChat from '@/components/AnalysisChat'
 import ChatHistory from '@/components/ChatHistory'
 import SearchPopover from '@/components/SearchPopover'
@@ -94,6 +94,47 @@ function AppShellContent({
     const [scoringOpen, setScoringOpen] = useState(false)
     const [filterOpen, setFilterOpen] = useState(true)
     const [analysisOpen, setAnalysisOpen] = useState(true)
+    const [alertsCount, setAlertsCount] = useState(0)
+    const [alertsEnabled, setAlertsEnabled] = useState(false)
+
+    useEffect(() => {
+        const fetchSettings = async () => {
+            try {
+                const response = await fetch('/api/settings')
+                if (response.ok) {
+                    const settings = await response.json()
+                    // Default to false if not present, check value string
+                    const enabled = settings.feature_alerts_enabled?.value === true
+                    setAlertsEnabled(enabled)
+                }
+            } catch (error) {
+                console.error('Failed to fetch settings:', error)
+            }
+        }
+        fetchSettings()
+    }, [])
+
+    useEffect(() => {
+        if (!alertsEnabled) return // Don't fetch counts if disabled
+
+        const fetchAlertsCount = async () => {
+            try {
+                const response = await fetch('/api/alerts')
+                if (response.ok) {
+                    const data = await response.json()
+                    // Count triggered alerts
+                    const triggered = (data.alerts || []).filter(a => a.status === 'triggered').length
+                    setAlertsCount(triggered)
+                }
+            } catch (error) {
+                console.error('Error fetching alerts count:', error)
+            }
+        }
+        fetchAlertsCount()
+        // Poll every minute
+        const interval = setInterval(fetchAlertsCount, 60000)
+        return () => clearInterval(interval)
+    }, [])
 
 
     // Detect screen size for responsive chat sidebar - initialize synchronously if possible
@@ -547,6 +588,22 @@ function AppShellContent({
                     {/* Right side - Avatar (and Chat on small screens) */}
                     <div className="flex items-center gap-2">
                         {/* Advanced Filter Button */}
+                        {/* Alerts Bell */}
+                        {/* Alerts Bell */}
+                        {alertsEnabled && (
+                            <Button
+                                variant="ghost"
+                                size="icon"
+                                className="relative"
+                                onClick={() => navigate('/alerts')}
+                            >
+                                <Bell className="h-5 w-5" />
+                                {alertsCount > 0 && (
+                                    <span className="absolute top-1 right-1 h-2.5 w-2.5 rounded-full bg-red-600 border-2 border-background"></span>
+                                )}
+                            </Button>
+                        )}
+
                         <Button
                             variant="ghost"
                             size="sm"

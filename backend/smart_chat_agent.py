@@ -5,9 +5,9 @@ import logging
 from datetime import datetime
 from typing import Dict, Any, List, Optional, Generator
 from google import genai
-from google.genai.types import GenerateContentConfig, Content, Part
+from google.genai.types import GenerateContentConfig, Content, Part, Tool
 
-from agent_tools import AGENT_TOOLS, ToolExecutor
+from agent_tools import AGENT_TOOLS, TOOL_DECLARATIONS, ToolExecutor
 from rag_context import RAGContext
 
 logger = logging.getLogger(__name__)
@@ -112,6 +112,19 @@ class SmartChatAgent:
             logger.error(f"Failed to format system prompt: {e}")
             return f"{persona_content}\nCurrent Date: {current_date_str}"
 
+    def _get_enabled_tools(self):
+        """Get the list of tools enabled for the current session based on feature flags."""
+        alerts_enabled = self.db.get_setting("feature_alerts_enabled") is True
+        
+        if alerts_enabled:
+            return AGENT_TOOLS
+        else:
+            # Filter out manage_alerts if disabled
+            filtered_decls = [
+                d for d in TOOL_DECLARATIONS 
+                if d.name != "manage_alerts"
+            ]
+            return Tool(function_declarations=filtered_decls)
 
     def chat(
         self,
@@ -150,9 +163,10 @@ class SmartChatAgent:
         contents.append(Content(role="user", parts=[Part(text=user_message)]))
         
         # Configure generation with tools
+        tools = self._get_enabled_tools()
         config = GenerateContentConfig(
             system_instruction=system_prompt,
-            tools=[AGENT_TOOLS],
+            tools=[tools],
             temperature=0.3,  # Lower = more deterministic, less hallucination
         )
         
@@ -185,6 +199,10 @@ class SmartChatAgent:
                         fc = part.function_call
                         tool_name = fc.name
                         tool_args = dict(fc.args) if fc.args else {}
+                        
+                        # Inject user_id context for alerts management
+                        if tool_name == "manage_alerts" and user_id:
+                            tool_args["user_id"] = user_id
                         
                         logger.info(f"[Agent] Calling tool: {tool_name}({tool_args})")
                         
@@ -269,9 +287,10 @@ class SmartChatAgent:
         
         contents.append(Content(role="user", parts=[Part(text=user_message)]))
         
+        tools = self._get_enabled_tools()
         config = GenerateContentConfig(
             system_instruction=system_prompt,
-            tools=[AGENT_TOOLS],
+            tools=[tools],
         )
         
         tool_calls_log = []
@@ -300,6 +319,10 @@ class SmartChatAgent:
                         fc = part.function_call
                         tool_name = fc.name
                         tool_args = dict(fc.args) if fc.args else {}
+                        
+                        # Inject user_id context for alerts management
+                        if tool_name == "manage_alerts" and user_id:
+                            tool_args["user_id"] = user_id
                         
                         yield {"type": "thinking", "data": f"Calling {tool_name}..."}
                         yield {"type": "tool_call", "data": {"tool": tool_name, "args": tool_args}}

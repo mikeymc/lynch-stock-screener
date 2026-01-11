@@ -3596,6 +3596,66 @@ def serve(path):
         return send_from_directory(app.static_folder, 'index.html')
 
 
+# ============================================================
+# Alerts API Endpoints
+# ============================================================
+
+@app.route('/api/alerts', methods=['GET'])
+@require_user_auth
+def get_alerts(user_id):
+    """Get all alerts for the current user."""
+    try:
+        alerts = db.get_alerts(user_id)
+        return jsonify({'alerts': alerts})
+    except Exception as e:
+        logger.error(f"Error getting alerts: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/alerts', methods=['POST'])
+@require_user_auth
+def create_alert(user_id):
+    """Create a new alert."""
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({'error': 'No data provided'}), 400
+            
+        symbol = data.get('symbol')
+        condition_type = data.get('condition_type')
+        condition_params = data.get('condition_params')
+        frequency = data.get('frequency', 'daily')
+        
+        if not symbol or not condition_type or not condition_params:
+            return jsonify({'error': 'Missing required fields'}), 400
+            
+        alert_id = db.create_alert(user_id, symbol, condition_type, condition_params, frequency)
+        
+        return jsonify({
+            'success': True,
+            'alert_id': alert_id,
+            'message': 'Alert created successfully'
+        })
+    except Exception as e:
+        logger.error(f"Error creating alert: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/alerts/<int:alert_id>', methods=['DELETE'])
+@require_user_auth
+def delete_alert(alert_id, user_id):
+    """Delete an alert."""
+    try:
+        success = db.delete_alert(alert_id, user_id)
+        if success:
+            return jsonify({'success': True, 'message': 'Alert deleted'})
+        else:
+            return jsonify({'error': 'Alert not found'}), 404
+    except Exception as e:
+        logger.error(f"Error deleting alert: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
 if __name__ == '__main__':
     # Start debugpy if ENABLE_DEBUGPY environment variable is set
     if os.environ.get('ENABLE_DEBUGPY', 'false').lower() == 'true':
