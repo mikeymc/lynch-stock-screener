@@ -73,7 +73,8 @@ def start_app_logic(name: str, root_dir: Path, backend_port: Optional[int] = Non
     # Find ports if not provided
     if backend_port is None:
         console.print(f"[dim]Finding backend port...[/dim]")
-        backend_port = find_free_port(5500)
+        # User has whitelisted 5001-5005 for OAuth
+        backend_port = find_free_port(5001)
     
     if frontend_port is None:
         console.print(f"[dim]Finding frontend port...[/dim]")
@@ -88,9 +89,11 @@ def start_app_logic(name: str, root_dir: Path, backend_port: Optional[int] = Non
     console.print(f"[yellow]Press Ctrl+C to stop all services.[/yellow]")
 
     # Environment variables
+    # Environment variables
     env = os.environ.copy()
     env["PORT"] = str(backend_port)
     env["VITE_API_URL"] = f"http://localhost:{backend_port}"
+    env["FRONTEND_URL"] = f"http://localhost:{frontend_port}"
     
     processes = []
     threads = []

@@ -40,15 +40,18 @@ if DEV_AUTH_BYPASS:
     print("=" * 60)
 
 
-def init_oauth_client():
+def init_oauth_client(redirect_uri=None):
     """Initialize Google OAuth client"""
+    # Use provided URI or fallback to env var
+    uri = redirect_uri or OAUTH_REDIRECT_URI
+
     client_config = {
         "web": {
             "client_id": GOOGLE_CLIENT_ID,
             "client_secret": GOOGLE_CLIENT_SECRET,
             "auth_uri": "https://accounts.google.com/o/oauth2/auth",
             "token_uri": "https://oauth2.googleapis.com/token",
-            "redirect_uris": [OAUTH_REDIRECT_URI],
+            "redirect_uris": [uri],
         }
     }
 
@@ -59,7 +62,7 @@ def init_oauth_client():
             'https://www.googleapis.com/auth/userinfo.email',
             'https://www.googleapis.com/auth/userinfo.profile'
         ],
-        redirect_uri=OAUTH_REDIRECT_URI
+        redirect_uri=uri
     )
 
     return flow

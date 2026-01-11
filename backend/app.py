@@ -248,7 +248,11 @@ def health():
 def get_google_auth_url():
     """Get Google OAuth authorization URL"""
     try:
-        flow = init_oauth_client()
+        # Construct dynamic redirect URI based on current host
+        # e.g. http://localhost:5001/api/auth/google/callback
+        redirect_uri = f"{request.host_url}api/auth/google/callback"
+        
+        flow = init_oauth_client(redirect_uri=redirect_uri)
         authorization_url, state = flow.authorization_url(
             access_type='offline',
             include_granted_scopes='true'
@@ -275,8 +279,11 @@ def google_auth_callback():
         if state != session.get('oauth_state'):
             return jsonify({'error': 'Invalid state parameter'}), 400
 
+        # Construct dynamic redirect URI
+        redirect_uri = f"{request.host_url}api/auth/google/callback"
+
         # Exchange code for tokens
-        flow = init_oauth_client()
+        flow = init_oauth_client(redirect_uri=redirect_uri)
         flow.fetch_token(code=code)
 
         # Get user info from ID token
