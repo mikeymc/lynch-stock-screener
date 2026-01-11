@@ -12,64 +12,10 @@ from rich.console import Console
 console = Console()
 app = typer.Typer(help="Manage git worktrees for independent development environments")
 
-def find_free_port(start_port: int) -> int:
-    """Find a free port starting from start_port"""
-    port = start_port
-    while True:
-        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-            if s.connect_ex(('localhost', port)) != 0:
-                return port
-        port += 1
+from cli.commands.app_cmd import start_app_logic, kill_processes_in_dir
 
-def kill_processes_in_dir(directory: Path):
-    """Find and kill processes running from the given directory"""
-    console.print(f"[dim]Checking for processes running in {directory}...[/dim]")
-    try:
-        # lsof +D <dir> lists open files in directory. We want processes where cwd is inside.
-        # Actually lsof is good but slow. 
-        # `lsof +D <dir>` might return many things.
-        # Let's try finding processes via their cwd using lsof (or pgrep/pwdx on linux, but on mac lsof is best)
-        # lsof -F p -d cwd +D <dir>
-        
-        # Simple approach: lsof +D returns all open files.
-        # We specifically want to kill servers (python, node).
-        
-        result = subprocess.run(['lsof', '-t', '+D', str(directory)], capture_output=True, text=True)
-        pids = result.stdout.strip().split('\n')
-        pids = [p for p in pids if p] # filter empty
-        
-        if pids:
-            console.print(f"[yellow]Found {len(pids)} processes using this worktree. Terminating...[/yellow]")
-            for pid in pids:
-                try:
-                    # Send SIGTERM
-                    os.kill(int(pid), 15)
-                except ProcessLookupError:
-                    pass
-            
-            # Wait a bit
-            time.sleep(1)
-            
-            # Force kill if still alive?
-            # Re-check
-            result = subprocess.run(['lsof', '-t', '+D', str(directory)], capture_output=True, text=True)
-            remaining = [p for p in result.stdout.strip().split('\n') if p]
-            if remaining:
-               console.print(f"[red]Force killing {len(remaining)} stubborn processes...[/red]")
-               for pid in remaining:
-                   try:
-                       os.kill(int(pid), 9)
-                   except:
-                       pass
-            console.print("[green]Processes terminated.[/green]")
-        else:
-            console.print("[dim]No active processes found.[/dim]")
-            
-    except FileNotFoundError:
-        # lsof might not be in path?
-        console.print("[yellow]Warning: 'lsof' not found. Could not auto-terminate processes.[/yellow]")
-    except Exception as e:
-        console.print(f"[red]Error killing processes: {e}[/red]")
+
+
 
 
 def run_command(cmd: str, cwd: Path, description: str):
@@ -202,71 +148,14 @@ def initialize(name: str):
 
 
 
-    # 6. Find Ports
-    console.print(f"[bold blue]Step 6: Allocating ports...[/bold blue]")
-    # Start searching from fairly safe range to avoid collisions with 5000/5173 default
-    be_port = find_free_port(5500)
-    # Ensure worker port? Worker connects to Redis/DB, doesn't listen usually.
-    # Frontend port:
-    fe_port = find_free_port(5200)
-    
-    console.print(f"[green]Backend Port: {be_port}[/green]")
-    console.print(f"[green]Frontend Port: {fe_port}[/green]")
-
-    # 7. Launch
-    console.print(f"[bold blue]Step 7: Launching applications...[/bold blue]")
-    
-    # Check for iTerm
-    try:
-        subprocess.run(["osascript", "-e", 'id of application "iTerm"'], capture_output=True, check=True)
-        has_iterm = True
-    except subprocess.CalledProcessError:
-        has_iterm = False
-        console.print("[yellow]iTerm not found. Skipping auto-launch. Please run manually.[/yellow]")
-    
-    if has_iterm:
-        applescript = f'''
-        tell application "iTerm"
-            tell current window
-                create tab with default profile
-            end tell
-            tell current session of current window
-                set name to "{name} - Backend"
-                write text "cd {backend_dir}"
-                write text "source ../.venv/bin/activate"
-                write text "export PORT={be_port}"
-                write text "export VITE_API_URL=http://localhost:{be_port}"
-                write text "uv run app.py"
-                
-                -- Split for Worker
-                set workerSession to (split horizontally with default profile)
-                tell workerSession
-                    set name to "{name} - Worker"
-                    write text "cd {backend_dir}"
-                    write text "source ../.venv/bin/activate"
-                    write text "uv run python worker.py"
-                end tell
-
-                -- Split for Frontend
-                set frontendSession to (split vertically with default profile)
-                tell frontendSession
-                    set name to "{name} - Frontend"
-                    write text "cd {frontend_dir}"
-                    write text "export VITE_API_URL=http://localhost:{be_port}"
-                    write text "npm run dev -- --port {fe_port}"
-                end tell
-            end tell
-        end tell
-        '''
-        
-        try:
-            subprocess.run(['osascript', '-e', applescript], check=True)
-            console.print("[bold green]✓ Launched servers in new iTerm window[/bold green]")
-            console.print(f"[bold]Frontend running at: http://localhost:{fe_port}[/bold]")
-        except subprocess.CalledProcessError as e:
-            console.print(f"[red]Failed to launch iTerm: {e}[/red]")
+    # 6 & 7. Launch (Find Ports & Start)
+    # start_app_logic(name, worktree_path) # Logic is now shared but we don't want to block init
     
     console.print(f"\n[bold green]Worktree '{name}' initialized successfully![/bold green]")
+    console.print(f"\n[yellow]To launch the app:[/yellow]")
+    console.print(f"  cd ../{name}")
+    console.print(f"  bag app start")
+
     
 
 @app.command("list")
