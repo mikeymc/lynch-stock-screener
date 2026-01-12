@@ -13,7 +13,7 @@ from rag_context import RAGContext
 logger = logging.getLogger(__name__)
 
 # Maximum number of reasoning steps before forcing a final answer
-MAX_ITERATIONS = 15
+MAX_ITERATIONS = 25
 
 
 class SmartChatAgent:
