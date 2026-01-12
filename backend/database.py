@@ -709,6 +709,56 @@ class Database:
             END $$;
         """)
 
+        # Migration: Add character column to algorithm_configurations for per-character tuning
+        cursor.execute("""
+            DO $$
+            BEGIN
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                               WHERE table_name = 'algorithm_configurations' AND column_name = 'character') THEN
+                    ALTER TABLE algorithm_configurations ADD COLUMN character TEXT DEFAULT 'lynch';
+                END IF;
+            END $$;
+        """)
+
+        # Migration: Add Buffett raw metric columns to screening_results
+        # These are computed during screening so we can re-score on the fly by character
+        cursor.execute("""
+            DO $$
+            BEGIN
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                               WHERE table_name = 'screening_results' AND column_name = 'roe') THEN
+                    ALTER TABLE screening_results ADD COLUMN roe REAL;
+                END IF;
+            END $$;
+        """)
+        cursor.execute("""
+            DO $$
+            BEGIN
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                               WHERE table_name = 'screening_results' AND column_name = 'owner_earnings') THEN
+                    ALTER TABLE screening_results ADD COLUMN owner_earnings REAL;
+                END IF;
+            END $$;
+        """)
+        cursor.execute("""
+            DO $$
+            BEGIN
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                               WHERE table_name = 'screening_results' AND column_name = 'debt_to_earnings') THEN
+                    ALTER TABLE screening_results ADD COLUMN debt_to_earnings REAL;
+                END IF;
+            END $$;
+        """)
+        cursor.execute("""
+            DO $$
+            BEGIN
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                               WHERE table_name = 'screening_results' AND column_name = 'gross_margin') THEN
+                    ALTER TABLE screening_results ADD COLUMN gross_margin REAL;
+                END IF;
+            END $$;
+        """)
+
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS watchlist (
                 symbol TEXT PRIMARY KEY,
@@ -2357,8 +2407,9 @@ class Database:
              earnings_cagr, revenue_cagr, consistency_score,
              peg_status, peg_score, debt_status, debt_score,
              institutional_ownership_status, institutional_ownership_score,
-             overall_status, overall_score, scored_at)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+             overall_status, overall_score, scored_at,
+             roe, owner_earnings, debt_to_earnings, gross_margin)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
         """
         args_insert = (
             session_id,
@@ -2385,7 +2436,11 @@ class Database:
             result_data.get('institutional_ownership_score'),
             result_data.get('overall_status'),
             result_data.get('overall_score'),
-            datetime.now()
+            datetime.now(),
+            result_data.get('roe'),
+            result_data.get('owner_earnings'),
+            result_data.get('debt_to_earnings'),
+            result_data.get('gross_margin')
         )
         self.write_queue.put((sql_insert, args_insert))
 
@@ -2425,7 +2480,8 @@ class Database:
                 'symbol', 'company_name', 'market_cap', 'price', 'pe_ratio', 'peg_ratio',
                 'debt_to_equity', 'institutional_ownership', 'dividend_yield',
                 'earnings_cagr', 'revenue_cagr', 'consistency_score', 'overall_status',
-                'overall_score', 'peg_score', 'debt_score', 'institutional_ownership_score'
+                'overall_score', 'peg_score', 'debt_score', 'institutional_ownership_score',
+                'roe', 'owner_earnings', 'debt_to_earnings', 'gross_margin'
             }
             
             # Validate sort parameters
@@ -2441,7 +2497,8 @@ class Database:
                        earnings_cagr, revenue_cagr, consistency_score,
                        peg_status, peg_score, debt_status, debt_score,
                        institutional_ownership_status, institutional_ownership_score, overall_status,
-                       overall_score
+                       overall_score,
+                       roe, owner_earnings, debt_to_earnings, gross_margin
                 FROM screening_results
                 WHERE session_id = %s
             """
@@ -2523,7 +2580,11 @@ class Database:
                     'institutional_ownership_status': row[19],
                     'institutional_ownership_score': row[20],
                     'overall_status': row[21],
-                    'overall_score': row[22]
+                    'overall_score': row[22],
+                    'roe': row[23],
+                    'owner_earnings': row[24],
+                    'debt_to_earnings': row[25],
+                    'gross_margin': row[26]
                 })
 
             # Get status counts for full session (respects country filter, not search/pagination)
@@ -3855,11 +3916,16 @@ class Database:
         ]
 
     # Algorithm Configuration Methods
-    def save_algorithm_config(self, config: Dict[str, Any]) -> int:
-        """Save an algorithm configuration and return its ID"""
+    def save_algorithm_config(self, config: Dict[str, Any], character: str = 'lynch') -> int:
+        """Save an algorithm configuration and return its ID.
+
+        Args:
+            config: Configuration dict with weights and thresholds
+            character: Character ID this config belongs to (default 'lynch')
+        """
         conn = self.get_connection()
         cursor = conn.cursor()
-        
+
         cursor.execute("""
             INSERT INTO algorithm_configurations
             (name, weight_peg, weight_consistency, weight_debt, weight_ownership,
@@ -3868,21 +3934,21 @@ class Database:
              inst_own_min, inst_own_max,
              revenue_growth_excellent, revenue_growth_good, revenue_growth_fair,
              income_growth_excellent, income_growth_good, income_growth_fair,
-             correlation_5yr, correlation_10yr, is_active)
-            VALUES (%s, %s, %s, %s, %s, 
-                    %s, %s, %s, 
-                    %s, %s, %s, 
-                    %s, %s, 
-                    %s, %s, %s, 
-                    %s, %s, %s, 
-                    %s, %s, %s)
+             correlation_5yr, correlation_10yr, is_active, character)
+            VALUES (%s, %s, %s, %s, %s,
+                    %s, %s, %s,
+                    %s, %s, %s,
+                    %s, %s,
+                    %s, %s, %s,
+                    %s, %s, %s,
+                    %s, %s, %s, %s)
             RETURNING id
         """, (
             config.get('name', 'Unnamed'),
-            config['weight_peg'],
-            config['weight_consistency'],
-            config['weight_debt'],
-            config['weight_ownership'],
+            config.get('weight_peg', 0.50),
+            config.get('weight_consistency', 0.25),
+            config.get('weight_debt', 0.15),
+            config.get('weight_ownership', 0.10),
             config.get('peg_excellent', 1.0),
             config.get('peg_good', 1.5),
             config.get('peg_fair', 2.0),
@@ -3899,9 +3965,10 @@ class Database:
             config.get('income_growth_fair', 5.0),
             config.get('correlation_5yr'),
             config.get('correlation_10yr'),
-            config.get('is_active', False)
+            config.get('is_active', False),
+            character
         ))
-        
+
         config_id = cursor.fetchone()[0]
         conn.commit()
         self.return_connection(conn)
@@ -3925,6 +3992,32 @@ class Database:
             results.append(row_dict)
 
         return results
+
+    def get_algorithm_config_for_character(self, character_id: str) -> Optional[Dict[str, Any]]:
+        """Get the most recent algorithm configuration for a specific character.
+
+        Args:
+            character_id: Character ID (e.g., 'lynch', 'buffett')
+
+        Returns:
+            Configuration dict or None if no config exists for this character
+        """
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT * FROM algorithm_configurations
+            WHERE character = %s
+            ORDER BY id DESC
+            LIMIT 1
+        """, (character_id,))
+        row = cursor.fetchone()
+        self.return_connection(conn)
+
+        if not row:
+            return None
+
+        colnames = [desc[0] for desc in cursor.description]
+        return dict(zip(colnames, row))
 
     # Background Jobs Methods
 

@@ -38,7 +38,7 @@ from stock_vectors import StockVectors, DEFAULT_ALGORITHM_CONFIG
 from sec_8k_client import SEC8KClient
 from material_event_summarizer import MaterialEventSummarizer, SUMMARIZABLE_ITEM_CODES
 from fly_machines import get_fly_manager
-from auth import init_oauth_client, require_user_auth
+from auth import init_oauth_client, require_user_auth, optional_user_auth
 from characters import get_character, list_characters
 
 from algorithm_optimizer import AlgorithmOptimizer
@@ -1387,107 +1387,228 @@ def get_cached_stocks():
 
 
 @app.route('/api/sessions/latest', methods=['GET'])
-def get_latest_session():
-    """Get the most recent screening session with paginated, sorted results using vectorized scoring"""
+@optional_user_auth
+def get_latest_session(user_id):
+    """Get the most recent screening session with paginated, sorted results.
+
+    Uses vectorized scoring for Lynch (performance), falls back to database-based
+    character scoring for Buffett and other characters.
+    """
     # Get optional query parameters
     search = request.args.get('search', None)
     page = request.args.get('page', 1, type=int)
     limit = request.args.get('limit', 100, type=int)
-    sort_by = request.args.get('sort_by', 'overall_score') # Default to score, not status
+    sort_by = request.args.get('sort_by', 'overall_score')
     sort_dir = request.args.get('sort_dir', 'desc')
-    
-    # Check if US-only filter is enabled
+
+    # Determine active character for scoring
+    character_id = 'lynch'  # Default
+    if user_id:
+        character_id = db.get_user_character(user_id)
+    character = get_character(character_id)
+
+    # Check if US-only filter is enabled (default: True for production)
     us_stocks_only = db.get_setting('us_stocks_only', True)
     country_filter = 'US' if us_stocks_only else None
-    
-    # Get user's algorithm config
-    configs = db.get_algorithm_configs()
-    if configs and len(configs) > 0:
-        db_config = configs[0]
-        config = {
-            'peg_excellent': db_config.get('peg_excellent', 1.0),
-            'peg_good': db_config.get('peg_good', 1.5),
-            'peg_fair': db_config.get('peg_fair', 2.0),
-            'debt_excellent': db_config.get('debt_excellent', 0.5),
-            'debt_good': db_config.get('debt_good', 1.0),
-            'debt_moderate': db_config.get('debt_moderate', 2.0),
-            'inst_own_min': db_config.get('inst_own_min', 0.20),
-            'inst_own_max': db_config.get('inst_own_max', 0.60),
-            'weight_peg': db_config.get('weight_peg', 0.50),
-            'weight_consistency': db_config.get('weight_consistency', 0.25),
-            'weight_debt': db_config.get('weight_debt', 0.15),
-            'weight_ownership': db_config.get('weight_ownership', 0.10),
-        }
-    else:
-        config = DEFAULT_ALGORITHM_CONFIG
 
-    try:
-        # Load and score
-        df = stock_vectors.load_vectors(country_filter)
-        scored_df = criteria.evaluate_batch(df, config)
-        
-        # Apply search filter
-        if search:
-            search_lower = search.lower()
-            mask = (
-                scored_df['symbol'].str.lower().str.contains(search_lower) |
-                scored_df['company_name'].fillna('').str.lower().str.contains(search_lower)
-            )
-            scored_df = scored_df[mask]
-            
-        # Apply Sorting
-        if sort_by in scored_df.columns:
-            ascending = sort_dir.lower() == 'asc'
-            scored_df = scored_df.sort_values(sort_by, ascending=ascending, na_position='last')
-            
-        # Pagination
-        total_count = len(scored_df)
-        offset = (page - 1) * limit
-        paginated_df = scored_df.iloc[offset:offset + limit]
-        
-        # Convert to records
-        results = paginated_df.to_dict(orient='records')
-        
-        # Clean NaNs and enrich with PE metrics (already computed in stock_vectors now)
-        cleaned_results = []
-        for result in results:
-            cleaned = {}
-            for key, value in result.items():
-                if pd.isna(value):
-                    cleaned[key] = None
-                elif isinstance(value, (np.floating, np.integer)):
-                    cleaned[key] = float(value) if np.isfinite(value) else None
-                else:
-                    cleaned[key] = value
-            cleaned_results.append(cleaned)
-            
-        # Count statuses
-        status_counts = scored_df['overall_status'].value_counts().to_dict()
-        # Ensure all keys exist
-        for status in ['STRONG_BUY', 'BUY', 'HOLD', 'CAUTION', 'AVOID']:
-            if status not in status_counts:
-                status_counts[status] = 0
-                
-        return jsonify({
-            'results': cleaned_results,
-            'total_count': total_count,
-            'total_pages': (total_count + limit - 1) // limit,
-            'current_page': page,
-            'limit': limit,
-            'status_counts': status_counts,
-            'session_id': 0, # Dummy ID since this is dynamic
-            '_meta': {
-                'source': 'vectorized_engine', 
-                'timestamp': datetime.now().isoformat()
+    # HYBRID APPROACH: Use vectorized for Lynch, database for other characters
+    if character_id == 'lynch':
+        # --- VECTORIZED PATH (for performance) ---
+        # Get user's algorithm config
+        configs = db.get_algorithm_configs()
+        if configs and len(configs) > 0:
+            db_config = configs[0]
+            config = {
+                'peg_excellent': db_config.get('peg_excellent', 1.0),
+                'peg_good': db_config.get('peg_good', 1.5),
+                'peg_fair': db_config.get('peg_fair', 2.0),
+                'debt_excellent': db_config.get('debt_excellent', 0.5),
+                'debt_good': db_config.get('debt_good', 1.0),
+                'debt_moderate': db_config.get('debt_moderate', 2.0),
+                'inst_own_min': db_config.get('inst_own_min', 0.20),
+                'inst_own_max': db_config.get('inst_own_max', 0.60),
+                'weight_peg': db_config.get('weight_peg', 0.50),
+                'weight_consistency': db_config.get('weight_consistency', 0.25),
+                'weight_debt': db_config.get('weight_debt', 0.15),
+                'weight_ownership': db_config.get('weight_ownership', 0.10),
             }
-        })
+        else:
+            config = DEFAULT_ALGORITHM_CONFIG
 
-    except Exception as e:
-        logger.error(f"Error in vectorized session: {e}")
-        import traceback
-        traceback.print_exc()
-        return jsonify({'error': str(e)}), 500
+        try:
+            # Load and score using vectorized engine
+            df = stock_vectors.load_vectors(country_filter)
+            scored_df = criteria.evaluate_batch(df, config)
 
+            # Apply search filter
+            if search:
+                search_lower = search.lower()
+                mask = (
+                    scored_df['symbol'].str.lower().str.contains(search_lower) |
+                    scored_df['company_name'].fillna('').str.lower().str.contains(search_lower)
+                )
+                scored_df = scored_df[mask]
+
+            # Apply Sorting
+            if sort_by in scored_df.columns:
+                ascending = sort_dir.lower() == 'asc'
+                scored_df = scored_df.sort_values(sort_by, ascending=ascending, na_position='last')
+
+            # Pagination
+            total_count = len(scored_df)
+            offset = (page - 1) * limit
+            paginated_df = scored_df.iloc[offset:offset + limit]
+
+            # Convert to records
+            results = paginated_df.to_dict(orient='records')
+
+            # Clean NaNs
+            cleaned_results = []
+            for result in results:
+                cleaned = {}
+                for key, value in result.items():
+                    if pd.isna(value):
+                        cleaned[key] = None
+                    elif isinstance(value, (np.floating, np.integer)):
+                        cleaned[key] = float(value) if np.isfinite(value) else None
+                    else:
+                        cleaned[key] = value
+                cleaned_results.append(cleaned)
+
+            # Count statuses
+            status_counts = scored_df['overall_status'].value_counts().to_dict()
+            # Ensure all keys exist
+            for status in ['STRONG_BUY', 'BUY', 'HOLD', 'CAUTION', 'AVOID']:
+                if status not in status_counts:
+                    status_counts[status] = 0
+
+            return jsonify({
+                'results': cleaned_results,
+                'total_count': total_count,
+                'total_pages': (total_count + limit - 1) // limit,
+                'current_page': page,
+                'limit': limit,
+                'status_counts': status_counts,
+                'active_character': character_id,
+                'session_id': 0,  # Dummy ID since this is dynamic
+                '_meta': {
+                    'source': 'vectorized_engine',
+                    'timestamp': datetime.now().isoformat()
+                }
+            })
+
+        except Exception as e:
+            logger.error(f"Error in vectorized session: {e}")
+            import traceback
+            traceback.print_exc()
+            return jsonify({'error': str(e)}), 500
+
+    else:
+        # --- DATABASE PATH (for character-aware scoring) ---
+        # IMPORTANT: For character scoring, we need to fetch ALL results, re-score them,
+        # re-sort by the new scores, THEN paginate. Otherwise pagination happens on
+        # Lynch scores and we get wrong ordering after Buffett re-scoring.
+        session_data = db.get_latest_session(
+            search=search,
+            page=1,  # Fetch from page 1
+            limit=10000,  # Fetch all results (large limit)
+            sort_by='overall_score',  # Sort doesn't matter, we'll re-sort after scoring
+            sort_dir='desc',
+            country_filter=country_filter
+        )
+
+        if not session_data:
+            return jsonify({'error': 'No screening sessions found'}), 404
+
+        # Enrich results with on-the-fly computed metrics
+        if 'results' in session_data:
+            # Import character scoring module
+            from character_scoring import apply_character_scoring
+
+            for result in session_data['results']:
+                symbol = result.get('symbol')
+
+                # Compute P/E range position from cached weekly prices
+                pe_range = criteria._calculate_pe_52_week_range(symbol, result.get('pe_ratio'))
+                result['pe_52_week_min'] = pe_range.get('pe_52_week_min')
+                result['pe_52_week_max'] = pe_range.get('pe_52_week_max')
+                result['pe_52_week_position'] = pe_range.get('pe_52_week_position')
+
+                # Compute consistency scores from earnings history
+                growth_data = analyzer.calculate_earnings_growth(symbol)
+                if growth_data:
+                    # Normalize to 0-100 scale (100 = best consistency)
+                    raw_income = growth_data.get('income_consistency_score')
+                    raw_revenue = growth_data.get('revenue_consistency_score')
+                    result['income_consistency_score'] = max(0.0, 100.0 - (raw_income * 2.0)) if raw_income is not None else None
+                    result['revenue_consistency_score'] = max(0.0, 100.0 - (raw_revenue * 2.0)) if raw_revenue is not None else None
+                else:
+                    result['income_consistency_score'] = None
+                    result['revenue_consistency_score'] = None
+
+            # Apply character-specific scoring to all results
+            if character:
+                session_data['results'] = [
+                    apply_character_scoring(result, character)
+                    for result in session_data['results']
+                ]
+
+                # CRITICAL: Re-sort after character scoring since scores have changed
+                # The database sorted by Lynch scores, but we just replaced them with character scores
+                reverse = (sort_dir.lower() == 'desc')
+                if sort_by == 'overall_score':
+                    # Sort by numeric score
+                    session_data['results'].sort(
+                        key=lambda x: x.get('overall_score') if x.get('overall_score') is not None else -1,
+                        reverse=reverse
+                    )
+                elif sort_by == 'overall_status':
+                    # Sort by status rank
+                    status_rank = {
+                        'STRONG_BUY': 5, 'BUY': 4, 'HOLD': 3, 'CAUTION': 2, 'AVOID': 1
+                    }
+                    session_data['results'].sort(
+                        key=lambda x: status_rank.get(x.get('overall_status'), 0),
+                        reverse=reverse
+                    )
+                else:
+                    # Sort by other columns (metric scores, etc.)
+                    session_data['results'].sort(
+                        key=lambda x: x.get(sort_by) if x.get(sort_by) is not None else -1,
+                        reverse=reverse
+                    )
+
+            # Clean NaN values in results
+            all_results = [clean_nan_values(result) for result in session_data['results']]
+
+            # Calculate status counts from ALL results (before pagination)
+            status_counts = {}
+            for result in all_results:
+                status = result.get('overall_status')
+                if status:
+                    status_counts[status] = status_counts.get(status, 0) + 1
+
+            # Ensure all status keys exist
+            for status in ['STRONG_BUY', 'BUY', 'HOLD', 'CAUTION', 'AVOID']:
+                if status not in status_counts:
+                    status_counts[status] = 0
+
+            # NOW paginate after re-scoring and re-sorting
+            total_count = len(all_results)
+            offset = (page - 1) * limit
+            paginated_results = all_results[offset:offset + limit]
+
+            session_data['results'] = paginated_results
+            session_data['total_count'] = total_count
+            session_data['total_pages'] = (total_count + limit - 1) // limit
+            session_data['current_page'] = page
+            session_data['limit'] = limit
+            session_data['status_counts'] = status_counts
+
+        # Include character info in response
+        session_data['active_character'] = character_id
+
+        return jsonify(session_data)
 
 
 @app.route('/api/stock/<symbol>/history', methods=['GET'])
@@ -3424,16 +3545,21 @@ def get_rescoring_progress(job_id):
     return jsonify(clean_nan_values(rescoring_jobs[job_id]))
 
 @app.route('/api/algorithm/config', methods=['GET', 'POST'])
-def algorithm_config():
-    """Get or update algorithm configuration.
-    
-    Source of truth: algorithm_configurations table (highest id = current config)
+@optional_user_auth
+def algorithm_config(user_id):
+    """Get or update algorithm configuration for the user's active character.
+
+    Source of truth: algorithm_configurations table (filtered by character)
     """
+    # Determine active character
+    character_id = 'lynch'  # Default
+    if user_id:
+        character_id = db.get_user_character(user_id)
+
     if request.method == 'GET':
-        # Load from algorithm_configurations table - always use highest ID
-        configs = db.get_algorithm_configs()
-        latest_config = configs[0] if configs else None
-        
+        # Load config for user's character
+        latest_config = db.get_algorithm_config_for_character(character_id)
+
         if latest_config:
             config = {
                 'weight_peg': latest_config.get('weight_peg', 0.50),
@@ -3456,7 +3582,7 @@ def algorithm_config():
                 'income_growth_fair': latest_config.get('income_growth_fair', 5.0),
             }
         else:
-            # No configs exist - return hardcoded defaults
+            # No configs exist for this character - return hardcoded defaults
             config = {
                 'weight_peg': 0.50,
                 'weight_consistency': 0.25,
@@ -3477,18 +3603,18 @@ def algorithm_config():
                 'income_growth_good': 10.0,
                 'income_growth_fair': 5.0,
             }
-        
-        return jsonify({'current': config})
-    
+
+        return jsonify({'current': config, 'character': character_id})
+
     elif request.method == 'POST':
-        # Save new config - INSERT new row into algorithm_configurations
+        # Save new config for user's character
         data = request.get_json()
-        
+
         if 'config' not in data:
             return jsonify({'error': 'No config provided'}), 400
-        
+
         config = data['config']
-        
+
         # Create new algorithm configuration row
         config_data = {
             'name': config.get('name', 'Manual Save'),
@@ -3513,9 +3639,9 @@ def algorithm_config():
             'correlation_5yr': config.get('correlation_5yr'),
             'correlation_10yr': config.get('correlation_10yr'),
         }
-        
-        config_id = db.save_algorithm_config(config_data)
-        logger.info(f"Saved new algorithm configuration with id={config_id}")
+
+        config_id = db.save_algorithm_config(config_data, character=character_id)
+        logger.info(f"Saved algorithm config id={config_id} for character={character_id}")
 
         # Reload settings in LynchCriteria to pick up new config
         criteria.reload_settings()

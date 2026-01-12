@@ -216,6 +216,17 @@ class DataFetcher:
             beta = info.get('beta')
             total_debt = info.get('totalDebt')
 
+            # If using TradingView cache and total_debt is missing, fetch from yfinance
+            # This is needed for Buffett's debt-to-earnings calculation
+            if total_debt is None and using_tradingview_cache:
+                try:
+                    yf_info = self._get_yf_info(symbol)
+                    if yf_info:
+                        total_debt = yf_info.get('totalDebt')
+                        logger.info(f"[{symbol}] Fetched total_debt from yfinance: {total_debt}")
+                except Exception as e:
+                    logger.warning(f"[{symbol}] Failed to fetch total_debt from yfinance: {e}")
+
             # Fallback for Debt-to-Equity if missing from EDGAR and yfinance info
             if debt_to_equity is None:
                 logger.info(f"[{symbol}] D/E missing from info, attempting calculation from balance sheet")
@@ -224,10 +235,14 @@ class DataFetcher:
                     if balance_sheet is not None and not balance_sheet.empty:
                         # Get most recent column
                         recent_col = balance_sheet.columns[0]
-                        calc_de = self._calculate_debt_to_equity(balance_sheet, recent_col)
+                        calc_de, calc_total_debt = self._calculate_debt_to_equity(balance_sheet, recent_col)
                         if calc_de is not None:
                             debt_to_equity = calc_de
                             logger.info(f"[{symbol}] Calculated D/E from balance sheet: {debt_to_equity:.2f}")
+                        # Also capture total_debt if we found it and don't already have it
+                        if calc_total_debt is not None and total_debt is None:
+                            total_debt = calc_total_debt
+                            logger.info(f"[{symbol}] Captured total_debt from balance sheet: {total_debt:,.0f}")
                 except Exception as e:
                     logger.warning(f"[{symbol}] Failed to calculate D/E from balance sheet: {e}")
             
@@ -573,7 +588,7 @@ class DataFetcher:
             for col in balance_sheet.columns:
                 year = col.year if hasattr(col, 'year') else None
                 if year and year in years:
-                    debt_to_equity = self._calculate_debt_to_equity(balance_sheet, col)
+                    debt_to_equity, _ = self._calculate_debt_to_equity(balance_sheet, col)
                     if debt_to_equity is not None:
                         # Update the existing record with D/E data
                         conn = self.db.get_connection()
@@ -598,7 +613,7 @@ class DataFetcher:
         except Exception as e:
             logger.error(f"[{symbol}] Error backfilling D/E data: {type(e).__name__}: {e}")
 
-    def _calculate_debt_to_equity(self, balance_sheet, col) -> Optional[float]:
+    def _calculate_debt_to_equity(self, balance_sheet, col) -> tuple[Optional[float], Optional[float]]:
         """
         Calculate debt-to-equity ratio from balance sheet data
 
@@ -607,7 +622,7 @@ class DataFetcher:
             col: column/date to extract data from
 
         Returns:
-            Debt-to-equity ratio or None if data unavailable
+            Tuple of (debt_to_equity_ratio, total_debt) or (None, None) if data unavailable
         """
         try:
             # Try to get Total Debt (preferred) or Total Liabilities
@@ -624,7 +639,7 @@ class DataFetcher:
                 'Total Liabilities',
                 'Total Liabilities Net Minority Interest'
             ]
-            
+
             for key in debt_keys:
                 if key in balance_sheet.index:
                     debt_or_liab = balance_sheet.loc[key, col]
@@ -639,7 +654,7 @@ class DataFetcher:
                 'Total Equity Gross Minority Interest',
                 'Common Stock Equity'
             ]
-            
+
             for key in equity_keys:
                 if key in balance_sheet.index:
                     equity = balance_sheet.loc[key, col]
@@ -647,12 +662,14 @@ class DataFetcher:
 
             # Calculate D/E ratio if both values are available and valid
             if pd.notna(debt_or_liab) and pd.notna(equity) and equity != 0:
-                return float(debt_or_liab / equity)
+                ratio = float(debt_or_liab / equity)
+                total_debt = float(debt_or_liab)
+                return (ratio, total_debt)
 
-            return None
+            return (None, None)
         except Exception as e:
             logger.debug(f"Error calculating D/E ratio: {e}")
-            return None
+            return (None, None)
 
     def _backfill_cash_flow(self, symbol: str, years: List[int]):
         """
@@ -776,7 +793,7 @@ class DataFetcher:
                     # Calculate debt-to-equity from balance sheet
                     debt_to_equity = None
                     if balance_sheet is not None and not balance_sheet.empty and col in balance_sheet.columns:
-                        debt_to_equity = self._calculate_debt_to_equity(balance_sheet, col)
+                        debt_to_equity, _ = self._calculate_debt_to_equity(balance_sheet, col)
                     
                     dividend = dividends_by_year.get(year)
 
@@ -853,7 +870,7 @@ class DataFetcher:
                     # Calculate debt-to-equity from quarterly balance sheet
                     debt_to_equity = None
                     if quarterly_balance_sheet is not None and not quarterly_balance_sheet.empty and col in quarterly_balance_sheet.columns:
-                        debt_to_equity = self._calculate_debt_to_equity(quarterly_balance_sheet, col)
+                        debt_to_equity, _ = self._calculate_debt_to_equity(quarterly_balance_sheet, col)
                     
                     # Map dividends to (year, quarter)
                     # Note: We need to calculate dividends_by_quarter here or reuse from above if we move it up
@@ -934,7 +951,7 @@ class DataFetcher:
                     # Calculate debt-to-equity from quarterly balance sheet
                     debt_to_equity = None
                     if quarterly_balance_sheet is not None and not quarterly_balance_sheet.empty and col in quarterly_balance_sheet.columns:
-                        debt_to_equity = self._calculate_debt_to_equity(quarterly_balance_sheet, col)
+                        debt_to_equity, _ = self._calculate_debt_to_equity(quarterly_balance_sheet, col)
                     
                     dividend = dividends_by_quarter.get((year, quarter))
 

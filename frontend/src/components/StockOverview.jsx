@@ -1,7 +1,61 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import StatusBar from "./StatusBar"
 
-export default function StockOverview({ stock }) {
+// Character-specific metric configurations for stock overview
+const CHARACTER_METRICS = {
+  lynch: {
+    valuation: [
+      { key: 'pe_ratio', label: 'P/E Ratio', format: 'number', decimals: 2, goodWhen: v => v < 15 },
+      { key: 'peg_ratio', label: 'PEG Ratio', format: 'number', decimals: 2, goodWhen: v => v < 1 },
+      { key: 'debt_to_equity', label: 'Debt/Equity', format: 'number', decimals: 2, goodWhen: v => v < 1 },
+      { key: 'dividend_yield', label: 'Div Yield', format: 'percent', decimals: 2 },
+    ],
+    growth: [
+      { key: 'institutional_ownership', label: 'Inst. Ownership', format: 'percent_decimal', decimals: 1, colSpan: 'col-span-2 sm:col-span-1' },
+      { key: 'revenue_cagr', label: '5Y Rev Growth', format: 'percent', decimals: 1, goodWhen: v => v > 10 },
+      { key: 'earnings_cagr', label: '5Y Inc Growth', format: 'percent', decimals: 1, goodWhen: v => v > 10 },
+    ]
+  },
+  buffett: {
+    valuation: [
+      { key: 'pe_ratio', label: 'P/E Ratio', format: 'number', decimals: 2, goodWhen: v => v < 15 },
+      { key: 'roe', label: 'ROE', format: 'percent', decimals: 2, goodWhen: v => v > 15 },
+      { key: 'debt_to_earnings', label: 'Debt/Earnings', format: 'years', decimals: 2, goodWhen: v => v < 4 },
+      { key: 'dividend_yield', label: 'Div Yield', format: 'percent', decimals: 2 },
+    ],
+    growth: [
+      { key: 'owner_earnings', label: 'Owner Earnings', format: 'currency', decimals: 1, colSpan: 'col-span-2 sm:col-span-1' },
+      { key: 'revenue_cagr', label: '5Y Rev Growth', format: 'percent', decimals: 1, goodWhen: v => v > 10 },
+      { key: 'earnings_cagr', label: '5Y Inc Growth', format: 'percent', decimals: 1, goodWhen: v => v > 10 },
+    ]
+  }
+};
+
+const formatValue = (value, format, decimals) => {
+  if (typeof value !== 'number') return '-';
+
+  switch (format) {
+    case 'percent':
+      return `${value.toFixed(decimals)}%`;
+    case 'percent_decimal':
+      return `${(value * 100).toFixed(decimals)}%`;
+    case 'currency':
+      // Convert to billions if >= 1000M, otherwise keep in millions
+      if (value >= 1000) {
+        return `$${(value / 1000).toFixed(2)}B`;
+      }
+      return `$${value.toFixed(1)}M`;
+    case 'years':
+      return `${value.toFixed(decimals)} yrs`;
+    case 'number':
+    default:
+      return value.toFixed(decimals);
+  }
+};
+
+export default function StockOverview({ stock, activeCharacter = 'lynch' }) {
+    const metrics = CHARACTER_METRICS[activeCharacter] || CHARACTER_METRICS.lynch;
+
     return (
         <div className="space-y-6 animate-in fade-in duration-500">
             {/* Top Row: Financial & Growth Metrics */}
@@ -14,30 +68,18 @@ export default function StockOverview({ stock }) {
                     </CardHeader>
                     <CardContent>
                         <div className="grid grid-cols-2 gap-y-6 gap-x-4">
-                            <div>
-                                <div className="text-sm text-muted-foreground mb-1">P/E Ratio</div>
-                                <div className={`text-2xl font-bold ${stock.pe_ratio < 15 ? "text-green-500" : ""}`}>
-                                    {typeof stock.pe_ratio === 'number' ? stock.pe_ratio.toFixed(2) : '-'}
-                                </div>
-                            </div>
-                            <div>
-                                <div className="text-sm text-muted-foreground mb-1">PEG Ratio</div>
-                                <div className={`text-2xl font-bold ${stock.peg_ratio < 1 ? "text-green-500" : ""}`}>
-                                    {typeof stock.peg_ratio === 'number' ? stock.peg_ratio.toFixed(2) : '-'}
-                                </div>
-                            </div>
-                            <div>
-                                <div className="text-sm text-muted-foreground mb-1">Debt/Equity</div>
-                                <div className={`text-2xl font-bold ${stock.debt_to_equity < 1 ? "text-green-500" : ""}`}>
-                                    {typeof stock.debt_to_equity === 'number' ? stock.debt_to_equity.toFixed(2) : '-'}
-                                </div>
-                            </div>
-                            <div>
-                                <div className="text-sm text-muted-foreground mb-1">Div Yield</div>
-                                <div className="text-2xl font-bold">
-                                    {typeof stock.dividend_yield === 'number' ? `${stock.dividend_yield.toFixed(2)}%` : '-'}
-                                </div>
-                            </div>
+                            {metrics.valuation.map(metric => {
+                                const value = stock[metric.key];
+                                const isGood = metric.goodWhen && typeof value === 'number' && metric.goodWhen(value);
+                                return (
+                                    <div key={metric.key}>
+                                        <div className="text-sm text-muted-foreground mb-1">{metric.label}</div>
+                                        <div className={`text-2xl font-bold ${isGood ? "text-green-500" : ""}`}>
+                                            {formatValue(value, metric.format, metric.decimals)}
+                                        </div>
+                                    </div>
+                                );
+                            })}
                         </div>
                     </CardContent>
                 </Card>
@@ -45,30 +87,22 @@ export default function StockOverview({ stock }) {
                 {/* Growth & Ownership */}
                 <Card>
                     <CardHeader className="pb-2">
-                        <CardTitle className="text-lg font-medium text-muted-foreground">Growth & Ownership</CardTitle>
+                        <CardTitle className="text-lg font-medium text-muted-foreground">Growth & Performance</CardTitle>
                     </CardHeader>
                     <CardContent>
                         <div className="grid grid-cols-2 gap-y-6 gap-x-4">
-                            <div className="col-span-2 sm:col-span-1">
-                                <div className="text-sm text-muted-foreground mb-1">Inst. Ownership</div>
-                                <div className="text-2xl font-bold">
-                                    {typeof stock.institutional_ownership === 'number'
-                                        ? `${(stock.institutional_ownership * 100).toFixed(1)}%`
-                                        : '-'}
-                                </div>
-                            </div>
-                            <div>
-                                <div className="text-sm text-muted-foreground mb-1">5Y Rev Growth</div>
-                                <div className={`text-2xl font-bold ${stock.revenue_cagr > 10 ? 'text-green-500' : ''}`}>
-                                    {typeof stock.revenue_cagr === 'number' ? `${stock.revenue_cagr.toFixed(1)}%` : '-'}
-                                </div>
-                            </div>
-                            <div>
-                                <div className="text-sm text-muted-foreground mb-1">5Y Inc Growth</div>
-                                <div className={`text-2xl font-bold ${stock.earnings_cagr > 10 ? 'text-green-500' : ''}`}>
-                                    {typeof stock.earnings_cagr === 'number' ? `${stock.earnings_cagr.toFixed(1)}%` : '-'}
-                                </div>
-                            </div>
+                            {metrics.growth.map(metric => {
+                                const value = stock[metric.key];
+                                const isGood = metric.goodWhen && typeof value === 'number' && metric.goodWhen(value);
+                                return (
+                                    <div key={metric.key} className={metric.colSpan || ''}>
+                                        <div className="text-sm text-muted-foreground mb-1">{metric.label}</div>
+                                        <div className={`text-2xl font-bold ${isGood ? 'text-green-500' : ''}`}>
+                                            {formatValue(value, metric.format, metric.decimals)}
+                                        </div>
+                                    </div>
+                                );
+                            })}
                         </div>
                     </CardContent>
                 </Card>

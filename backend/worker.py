@@ -386,9 +386,16 @@ class BackgroundWorker:
                     return None
 
                 # 2. Evaluate stock against Lynch criteria
-                evaluation = criteria.evaluate_stock(symbol, algorithm=algorithm)
+                # Pass stock_data to avoid re-querying DB (write queue hasn't flushed yet)
+                evaluation = criteria.evaluate_stock(symbol, algorithm=algorithm, stock_metrics=stock_data)
                 if not evaluation:
                     return None
+
+                # Log Buffett metrics being saved
+                debt_to_earnings = evaluation.get('debt_to_earnings')
+                roe = evaluation.get('roe')
+                if debt_to_earnings is not None or roe is not None:
+                    logger.info(f"[{symbol}] Buffett metrics - debt_to_earnings: {debt_to_earnings}, ROE: {roe}, gross_margin: {evaluation.get('gross_margin')}")
 
                 # NOTE: Price history and news caching are now handled by separate jobs:
                 # - price_history_cache: Caches weekly price history
