@@ -14,8 +14,7 @@ from characters.config import CharacterConfig
 
 # Available AI models for analysis generation
 AVAILABLE_MODELS = ["gemini-2.5-flash", "gemini-3-flash-preview", "gemini-3-pro-preview"]
-DEFAULT_MODEL = "gemini-2.5-flash"
-
+DEFAULT_MODEL = "gemini-3-pro-preview"
 
 class StockAnalyst:
     """Character-aware stock analyst that generates analyses using AI.
@@ -495,7 +494,7 @@ class StockAnalyst:
         )
 
         response = self.client.models.generate_content(
-            model="gemini-2.5-flash",
+            model=model_version,
             contents=prompt
         )
 
@@ -515,7 +514,7 @@ class StockAnalyst:
         sections: Optional[Dict[str, Any]] = None,
         news: Optional[List[Dict[str, Any]]] = None,
         material_events: Optional[List[Dict[str, Any]]] = None,
-        model_version: str = "gemini-2.5-flash"
+        model_version: str = DEFAULT_MODEL
     ) -> Dict[str, Any]:
         """Generate DCF model recommendations using AI."""
         if model_version not in AVAILABLE_MODELS:
