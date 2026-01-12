@@ -45,6 +45,7 @@ const TOOL_DESCRIPTIONS = {
   get_analyst_estimates: "Checking analyst forecasts",
   find_similar_stocks: "Finding similar companies",
   get_material_events: "Checking SEC filings",
+  get_stock_metrics: "Analyzing key metrics",
   get_historical_pe: "Analyzing valuation history"
 }
 
