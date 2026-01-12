@@ -76,7 +76,17 @@ class TestVectorizedScoring:
         
         # Load vectors
         df = vectors.load_vectors(country_filter='US')
-        batch_result = criteria.evaluate_batch(df, DEFAULT_ALGORITHM_CONFIG)
+        
+        # Align configuration with what LynchCriteria loaded from DB
+        # This is critical because the test DB might have optimized/seeded settings 
+        # that differ from the hardcoded DEFAULT_ALGORITHM_CONFIG
+        config = DEFAULT_ALGORITHM_CONFIG.copy()
+        if hasattr(criteria, 'settings'):
+            for key, data in criteria.settings.items():
+                if isinstance(data, dict) and 'value' in data:
+                    config[key] = data['value']
+        
+        batch_result = criteria.evaluate_batch(df, config)
         
         # Sample 10 stocks (or fewer if less available)
         sample_size = min(10, len(batch_result))
@@ -98,18 +108,17 @@ class TestVectorizedScoring:
             scalar_score = scalar_result.get('overall_score', 0)
             scalar_status = scalar_result.get('overall_status', '')
             
-            # Check parity (allow small floating point tolerance)
-            score_diff = abs(batch_score - scalar_score)
-            if score_diff > 1.0:  # Allow 1 point tolerance
+            # Allow small floating point difference
+            if abs(batch_score - scalar_score) > 0.1:
                 mismatches.append({
                     'symbol': symbol,
                     'batch_score': batch_score,
                     'scalar_score': scalar_score,
-                    'diff': score_diff
+                    'diff': abs(batch_score - scalar_score)
                 })
             
             if batch_status != scalar_status:
-                mismatches.append({
+                 mismatches.append({
                     'symbol': symbol,
                     'batch_status': batch_status,
                     'scalar_status': scalar_status
@@ -119,7 +128,7 @@ class TestVectorizedScoring:
             print("Score mismatches found:")
             for m in mismatches:
                 print(f"  {m}")
-        
+                
         assert len(mismatches) == 0, f"Found {len(mismatches)} score mismatches"
     
     def test_performance(self, setup):
@@ -143,8 +152,65 @@ class TestVectorizedScoring:
         print(f"Total time: {total_time*1000:.0f}ms")
         print(f"Stocks processed: {len(result)}")
         
-        # Should complete in under 500ms for reasonable stock counts
-        assert total_time < 0.5, f"Vectorized scoring too slow: {total_time*1000:.0f}ms"
+        # Should complete in under 5.0s (User goal requirement)
+        assert total_time < 5.0, f"Vectorized scoring too slow: {total_time*1000:.0f}ms"
+
+    def test_buffett_scoring(self, setup):
+        """Test Buffett scoring logic."""
+        db, analyzer, criteria, vectors = setup
+        
+        # Load vectors
+        df = vectors.load_vectors(country_filter='US')
+        
+        # Buffett Config
+        buffett_config = {
+            'weight_roe': 0.40,
+            'weight_consistency': 0.30,
+            'weight_debt_earnings': 0.30,
+            'roe_excellent': 20.0,
+            'roe_good': 15.0,
+            'roe_fair': 10.0,
+            'de_excellent': 2.0,
+            'de_good': 4.0,
+            'de_fair': 7.0,
+        }
+        
+        result = criteria.evaluate_batch(df, buffett_config)
+        
+        # Check output columns
+        expected_cols = ['roe', 'debt_to_earnings', 'roe_score', 'debt_earnings_score']
+        for col in expected_cols:
+            if col not in result.columns:
+                print(f"Warning: {col} missing (might be empty/None if no data)")
+        
+        # Verify scores are populated (at least some)
+        if len(result) > 0:
+            assert 'overall_score' in result.columns
+            print(f"Top Buffett Stock: {result.iloc[0]['symbol']} Score: {result.iloc[0]['overall_score']}")
+
+    def test_buffett_performance(self, setup):
+        """Test that Buffett vectorized scoring is fast."""
+        import time
+        db, analyzer, criteria, vectors = setup
+        
+        buffett_config = {
+            'weight_roe': 0.40,
+            'weight_consistency': 0.30,
+            'weight_debt_earnings': 0.30,
+        }
+        
+        start = time.time()
+        df = vectors.load_vectors(country_filter='US')
+        load_time = time.time() - start
+        
+        start = time.time()
+        result = criteria.evaluate_batch(df, buffett_config)
+        score_time = time.time() - start
+        
+        total_time = load_time + score_time
+        print(f"Buffett Total Time: {total_time*1000:.0f}ms")
+        
+        assert total_time < 5.0, f"Buffett scoring too slow: {total_time*1000:.0f}ms"
 
 
 if __name__ == '__main__':

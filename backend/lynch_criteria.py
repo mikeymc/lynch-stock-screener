@@ -1065,38 +1065,113 @@ class LynchCriteria:
         inst_own_min = config.get('inst_own_min', 0.20)
         inst_own_max = config.get('inst_own_max', 0.60)
         
-        # Extract weights
-        weight_peg = config.get('weight_peg', 0.50)
-        weight_consistency = config.get('weight_consistency', 0.25)
-        weight_debt = config.get('weight_debt', 0.15)
-        weight_ownership = config.get('weight_ownership', 0.10)
+        # Extract weights (default to 0 if not present to support dynamic composition)
+        weight_peg = config.get('weight_peg', 0.0)
+        weight_consistency = config.get('weight_consistency', 0.0)
+        weight_debt = config.get('weight_debt', 0.0)
+        weight_ownership = config.get('weight_ownership', 0.0)
         
-        # Calculate component scores using vectorized methods
-        peg_score = self._vectorized_peg_score(
-            df['peg_ratio'], peg_excellent, peg_good, peg_fair
-        )
+        # Buffett Weights
+        weight_roe = config.get('weight_roe', 0.0)
+        weight_debt_earnings = config.get('weight_debt_earnings', 0.0)
         
-        debt_score = self._vectorized_debt_score(
-            df['debt_to_equity'], debt_excellent, debt_good, debt_moderate
-        )
+        # Initialize overall score
+        overall_score = pd.Series(0.0, index=df.index)
         
-        ownership_score = self._vectorized_ownership_score(
-            df['institutional_ownership'], inst_own_min, inst_own_max
-        )
+        # --- Lynch Components ---
         
-        # Consistency score is already 0-100 normalized, use directly
-        # Default to 50 (neutral) for missing values
-        consistency_score = df['income_consistency_score'].fillna(50.0)
+        peg_score = pd.Series(0.0, index=df.index)
+        peg_status = pd.Series('N/A', index=df.index)
+        if weight_peg > 0:
+            peg_score = self._vectorized_peg_score(
+                df['peg_ratio'], peg_excellent, peg_good, peg_fair
+            )
+            overall_score += peg_score * weight_peg
+            
+            # Determine PEG status (Legacy PASS/CLOSE/FAIL logic)
+            peg_conditions = [
+                df['peg_ratio'].isna(),
+                df['peg_ratio'] <= peg_excellent,
+                df['peg_ratio'] <= peg_good,
+            ]
+            peg_choices = ['FAIL', 'PASS', 'CLOSE']
+            peg_status = np.select(peg_conditions, peg_choices, default='FAIL')
         
-        # Calculate overall score (weighted sum)
-        overall_score = (
-            peg_score * weight_peg +
-            consistency_score * weight_consistency +
-            debt_score * weight_debt +
-            ownership_score * weight_ownership
-        )
+        debt_score = pd.Series(0.0, index=df.index)
+        debt_status = pd.Series('N/A', index=df.index)
+        if weight_debt > 0:
+            debt_score = self._vectorized_debt_score(
+                df['debt_to_equity'], debt_excellent, debt_good, debt_moderate
+            )
+            overall_score += debt_score * weight_debt
+            
+            # Determine debt status
+            debt_conditions = [
+                df['debt_to_equity'].isna(),
+                df['debt_to_equity'] <= debt_excellent,
+                df['debt_to_equity'] <= debt_good,
+            ]
+            debt_choices = ['FAIL', 'PASS', 'CLOSE']
+            debt_status = np.select(debt_conditions, debt_choices, default='FAIL')
+            
+        ownership_score = pd.Series(0.0, index=df.index)
+        ownership_status = pd.Series('N/A', index=df.index)
+        if weight_ownership > 0:
+            ownership_score = self._vectorized_ownership_score(
+                df['institutional_ownership'], inst_own_min, inst_own_max
+            )
+            overall_score += ownership_score * weight_ownership
+            
+            # Determine institutional ownership status
+            inst_pass = (df['institutional_ownership'] >= inst_own_min) & (df['institutional_ownership'] <= inst_own_max)
+            dist_min = (df['institutional_ownership'] - inst_own_min).abs()
+            dist_max = (df['institutional_ownership'] - inst_own_max).abs()
+            inst_close = (~inst_pass) & ((dist_min <= 0.05) | (dist_max <= 0.05))
+            
+            inst_conditions = [
+                df['institutional_ownership'].isna(),
+                inst_pass,
+                inst_close,
+            ]
+            inst_choices = ['FAIL', 'PASS', 'CLOSE']
+            ownership_status = np.select(inst_conditions, inst_choices, default='FAIL')
+
+        # --- Buffett Components ---
         
-        # Assign overall status using np.select (matches _evaluate_weighted)
+        roe_score = pd.Series(0.0, index=df.index)
+        if weight_roe > 0:
+            # ROE Thresholds (fetching from config or defaults)
+            roe_excellent = config.get('roe_excellent', 20.0)
+            roe_good = config.get('roe_good', 15.0)
+            roe_fair = config.get('roe_fair', 10.0)
+            
+            roe_score = self._vectorized_roe_score(
+                df['roe'], roe_excellent, roe_good, roe_fair
+            )
+            overall_score += roe_score * weight_roe
+
+        debt_earnings_score = pd.Series(0.0, index=df.index)
+        if weight_debt_earnings > 0:
+            # Debt/Earnings Thresholds
+            de_excellent = config.get('de_excellent', 2.0)
+            de_good = config.get('de_good', 4.0)
+            de_fair = config.get('de_fair', 7.0)
+            
+            debt_earnings_score = self._vectorized_debt_earnings_score(
+                df['debt_to_earnings'], de_excellent, de_good, de_fair
+            )
+            overall_score += debt_earnings_score * weight_debt_earnings
+
+        # --- Shared Components ---
+
+        consistency_score = pd.Series(0.0, index=df.index)
+        if weight_consistency > 0:
+            # Consistency score is already 0-100 normalized, use directly
+            # Default to 50 (neutral) for missing values
+            consistency_score = df['income_consistency_score'].fillna(50.0)
+            overall_score += consistency_score * weight_consistency
+        
+        # Assign overall status using np.select
         conditions = [
             overall_score >= 80,
             overall_score >= 60,
@@ -1106,48 +1181,21 @@ class LynchCriteria:
         choices = ['STRONG_BUY', 'BUY', 'HOLD', 'CAUTION']
         overall_status = np.select(conditions, choices, default='AVOID')
         
-        # Determine PEG status (Legacy PASS/CLOSE/FAIL logic)
-        peg_conditions = [
-            df['peg_ratio'].isna(),
-            df['peg_ratio'] <= peg_excellent,
-            df['peg_ratio'] <= peg_good,
-        ]
-        peg_choices = ['FAIL', 'PASS', 'CLOSE']
-        peg_status = np.select(peg_conditions, peg_choices, default='FAIL')
-        
-        # Determine debt status (Legacy PASS/CLOSE/FAIL logic)
-        debt_conditions = [
-            df['debt_to_equity'].isna(),
-            df['debt_to_equity'] <= debt_excellent,
-            df['debt_to_equity'] <= debt_good,
-        ]
-        debt_choices = ['FAIL', 'PASS', 'CLOSE']
-        debt_status = np.select(debt_conditions, debt_choices, default='FAIL')
-        
-        # Determine institutional ownership status (Legacy PASS/CLOSE/FAIL logic)
-        # PASS: Inside the sweet spot (min-max)
-        inst_pass = (df['institutional_ownership'] >= inst_own_min) & (df['institutional_ownership'] <= inst_own_max)
-        
-        # CLOSE: Within 5% of boundaries (only if not passing)
-        dist_min = (df['institutional_ownership'] - inst_own_min).abs()
-        dist_max = (df['institutional_ownership'] - inst_own_max).abs()
-        inst_close = (~inst_pass) & ((dist_min <= 0.05) | (dist_max <= 0.05))
-        
-        inst_conditions = [
-            df['institutional_ownership'].isna(),
-            inst_pass,
-            inst_close,
-        ]
-        inst_choices = ['FAIL', 'PASS', 'CLOSE']
-        inst_status = np.select(inst_conditions, inst_choices, default='FAIL')
-        
         # Build result DataFrame with all display fields
-        result = df[['symbol', 'company_name', 'country', 'sector', 'ipo_year',
-                     'price', 'market_cap', 'pe_ratio', 'peg_ratio', 
-                     'debt_to_equity', 'institutional_ownership', 'dividend_yield',
-                     'earnings_cagr', 'revenue_cagr', 
-                     'income_consistency_score', 'revenue_consistency_score',
-                     'pe_52_week_min', 'pe_52_week_max', 'pe_52_week_position']].copy()
+        # Include Buffett columns if available
+        cols = ['symbol', 'company_name', 'country', 'sector', 'ipo_year',
+                'price', 'market_cap', 'pe_ratio', 'peg_ratio', 
+                'debt_to_equity', 'institutional_ownership', 'dividend_yield',
+                'earnings_cagr', 'revenue_cagr', 
+                'income_consistency_score', 'revenue_consistency_score',
+                'pe_52_week_min', 'pe_52_week_max', 'pe_52_week_position']
+        
+        # Add Buffer metrics if they exist in df
+        for col in ['roe', 'debt_to_earnings', 'owner_earnings']:
+            if col in df.columns:
+                cols.append(col)
+                
+        result = df[cols].copy()
         
         # Add scoring columns
         result['overall_score'] = overall_score.round(1)
@@ -1157,8 +1205,13 @@ class LynchCriteria:
         result['debt_score'] = debt_score.round(1)
         result['debt_status'] = debt_status
         result['institutional_ownership_score'] = ownership_score.round(1)
-        result['institutional_ownership_status'] = inst_status
+        result['institutional_ownership_status'] = ownership_status
         result['consistency_score'] = consistency_score.round(1)
+        
+        # Add Buffett Scores
+        if weight_roe > 0 or weight_debt_earnings > 0:
+            result['roe_score'] = roe_score.round(1)
+            result['debt_earnings_score'] = debt_earnings_score.round(1)
         
         # Sort by overall_score descending
         result = result.sort_values('overall_score', ascending=False)
@@ -1287,5 +1340,87 @@ class LynchCriteria:
         
         # None/NaN gets 0
         result[ownership.isna()] = 0.0
+        
+        return result
+    
+    def _vectorized_roe_score(self, roe: pd.Series, excellent: float, good: float, fair: float) -> pd.Series:
+        """
+        Vectorized ROE score (Higher is Better).
+        excellent (20) -> 100
+        good (15) -> 75
+        fair (10) -> 50
+        poor (0) -> 25
+        """
+        result = pd.Series(50.0, index=roe.index) # Default neutral
+        
+        # Excellent: 100
+        mask_exc = roe >= excellent
+        result[mask_exc] = 100.0
+        
+        # Good: 75-100
+        mask_good = (roe >= good) & (roe < excellent)
+        if mask_good.any():
+            rng = excellent - good
+            pos = (roe[mask_good] - good) / rng
+            result[mask_good] = 75.0 + (25.0 * pos)
+            
+        # Fair: 50-75
+        mask_fair = (roe >= fair) & (roe < good)
+        if mask_fair.any():
+            rng = good - fair
+            pos = (roe[mask_fair] - fair) / rng
+            result[mask_fair] = 50.0 + (25.0 * pos)
+            
+        # Poor: 25-50
+        mask_poor = (roe >= 0) & (roe < fair)
+        if mask_poor.any():
+            rng = fair
+            pos = roe[mask_poor] / rng
+            result[mask_poor] = 25.0 + (25.0 * pos)
+            
+        # Negative: 0-25
+        mask_neg = roe < 0
+        result[mask_neg] = 0.0
+        
+        return result
+
+    def _vectorized_debt_earnings_score(self, de: pd.Series, excellent: float, good: float, fair: float) -> pd.Series:
+        """
+        Vectorized Debt/Earnings score (Lower is Better).
+        excellent (2.0) -> 100
+        good (4.0) -> 75
+        fair (7.0) -> 50
+        poor -> 25
+        """
+        result = pd.Series(50.0, index=de.index) 
+        
+        # Excellent
+        mask_exc = de <= excellent
+        result[mask_exc] = 100.0
+        
+        # Good: 75-100
+        mask_good = (de > excellent) & (de <= good)
+        if mask_good.any():
+            rng = good - excellent
+            pos = (good - de[mask_good]) / rng
+            result[mask_good] = 75.0 + (25.0 * pos)
+            
+        # Fair: 50-75
+        mask_fair = (de > good) & (de <= fair)
+        if mask_fair.any():
+            rng = fair - good
+            pos = (fair - de[mask_fair]) / rng
+            result[mask_fair] = 50.0 + (25.0 * pos)
+            
+        # Poor: 0-50
+        # Let's say max reasonable is 10.0
+        max_poor = 10.0
+        mask_poor = (de > fair) & (de < max_poor)
+        if mask_poor.any():
+            rng = max_poor - fair
+            pos = (max_poor - de[mask_poor]) / rng
+            result[mask_poor] = 25.0 * pos
+            
+        result[de >= max_poor] = 0.0
         
         return result

@@ -1452,6 +1452,7 @@ def get_latest_session(user_id):
     limit = request.args.get('limit', 100, type=int)
     sort_by = request.args.get('sort_by', 'overall_score')
     sort_dir = request.args.get('sort_dir', 'desc')
+    status_filter = request.args.get('status', None)
 
     # Determine active character for scoring
     character_id = db.get_user_character(user_id)
@@ -1462,33 +1463,64 @@ def get_latest_session(user_id):
     country_filter = 'US' if us_stocks_only else None
 
     # HYBRID APPROACH: Use vectorized for Lynch, database for other characters
-    if character_id == 'lynch':
+    if character_id in ['lynch', 'buffett']:
         # --- VECTORIZED PATH (for performance) ---
         # Get user's algorithm config
         configs = db.get_algorithm_configs()
-        if configs and len(configs) > 0:
-            db_config = configs[0]
+        
+        # Build Config based on Active Character
+        if character_id == 'lynch':
+            if configs and len(configs) > 0:
+                # Todo: Filtering by character_id in DB would be better
+                # For now assume first config is Lynch or generic
+                db_config = configs[0]
+                config = {
+                    'peg_excellent': db_config.get('peg_excellent', 1.0),
+                    'peg_good': db_config.get('peg_good', 1.5),
+                    'peg_fair': db_config.get('peg_fair', 2.0),
+                    'debt_excellent': db_config.get('debt_excellent', 0.5),
+                    'debt_good': db_config.get('debt_good', 1.0),
+                    'debt_moderate': db_config.get('debt_moderate', 2.0),
+                    'inst_own_min': db_config.get('inst_own_min', 0.20),
+                    'inst_own_max': db_config.get('inst_own_max', 0.60),
+                    'weight_peg': db_config.get('weight_peg', 0.50),
+                    'weight_consistency': db_config.get('weight_consistency', 0.25),
+                    'weight_debt': db_config.get('weight_debt', 0.15),
+                    'weight_ownership': db_config.get('weight_ownership', 0.10),
+                }
+            else:
+                config = DEFAULT_ALGORITHM_CONFIG
+                
+        elif character_id == 'buffett':
+            # Buffett Configuration
+            # TODO: Fetch from DB in future if we allow tuning Buffett
             config = {
-                'peg_excellent': db_config.get('peg_excellent', 1.0),
-                'peg_good': db_config.get('peg_good', 1.5),
-                'peg_fair': db_config.get('peg_fair', 2.0),
-                'debt_excellent': db_config.get('debt_excellent', 0.5),
-                'debt_good': db_config.get('debt_good', 1.0),
-                'debt_moderate': db_config.get('debt_moderate', 2.0),
-                'inst_own_min': db_config.get('inst_own_min', 0.20),
-                'inst_own_max': db_config.get('inst_own_max', 0.60),
-                'weight_peg': db_config.get('weight_peg', 0.50),
-                'weight_consistency': db_config.get('weight_consistency', 0.25),
-                'weight_debt': db_config.get('weight_debt', 0.15),
-                'weight_ownership': db_config.get('weight_ownership', 0.10),
+                'weight_roe': 0.40,
+                'weight_consistency': 0.30,
+                'weight_debt_earnings': 0.30,
+                
+                # Zero out Lynch weights
+                'weight_peg': 0.0,
+                'weight_debt': 0.0,
+                'weight_ownership': 0.0,
+                
+                # Thresholds
+                'roe_excellent': 20.0,
+                'roe_good': 15.0,
+                'roe_fair': 10.0,
+                'de_excellent': 2.0,
+                'de_good': 4.0,
+                'de_fair': 7.0,
             }
-        else:
-            config = DEFAULT_ALGORITHM_CONFIG
 
         try:
             # Load and score using vectorized engine
             df = stock_vectors.load_vectors(country_filter)
             scored_df = criteria.evaluate_batch(df, config)
+
+            # Apply Status Filter
+            if status_filter and status_filter.upper() != 'ALL':
+                scored_df = scored_df[scored_df['overall_status'] == status_filter.upper()]
 
             # Apply search filter
             if search:

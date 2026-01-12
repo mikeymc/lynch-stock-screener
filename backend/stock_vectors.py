@@ -76,13 +76,19 @@ class StockVectors:
         df = self._load_stock_metrics(country_filter)
         logger.info(f"[StockVectors] Loaded {len(df)} stocks from stock_metrics")
         
-        # Step 2: Compute growth rates from earnings_history
-        df = self._compute_growth_metrics(df)
+        # Step 2: Load Annual Earnings History (Used by Growth & Buffett metrics)
+        earnings_df = self._load_annual_earnings(df['symbol'].tolist())
         
-        # Step 3: Compute P/E 52-week ranges
+        # Step 3: Compute growth rates
+        df = self._compute_growth_metrics(df, earnings_df)
+        
+        # Step 4: Compute Buffett metrics (ROE, Owner Earnings, Debt/Earnings)
+        df = self._compute_buffett_metrics(df, earnings_df)
+
+        # Step 5: Compute P/E 52-week ranges
         df = self._compute_pe_ranges(df)
         
-        # Step 3: Compute PEG ratio (pe_ratio / earnings_cagr)
+        # Step 6: Compute PEG ratio (pe_ratio / earnings_cagr)
         df['peg_ratio'] = df.apply(
             lambda row: row['pe_ratio'] / row['earnings_cagr'] 
             if row['pe_ratio'] and row['earnings_cagr'] and row['earnings_cagr'] > 0 
@@ -96,6 +102,23 @@ class StockVectors:
         self._df = df
         self._last_loaded = datetime.now()
         return df
+
+    def _load_annual_earnings(self, symbols: List[str]) -> pd.DataFrame:
+        """Bulk load annual earnings history for provided symbols."""
+        conn = self.db.get_connection()
+        try:
+            # We fetch all necessary columns for both growth and buffett metrics
+            query = """
+                SELECT 
+                    symbol, year, net_income, revenue, 
+                    operating_cash_flow, capital_expenditures
+                FROM earnings_history
+                WHERE period = 'annual'
+                ORDER BY symbol, year
+            """
+            return pd.read_sql_query(query, conn)
+        finally:
+            self.db.return_connection(conn)
     
     def _load_stock_metrics(self, country_filter: str = None) -> pd.DataFrame:
         """
@@ -115,6 +138,7 @@ class StockVectors:
                     sm.debt_to_equity,
                     sm.dividend_yield,
                     sm.institutional_ownership,
+                    sm.total_debt,
                     s.sector,
                     s.company_name,
                     s.country,
@@ -134,22 +158,13 @@ class StockVectors:
         finally:
             self.db.return_connection(conn)
     
-    def _compute_growth_metrics(self, df: pd.DataFrame) -> pd.DataFrame:
+    def _compute_growth_metrics(self, df: pd.DataFrame, earnings_df: pd.DataFrame) -> pd.DataFrame:
         """
         Compute 5Y CAGRs and consistency scores from earnings_history.
         Optimized with groupby().apply() to avoid slow loops.
         """
-        conn = self.db.get_connection()
-        try:
-            earnings_query = """
-                SELECT symbol, year, net_income, revenue
-                FROM earnings_history
-                WHERE period = 'annual'
-                ORDER BY symbol, year
-            """
-            earnings_df = pd.read_sql_query(earnings_query, conn)
-        finally:
-            self.db.return_connection(conn)
+        if earnings_df.empty:
+             return df
         
         # Pre-filter for valid inputs slightly speeds up groups
         mask_valid = earnings_df['net_income'].notna() & earnings_df['revenue'].notna()
@@ -254,6 +269,90 @@ class StockVectors:
         
         return std_dev + negative_year_penalty
     
+    def _compute_buffett_metrics(self, df: pd.DataFrame, earnings_df: pd.DataFrame) -> pd.DataFrame:
+        """
+        Compute Buffett-specific metrics:
+        - ROE (Return on Equity)
+        - Owner Earnings (OCF - Maintenance CapEx)
+        - Debt to Earnings (Total Debt / Net Income)
+        """
+        if earnings_df.empty:
+            df['roe'] = None
+            df['owner_earnings'] = None
+            df['debt_to_earnings'] = None
+            return df
+
+        # Get latest annual earnings (last row per symbol since it's sorted by year)
+        # groupby().last() is efficient
+        latest_earnings = earnings_df.groupby('symbol').last().reset_index()
+
+        # Merge earnings data with main DF
+        merged = df.merge(latest_earnings, on='symbol', how='left')
+
+        # 1. Calculate Debt to Earnings
+        # Total Debt / Net Income
+        # Handle division by zero and negative income cases
+        def calc_debt_to_earnings(row):
+            debt = row['total_debt']
+            income = row['net_income']
+            
+            if pd.isna(debt) or pd.isna(income) or income <= 0:
+                return None
+            return debt / income
+
+        merged['debt_to_earnings'] = merged.apply(calc_debt_to_earnings, axis=1)
+
+        # 2. Calculate Owner Earnings
+        # OCF - (Abs(CapEx) * 0.7)
+        # Note: CapEx is usually negative in DB, ensuring abs() handles it correctly
+        def calc_owner_earnings(row):
+            ocf = row['operating_cash_flow']
+            capex = row['capital_expenditures']
+            
+            if pd.isna(ocf) or pd.isna(capex):
+                return None
+            
+            # Estimate maintenance capex as 70% of total capex
+            maintenance_capex = abs(capex) * 0.7
+            return (ocf - maintenance_capex) / 1_000_000  # Convert to millions to match scalar version
+
+        merged['owner_earnings'] = merged.apply(calc_owner_earnings, axis=1)
+
+        # 3. Calculate ROE
+        # ROE = Net Income / Equity
+        # Since we don't store equity directly in stock_metrics, we derive it:
+        # Equity = Total Debt / Debt_to_Equity
+        # ROE = Net Income / (Total Debt / Debt_to_Equity) = (Net Income * Debt_to_Equity) / Total Debt
+        def calc_roe(row):
+            income = row['net_income']
+            debt = row['total_debt']
+            de_ratio = row['debt_to_equity']
+            
+            if pd.isna(income):
+                return None
+            
+            # Case 1: We have valid debt and D/E ratio
+            if pd.notna(debt) and pd.notna(de_ratio) and debt > 0 and de_ratio > 0:
+                equity = debt / de_ratio
+                return (income / equity) * 100
+            
+            # Case 2: Debt is 0. 
+            # If Debt is 0, D/E is 0. We can't derive equity from this.
+            # However, high quality companies often have low debt.
+            # We are stuck without direct Equity data.
+            # For now, return None. 
+            # TODO: Add 'shareholder_equity' to stock_metrics in future migration
+            return None
+
+        merged['roe'] = merged.apply(calc_roe, axis=1)
+
+        # Update columns in original DF
+        df['roe'] = merged['roe']
+        df['owner_earnings'] = merged['owner_earnings']
+        df['debt_to_earnings'] = merged['debt_to_earnings']
+
+        return df
+
     def _compute_pe_ranges(self, df: pd.DataFrame) -> pd.DataFrame:
         """
         Compute 52-week P/E range metrics using Quarterly TTM EPS (Vectorized).
