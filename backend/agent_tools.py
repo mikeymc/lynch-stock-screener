@@ -3,6 +3,7 @@
 
 from typing import Dict, Any, List, Optional, Callable
 from google.genai.types import FunctionDeclaration, Schema, Type, Tool
+from fred_service import get_fred_service, SUPPORTED_SERIES
 
 
 # =============================================================================
@@ -336,6 +337,38 @@ manage_alerts_decl = FunctionDeclaration(
 
 
 # =============================================================================
+# FRED Macroeconomic Data Tools
+# =============================================================================
+
+get_fred_series_decl = FunctionDeclaration(
+    name="get_fred_series",
+    description="Get historical observations for a FRED economic data series. Use this to analyze trends in macroeconomic indicators like GDP, unemployment, inflation, interest rates, etc.",
+    parameters=Schema(
+        type=Type.OBJECT,
+        properties={
+            "series_id": Schema(
+                type=Type.STRING,
+                description="FRED series ID. Common series: GDPC1 (Real GDP), UNRATE (Unemployment), CPIAUCSL (CPI), FEDFUNDS (Fed Funds Rate), DGS10 (10-Year Treasury), T10Y2Y (Yield Curve), VIXCLS (VIX), ICSA (Jobless Claims)"
+            ),
+            "start_date": Schema(type=Type.STRING, description="Start date in YYYY-MM-DD format (optional, defaults to 2 years ago)"),
+            "end_date": Schema(type=Type.STRING, description="End date in YYYY-MM-DD format (optional, defaults to today)"),
+        },
+        required=["series_id"],
+    ),
+)
+
+get_economic_indicators_decl = FunctionDeclaration(
+    name="get_economic_indicators",
+    description="Get current values of key macroeconomic indicators including GDP, unemployment rate, inflation (CPI), Fed funds rate, 10-year Treasury yield, yield curve spread, VIX volatility index, and initial jobless claims. Use this for a quick economic overview.",
+    parameters=Schema(
+        type=Type.OBJECT,
+        properties={},
+        required=[],
+    ),
+)
+
+
+# =============================================================================
 # Tool Registry: Maps tool names to their declarations
 # =============================================================================
 
@@ -361,6 +394,9 @@ TOOL_DECLARATIONS = [
     get_sector_comparison_decl,
     get_earnings_history_decl,
     manage_alerts_decl,
+    # FRED macroeconomic tools
+    get_fred_series_decl,
+    get_economic_indicators_decl,
 ]
 
 # Create the Tool object for Gemini API
@@ -419,6 +455,9 @@ class ToolExecutor:
             "get_sector_comparison": self._get_sector_comparison,
             "get_earnings_history": self._get_earnings_history,
             "manage_alerts": self._manage_alerts,
+            # FRED macroeconomic tools
+            "get_fred_series": self._get_fred_series,
+            "get_economic_indicators": self._get_economic_indicators,
         }
         
         executor = executor_map.get(tool_name)
@@ -1776,6 +1815,68 @@ class ToolExecutor:
                     return {"error": f"Alert {alert_id} not found or could not be deleted."}
             except Exception as e:
                 return {"error": f"Failed to delete alert: {str(e)}"}
-        
+
         else:
             return {"error": f"Unknown action: {action}"}
+
+    # =========================================================================
+    # FRED Macroeconomic Data Tools
+    # =========================================================================
+
+    def _get_fred_series(self, series_id: str, start_date: str = None, end_date: str = None) -> Dict[str, Any]:
+        """Get historical observations for a FRED economic data series."""
+        fred = get_fred_service()
+        if not fred.is_available():
+            return {"error": "FRED API key not configured"}
+
+        result = fred.get_series(series_id, start_date=start_date, end_date=end_date)
+
+        if 'error' in result:
+            return result
+
+        # Limit observations for chat context (last 24 data points)
+        observations = result.get('observations', [])
+        if len(observations) > 24:
+            observations = observations[-24:]
+
+        return {
+            "series_id": result['series_id'],
+            "name": result['name'],
+            "frequency": result['frequency'],
+            "units": result['units'],
+            "description": result['description'],
+            "latest_value": result['latest']['value'] if result['latest'] else None,
+            "latest_date": result['latest']['date'] if result['latest'] else None,
+            "observations": observations,
+            "observation_count": len(observations),
+            "total_available": result['observation_count']
+        }
+
+    def _get_economic_indicators(self) -> Dict[str, Any]:
+        """Get current values of key macroeconomic indicators."""
+        fred = get_fred_service()
+        if not fred.is_available():
+            return {"error": "FRED API key not configured"}
+
+        result = fred.get_economic_summary()
+
+        if 'error' in result:
+            return result
+
+        # Format for easy reading by the LLM
+        indicators = result.get('indicators', {})
+        formatted = {}
+        for series_id, data in indicators.items():
+            formatted[data['name']] = {
+                "value": data['value'],
+                "units": data['units'],
+                "date": data['date'],
+                "change": data.get('change'),
+                "series_id": series_id
+            }
+
+        return {
+            "indicators": formatted,
+            "fetched_at": result.get('fetched_at'),
+            "available_series": list(SUPPORTED_SERIES.keys())
+        }

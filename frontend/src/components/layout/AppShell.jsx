@@ -96,6 +96,7 @@ function AppShellContent({
     const [analysisOpen, setAnalysisOpen] = useState(true)
     const [alertsCount, setAlertsCount] = useState(0)
     const [alertsEnabled, setAlertsEnabled] = useState(false)
+    const [fredEnabled, setFredEnabled] = useState(false)
 
     useEffect(() => {
         const fetchSettings = async () => {
@@ -104,8 +105,10 @@ function AppShellContent({
                 if (response.ok) {
                     const settings = await response.json()
                     // Default to false if not present, check value string
-                    const enabled = settings.feature_alerts_enabled?.value === true
-                    setAlertsEnabled(enabled)
+                    const alertsOn = settings.feature_alerts_enabled?.value === true
+                    const fredOn = settings.feature_fred_enabled?.value === true
+                    setAlertsEnabled(alertsOn)
+                    setFredEnabled(fredOn)
                 }
             } catch (error) {
                 console.error('Failed to fetch settings:', error)
@@ -153,6 +156,7 @@ function AppShellContent({
     }, [])
 
     const isStockDetail = location.pathname.startsWith('/stock/')
+    const isEconomyPage = location.pathname === '/economy'
 
     const getCount = (statusKey) => {
         if (!summary) return 0
@@ -205,14 +209,28 @@ function AppShellContent({
                                             <span>All Stocks</span>
                                         </SidebarMenuButton>
                                     </SidebarMenuItem>
+                                    {fredEnabled && (
+                                        <SidebarMenuItem>
+                                            <SidebarMenuButton
+                                                onClick={() => {
+                                                    navigate('/economy')
+                                                    onNavClick()
+                                                }}
+                                                isActive={isEconomyPage}
+                                                className="pl-4 font-normal text-muted-foreground data-[active=true]:font-medium data-[active=true]:text-primary"
+                                            >
+                                                <span>Economy</span>
+                                            </SidebarMenuButton>
+                                        </SidebarMenuItem>
+                                    )}
                                 </SidebarMenu>
                             </SidebarGroupContent>
                         </SidebarGroup>
 
 
 
-                        {/* Filter Section - Hidden on Detail Page */}
-                        {!isStockDetail && (
+                        {/* Filter Section - Hidden on Detail/Economy Pages */}
+                        {!isStockDetail && !isEconomyPage && (
                             <Collapsible open={filterOpen} onOpenChange={setFilterOpen}>
                                 <SidebarGroup>
                                     <CollapsibleTrigger asChild>
@@ -361,8 +379,8 @@ function AppShellContent({
                             </Collapsible>
                         )}
 
-                        {/* Scoring Algorithm Section - Hidden on Detail Page, Collapsed by Default */}
-                        {!isStockDetail && (
+                        {/* Scoring Algorithm Section - Hidden on Detail/Economy Pages, Collapsed by Default */}
+                        {!isStockDetail && !isEconomyPage && (
                             <Collapsible open={scoringOpen} onOpenChange={setScoringOpen}>
                                 <SidebarGroup>
                                     <CollapsibleTrigger asChild>
