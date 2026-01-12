@@ -1069,7 +1069,7 @@ const AnalysisChat = forwardRef(function AnalysisChat({ symbol, stockName, chatO
                 disabled={chatLoading}
               />
               <label htmlFor="agent-mode" className="text-sm text-muted-foreground cursor-pointer">
-                Agent Mode {agentMode ? '(Beta)' : ''}
+                Agent Mode (Beta)
               </label>
             </div>
           </div>
