@@ -340,7 +340,7 @@ function AppShellContent({
                                                                 isActive={filter === 'HOLD'}
                                                                 className="pl-6 font-normal text-muted-foreground data-[active=true]:font-medium data-[active=true]:text-primary"
                                                             >
-                                                                <span className="flex-1">Neutral</span>
+                                                                <span className="flex-1">Fair</span>
                                                                 <span className="text-xs text-muted-foreground opacity-50">{getCount('HOLD')}</span>
                                                             </SidebarMenuButton>
                                                         </SidebarMenuItem>
