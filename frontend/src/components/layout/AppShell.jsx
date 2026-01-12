@@ -659,15 +659,6 @@ function AppShellContent({
                                 <aside className="h-full border-l bg-background flex flex-col">
                                     <div className="px-4 py-3 border-b flex items-center justify-between shrink-0">
                                         <h2 className="font-semibold">{chatTitle}</h2>
-                                        <Button
-                                            variant="ghost"
-                                            size="icon"
-                                            className="h-7 w-7"
-                                            onClick={handleNewChat}
-                                            title="New conversation"
-                                        >
-                                            <Plus className="h-4 w-4" />
-                                        </Button>
                                     </div>
                                     <div className="flex-1 overflow-hidden">
                                         <AnalysisChat
