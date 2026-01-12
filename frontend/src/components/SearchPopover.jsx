@@ -44,7 +44,7 @@ export default function SearchPopover({ onSelect }) {
     setLoading(true)
     try {
       const response = await fetch(
-        `${API_BASE}/sessions/latest?search=${encodeURIComponent(searchQuery)}&limit=10`
+        `${API_BASE}/stocks/search?q=${encodeURIComponent(searchQuery)}&limit=10`
       )
       if (response.ok) {
         const data = await response.json()
@@ -76,7 +76,7 @@ export default function SearchPopover({ onSelect }) {
 
     debounceRef.current = setTimeout(() => {
       fetchResults(value)
-    }, 200)
+    }, 100)
   }
 
   // Handle stock selection

@@ -1438,6 +1438,26 @@ def get_cached_stocks():
     })
 
 
+@app.route('/api/stocks/search', methods=['GET'])
+def search_stocks_endpoint():
+    """
+    Fast search endpoint for stock lookup.
+    Avoids heavy screening overhead of /api/sessions/latest.
+    """
+    try:
+        query = request.args.get('q', '')
+        limit = request.args.get('limit', 10, type=int)
+        
+        # Limit max results to prevent large payloads
+        if limit > 50:
+            limit = 50
+            
+        results = db.search_stocks(query, limit)
+        return jsonify({'results': results})
+    except Exception as e:
+        logger.error(f"Search endpoint error: {e}")
+        return jsonify({'error': str(e)}), 500
+
 @app.route('/api/sessions/latest', methods=['GET'])
 @require_user_auth
 def get_latest_session(user_id):

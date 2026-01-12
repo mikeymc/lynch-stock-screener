@@ -2111,6 +2111,54 @@ class Database:
         finally:
             self.return_connection(conn)
 
+
+    def search_stocks(self, query: str, limit: int = 10) -> List[Dict[str, Any]]:
+        """
+        Search stocks by symbol or company name.
+        
+        Args:
+            query: Search query string
+            limit: Maximum number of results to return
+            
+        Returns:
+            List of dictionaries with 'symbol' and 'company_name'
+        """
+        if not query or len(query.strip()) == 0:
+            return []
+            
+        search_term = f"%{query.strip()}%"
+        
+        conn = self.get_connection()
+        try:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT symbol, company_name 
+                FROM stocks 
+                WHERE symbol ILIKE %s OR company_name ILIKE %s 
+                ORDER BY 
+                    CASE 
+                        WHEN symbol ILIKE %s THEN 0  -- Exact symbol match priority
+                        WHEN symbol ILIKE %s THEN 1  -- Starts with symbol priority
+                        ELSE 2 
+                    END,
+                    symbol 
+                LIMIT %s
+            """, (search_term, search_term, query, f"{query}%", limit))
+            
+            results = []
+            for row in cursor.fetchall():
+                results.append({
+                    'symbol': row[0],
+                    'company_name': row[1]
+                })
+                
+            return results
+        except Exception as e:
+            logger.error(f"Error searching stocks: {e}")
+            return []
+        finally:
+            self.return_connection(conn)
+
     def get_all_cached_stocks(self) -> List[str]:
         conn = self.get_connection()
         try:
