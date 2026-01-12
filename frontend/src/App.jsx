@@ -26,6 +26,7 @@ import UserAvatar from './components/UserAvatar'
 import Settings from './pages/Settings'
 import Alerts from './pages/Alerts'
 import Economy from './pages/Economy'
+import Help from './pages/Help'
 // import './App.css' // Disabled for shadcn migration
 
 ChartJS.register(
@@ -1099,6 +1100,19 @@ function App() {
   const [showAdvancedFilters, setShowAdvancedFilters] = useState(false)
   const [activeCharacter, setActiveCharacter] = useState('lynch')
 
+  // Check for first visit and redirect to help
+  useEffect(() => {
+    if (!user || loading) return
+
+    const hasVisited = localStorage.getItem('hasVisitedApp')
+
+    if (!hasVisited && location.pathname === '/') {
+      // Mark as visited before redirecting
+      localStorage.setItem('hasVisitedApp', 'true')
+      navigate('/help')
+    }
+  }, [user, loading, navigate, location.pathname])
+
   // Fetch algorithm metadata
   useEffect(() => {
     const controller = new AbortController()
@@ -1234,6 +1248,7 @@ function App() {
         <Route path="/settings" element={<Settings />} />
         <Route path="/alerts" element={<Alerts />} />
         <Route path="/economy" element={<Economy />} />
+        <Route path="/help" element={<Help />} />
       </Route>
     </Routes>
   )

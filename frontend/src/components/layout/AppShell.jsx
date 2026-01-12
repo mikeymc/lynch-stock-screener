@@ -578,9 +578,17 @@ function AppShellContent({
                     </ScrollArea>
                 </SidebarContent>
 
-                {/* Settings at bottom */}
+                {/* Settings and Help at bottom */}
                 <div className="mt-auto border-t p-2">
                     <SidebarMenu>
+                        <SidebarMenuItem>
+                            <SidebarMenuButton onClick={() => {
+                                navigate('/help')
+                                onNavClick()
+                            }}>
+                                <span>Help</span>
+                            </SidebarMenuButton>
+                        </SidebarMenuItem>
                         <SidebarMenuItem>
                             <SidebarMenuButton onClick={() => {
                                 navigate('/settings')
