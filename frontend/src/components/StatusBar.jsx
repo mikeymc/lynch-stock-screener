@@ -7,6 +7,8 @@ export default function StatusBar({ status, score, value, metricType, compact = 
 
   // Ensure score is clamped between 0 and 100
   const clampedScore = Math.max(0, Math.min(100, score || 0))
+  // Ensure there's always a tiny visible bar (2%) even for 0% score
+  const visualScore = Math.max(2, clampedScore)
 
   // Determine color based on metric type
   let barColor = "bg-green-600"
@@ -29,7 +31,7 @@ export default function StatusBar({ status, score, value, metricType, compact = 
         {/* Progress Fill */}
         <div
           className={`absolute top-0 left-0 h-full ${barColor} rounded-full transition-all duration-300`}
-          style={{ width: `${clampedScore}%` }}
+          style={{ width: `${visualScore}%` }}
         />
       </div>
     </div>
