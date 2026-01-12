@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect, useRef, useCallback } from 'react'
-import { Routes, Route, useNavigate, useSearchParams } from 'react-router-dom'
+import { Routes, Route, useNavigate, useSearchParams, useLocation } from 'react-router-dom'
 import AppShell from './components/layout/AppShell'
 import { Line } from 'react-chartjs-2'
 import {
@@ -336,6 +336,7 @@ function StockListView({
       page = currentPage,
       sort = sortBy,
       dir = sortDir,
+      status = filter !== 'watchlist' && filter !== 'all' ? filter : null,
       showLoading = true
     } = options
 
@@ -345,6 +346,7 @@ function StockListView({
 
     const params = new URLSearchParams()
     if (search) params.set('search', search)
+    if (status) params.set('status', status)
     params.set('page', page)
     params.set('limit', itemsPerPage)
     params.set('sort_by', sort)
@@ -426,10 +428,13 @@ function StockListView({
 
       fetchWatchlistItems()
     }
-    // If switching FROM watchlist back to other filters, reload session data
-    else if (prevFilter === 'watchlist' && filter !== 'watchlist') {
-      setStocks([]) // Clear stale watchlist items immediately
-      fetchStocks({ page: 1 })
+    // If switching FROM watchlist back to other filters, OR changing status filter
+    else if (filter !== 'watchlist') {
+      // If we were on watchlist, clear stale items
+      if (prevFilter === 'watchlist') {
+        setStocks([])
+      }
+      fetchStocks({ page: 1, status: filter !== 'all' ? filter : null })
       setCurrentPage(1)
     }
 
@@ -764,10 +769,10 @@ function StockListView({
         return false
       }
 
-      // Apply status filter
-      if (filter !== 'all' && filter !== 'watchlist' && stock.overall_status !== filter) {
-        return false
-      }
+      // Status filter is now handled by backend (except for watchlist)
+      // if (filter !== 'all' && filter !== 'watchlist' && stock.overall_status !== filter) {
+      //   return false
+      // }
 
       // Search is now handled by backend API - no frontend filter needed
       // EXCEPT for watchlist mode which is client-side
@@ -1087,6 +1092,8 @@ function StockListView({
 
 function App() {
   const { user, loading } = useAuth()
+  const navigate = useNavigate()
+  const location = useLocation()
   const [stocks, setStocks] = useState([])
   const [summary, setSummary] = useState(null)
   const [filter, setFilter] = useState('all')
@@ -1206,6 +1213,7 @@ function App() {
           watchlistCount={watchlist.size}
           showAdvancedFilters={showAdvancedFilters}
           setShowAdvancedFilters={setShowAdvancedFilters}
+          activeCharacter={activeCharacter}
         />
       }>
         <Route path="/" element={
