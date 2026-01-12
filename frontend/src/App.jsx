@@ -388,38 +388,38 @@ function StockListView({
             return
           }
 
-          const promises = Array.from(watchlist).map(async symbol => {
-            try {
-              const res = await fetch(`${API_BASE}/stock/${symbol}?algorithm=${algorithm}`)
-              if (!res.ok) return null
-              const data = await res.json()
-              // Flatten structure to match session results
-              if (data.stock_data && data.evaluation) {
-                return {
-                  ...data.stock_data,
-                  ...data.evaluation,
-                  // Ensure symbol is present
-                  symbol: data.stock_data.symbol || symbol
-                }
-              }
-              return null
-            } catch (e) {
-              console.error(`Failed to fetch ${symbol}`, e)
-              return null
-            }
+          const symbols = Array.from(watchlist)
+          const res = await fetch(`${API_BASE}/stocks/batch`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+              symbols: symbols,
+              algorithm: algorithm
+            })
           })
 
-          const results = (await Promise.all(promises)).filter(item => item !== null)
-
-          setStocks(results)
-          setTotalPages(1) // Watchlist is single page for now
-          setTotalCount(results.length)
+          if (res.ok) {
+            const data = await res.json()
+            // Only update if we are still on the watchlist filter
+            if (filter === 'watchlist') {
+              setStocks(data.results || [])
+              setTotalPages(1)
+              setTotalCount(data.results?.length || 0)
+            }
+          } else {
+            console.error('Batch fetch failed', res.status)
+            setError('Failed to load watchlist items')
+          }
         } catch (e) {
           console.error('Error fetching watchlist:', e)
           setError('Failed to load watchlist items')
         } finally {
-          setLoading(false)
-          setProgress('')
+          if (filter === 'watchlist') {
+            setLoading(false)
+            setProgress('')
+          }
         }
       }
 

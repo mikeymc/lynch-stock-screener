@@ -702,7 +702,58 @@ def get_stock(symbol):
     })
 
 
+@app.route('/api/stocks/batch', methods=['POST'])
+def batch_get_stocks():
+    """Batch fetch stock data and evaluations for a list of symbols"""
+    try:
+        data = request.get_json()
+        if not data or 'symbols' not in data:
+            return jsonify({'error': 'No symbols provided'}), 400
+            
+        symbols = data['symbols']
+        algorithm = data.get('algorithm', 'weighted')
+        
+        # Limit batch size to prevent abuse
+        if len(symbols) > 50:
+            symbols = symbols[:50]
+            
+        results = []
+        
+        # Helper for parallel execution
+        def fetch_one(symbol):
+            try:
+                # Use cached data if available, only fetch if missing
+                stock_data = fetcher.fetch_stock_data(symbol.upper(), force_refresh=False)
+                if not stock_data:
+                    return None
+                    
+                evaluation = criteria.evaluate_stock(symbol.upper(), algorithm=algorithm)
+                
+                # Merge into single object as expected by frontend
+                if evaluation:
+                    # Prefer evaluation data but fallback to stock_data
+                    merged = {**clean_nan_values(stock_data), **clean_nan_values(evaluation)}
+                    merged['symbol'] = symbol.upper() # Ensure symbol is present
+                    return merged
+                return None
+            except Exception as e:
+                logger.error(f"Error fetching {symbol} in batch: {e}")
+                return None
 
+        # Execute in parallel
+        with ThreadPoolExecutor(max_workers=10) as executor:
+            future_to_symbol = {executor.submit(fetch_one, sym): sym for sym in symbols}
+            
+            for future in as_completed(future_to_symbol):
+                res = future.result()
+                if res:
+                    results.append(res)
+                    
+        return jsonify({'results': results})
+        
+    except Exception as e:
+        logger.error(f"Batch fetch error: {e}")
+        return jsonify({'error': str(e)}), 500
 @app.route('/api/stock/<symbol>/insider', methods=['GET'])
 @require_user_auth
 def get_stock_insider_trades(symbol, user_id):
