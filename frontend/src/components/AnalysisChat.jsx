@@ -46,7 +46,10 @@ const TOOL_DESCRIPTIONS = {
   find_similar_stocks: "Finding similar companies",
   get_material_events: "Checking SEC filings",
   get_stock_metrics: "Analyzing key metrics",
-  get_historical_pe: "Analyzing valuation history"
+  get_historical_pe: "Analyzing valuation history",
+  // FRED macroeconomic tools
+  get_fred_series: "Fetching economic data",
+  get_economic_indicators: "Checking economic indicators"
 }
 
 function SourceCitation({ sources }) {

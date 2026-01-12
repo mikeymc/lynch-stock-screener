@@ -40,6 +40,7 @@ from material_event_summarizer import MaterialEventSummarizer, SUMMARIZABLE_ITEM
 from fly_machines import get_fly_manager
 from auth import init_oauth_client, require_user_auth
 from characters import get_character, list_characters
+from fred_service import get_fred_service, SUPPORTED_SERIES, CATEGORIES
 
 from algorithm_optimizer import AlgorithmOptimizer
 from google import genai
@@ -3576,6 +3577,102 @@ def get_backtest_results():
         return jsonify(clean_nan_values(results))
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+
+
+# ============================================================
+# FRED Macroeconomic Data Endpoints
+# ============================================================
+
+@app.route('/api/fred/series/<series_id>', methods=['GET'])
+def get_fred_series(series_id):
+    """Get observations for a FRED series."""
+    fred_enabled = db.get_setting('feature_fred_enabled', False)
+    if not fred_enabled:
+        return jsonify({'error': 'FRED features are not enabled'}), 403
+
+    fred = get_fred_service()
+    if not fred.is_available():
+        return jsonify({'error': 'FRED API key not configured'}), 503
+
+    start_date = request.args.get('start_date')
+    end_date = request.args.get('end_date')
+
+    result = fred.get_series(series_id, start_date=start_date, end_date=end_date)
+
+    if 'error' in result:
+        return jsonify(result), 400
+
+    return jsonify(result)
+
+
+@app.route('/api/fred/series/<series_id>/info', methods=['GET'])
+def get_fred_series_info(series_id):
+    """Get metadata for a FRED series."""
+    fred_enabled = db.get_setting('feature_fred_enabled', False)
+    if not fred_enabled:
+        return jsonify({'error': 'FRED features are not enabled'}), 403
+
+    fred = get_fred_service()
+    if not fred.is_available():
+        return jsonify({'error': 'FRED API key not configured'}), 503
+
+    result = fred.get_series_info(series_id)
+
+    if 'error' in result:
+        return jsonify(result), 400
+
+    return jsonify(result)
+
+
+@app.route('/api/fred/dashboard', methods=['GET'])
+def get_fred_dashboard():
+    """Get all dashboard indicators with recent history."""
+    fred_enabled = db.get_setting('feature_fred_enabled', False)
+    if not fred_enabled:
+        return jsonify({'error': 'FRED features are not enabled'}), 403
+
+    fred = get_fred_service()
+    if not fred.is_available():
+        return jsonify({'error': 'FRED API key not configured'}), 503
+
+    result = fred.get_dashboard_data()
+
+    if 'error' in result:
+        return jsonify(result), 500
+
+    return jsonify(result)
+
+
+@app.route('/api/fred/summary', methods=['GET'])
+def get_fred_summary():
+    """Get current values of all economic indicators."""
+    fred_enabled = db.get_setting('feature_fred_enabled', False)
+    if not fred_enabled:
+        return jsonify({'error': 'FRED features are not enabled'}), 403
+
+    fred = get_fred_service()
+    if not fred.is_available():
+        return jsonify({'error': 'FRED API key not configured'}), 503
+
+    result = fred.get_economic_summary()
+
+    if 'error' in result:
+        return jsonify(result), 500
+
+    return jsonify(result)
+
+
+@app.route('/api/fred/indicators', methods=['GET'])
+def get_fred_indicators():
+    """Get list of supported FRED indicators."""
+    fred_enabled = db.get_setting('feature_fred_enabled', False)
+    if not fred_enabled:
+        return jsonify({'error': 'FRED features are not enabled'}), 403
+
+    return jsonify({
+        'indicators': SUPPORTED_SERIES,
+        'categories': CATEGORIES
+    })
 
 
 # ============================================================

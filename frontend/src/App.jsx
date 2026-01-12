@@ -25,6 +25,7 @@ import { useAuth } from './context/AuthContext'
 import UserAvatar from './components/UserAvatar'
 import Settings from './pages/Settings'
 import Alerts from './pages/Alerts'
+import Economy from './pages/Economy'
 // import './App.css' // Disabled for shadcn migration
 
 ChartJS.register(
@@ -1218,6 +1219,7 @@ function App() {
         <Route path="/tuning" element={<AlgorithmTuning />} />
         <Route path="/settings" element={<Settings />} />
         <Route path="/alerts" element={<Alerts />} />
+        <Route path="/economy" element={<Economy />} />
       </Route>
     </Routes>
   )

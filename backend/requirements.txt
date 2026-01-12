@@ -22,3 +22,4 @@ scipy
 pytest-playwright
 scikit-optimize
 debugpy
+fredapi

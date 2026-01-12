@@ -3734,6 +3734,7 @@ class Database:
             # Feature flags only - weights/thresholds are in algorithm_configurations
             'feature_reddit_enabled': {'value': False, 'desc': 'Enable Reddit social sentiment tab (experimental)'},
             'feature_agent_mode_enabled': {'value': False, 'desc': 'Enable Agent Mode toggle in chat (experimental)'},
+            'feature_fred_enabled': {'value': False, 'desc': 'Enable FRED macroeconomic data features'},
         }
 
         current_settings = self.get_all_settings()
