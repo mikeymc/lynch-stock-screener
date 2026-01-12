@@ -31,6 +31,16 @@ const CHARACTER_METRICS = {
         ],
         row4: [
             { key: 'gross_margin', label: 'Gross Margin', format: 'percent', goodWhen: v => v !== null && v > 40 },
+            {
+                key: 'owner_earnings',
+                label: (
+                    <>
+                        <span className="hidden md:inline">Owner Earnings</span>
+                        <span className="md:hidden">Owner Earn.</span>
+                    </>
+                ),
+                format: 'currency_large'
+            },
             { key: 'revenue_cagr', label: '5Y Rev Growth', format: 'percent', goodWhen: v => v !== null && v > 10 },
             { key: 'earnings_cagr', label: '5Y Inc Growth', format: 'percent', goodWhen: v => v !== null && v > 10 },
         ]
@@ -53,6 +63,14 @@ function formatMetricValue(value, format) {
             return typeof value === 'number' ? value.toFixed(1) : '-'
         case 'currency':
             return typeof value === 'number' ? `$${value.toFixed(2)}` : '-'
+        case 'currency_large':
+            // Assumes input is in Millions (1879 = 1.88B) - similar to market_cap logic if needed,
+            // but here we expect raw millions from backend for owner_earnings
+            if (typeof value !== 'number') return '-'
+            if (value >= 1000) {
+                return `$${(value / 1000).toFixed(2)}B`
+            }
+            return `$${value.toFixed(0)}M`
         default:
             return typeof value === 'number' ? value.toFixed(2) : String(value)
     }
@@ -150,7 +168,7 @@ export default function StockListCard({ stock, toggleWatchlist, watchlist, activ
                     </div>
 
                     {/* Row 4: Character-specific secondary metrics */}
-                    <div className="grid grid-cols-3 gap-4 border-b pb-2">
+                    <div className={`grid gap-4 border-b pb-2 ${activeCharacter === 'buffett' ? 'grid-cols-2 md:grid-cols-4' : 'grid-cols-3'}`}>
                         {CHARACTER_METRICS[activeCharacter]?.row4.map(metric => (
                             <div key={metric.key}>
                                 <div className="text-xs text-muted-foreground">{metric.label}</div>

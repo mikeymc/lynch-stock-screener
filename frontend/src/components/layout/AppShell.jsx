@@ -45,7 +45,8 @@ function AppShellContent({
     algorithms = {},
     summary = {},
     watchlistCount = 0,
-    showAdvancedFilters, setShowAdvancedFilters
+    showAdvancedFilters, setShowAdvancedFilters,
+    activeCharacter = 'lynch'
 }) {
     const { isMobile, setOpenMobile } = useSidebar()
     const { agentMode, conversations, removeConversation, activeConversationId, setActiveConversationId } = useChatContext()
@@ -176,7 +177,8 @@ function AppShellContent({
     // Determine chat context
     const chatSymbol = isStockDetail ? symbol : null
     const chatContext = isStockDetail ? 'general' : 'market' // 'market' context for main page
-    const chatTitle = chatSymbol ? `AI Assistant - ${chatSymbol}` : 'Analyst'
+    const formattedCharacter = activeCharacter ? activeCharacter.charAt(0).toUpperCase() + activeCharacter.slice(1) : 'Lynch'
+    const chatTitle = chatSymbol ? `${formattedCharacter} - ${chatSymbol}` : formattedCharacter
 
     return (
         <div className="flex h-screen w-full overflow-hidden">
