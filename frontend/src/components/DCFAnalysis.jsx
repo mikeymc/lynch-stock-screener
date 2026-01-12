@@ -538,7 +538,32 @@ const DCFAnalysis = ({ stockData, earningsHistory }) => {
           </Card>
         )}
 
-        {/* AI Recommendations Panel (full display with scenarios and reasoning) */}
+        {/* Valuation Results Panel - Moved to top */}
+        <Card className="mb-6">
+          <CardHeader>
+            <CardTitle>Valuation Results</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="flex flex-wrap items-center justify-between gap-4">
+              <div className="flex-1 min-w-[120px] p-4 bg-muted/50 rounded-lg text-center">
+                <p className="text-sm text-muted-foreground mb-1">Intrinsic Value</p>
+                <p className="text-xl sm:text-2xl font-bold text-primary">${analysis.intrinsicValuePerShare.toFixed(2)}</p>
+              </div>
+              <div className="flex-1 min-w-[120px] p-4 bg-muted/50 rounded-lg text-center">
+                <p className="text-sm text-muted-foreground mb-1">Current Price</p>
+                <p className="text-xl sm:text-2xl font-semibold">${stockData.price.toFixed(2)}</p>
+              </div>
+              <div className={`flex-1 min-w-[120px] p-4 rounded-lg text-center ${analysis.upside > 0 ? 'bg-green-500/10' : 'bg-red-500/10'}`}>
+                <p className="text-sm text-muted-foreground mb-1">Upside / Downside</p>
+                <p className={`text-xl sm:text-2xl font-semibold ${analysis.upside > 0 ? 'text-green-600' : 'text-red-600'}`}>
+                  {analysis.upside > 0 ? '+' : ''}{analysis.upside.toFixed(0)}%
+                </p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* AI Recommendations Panel */}
         <DCFAIRecommendations
           recommendations={aiRecommendations}
           loading={aiLoading}
@@ -548,9 +573,10 @@ const DCFAnalysis = ({ stockData, earningsHistory }) => {
           onApplyScenario={applyScenario}
         />
 
-        <div className="grid grid-cols-1 2xl:grid-cols-2 gap-6">
+        {/* Two Column Layout: Assumptions | Projections */}
+        <div className="grid grid-cols-1 2xl:grid-cols-2 gap-6 mt-6">
           {/* Assumptions Panel */}
-          <Card>
+          <Card className="h-full">
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle>Assumptions</CardTitle>
               <DCFOptimizeButton
@@ -683,79 +709,53 @@ const DCFAnalysis = ({ stockData, earningsHistory }) => {
             </CardContent>
           </Card>
 
-          {/* Results Panel */}
-          <div className="space-y-6">
-            <Card>
-              <CardHeader>
-                <CardTitle>Valuation Results</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="flex flex-wrap items-center justify-between gap-4">
-                  <div className="flex-1 min-w-[120px] p-4 bg-muted/50 rounded-lg text-center">
-                    <p className="text-sm text-muted-foreground mb-1">Intrinsic Value</p>
-                    <p className="text-xl sm:text-2xl font-bold text-primary">${analysis.intrinsicValuePerShare.toFixed(2)}</p>
-                  </div>
-                  <div className="flex-1 min-w-[120px] p-4 bg-muted/50 rounded-lg text-center">
-                    <p className="text-sm text-muted-foreground mb-1">Current Price</p>
-                    <p className="text-xl sm:text-2xl font-semibold">${stockData.price.toFixed(2)}</p>
-                  </div>
-                  <div className={`flex-1 min-w-[120px] p-4 rounded-lg text-center ${analysis.upside > 0 ? 'bg-green-500/10' : 'bg-red-500/10'}`}>
-                    <p className="text-sm text-muted-foreground mb-1">Upside / Downside</p>
-                    <p className={`text-xl sm:text-2xl font-semibold ${analysis.upside > 0 ? 'text-green-600' : 'text-red-600'}`}>
-                      {analysis.upside > 0 ? '+' : ''}{analysis.upside.toFixed(0)}%
-                    </p>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader>
-                <CardTitle>Projections</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="overflow-x-auto">
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>Year</TableHead>
-                        <TableHead className="text-right">Projected FCF</TableHead>
-                        <TableHead className="text-right">Discount Factor</TableHead>
-                        <TableHead className="text-right">Present Value</TableHead>
+          {/* Projections Panel */}
+          <Card className="h-full">
+            <CardHeader>
+              <CardTitle>Projections</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Year</TableHead>
+                      <TableHead className="text-right">Projected FCF</TableHead>
+                      <TableHead className="text-right">Discount Factor</TableHead>
+                      <TableHead className="text-right">Present Value</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {analysis.projections.map((row) => (
+                      <TableRow key={row.year}>
+                        <TableCell>{row.year}</TableCell>
+                        <TableCell className="text-right">{formatLargeValue(row.fcf)}</TableCell>
+                        <TableCell className="text-right">{row.discountFactor.toFixed(3)}</TableCell>
+                        <TableCell className="text-right">{formatLargeValue(row.presentValue)}</TableCell>
                       </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {analysis.projections.map((row) => (
-                        <TableRow key={row.year}>
-                          <TableCell>{row.year}</TableCell>
-                          <TableCell className="text-right">{formatLargeValue(row.fcf)}</TableCell>
-                          <TableCell className="text-right">{row.discountFactor.toFixed(3)}</TableCell>
-                          <TableCell className="text-right">{formatLargeValue(row.presentValue)}</TableCell>
-                        </TableRow>
-                      ))}
-                      <TableRow className="font-bold bg-muted/50">
-                        <TableCell colSpan={3} className="text-right">Sum of PV of FCF</TableCell>
-                        <TableCell className="text-right">{formatLargeValue(analysis.totalPresentValue)}</TableCell>
-                      </TableRow>
-                      <TableRow className="font-bold bg-muted/50">
-                        <TableCell colSpan={3} className="text-right">
-                          <div className="flex items-center justify-end gap-1">
-                            Terminal Value PV
-                            <span className="text-xs text-muted-foreground" title={`Terminal Value: ${formatLargeValue(analysis.terminalValue)}`}>ⓘ</span>
-                          </div>
-                        </TableCell>
-                        <TableCell className="text-right">{formatLargeValue(analysis.terminalValuePresent)}</TableCell>
-                      </TableRow>
-                      <TableRow className="font-bold text-base border-t-2">
-                        <TableCell colSpan={3} className="text-right">Total Equity Value</TableCell>
-                        <TableCell className="text-right">{formatLargeValue(analysis.totalEquityValue)}</TableCell>
-                      </TableRow>
-                    </TableBody>
-                  </Table>
-                </div>
-              </CardContent>
-            </Card>
-          </div>
+                    ))}
+                    <TableRow className="font-bold bg-muted/50">
+                      <TableCell colSpan={3} className="text-right">Sum of PV of FCF</TableCell>
+                      <TableCell className="text-right">{formatLargeValue(analysis.totalPresentValue)}</TableCell>
+                    </TableRow>
+                    <TableRow className="font-bold bg-muted/50">
+                      <TableCell colSpan={3} className="text-right">
+                        <div className="flex items-center justify-end gap-1">
+                          Terminal Value PV
+                          <span className="text-xs text-muted-foreground" title={`Terminal Value: ${formatLargeValue(analysis.terminalValue)}`}>ⓘ</span>
+                        </div>
+                      </TableCell>
+                      <TableCell className="text-right">{formatLargeValue(analysis.terminalValuePresent)}</TableCell>
+                    </TableRow>
+                    <TableRow className="font-bold text-base border-t-2">
+                      <TableCell colSpan={3} className="text-right">Total Equity Value</TableCell>
+                      <TableCell className="text-right">{formatLargeValue(analysis.totalEquityValue)}</TableCell>
+                    </TableRow>
+                  </TableBody>
+                </Table>
+              </div>
+            </CardContent>
+          </Card>
         </div>
 
         {/* Sensitivity Analysis */}
