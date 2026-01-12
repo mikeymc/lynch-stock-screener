@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { screeningCache } from '../utils/cache';
 import './AlgorithmTuning.css';
 
 const CollapsibleSection = ({ title, children, defaultOpen = false }) => {
@@ -254,6 +255,9 @@ export default function AlgorithmTuning() {
                 // Poll for rescoring progress
                 pollRescoringProgress(data.rescore_job_id);
             } else {
+                // Invalidate cache immediately on save
+                await screeningCache.clear();
+
                 alert('Configuration saved!');
                 setRescoringRunning(false);
             }

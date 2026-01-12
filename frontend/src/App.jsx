@@ -26,6 +26,7 @@ import UserAvatar from './components/UserAvatar'
 import Settings from './pages/Settings'
 import Alerts from './pages/Alerts'
 import Economy from './pages/Economy'
+import { screeningCache } from './utils/cache'
 import Help from './pages/Help'
 // import './App.css' // Disabled for shadcn migration
 
@@ -116,7 +117,8 @@ function StockListView({
   algorithm, setAlgorithm,
   algorithms,
   showAdvancedFilters, setShowAdvancedFilters,
-  activeCharacter, setActiveCharacter
+  activeCharacter, setActiveCharacter,
+  user
 }) {
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
@@ -257,11 +259,29 @@ function StockListView({
 
     const loadLatestSession = async () => {
       try {
+        // Try to load from cache first
+        if (user && user.id && activeCharacter) {
+          const cachedData = await screeningCache.getResults(user.id, activeCharacter)
+          if (cachedData) {
+            console.log('[App] Loaded screening results from cache')
+            setStocks(cachedData.results)
+            setTotalPages(cachedData.total_pages || 1)
+            setTotalCount(cachedData.total_count || 0)
+
+            // Reconstruct summary from cached data status counts
+            updateSummaryFromData(cachedData)
+
+            setLoadingSession(false)
+            return // Skip network fetch
+          }
+        }
+
         const response = await fetch(`${API_BASE}/sessions/latest`, { signal })
 
         if (response.ok) {
           const sessionData = await response.json()
           const results = sessionData.results || []
+
           setStocks(results)
           setTotalPages(sessionData.total_pages || 1)
           setTotalCount(sessionData.total_count || 0)
@@ -271,34 +291,14 @@ function StockListView({
             setActiveCharacter(sessionData.active_character)
           }
 
-          // Use status_counts from API (counts for full session, not just current page)
-          const counts = sessionData.status_counts || {}
+          updateSummaryFromData(sessionData)
 
-          // Check if we have new algorithm statuses or old ones
-          const hasNewStatuses = counts['STRONG_BUY'] !== undefined || counts['BUY'] !== undefined ||
-            counts['HOLD'] !== undefined || counts['AVOID'] !== undefined
-
-          if (hasNewStatuses) {
-            // New algorithm statuses
-            setSummary({
-              totalAnalyzed: sessionData.total_count || results.length,
-              strong_buy_count: counts['STRONG_BUY'] || 0,
-              buy_count: counts['BUY'] || 0,
-              hold_count: counts['HOLD'] || 0,
-              caution_count: counts['CAUTION'] || 0,
-              avoid_count: counts['AVOID'] || 0,
-              algorithm: 'weighted'
-            })
-          } else {
-            // Old algorithm statuses (classic)
-            setSummary({
-              totalAnalyzed: sessionData.total_count || results.length,
-              passCount: counts['PASS'] || 0,
-              closeCount: counts['CLOSE'] || 0,
-              failCount: counts['FAIL'] || 0,
-              algorithm: 'classic'
-            })
+          // Cache the fresh results
+          if (user && user.id) {
+            const charId = sessionData.active_character || activeCharacter || 'lynch'
+            screeningCache.saveResults(user.id, charId, sessionData)
           }
+
         } else if (response.status === 404) {
           // No sessions yet, this is okay
           setStocks([])
@@ -320,10 +320,42 @@ function StockListView({
       }
     }
 
+    // Helper to update summary state from session data
+    const updateSummaryFromData = (data) => {
+      const results = data.results || []
+      const counts = data.status_counts || {}
+
+      // Check if we have new algorithm statuses or old ones
+      const hasNewStatuses = counts['STRONG_BUY'] !== undefined || counts['BUY'] !== undefined ||
+        counts['HOLD'] !== undefined || counts['AVOID'] !== undefined
+
+      if (hasNewStatuses) {
+        // New algorithm statuses
+        setSummary({
+          totalAnalyzed: data.total_count || results.length,
+          strong_buy_count: counts['STRONG_BUY'] || 0,
+          buy_count: counts['BUY'] || 0,
+          hold_count: counts['HOLD'] || 0,
+          caution_count: counts['CAUTION'] || 0,
+          avoid_count: counts['AVOID'] || 0,
+          algorithm: 'weighted'
+        })
+      } else {
+        // Old algorithm statuses (classic)
+        setSummary({
+          totalAnalyzed: data.total_count || results.length,
+          passCount: counts['PASS'] || 0,
+          closeCount: counts['CLOSE'] || 0,
+          failCount: counts['FAIL'] || 0,
+          algorithm: 'classic'
+        })
+      }
+    }
+
     loadLatestSession()
 
     return () => controller.abort()
-  }, [])
+  }, [user, activeCharacter])
 
   // State for backend pagination
   const [totalPages, setTotalPages] = useState(1)
@@ -1105,7 +1137,12 @@ function App() {
   const [algorithm, setAlgorithm] = useState('weighted')
   const [algorithms, setAlgorithms] = useState({})
   const [showAdvancedFilters, setShowAdvancedFilters] = useState(false)
-  const [activeCharacter, setActiveCharacter] = useState('lynch')
+  const [activeCharacter, setActiveCharacter] = useState(() => localStorage.getItem('activeCharacter') || 'lynch')
+
+  // Persist activeCharacter
+  useEffect(() => {
+    localStorage.setItem('activeCharacter', activeCharacter)
+  }, [activeCharacter])
 
   // Check for first visit and redirect to help
   useEffect(() => {
@@ -1241,6 +1278,7 @@ function App() {
             setShowAdvancedFilters={setShowAdvancedFilters}
             activeCharacter={activeCharacter}
             setActiveCharacter={setActiveCharacter}
+            user={user}
           />
         } />
         <Route path="/stock/:symbol" element={

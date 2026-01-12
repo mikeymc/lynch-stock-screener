@@ -670,7 +670,7 @@ function AppShellContent({
                 </header>
 
                 {/* Page content - with resizable panels on large screens */}
-                <ResizablePanelGroup id="app-shell-layout-v8" autoSaveId="app-shell-layout-v8" direction="horizontal" className="flex-1 overflow-hidden">
+                <ResizablePanelGroup id="app-shell-layout-v8" direction="horizontal" className="flex-1 overflow-hidden">
                     <ResizablePanel id="main-content-panel" defaultSize={70} order={1}>
                         {/* Main content */}
                         <main className="h-full overflow-auto p-4 min-w-0 scrollbar-hide">

@@ -17,6 +17,7 @@ if (DEV_AUTH_BYPASS) {
 
 // Mock user for dev bypass
 const DEV_MOCK_USER = {
+  id: 'dev-user-id',
   email: 'dev@localhost',
   name: 'Dev User',
   is_admin: true,
