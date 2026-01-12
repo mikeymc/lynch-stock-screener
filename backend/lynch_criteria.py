@@ -254,112 +254,7 @@ class LynchCriteria:
             logger.error(f"Error evaluating with character {character_id}: {e}")
             return None
 
-    def _calculate_pe_52_week_range(self, symbol: str, stock: Dict[str, Any]) -> Dict[str, Any]:
-        """
-        Calculate the 52-week P/E range (min, max, current position).
-        Uses Quarterly TTM EPS (Rolling 4-Quarter Sum) for accuracy.
-        
-        Args:
-            symbol: Stock symbol
-            stock: Dictionary containing current stock metrics (price, pe_ratio, etc.)
-        """
-        from datetime import datetime, timedelta
-        
-        result = {
-            'pe_52_week_min': None,
-            'pe_52_week_max': None,
-            'pe_52_week_position': None
-        }
-        
-        try:
-            weekly_prices = self.db.get_weekly_prices(symbol)
-            shares_outstanding = stock.get('shares_outstanding')
-            
-            # If standard shares calculation fails, try stock_metrics if available
-            if not shares_outstanding and stock.get('market_cap') and stock.get('price'):
-                shares_outstanding = stock.get('market_cap') / stock.get('price')
 
-            if not weekly_prices or not weekly_prices.get('dates') or not weekly_prices.get('prices'):
-                return result
-            
-            if not shares_outstanding:
-                return result
-                
-            # Get earnings history
-            earnings_history = self.db.get_earnings_history(symbol, period_type='quarterly')
-            if not earnings_history:
-                return result
-            
-            # Filter for quarterly net_income
-            quarterly_data = [e for e in earnings_history if e.get('period') in ['Q1', 'Q2', 'Q3', 'Q4'] and e.get('net_income') is not None]
-            # Sort by fiscal_end
-            quarterly_data.sort(key=lambda x: x.get('fiscal_end') or '')
-            
-            if len(quarterly_data) < 4:
-                return result
-
-            # Calculate cutoff date for 52 weeks ago
-            cutoff_date = datetime.now() - timedelta(weeks=52)
-            cutoff_str = cutoff_date.strftime('%Y-%m-%d')
-            
-            pe_values = []
-            
-            for i, date_str in enumerate(weekly_prices['dates']):
-                # Only include last 52 weeks
-                ds = str(date_str)
-                if ds < cutoff_str:
-                    continue
-                
-                price = weekly_prices['prices'][i]
-                if not price or price <= 0:
-                    continue
-                    
-                # Find valid quarters (fiscal_end <= current_week)
-                # Ensure date comparison is string-safe
-                valid_quarters = [q for q in quarterly_data if q.get('fiscal_end') and str(q['fiscal_end']) <= ds]
-                
-                if len(valid_quarters) >= 4:
-                    last_4 = valid_quarters[-4:]
-                    ttm_net_income = sum(q['net_income'] for q in last_4)
-                    
-                    if ttm_net_income > 0:
-                        # TTM EPS = TTM Net Income / Current Shares
-                        # Usage of Current Shares is valid because Prices are Split-Adjusted (from yfinance)
-                        ttm_eps = ttm_net_income / shares_outstanding
-                        
-                        if ttm_eps > 0:
-                            pe = price / ttm_eps
-                            if pe < 1000: # Filter outliers
-                                pe_values.append(pe)
-
-            if not pe_values:
-                return result
-                
-            pe_min = min(pe_values)
-            pe_max = max(pe_values)
-            
-            # Current Position Logic
-            # Compare LIVE P/E against the TTM Range we just built
-            current_pe = stock.get('pe_ratio')
-            
-            position = 50.0 
-            
-            if pe_max > pe_min and current_pe is not None:
-                if current_pe < pe_min:
-                    position = 0.0
-                elif current_pe > pe_max:
-                    position = 100.0
-                else:
-                    position = ((current_pe - pe_min) / (pe_max - pe_min)) * 100
-            
-            result['pe_52_week_min'] = round(pe_min, 2)
-            result['pe_52_week_max'] = round(pe_max, 2)
-            result['pe_52_week_position'] = round(position, 1)
-            
-        except Exception as e:
-            print(f"Error calculating P/E range for {symbol}: {e}")
-            
-        return result
 
     def _get_base_metrics(self, symbol: str, stock_metrics: Dict[str, Any] = None) -> Optional[Dict[str, Any]]:
         """Get base metrics and growth data for a stock.
@@ -427,8 +322,8 @@ class LynchCriteria:
         revenue_growth_score = self.calculate_revenue_growth_score(revenue_cagr)
         income_growth_score = self.calculate_income_growth_score(earnings_cagr)
 
-        # Calculate 52-week P/E range
-        pe_range_data = self._calculate_pe_52_week_range(symbol, metrics)
+        # Calculate 52-week P/E range using shared calculator
+        pe_range_data = self.metric_calculator.calculate_pe_52_week_range(symbol, metrics)
 
         # Calculate Buffett metrics for on-the-fly re-scoring
         # These are stored in screening_results so any character can score them

@@ -1529,7 +1529,7 @@ def get_latest_session(user_id):
                 symbol = result.get('symbol')
 
                 # Compute P/E range position from cached weekly prices
-                pe_range = criteria._calculate_pe_52_week_range(symbol, result.get('pe_ratio'))
+                pe_range = criteria.metric_calculator.calculate_pe_52_week_range(symbol, result)
                 result['pe_52_week_min'] = pe_range.get('pe_52_week_min')
                 result['pe_52_week_max'] = pe_range.get('pe_52_week_max')
                 result['pe_52_week_position'] = pe_range.get('pe_52_week_position')

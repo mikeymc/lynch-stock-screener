@@ -67,6 +67,9 @@ class StockEvaluator:
 
         consistency_score = normalize_consistency(raw_income_consistency)
 
+        # Calculate 52-week P/E range
+        pe_range_data = self.metric_calculator.calculate_pe_52_week_range(symbol, metrics)
+
         return {
             'symbol': symbol,
             'company_name': metrics.get('company_name'),
@@ -81,6 +84,9 @@ class StockEvaluator:
             'earnings_cagr': earnings_cagr,
             'revenue_cagr': revenue_cagr,
             'earnings_consistency': consistency_score,
+            'pe_52_week_min': pe_range_data.get('pe_52_week_min'),
+            'pe_52_week_max': pe_range_data.get('pe_52_week_max'),
+            'pe_52_week_position': pe_range_data.get('pe_52_week_position'),
         }
 
     def _get_character_metrics(self, symbol: str) -> Dict[str, Any]:
