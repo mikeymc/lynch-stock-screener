@@ -1,10 +1,64 @@
+// ABOUTME: Displays stock data in card format with character-specific metrics
+// ABOUTME: Swaps displayed metrics based on active character (Lynch vs Buffett)
+
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { useNavigate } from "react-router-dom"
 import StatusBar from "./StatusBar"
 
-export default function StockListCard({ stock, toggleWatchlist, watchlist }) {
+// Metric configurations for each character
+const CHARACTER_METRICS = {
+    lynch: {
+        row3: [
+            { key: 'pe_ratio', label: 'P/E Ratio', format: 'ratio', goodWhen: v => v !== null && v < 15 },
+            { key: 'peg_ratio', label: 'PEG Ratio', format: 'ratio', goodWhen: v => v !== null && v < 1 },
+            { key: 'debt_to_equity', label: 'Debt/Equity', format: 'ratio', goodWhen: v => v !== null && v < 1 },
+            { key: 'dividend_yield', label: 'Div Yield', format: 'percent' },
+        ],
+        row4: [
+            { key: 'institutional_ownership', label: 'Inst. Own', format: 'ownership_percent' },
+            { key: 'revenue_cagr', label: '5Y Rev Growth', format: 'percent', goodWhen: v => v !== null && v > 10 },
+            { key: 'earnings_cagr', label: '5Y Inc Growth', format: 'percent', goodWhen: v => v !== null && v > 10 },
+        ]
+    },
+    buffett: {
+        row3: [
+            { key: 'pe_ratio', label: 'P/E Ratio', format: 'ratio', goodWhen: v => v !== null && v < 15 },
+            { key: 'roe', label: 'ROE', format: 'percent', goodWhen: v => v !== null && v > 15 },
+            { key: 'debt_to_earnings', label: 'Debt/Earn (yrs)', format: 'years', goodWhen: v => v !== null && v < 4 },
+            { key: 'dividend_yield', label: 'Div Yield', format: 'percent' },
+        ],
+        row4: [
+            { key: 'gross_margin', label: 'Gross Margin', format: 'percent', goodWhen: v => v !== null && v > 40 },
+            { key: 'revenue_cagr', label: '5Y Rev Growth', format: 'percent', goodWhen: v => v !== null && v > 10 },
+            { key: 'earnings_cagr', label: '5Y Inc Growth', format: 'percent', goodWhen: v => v !== null && v > 10 },
+        ]
+    }
+}
+
+// Format a metric value based on its type
+function formatMetricValue(value, format) {
+    if (value === null || value === undefined) return '-'
+
+    switch (format) {
+        case 'ratio':
+            return typeof value === 'number' ? value.toFixed(2) : '-'
+        case 'percent':
+            return typeof value === 'number' ? `${value.toFixed(1)}%` : '-'
+        case 'ownership_percent':
+            // institutional_ownership comes as 0-1, needs *100
+            return typeof value === 'number' ? `${(value * 100).toFixed(1)}%` : '-'
+        case 'years':
+            return typeof value === 'number' ? value.toFixed(1) : '-'
+        case 'currency':
+            return typeof value === 'number' ? `$${value.toFixed(2)}` : '-'
+        default:
+            return typeof value === 'number' ? value.toFixed(2) : String(value)
+    }
+}
+
+export default function StockListCard({ stock, toggleWatchlist, watchlist, activeCharacter = 'lynch' }) {
     const navigate = useNavigate()
     const isWatchlisted = watchlist?.has(stock.symbol)
 
@@ -83,56 +137,28 @@ export default function StockListCard({ stock, toggleWatchlist, watchlist }) {
                         </div>
                     </div>
 
-                    {/* Row 3: Valuation & Financials */}
+                    {/* Row 3: Character-specific metrics */}
                     <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                        <div>
-                            <div className="text-xs text-muted-foreground">P/E Ratio</div>
-                            <div className={stock.pe_ratio < 15 ? "text-green-600 font-medium" : ""}>
-                                {typeof stock.pe_ratio === 'number' ? stock.pe_ratio.toFixed(2) : '-'}
+                        {CHARACTER_METRICS[activeCharacter]?.row3.map(metric => (
+                            <div key={metric.key}>
+                                <div className="text-xs text-muted-foreground">{metric.label}</div>
+                                <div className={metric.goodWhen?.(stock[metric.key]) ? "text-green-600 font-medium" : "font-medium"}>
+                                    {formatMetricValue(stock[metric.key], metric.format)}
+                                </div>
                             </div>
-                        </div>
-                        <div>
-                            <div className="text-xs text-muted-foreground">PEG Ratio</div>
-                            <div className={stock.peg_ratio < 1 ? "text-green-600 font-medium" : ""}>
-                                {typeof stock.peg_ratio === 'number' ? stock.peg_ratio.toFixed(2) : '-'}
-                            </div>
-                        </div>
-                        <div>
-                            <div className="text-xs text-muted-foreground">Debt/Equity</div>
-                            <div className={stock.debt_to_equity < 1 ? "text-green-600 font-medium" : ""}>
-                                {typeof stock.debt_to_equity === 'number' ? stock.debt_to_equity.toFixed(2) : '-'}
-                            </div>
-                        </div>
-                        <div>
-                            <div className="text-xs text-muted-foreground">Div Yield</div>
-                            <div className="font-medium">
-                                {typeof stock.dividend_yield === 'number' ? `${stock.dividend_yield.toFixed(2)}%` : '-'}
-                            </div>
-                        </div>
+                        ))}
                     </div>
 
-                    {/* Row 4: Growth & Ownership */}
+                    {/* Row 4: Character-specific secondary metrics */}
                     <div className="grid grid-cols-3 gap-4 border-b pb-2">
-                        <div>
-                            <div className="text-xs text-muted-foreground">Inst. Own</div>
-                            <div className="font-medium">
-                                {typeof stock.institutional_ownership === 'number'
-                                    ? `${(stock.institutional_ownership * 100).toFixed(1)}%`
-                                    : '-'}
+                        {CHARACTER_METRICS[activeCharacter]?.row4.map(metric => (
+                            <div key={metric.key}>
+                                <div className="text-xs text-muted-foreground">{metric.label}</div>
+                                <div className={metric.goodWhen?.(stock[metric.key]) ? "text-green-600 font-medium" : "font-medium"}>
+                                    {formatMetricValue(stock[metric.key], metric.format)}
+                                </div>
                             </div>
-                        </div>
-                        <div>
-                            <div className="text-xs text-muted-foreground">5Y Rev Growth</div>
-                            <div className={`font-medium ${stock.revenue_cagr > 10 ? 'text-green-600' : ''}`}>
-                                {typeof stock.revenue_cagr === 'number' ? `${stock.revenue_cagr.toFixed(1)}%` : '-'}
-                            </div>
-                        </div>
-                        <div>
-                            <div className="text-xs text-muted-foreground">5Y Inc Growth</div>
-                            <div className={`font-medium ${stock.earnings_cagr > 10 ? 'text-green-600' : ''}`}>
-                                {typeof stock.earnings_cagr === 'number' ? `${stock.earnings_cagr.toFixed(1)}%` : '-'}
-                            </div>
-                        </div>
+                        ))}
                     </div>
 
                     {/* Row 5: Charts (StatusBar) */}

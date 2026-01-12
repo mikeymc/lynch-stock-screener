@@ -125,7 +125,7 @@ class MetricCalculator:
 
         return result
 
-    def calculate_debt_to_earnings(self, symbol: str) -> Dict[str, Any]:
+    def calculate_debt_to_earnings(self, symbol: str, total_debt: float = None) -> Dict[str, Any]:
         """Calculate years to pay off debt with current earnings.
 
         Debt-to-Earnings = Total Debt / Annual Net Income
@@ -134,6 +134,7 @@ class MetricCalculator:
 
         Args:
             symbol: Stock ticker
+            total_debt: Optional pre-fetched total_debt to avoid DB lookup
 
         Returns:
             Dict with debt_to_earnings_years and related metrics
@@ -144,12 +145,13 @@ class MetricCalculator:
             'annual_net_income': None,
         }
 
-        # Get total debt from stock_metrics
-        metrics = self.db.get_stock_metrics(symbol)
-        if not metrics:
-            return result
+        # Use provided total_debt if available, otherwise fetch from DB
+        if total_debt is None:
+            metrics = self.db.get_stock_metrics(symbol)
+            if not metrics:
+                return result
+            total_debt = metrics.get('total_debt')
 
-        total_debt = metrics.get('total_debt')
         result['total_debt'] = total_debt
 
         # Get net income from earnings history
@@ -162,7 +164,7 @@ class MetricCalculator:
         net_income = latest.get('net_income')
         result['annual_net_income'] = net_income
 
-        if total_debt and net_income and net_income > 0:
+        if total_debt is not None and net_income and net_income > 0:
             years_to_payoff = total_debt / net_income
             result['debt_to_earnings_years'] = round(years_to_payoff, 2)
 
@@ -189,23 +191,103 @@ class MetricCalculator:
 
         return result
 
-    def calculate_gross_margin_stability(self, symbol: str, years: int = 5) -> Dict[str, Any]:
-        """Calculate gross margin stability (moat indicator).
+    def calculate_gross_margin(self, symbol: str, years: int = 5) -> Dict[str, Any]:
+        """Calculate gross margin metrics from yfinance income statement.
+
+        Gross Margin = Gross Profit / Total Revenue
 
         Stable or growing gross margins suggest pricing power / moat.
 
+        Args:
+            symbol: Stock ticker
+            years: Number of years to analyze
+
         Returns:
-            Dict with current_gross_margin, avg_gross_margin, trend
+            Dict with current, average, trend, and history
         """
         result = {
-            'current_gross_margin': None,
-            'avg_gross_margin': None,
-            'gross_margin_trend': None,  # 'stable', 'improving', 'declining'
+            'current': None,
+            'average': None,
+            'trend': None,  # 'stable', 'improving', 'declining'
+            'history': [],
         }
 
-        # This would require gross profit data which we may not have
-        # For now, return empty - can enhance later
-        return result
+        try:
+            import yfinance as yf
+            import pandas as pd
+            import numpy as np
+
+            ticker = yf.Ticker(symbol)
+            income_stmt = ticker.income_stmt
+
+            if income_stmt is None or income_stmt.empty:
+                return result
+
+            # Look for gross profit and revenue
+            gross_profit_key = None
+            revenue_key = None
+
+            for key in ['Gross Profit', 'GrossProfit']:
+                if key in income_stmt.index:
+                    gross_profit_key = key
+                    break
+
+            for key in ['Total Revenue', 'TotalRevenue', 'Revenue']:
+                if key in income_stmt.index:
+                    revenue_key = key
+                    break
+
+            if not gross_profit_key or not revenue_key:
+                logger.debug(f"{symbol}: Missing gross profit or revenue in income statement")
+                return result
+
+            margins = []
+            for col in income_stmt.columns[:years]:  # Most recent N years
+                year = col.year if hasattr(col, 'year') else pd.Timestamp(col).year
+                gross_profit = income_stmt.loc[gross_profit_key, col]
+                revenue = income_stmt.loc[revenue_key, col]
+
+                if pd.notna(gross_profit) and pd.notna(revenue) and revenue != 0:
+                    margin = (gross_profit / revenue) * 100  # as percentage
+                    margins.append({'year': year, 'margin': round(margin, 2)})
+
+            if not margins:
+                return result
+
+            # Sort by year descending (most recent first)
+            margins.sort(key=lambda x: x['year'], reverse=True)
+            result['history'] = margins
+
+            # Current (most recent year)
+            result['current'] = margins[0]['margin'] if margins else None
+
+            # Average
+            margin_values = [m['margin'] for m in margins]
+            result['average'] = round(sum(margin_values) / len(margin_values), 2)
+
+            # Trend analysis
+            if len(margin_values) >= 3:
+                std_dev = np.std(margin_values)
+                first_half = margin_values[len(margin_values)//2:]  # Older years
+                second_half = margin_values[:len(margin_values)//2]  # Recent years
+
+                avg_first = sum(first_half) / len(first_half) if first_half else 0
+                avg_second = sum(second_half) / len(second_half) if second_half else 0
+
+                if std_dev < 2:
+                    result['trend'] = 'stable'
+                elif avg_second > avg_first + 1:
+                    result['trend'] = 'improving'
+                elif avg_second < avg_first - 1:
+                    result['trend'] = 'declining'
+                else:
+                    result['trend'] = 'stable'
+
+            return result
+
+        except Exception as e:
+            logger.warning(f"Failed to calculate gross margin for {symbol}: {e}")
+            return result
 
     def get_buffett_metrics(self, symbol: str) -> Dict[str, Any]:
         """Get all Buffett-relevant metrics for a stock.
@@ -219,6 +301,7 @@ class MetricCalculator:
         owner_earnings_data = self.calculate_owner_earnings(symbol)
         debt_data = self.calculate_debt_to_earnings(symbol)
         consistency_data = self.calculate_earnings_consistency(symbol)
+        gross_margin_data = self.calculate_gross_margin(symbol)
 
         return {
             'roe': {
@@ -229,6 +312,11 @@ class MetricCalculator:
             'owner_earnings': owner_earnings_data['owner_earnings'],
             'debt_to_earnings_years': debt_data['debt_to_earnings_years'],
             'earnings_consistency': consistency_data['earnings_consistency'],
+            'gross_margin': {
+                'current': gross_margin_data['current'],
+                'average': gross_margin_data['average'],
+                'trend': gross_margin_data['trend'],
+            },
         }
 
     def _fetch_equity_history(self, symbol: str) -> Dict[int, float]:

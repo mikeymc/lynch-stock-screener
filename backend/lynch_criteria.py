@@ -97,7 +97,11 @@ class LynchCriteria:
     def __init__(self, db: Database, analyzer: EarningsAnalyzer):
         self.db = db
         self.analyzer = analyzer
-        
+
+        # Metric calculator for computing derived Buffett metrics
+        from metric_calculator import MetricCalculator
+        self.metric_calculator = MetricCalculator(db)
+
         # Initialize default settings if needed
         self.db.init_default_settings()
         self.reload_settings()
@@ -180,7 +184,7 @@ class LynchCriteria:
         self.income_growth_good = self.settings['income_growth_good']['value']
         self.income_growth_fair = self.settings['income_growth_fair']['value']
 
-    def evaluate_stock(self, symbol: str, algorithm: str = 'weighted', overrides: Dict[str, float] = None, custom_metrics: Dict[str, Any] = None) -> Optional[Dict[str, Any]]:
+    def evaluate_stock(self, symbol: str, algorithm: str = 'weighted', overrides: Dict[str, float] = None, custom_metrics: Dict[str, Any] = None, stock_metrics: Dict[str, Any] = None) -> Optional[Dict[str, Any]]:
         """
         Evaluate a stock using the specified algorithm.
 
@@ -190,6 +194,7 @@ class LynchCriteria:
         Args:
             symbol: Stock ticker symbol
             algorithm: One of 'weighted', 'two_tier', 'category_based', 'critical_factors', 'classic'
+            stock_metrics: Optional pre-fetched stock metrics to avoid re-querying DB
 
         Returns:
             Dictionary with evaluation results including algorithm-specific scoring
@@ -204,7 +209,7 @@ class LynchCriteria:
         if custom_metrics:
             base_data = custom_metrics
         else:
-            base_data = self._get_base_metrics(symbol)
+            base_data = self._get_base_metrics(symbol, stock_metrics=stock_metrics)
 
         if not base_data:
             return None
@@ -356,9 +361,19 @@ class LynchCriteria:
             
         return result
 
-    def _get_base_metrics(self, symbol: str) -> Optional[Dict[str, Any]]:
-        """Get base metrics and growth data for a stock."""
-        metrics = self.db.get_stock_metrics(symbol)
+    def _get_base_metrics(self, symbol: str, stock_metrics: Dict[str, Any] = None) -> Optional[Dict[str, Any]]:
+        """Get base metrics and growth data for a stock.
+
+        Args:
+            symbol: Stock ticker
+            stock_metrics: Optional pre-fetched metrics to avoid DB lookup
+        """
+        # Use provided metrics if available, otherwise fetch from DB
+        if stock_metrics:
+            metrics = stock_metrics
+        else:
+            metrics = self.db.get_stock_metrics(symbol)
+
         if not metrics:
             return None
 
@@ -411,9 +426,23 @@ class LynchCriteria:
         # Calculate growth scores
         revenue_growth_score = self.calculate_revenue_growth_score(revenue_cagr)
         income_growth_score = self.calculate_income_growth_score(earnings_cagr)
-        
+
         # Calculate 52-week P/E range
         pe_range_data = self._calculate_pe_52_week_range(symbol, metrics)
+
+        # Calculate Buffett metrics for on-the-fly re-scoring
+        # These are stored in screening_results so any character can score them
+        roe_data = self.metric_calculator.calculate_roe(symbol)
+        owner_earnings_data = self.metric_calculator.calculate_owner_earnings(symbol)
+        # Pass total_debt from metrics to avoid DB re-fetch (write queue may not have flushed)
+        debt_to_earnings_data = self.metric_calculator.calculate_debt_to_earnings(symbol, total_debt=metrics.get('total_debt'))
+        gross_margin_data = self.metric_calculator.calculate_gross_margin(symbol)
+
+        # Extract values for storage (use 5yr avg for ROE as Buffett prefers long-term)
+        roe = roe_data.get('avg_roe_5yr')
+        owner_earnings = owner_earnings_data.get('owner_earnings')
+        debt_to_earnings = debt_to_earnings_data.get('debt_to_earnings_years')
+        gross_margin = gross_margin_data.get('current')
 
         # Return base data that all algorithms can use
         return {
@@ -447,6 +476,11 @@ class LynchCriteria:
             'pe_52_week_min': pe_range_data['pe_52_week_min'],
             'pe_52_week_max': pe_range_data['pe_52_week_max'],
             'pe_52_week_position': pe_range_data['pe_52_week_position'],
+            # Buffett metrics (for on-the-fly character re-scoring)
+            'roe': roe,
+            'owner_earnings': owner_earnings,
+            'debt_to_earnings': debt_to_earnings,
+            'gross_margin': gross_margin,
         }
 
     def _evaluate_classic(self, symbol: str, base_data: Dict[str, Any]) -> Dict[str, Any]:

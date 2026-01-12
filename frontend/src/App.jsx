@@ -113,7 +113,8 @@ function StockListView({
   watchlist, toggleWatchlist,
   algorithm, setAlgorithm,
   algorithms,
-  showAdvancedFilters, setShowAdvancedFilters
+  showAdvancedFilters, setShowAdvancedFilters,
+  activeCharacter, setActiveCharacter
 }) {
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
@@ -263,6 +264,11 @@ function StockListView({
           setTotalPages(sessionData.total_pages || 1)
           setTotalCount(sessionData.total_count || 0)
 
+          // Capture active character from API
+          if (sessionData.active_character) {
+            setActiveCharacter(sessionData.active_character)
+          }
+
           // Use status_counts from API (counts for full session, not just current page)
           const counts = sessionData.status_counts || {}
 
@@ -352,11 +358,14 @@ function StockListView({
           setTotalPages(data.total_pages || 1)
           setTotalCount(data.total_count || 0)
         }
+        if (data.active_character) {
+          setActiveCharacter(data.active_character)
+        }
         return data
       })
       .catch(err => console.error('Error fetching stocks:', err))
       .finally(() => setSearchLoading(false))
-  }, [searchQuery, currentPage, sortBy, sortDir, setStocks])
+  }, [searchQuery, currentPage, sortBy, sortDir, setStocks, setActiveCharacter])
 
 
   // Watchlist fetching logic
@@ -1012,6 +1021,7 @@ function StockListView({
                 stock={stock}
                 toggleWatchlist={toggleWatchlist}
                 watchlist={watchlist}
+                activeCharacter={activeCharacter}
               />
             ))}
           </div>
@@ -1080,12 +1090,13 @@ function App() {
   const [filter, setFilter] = useState('all')
   const [searchQuery, setSearchQuery] = useState('')
   const [currentPage, setCurrentPage] = useState(1)
-  const [sortBy, setSortBy] = useState('overall_status')
-  const [sortDir, setSortDir] = useState('asc')
+  const [sortBy, setSortBy] = useState('overall_score')
+  const [sortDir, setSortDir] = useState('desc')
   const [watchlist, setWatchlist] = useState(new Set())
   const [algorithm, setAlgorithm] = useState('weighted')
   const [algorithms, setAlgorithms] = useState({})
   const [showAdvancedFilters, setShowAdvancedFilters] = useState(false)
+  const [activeCharacter, setActiveCharacter] = useState('lynch')
 
   // Fetch algorithm metadata
   useEffect(() => {
@@ -1205,6 +1216,8 @@ function App() {
             algorithms={algorithms}
             showAdvancedFilters={showAdvancedFilters}
             setShowAdvancedFilters={setShowAdvancedFilters}
+            activeCharacter={activeCharacter}
+            setActiveCharacter={setActiveCharacter}
           />
         } />
         <Route path="/stock/:symbol" element={
@@ -1213,6 +1226,7 @@ function App() {
             toggleWatchlist={toggleWatchlist}
             algorithm={algorithm}
             algorithms={algorithms}
+            activeCharacter={activeCharacter}
           />
         } />
         <Route path="/tuning" element={<AlgorithmTuning />} />

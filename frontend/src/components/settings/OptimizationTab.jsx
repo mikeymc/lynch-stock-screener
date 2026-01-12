@@ -1,3 +1,6 @@
+// ABOUTME: Algorithm tuning UI for configuring scoring weights and thresholds
+// ABOUTME: Supports per-character configurations (Lynch, Buffett have different tunable params)
+
 import { useState, useEffect } from 'react'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Button } from "@/components/ui/button"
@@ -8,38 +11,143 @@ import { Label } from "@/components/ui/label"
 import { Sparkles, Play, Save, Loader2, TrendingUp, CheckCircle2, XCircle, Target, BarChart3, Info, AlertCircle } from 'lucide-react'
 import { cn } from "@/lib/utils"
 
-export default function OptimizationTab() {
-    const [config, setConfig] = useState({
-        // Weights
-        weight_peg: 0.50,
-        weight_consistency: 0.25,
-        weight_debt: 0.15,
-        weight_ownership: 0.10,
+// Character-specific slider configurations
+const CHARACTER_SLIDER_CONFIGS = {
+    lynch: {
+        displayName: 'Peter Lynch',
+        weights: [
+            { key: 'weight_peg', label: 'PEG Score', default: 0.50 },
+            { key: 'weight_consistency', label: 'Consistency', default: 0.25 },
+            { key: 'weight_debt', label: 'Debt Score', default: 0.15 },
+            { key: 'weight_ownership', label: 'Ownership', default: 0.10 },
+        ],
+        thresholdGroups: [
+            {
+                title: 'PEG Thresholds',
+                color: 'blue-500',
+                sliders: [
+                    { key: 'peg_excellent', label: 'Excellent (Upper)', min: 0.5, max: 1.5, step: 0.05, default: 1.0 },
+                    { key: 'peg_good', label: 'Good (Upper)', min: 1.0, max: 2.5, step: 0.05, default: 1.5 },
+                    { key: 'peg_fair', label: 'Fair (Upper)', min: 1.5, max: 3.0, step: 0.05, default: 2.0 },
+                ]
+            },
+            {
+                title: 'D/E Thresholds',
+                color: 'red-500',
+                sliders: [
+                    { key: 'debt_excellent', label: 'Excellent D/E', min: 0.2, max: 1.0, step: 0.05, default: 0.5 },
+                    { key: 'debt_good', label: 'Good D/E', min: 0.5, max: 1.5, step: 0.05, default: 1.0 },
+                    { key: 'debt_moderate', label: 'Moderate D/E', min: 1.0, max: 3.0, step: 0.05, default: 2.0 },
+                ]
+            },
+            {
+                title: 'Institutional Ownership',
+                color: 'purple-500',
+                sliders: [
+                    { key: 'inst_own_min', label: 'Minimum Ideal', min: 0, max: 0.6, step: 0.01, isPercentage: true, default: 0.20 },
+                    { key: 'inst_own_max', label: 'Maximum Ideal', min: 0.5, max: 1.1, step: 0.01, isPercentage: true, default: 0.60 },
+                ]
+            },
+            {
+                title: 'Revenue Thresholds',
+                color: 'green-500',
+                sliders: [
+                    { key: 'revenue_growth_excellent', label: 'Excellent (CAGR %)', min: 10, max: 25, step: 0.5, default: 15.0 },
+                    { key: 'revenue_growth_good', label: 'Good (CAGR %)', min: 5, max: 20, step: 0.5, default: 10.0 },
+                    { key: 'revenue_growth_fair', label: 'Fair (CAGR %)', min: 0, max: 15, step: 0.5, default: 5.0 },
+                ]
+            },
+            {
+                title: 'Net Income Thresholds',
+                color: 'emerald-500',
+                sliders: [
+                    { key: 'income_growth_excellent', label: 'Excellent (CAGR %)', min: 10, max: 25, step: 0.5, default: 15.0 },
+                    { key: 'income_growth_good', label: 'Good (CAGR %)', min: 5, max: 20, step: 0.5, default: 10.0 },
+                    { key: 'income_growth_fair', label: 'Fair (CAGR %)', min: 0, max: 15, step: 0.5, default: 5.0 },
+                ]
+            },
+        ]
+    },
+    buffett: {
+        displayName: 'Warren Buffett',
+        weights: [
+            { key: 'weight_roe', label: 'ROE Score', default: 0.40 },
+            { key: 'weight_consistency', label: 'Consistency', default: 0.30 },
+            { key: 'weight_debt_to_earnings', label: 'Debt-to-Earnings', default: 0.30 },
+        ],
+        thresholdGroups: [
+            {
+                title: 'ROE Thresholds',
+                color: 'blue-500',
+                sliders: [
+                    { key: 'roe_excellent', label: 'Excellent (%)', min: 15, max: 30, step: 1, default: 20.0 },
+                    { key: 'roe_good', label: 'Good (%)', min: 10, max: 25, step: 1, default: 15.0 },
+                    { key: 'roe_fair', label: 'Fair (%)', min: 5, max: 20, step: 1, default: 10.0 },
+                ]
+            },
+            {
+                title: 'Debt-to-Earnings (Years)',
+                color: 'red-500',
+                sliders: [
+                    { key: 'debt_to_earnings_excellent', label: 'Excellent (years)', min: 0, max: 3, step: 0.5, default: 2.0 },
+                    { key: 'debt_to_earnings_good', label: 'Good (years)', min: 1, max: 5, step: 0.5, default: 4.0 },
+                    { key: 'debt_to_earnings_fair', label: 'Fair (years)', min: 3, max: 10, step: 0.5, default: 7.0 },
+                ]
+            },
+            {
+                title: 'Gross Margin Thresholds',
+                color: 'green-500',
+                sliders: [
+                    { key: 'gross_margin_excellent', label: 'Excellent (%)', min: 30, max: 60, step: 1, default: 50.0 },
+                    { key: 'gross_margin_good', label: 'Good (%)', min: 20, max: 50, step: 1, default: 40.0 },
+                    { key: 'gross_margin_fair', label: 'Fair (%)', min: 10, max: 40, step: 1, default: 30.0 },
+                ]
+            },
+            {
+                title: 'Revenue Thresholds',
+                color: 'emerald-500',
+                sliders: [
+                    { key: 'revenue_growth_excellent', label: 'Excellent (CAGR %)', min: 10, max: 25, step: 0.5, default: 15.0 },
+                    { key: 'revenue_growth_good', label: 'Good (CAGR %)', min: 5, max: 20, step: 0.5, default: 10.0 },
+                    { key: 'revenue_growth_fair', label: 'Fair (CAGR %)', min: 0, max: 15, step: 0.5, default: 5.0 },
+                ]
+            },
+            {
+                title: 'Net Income Thresholds',
+                color: 'purple-500',
+                sliders: [
+                    { key: 'income_growth_excellent', label: 'Excellent (CAGR %)', min: 10, max: 25, step: 0.5, default: 15.0 },
+                    { key: 'income_growth_good', label: 'Good (CAGR %)', min: 5, max: 20, step: 0.5, default: 10.0 },
+                    { key: 'income_growth_fair', label: 'Fair (CAGR %)', min: 0, max: 15, step: 0.5, default: 5.0 },
+                ]
+            },
+        ]
+    }
+}
 
-        // PEG Thresholds
-        peg_excellent: 1.0,
-        peg_good: 1.5,
-        peg_fair: 2.0,
+// Build default config from slider config
+function buildDefaultConfig(characterId) {
+    const charConfig = CHARACTER_SLIDER_CONFIGS[characterId] || CHARACTER_SLIDER_CONFIGS.lynch
+    const defaults = {}
 
-        // Debt Thresholds
-        debt_excellent: 0.5,
-        debt_good: 1.0,
-        debt_moderate: 2.0,
-
-        // Institutional Ownership Thresholds
-        inst_own_min: 0.20,
-        inst_own_max: 0.60,
-
-        // Revenue Growth Thresholds
-        revenue_growth_excellent: 15.0,
-        revenue_growth_good: 10.0,
-        revenue_growth_fair: 5.0,
-
-        // Income Growth Thresholds
-        income_growth_excellent: 15.0,
-        income_growth_good: 10.0,
-        income_growth_fair: 5.0
+    // Weights
+    charConfig.weights.forEach(w => {
+        defaults[w.key] = w.default
     })
+
+    // Thresholds
+    charConfig.thresholdGroups.forEach(group => {
+        group.sliders.forEach(s => {
+            defaults[s.key] = s.default
+        })
+    })
+
+    return defaults
+}
+
+export default function OptimizationTab() {
+    const [activeCharacter, setActiveCharacter] = useState('lynch')
+    const [config, setConfig] = useState(() => buildDefaultConfig('lynch'))
 
     const [validationRunning, setValidationRunning] = useState(false)
     const [optimizationRunning, setOptimizationRunning] = useState(false)
@@ -55,7 +163,7 @@ export default function OptimizationTab() {
 
 
 
-    // Load current configuration on mount
+    // Load current configuration and character on mount
     useEffect(() => {
         const controller = new AbortController()
         loadCurrentConfig(controller.signal)
@@ -64,12 +172,22 @@ export default function OptimizationTab() {
 
     const loadCurrentConfig = async (signal) => {
         try {
-            const response = await fetch('/api/algorithm/config', { signal })
+            // Fetch character setting first
+            const charResponse = await fetch('/api/settings/character', { signal, credentials: 'include' })
+            const charData = await charResponse.json()
+            const character = charData.active_character || 'lynch'
+            setActiveCharacter(character)
+
+            // Fetch algorithm config (now character-aware on backend)
+            const response = await fetch('/api/algorithm/config', { signal, credentials: 'include' })
             const data = await response.json()
             if (data.current) {
                 setConfig(data.current)
                 // Auto-run validation to show analysis for current config
                 runValidationForConfig(data.current, signal)
+            } else {
+                // No saved config, use defaults for character
+                setConfig(buildDefaultConfig(character))
             }
         } catch (error) {
             if (error.name !== 'AbortError') {
@@ -107,11 +225,15 @@ export default function OptimizationTab() {
 
         if (key.startsWith('weight_')) {
             const newConfig = { ...config, [key]: numValue }
-            const weightKeys = Object.keys(config).filter(k => k.startsWith('weight_'))
-            const total = weightKeys.reduce((sum, k) => sum + newConfig[k], 0)
+            // Get weight keys from current character's config
+            const charConfig = CHARACTER_SLIDER_CONFIGS[activeCharacter] || CHARACTER_SLIDER_CONFIGS.lynch
+            const weightKeys = charConfig.weights.map(w => w.key)
+            const total = weightKeys.reduce((sum, k) => sum + (newConfig[k] || 0), 0)
             const normalized = { ...newConfig }
             weightKeys.forEach(k => {
-                normalized[k] = newConfig[k] / total
+                if (newConfig[k] !== undefined && total > 0) {
+                    normalized[k] = newConfig[k] / total
+                }
             })
             setConfig(normalized)
         } else {
@@ -365,9 +487,11 @@ export default function OptimizationTab() {
     return (
         <div className="space-y-6">
             <div>
-                <h3 className="text-lg font-medium">Algorithm Tuning</h3>
+                <h3 className="text-lg font-medium">
+                    Algorithm Tuning: {CHARACTER_SLIDER_CONFIGS[activeCharacter]?.displayName || 'Peter Lynch'}
+                </h3>
                 <p className="text-sm text-muted-foreground">
-                    Configure scoring weights and thresholds to optimize stock screening accuracy.
+                    Configure scoring weights and thresholds for {CHARACTER_SLIDER_CONFIGS[activeCharacter]?.displayName || 'Peter Lynch'}-style screening.
                 </p>
             </div>
             <div className="border-t" />
@@ -395,8 +519,7 @@ export default function OptimizationTab() {
 
                             <div className="border-t" />
 
-                            {/* Settings Grid */}
-                            {/* Settings Masonry Layout */}
+                            {/* Settings Grid - Dynamic based on character */}
                             <div className="columns-1 md:columns-2 lg:columns-3 gap-6 space-y-6">
                                 {/* Algorithm Weights */}
                                 <div className="break-inside-avoid space-y-4">
@@ -405,76 +528,26 @@ export default function OptimizationTab() {
                                         Algorithm Weights
                                     </div>
                                     <div className="space-y-4 p-4 bg-muted/30 rounded-lg border">
-                                        {renderSlider('weight_peg', 'PEG Score', 0, 1, 0.01, true)}
-                                        {renderSlider('weight_consistency', 'Consistency', 0, 1, 0.01, true)}
-                                        {renderSlider('weight_debt', 'Debt Score', 0, 1, 0.01, true)}
-                                        {renderSlider('weight_ownership', 'Ownership', 0, 1, 0.01, true)}
+                                        {CHARACTER_SLIDER_CONFIGS[activeCharacter]?.weights.map(w => (
+                                            renderSlider(w.key, w.label, 0, 1, 0.01, true)
+                                        ))}
                                     </div>
                                 </div>
 
-                                {/* PEG Thresholds */}
-                                <div className="break-inside-avoid space-y-4">
-                                    <div className="font-medium text-sm text-foreground mb-2 flex items-center gap-2">
-                                        <div className="w-1 h-4 bg-blue-500 rounded-full"></div>
-                                        PEG Thresholds
+                                {/* Threshold Groups - Dynamic based on character */}
+                                {CHARACTER_SLIDER_CONFIGS[activeCharacter]?.thresholdGroups.map((group, idx) => (
+                                    <div key={group.title} className="break-inside-avoid space-y-4">
+                                        <div className="font-medium text-sm text-foreground mb-2 flex items-center gap-2">
+                                            <div className={`w-1 h-4 bg-${group.color} rounded-full`}></div>
+                                            {group.title}
+                                        </div>
+                                        <div className="space-y-4 p-4 bg-muted/30 rounded-lg border">
+                                            {group.sliders.map(s => (
+                                                renderSlider(s.key, s.label, s.min, s.max, s.step, s.isPercentage)
+                                            ))}
+                                        </div>
                                     </div>
-                                    <div className="space-y-4 p-4 bg-muted/30 rounded-lg border">
-                                        {renderSlider('peg_excellent', 'Excellent (Upper)', 0.5, 1.5, 0.05)}
-                                        {renderSlider('peg_good', 'Good (Upper)', 1.0, 2.5, 0.05)}
-                                        {renderSlider('peg_fair', 'Fair (Upper)', 1.5, 3.0, 0.05)}
-                                    </div>
-                                </div>
-
-                                {/* Revenue Thresholds */}
-                                <div className="break-inside-avoid space-y-4">
-                                    <div className="font-medium text-sm text-foreground mb-2 flex items-center gap-2">
-                                        <div className="w-1 h-4 bg-green-500 rounded-full"></div>
-                                        Revenue Thresholds
-                                    </div>
-                                    <div className="space-y-4 p-4 bg-muted/30 rounded-lg border">
-                                        {renderSlider('revenue_growth_excellent', 'Excellent (CAGR %)', 10, 25, 0.5)}
-                                        {renderSlider('revenue_growth_good', 'Good (CAGR %)', 5, 20, 0.5)}
-                                        {renderSlider('revenue_growth_fair', 'Fair (CAGR %)', 0, 15, 0.5)}
-                                    </div>
-                                </div>
-
-                                {/* Net Income Thresholds */}
-                                <div className="break-inside-avoid space-y-4">
-                                    <div className="font-medium text-sm text-foreground mb-2 flex items-center gap-2">
-                                        <div className="w-1 h-4 bg-emerald-500 rounded-full"></div>
-                                        Net Income Thresholds
-                                    </div>
-                                    <div className="space-y-4 p-4 bg-muted/30 rounded-lg border">
-                                        {renderSlider('income_growth_excellent', 'Excellent (CAGR %)', 10, 25, 0.5)}
-                                        {renderSlider('income_growth_good', 'Good (CAGR %)', 5, 20, 0.5)}
-                                        {renderSlider('income_growth_fair', 'Fair (CAGR %)', 0, 15, 0.5)}
-                                    </div>
-                                </div>
-
-                                {/* Debt Thresholds */}
-                                <div className="break-inside-avoid space-y-4">
-                                    <div className="font-medium text-sm text-foreground mb-2 flex items-center gap-2">
-                                        <div className="w-1 h-4 bg-red-500 rounded-full"></div>
-                                        D/E Thresholds
-                                    </div>
-                                    <div className="space-y-4 p-4 bg-muted/30 rounded-lg border">
-                                        {renderSlider('debt_excellent', 'Excellent D/E', 0.2, 1.0, 0.05)}
-                                        {renderSlider('debt_good', 'Good D/E', 0.5, 1.5, 0.05)}
-                                        {renderSlider('debt_moderate', 'Moderate D/E', 1.0, 3.0, 0.05)}
-                                    </div>
-                                </div>
-
-                                {/* Institutional Ownership */}
-                                <div className="break-inside-avoid space-y-4">
-                                    <div className="font-medium text-sm text-foreground mb-2 flex items-center gap-2">
-                                        <div className="w-1 h-4 bg-purple-500 rounded-full"></div>
-                                        Institutional Ownership
-                                    </div>
-                                    <div className="space-y-4 p-4 bg-muted/30 rounded-lg border">
-                                        {renderSlider('inst_own_min', 'Minimum Ideal', 0, 0.6, 0.01, true)}
-                                        {renderSlider('inst_own_max', 'Maximum Ideal', 0.5, 1.1, 0.01, true)}
-                                    </div>
-                                </div>
+                                ))}
                             </div>
 
 
@@ -640,7 +713,7 @@ export default function OptimizationTab() {
                                 </div>
                             )}
 
-                            {/* Live Visualization Masonry Layout */}
+                            {/* Live Visualization Masonry Layout - Dynamic based on character */}
                             <div className="columns-1 md:columns-2 lg:columns-3 gap-6 space-y-6">
                                 {/* Algorithm Weights */}
                                 <div className="break-inside-avoid space-y-4">
@@ -649,76 +722,26 @@ export default function OptimizationTab() {
                                         Algorithm Weights
                                     </div>
                                     <div className={cn("space-y-4 p-4 rounded-lg border", optimizationRunning ? "bg-amber-50/50 dark:bg-amber-950/20 border-amber-200 dark:border-amber-900" : "bg-muted/30")}>
-                                        {renderLiveSlider('weight_peg', 'PEG Score', 0, 1, 0.01, true)}
-                                        {renderLiveSlider('weight_consistency', 'Consistency', 0, 1, 0.01, true)}
-                                        {renderLiveSlider('weight_debt', 'Debt Score', 0, 1, 0.01, true)}
-                                        {renderLiveSlider('weight_ownership', 'Ownership', 0, 1, 0.01, true)}
+                                        {CHARACTER_SLIDER_CONFIGS[activeCharacter]?.weights.map(w => (
+                                            renderLiveSlider(w.key, w.label, 0, 1, 0.01, true)
+                                        ))}
                                     </div>
                                 </div>
 
-                                {/* PEG Thresholds */}
-                                <div className="break-inside-avoid space-y-4">
-                                    <div className="font-medium text-sm text-foreground mb-2 flex items-center gap-2">
-                                        <div className={cn("w-1 h-4 rounded-full", optimizationRunning ? "bg-amber-500" : "bg-blue-500")}></div>
-                                        PEG Thresholds
+                                {/* Threshold Groups - Dynamic based on character */}
+                                {CHARACTER_SLIDER_CONFIGS[activeCharacter]?.thresholdGroups.map((group, idx) => (
+                                    <div key={group.title} className="break-inside-avoid space-y-4">
+                                        <div className="font-medium text-sm text-foreground mb-2 flex items-center gap-2">
+                                            <div className={cn("w-1 h-4 rounded-full", optimizationRunning ? "bg-amber-500" : `bg-${group.color}`)}></div>
+                                            {group.title}
+                                        </div>
+                                        <div className={cn("space-y-4 p-4 rounded-lg border", optimizationRunning ? "bg-amber-50/50 dark:bg-amber-950/20 border-amber-200 dark:border-amber-900" : "bg-muted/30")}>
+                                            {group.sliders.map(s => (
+                                                renderLiveSlider(s.key, s.label, s.min, s.max, s.step, s.isPercentage)
+                                            ))}
+                                        </div>
                                     </div>
-                                    <div className={cn("space-y-4 p-4 rounded-lg border", optimizationRunning ? "bg-amber-50/50 dark:bg-amber-950/20 border-amber-200 dark:border-amber-900" : "bg-muted/30")}>
-                                        {renderLiveSlider('peg_excellent', 'Excellent (Upper)', 0.5, 1.5, 0.05)}
-                                        {renderLiveSlider('peg_good', 'Good (Upper)', 1.0, 2.5, 0.05)}
-                                        {renderLiveSlider('peg_fair', 'Fair (Upper)', 1.5, 3.0, 0.05)}
-                                    </div>
-                                </div>
-
-                                {/* Revenue Thresholds */}
-                                <div className="break-inside-avoid space-y-4">
-                                    <div className="font-medium text-sm text-foreground mb-2 flex items-center gap-2">
-                                        <div className={cn("w-1 h-4 rounded-full", optimizationRunning ? "bg-amber-500" : "bg-green-500")}></div>
-                                        Revenue Thresholds
-                                    </div>
-                                    <div className={cn("space-y-4 p-4 rounded-lg border", optimizationRunning ? "bg-amber-50/50 dark:bg-amber-950/20 border-amber-200 dark:border-amber-900" : "bg-muted/30")}>
-                                        {renderLiveSlider('revenue_growth_excellent', 'Excellent (CAGR %)', 10, 25, 0.5)}
-                                        {renderLiveSlider('revenue_growth_good', 'Good (CAGR %)', 5, 20, 0.5)}
-                                        {renderLiveSlider('revenue_growth_fair', 'Fair (CAGR %)', 0, 15, 0.5)}
-                                    </div>
-                                </div>
-
-                                {/* Net Income Thresholds */}
-                                <div className="break-inside-avoid space-y-4">
-                                    <div className="font-medium text-sm text-foreground mb-2 flex items-center gap-2">
-                                        <div className={cn("w-1 h-4 rounded-full", optimizationRunning ? "bg-amber-500" : "bg-emerald-500")}></div>
-                                        Net Income Thresholds
-                                    </div>
-                                    <div className={cn("space-y-4 p-4 rounded-lg border", optimizationRunning ? "bg-amber-50/50 dark:bg-amber-950/20 border-amber-200 dark:border-amber-900" : "bg-muted/30")}>
-                                        {renderLiveSlider('income_growth_excellent', 'Excellent (CAGR %)', 10, 25, 0.5)}
-                                        {renderLiveSlider('income_growth_good', 'Good (CAGR %)', 5, 20, 0.5)}
-                                        {renderLiveSlider('income_growth_fair', 'Fair (CAGR %)', 0, 15, 0.5)}
-                                    </div>
-                                </div>
-
-                                {/* D/E Thresholds */}
-                                <div className="break-inside-avoid space-y-4">
-                                    <div className="font-medium text-sm text-foreground mb-2 flex items-center gap-2">
-                                        <div className={cn("w-1 h-4 rounded-full", optimizationRunning ? "bg-amber-500" : "bg-red-500")}></div>
-                                        D/E Thresholds
-                                    </div>
-                                    <div className={cn("space-y-4 p-4 rounded-lg border", optimizationRunning ? "bg-amber-50/50 dark:bg-amber-950/20 border-amber-200 dark:border-amber-900" : "bg-muted/30")}>
-                                        {renderLiveSlider('debt_excellent', 'Excellent D/E', 0.2, 1.0, 0.05)}
-                                        {renderLiveSlider('debt_good', 'Good D/E', 0.5, 1.5, 0.05)}
-                                        {renderLiveSlider('debt_moderate', 'Moderate D/E', 1.0, 3.0, 0.05)}
-                                    </div>
-                                </div>
-
-                                {/* Institutional Ownership */}
-                                <div className="break-inside-avoid space-y-4">
-                                    <div className="font-medium text-sm text-foreground mb-2 flex items-center gap-2">
-                                        <div className={cn("w-1 h-4 rounded-full", optimizationRunning ? "bg-amber-500" : "bg-purple-500")}></div>
-                                        Institutional Ownership
-                                    </div>
-                                    <div className={cn("space-y-4 p-4 rounded-lg border", optimizationRunning ? "bg-amber-50/50 dark:bg-amber-950/20 border-amber-200 dark:border-amber-900" : "bg-muted/30")}>
-                                        {renderLiveSlider('inst_own_min', 'Minimum Ideal', 0, 0.6, 0.01, true)}
-                                        {renderLiveSlider('inst_own_max', 'Maximum Ideal', 0.5, 1.1, 0.01, true)}
-                                    </div>
-                                </div>
+                                ))}
                             </div>
 
 

@@ -24,7 +24,7 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 
 const API_BASE = '/api'
 
-export default function StockDetail({ watchlist, toggleWatchlist, algorithm }) {
+export default function StockDetail({ watchlist, toggleWatchlist, algorithm, activeCharacter }) {
   const { symbol } = useParams()
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
@@ -326,7 +326,7 @@ export default function StockDetail({ watchlist, toggleWatchlist, algorithm }) {
       <ErrorBoundary>
         <div className="flex-1 w-full">
           {activeTab === 'overview' && (
-            <StockOverview stock={stock} />
+            <StockOverview stock={stock} activeCharacter={activeCharacter} />
           )}
 
           {activeTab === 'charts' && (
