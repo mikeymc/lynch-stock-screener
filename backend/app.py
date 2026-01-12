@@ -38,7 +38,7 @@ from stock_vectors import StockVectors, DEFAULT_ALGORITHM_CONFIG
 from sec_8k_client import SEC8KClient
 from material_event_summarizer import MaterialEventSummarizer, SUMMARIZABLE_ITEM_CODES
 from fly_machines import get_fly_manager
-from auth import init_oauth_client, require_user_auth, optional_user_auth
+from auth import init_oauth_client, require_user_auth
 from characters import get_character, list_characters
 from fred_service import get_fred_service, SUPPORTED_SERIES, CATEGORIES
 
@@ -1439,7 +1439,7 @@ def get_cached_stocks():
 
 
 @app.route('/api/sessions/latest', methods=['GET'])
-@optional_user_auth
+@require_user_auth
 def get_latest_session(user_id):
     """Get the most recent screening session with paginated, sorted results.
 
@@ -1454,9 +1454,7 @@ def get_latest_session(user_id):
     sort_dir = request.args.get('sort_dir', 'desc')
 
     # Determine active character for scoring
-    character_id = 'lynch'  # Default
-    if user_id:
-        character_id = db.get_user_character(user_id)
+    character_id = db.get_user_character(user_id)
     character = get_character(character_id)
 
     # Check if US-only filter is enabled (default: True for production)
@@ -3597,16 +3595,14 @@ def get_rescoring_progress(job_id):
     return jsonify(clean_nan_values(rescoring_jobs[job_id]))
 
 @app.route('/api/algorithm/config', methods=['GET', 'POST'])
-@optional_user_auth
+@require_user_auth
 def algorithm_config(user_id):
     """Get or update algorithm configuration for the user's active character.
 
     Source of truth: algorithm_configurations table (filtered by character)
     """
     # Determine active character
-    character_id = 'lynch'  # Default
-    if user_id:
-        character_id = db.get_user_character(user_id)
+    character_id = db.get_user_character(user_id)
 
     if request.method == 'GET':
         # Load config for user's character

@@ -93,27 +93,5 @@ def require_user_auth(f):
     return decorated_function
 
 
-def optional_user_auth(f):
-    """
-    Decorator for routes that work with or without authentication.
-    If user is logged in, injects user_id. Otherwise, injects None.
 
-    Use this for routes that provide personalized data when logged in
-    but should still work anonymously (e.g., screener results with character scoring).
-    """
-    @wraps(f)
-    def decorated_function(*args, **kwargs):
-        if 'user_id' in session:
-            # Normal authenticated user
-            kwargs['user_id'] = session['user_id']
-        elif DEV_AUTH_BYPASS:
-            # Dev bypass enabled - use mock user
-            kwargs['user_id'] = 'dev-user-bypass'
-        else:
-            # No auth - inject None (route handles anonymous case)
-            kwargs['user_id'] = None
-
-        return f(*args, **kwargs)
-
-    return decorated_function
 
