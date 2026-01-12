@@ -4,6 +4,7 @@
 import logging
 from datetime import datetime
 from typing import Dict, Any, List, Optional, Generator
+import time
 from google import genai
 from google.genai.types import GenerateContentConfig, Content, Part, Tool
 
@@ -45,6 +46,7 @@ class SmartChatAgent:
         self._client = None
         
         self.model_name = "gemini-2.5-flash"
+        self.fallback_model_name = "gemini-2.0-flash"
     
     @property
     def client(self):
@@ -177,12 +179,48 @@ class SmartChatAgent:
         while iterations < MAX_ITERATIONS:
             iterations += 1
             
-            # Generate response
-            response = self.client.models.generate_content(
-                model=self.model_name,
-                contents=contents,
-                config=config,
-            )
+            # Generate response with retry logic and fallback
+            response = None
+            
+            models_to_try = [self.model_name, self.fallback_model_name]
+            
+            for model_index, model in enumerate(models_to_try):
+                retry_count = 0
+                max_retries = 3
+                base_delay = 1
+                model_success = False
+                
+                while retry_count <= max_retries:
+                    try:
+                        response = self.client.models.generate_content(
+                            model=model,
+                            contents=contents,
+                            config=config,
+                        )
+                        model_success = True
+                        break
+                    except Exception as e:
+                        is_overloaded = "503" in str(e) or "overloaded" in str(e).lower()
+                        
+                        # If retries left for this model, wait and retry
+                        if is_overloaded and retry_count < max_retries:
+                            sleep_time = base_delay * (2 ** retry_count)
+                            logger.warning(f"Gemini API ({model}) overloaded. Retrying in {sleep_time}s (attempt {retry_count + 1}/{max_retries})")
+                            time.sleep(sleep_time)
+                            retry_count += 1
+                            continue
+                        
+                        # If we are here, this model failed all retries (or non-retriable error)
+                        # If it's the last model, or not an overload error, raise it
+                        if model_index == len(models_to_try) - 1 or not is_overloaded:
+                            raise e
+                        
+                        # Otherwise break inner loop to try next model
+                        logger.warning(f"Primary model {model} failed. Switching to fallback...")
+                        break
+                
+                if model_success:
+                    break
             
             # Check if model wants to call a tool
             if response.candidates and response.candidates[0].content.parts:
@@ -301,11 +339,48 @@ class SmartChatAgent:
             
             # For the final response, we want to stream tokens
             # First, check if this iteration will have tool calls
-            response = self.client.models.generate_content(
-                model=self.model_name,
-                contents=contents,
-                config=config,
-            )
+            response = None
+            
+            models_to_try = [self.model_name, self.fallback_model_name]
+            
+            for model_index, model in enumerate(models_to_try):
+                retry_count = 0
+                max_retries = 3
+                base_delay = 1
+                model_success = False
+
+                while retry_count <= max_retries:
+                    try:
+                        response = self.client.models.generate_content(
+                            model=model,
+                            contents=contents,
+                            config=config,
+                        )
+                        model_success = True
+                        break
+                    except Exception as e:
+                        is_overloaded = "503" in str(e) or "overloaded" in str(e).lower()
+                        
+                        if is_overloaded and retry_count < max_retries:
+                            sleep_time = base_delay * (2 ** retry_count)
+                            # Yield a thinking status so the user knows we are retrying
+                            yield {"type": "thinking", "data": f"Model ({model}) overloaded, retrying in {sleep_time}s..."}
+                            logger.warning(f"Gemini API ({model}) overloaded. Retrying in {sleep_time}s (attempt {retry_count + 1}/{max_retries})")
+                            time.sleep(sleep_time)
+                            retry_count += 1
+                            continue
+                        
+                        # If we are here, this model failed
+                        if model_index == len(models_to_try) - 1 or not is_overloaded:
+                            raise e
+                        
+                        # Fallback
+                        yield {"type": "thinking", "data": f"Primary model overloaded. Switching to fallback ({self.fallback_model_name})..."}
+                        logger.warning(f"Primary model {model} failed. Switching to fallback...")
+                        break
+                
+                if model_success:
+                    break
             
             if response.candidates and response.candidates[0].content.parts:
                 parts = response.candidates[0].content.parts
@@ -348,7 +423,6 @@ class SmartChatAgent:
                 # Final text response - stream it in chunks for better UX
                 text_parts = [p for p in parts if hasattr(p, 'text') and p.text]
                 if text_parts:
-                    import time
                     for part in text_parts:
                         # Stream the text in chunks to simulate real-time streaming
                         text = part.text
@@ -362,7 +436,6 @@ class SmartChatAgent:
             
             if response.text:
                 # Stream in chunks
-                import time
                 text = response.text
                 chunk_size = 30
                 for i in range(0, len(text), chunk_size):
