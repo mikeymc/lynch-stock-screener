@@ -1,5 +1,6 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import StatusBar from "./StatusBar"
+import { formatLargeCurrency } from "../utils/formatters"
 
 // Character-specific metric configurations for stock overview
 const CHARACTER_METRICS = {
@@ -41,11 +42,8 @@ const formatValue = (value, format, decimals) => {
         case 'percent_decimal':
             return `${(value * 100).toFixed(decimals)}%`;
         case 'currency':
-            // Convert to billions if >= 1000M, otherwise keep in millions
-            if (value >= 1000) {
-                return `$${(value / 1000).toFixed(2)}B`;
-            }
-            return `$${value.toFixed(1)}M`;
+        case 'currency_large':
+            return formatLargeCurrency(value)
         case 'years':
             return `${value.toFixed(decimals)} yrs`;
         case 'number':

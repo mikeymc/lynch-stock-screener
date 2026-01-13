@@ -2,6 +2,7 @@
 // ABOUTME: Supports both clickable (in table view) and read-only (in detail view) modes
 
 import StatusBar from './StatusBar'
+import { formatLargeCurrency } from '../utils/formatters'
 
 function getStatusColor(status) {
   switch (status) {
@@ -72,7 +73,7 @@ export default function StockTableRow({ stock, watchlist, onToggleWatchlist, onC
       <td className={`${cellClasses} font-semibold text-primary`}>{stock.symbol}</td>
       <td className={cellClasses}>{stock.company_name || 'N/A'}</td>
       <td className={cellClasses}>{stock.country || 'N/A'}</td>
-      <td className={cellClasses}>{typeof stock.market_cap === 'number' ? `$${(stock.market_cap / 1e9).toFixed(2)}B` : 'N/A'}</td>
+      <td className={cellClasses}>{formatLargeCurrency(stock.market_cap)}</td>
       <td className={cellClasses}>{stock.sector || 'N/A'}</td>
       <td className={cellClasses}>{typeof stock.ipo_year === 'number' ? new Date().getFullYear() - stock.ipo_year : 'N/A'}</td>
       <td className={cellClasses}>{typeof stock.price === 'number' ? `$${stock.price.toFixed(2)}` : 'N/A'}</td>

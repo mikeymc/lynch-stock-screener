@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { useNavigate } from "react-router-dom"
 import StatusBar from "./StatusBar"
+import { formatLargeCurrency } from "../utils/formatters"
 
 // Metric configurations for each character
 const CHARACTER_METRICS = {
@@ -64,13 +65,7 @@ function formatMetricValue(value, format) {
         case 'currency':
             return typeof value === 'number' ? `$${value.toFixed(2)}` : '-'
         case 'currency_large':
-            // Assumes input is in Millions (1879 = 1.88B) - similar to market_cap logic if needed,
-            // but here we expect raw millions from backend for owner_earnings
-            if (typeof value !== 'number') return '-'
-            if (value >= 1000) {
-                return `$${(value / 1000).toFixed(2)}B`
-            }
-            return `$${value.toFixed(0)}M`
+            return formatLargeCurrency(value)
         default:
             return typeof value === 'number' ? value.toFixed(2) : String(value)
     }
@@ -119,9 +114,7 @@ export default function StockListCard({ stock, toggleWatchlist, watchlist, activ
                         <div>
                             <div className="text-xs text-muted-foreground">Market Cap</div>
                             <div className="font-semibold text-base">
-                                {typeof stock.market_cap === 'number'
-                                    ? `$${(stock.market_cap / 1e9).toFixed(2)}B`
-                                    : (stock.market_cap || 'N/A')}
+                                {formatLargeCurrency(stock.market_cap)}
                             </div>
                         </div>
                         <div>

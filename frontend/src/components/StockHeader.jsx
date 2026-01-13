@@ -1,6 +1,7 @@
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
+import { formatLargeCurrency } from "../utils/formatters"
 
 export default function StockHeader({ stock, toggleWatchlist, watchlist, className, onClick }) {
     const isWatchlisted = watchlist?.has(stock.symbol)
@@ -45,9 +46,7 @@ export default function StockHeader({ stock, toggleWatchlist, watchlist, classNa
                     <div className="text-right hidden md:block">
                         <div className="text-sm font-medium text-muted-foreground">Market Cap</div>
                         <div className="font-semibold leading-none">
-                            {typeof stock.market_cap === 'number'
-                                ? `$${(stock.market_cap / 1e9).toFixed(2)}B`
-                                : (stock.market_cap || 'N/A')}
+                            {formatLargeCurrency(stock.market_cap)}
                         </div>
                     </div>
 
