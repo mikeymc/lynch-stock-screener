@@ -4,9 +4,11 @@ Production environment commands for bag CLI
 import typer
 from rich.console import Console
 from cli.utils.fly import run_fly_command, get_machines, filter_machines, select_machine_interactive, get_running_jobs_from_prod_db
+from cli.commands import db
 
 console = Console()
 app = typer.Typer(help="Production environment operations")
+app.add_typer(db.app, name="db", help="Database operations")
 
 
 @app.command()
@@ -146,11 +148,7 @@ def ssh(
     run_fly_command(["ssh", "console", "-s", machine_id])
 
 
-@app.command()
-def db():
-    """Connect to Postgres database"""
-    console.print("[bold blue]🗄️  Connecting to database...[/bold blue]")
-    run_fly_command(["postgres", "connect", "-a", "lynch-postgres"])
+
 
 
 @app.command()
