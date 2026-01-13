@@ -1,4 +1,5 @@
 import { createContext, useContext, useEffect, useState } from "react"
+import { useAuth } from "@/context/AuthContext"
 
 const ThemeProviderContext = createContext({
     theme: "system",
@@ -12,19 +13,46 @@ export function ThemeProvider({
     ...props
 }) {
     const [theme, setTheme] = useState(
-        () => localStorage.getItem(storageKey) || defaultTheme
+        () => {
+            // Check URL query param first for override
+            if (typeof window !== 'undefined') {
+                const params = new URLSearchParams(window.location.search)
+                const themeParam = params.get('theme')
+                if (themeParam) return themeParam
+            }
+            return localStorage.getItem(storageKey) || defaultTheme
+        }
     )
     const [isLoading, setIsLoading] = useState(true)
 
+    const { user, loading: authLoading } = useAuth()
+
     // Fetch user's theme from backend on mount
     useEffect(() => {
+        // Wait for auth check to complete
+        if (authLoading) return
+
+        // If theme was set by URL param, don't fetch from backend to avoid overwriting the preview
+        const params = new URLSearchParams(window.location.search)
+        if (params.get('theme')) {
+            setIsLoading(false)
+            return
+        }
+
+        // If not authenticated, use localStorage/default and stop
+        if (!user) {
+            const localTheme = localStorage.getItem(storageKey) || defaultTheme
+            setTheme(localTheme)
+            setIsLoading(false)
+            return
+        }
+
         fetch('/api/settings/theme', { credentials: 'include' })
             .then(res => {
                 if (res.ok) {
                     return res.json()
                 }
-                // If not authenticated, use localStorage
-                throw new Error('Not authenticated')
+                throw new Error('Failed to fetch theme')
             })
             .then(data => {
                 if (data.theme) {

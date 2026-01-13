@@ -6,12 +6,14 @@ from flask_cors import CORS
 from flask_session import Session
 from flask_sqlalchemy import SQLAlchemy
 from werkzeug.middleware.proxy_fix import ProxyFix
+from werkzeug.security import generate_password_hash, check_password_hash
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import threading
 import json
 import math
 import time
 import os
+import secrets
 import numpy as np
 import pandas as pd
 import yfinance as yf
@@ -344,6 +346,144 @@ def logout():
     """Logout user and clear session"""
     session.clear()
     return jsonify({'message': 'Logged out successfully'})
+
+
+@app.route('/api/auth/register', methods=['POST'])
+def register():
+    """Register a new user with email and password"""
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({'error': 'No data provided'}), 400
+
+        email = data.get('email')
+        password = data.get('password')
+        name = data.get('name')
+
+        if not email or not password:
+            return jsonify({'error': 'Email and password are required'}), 400
+
+        # Check if user already exists
+        existing_user = db.get_user_by_email(email)
+        if existing_user:
+            return jsonify({'error': 'Email already registered'}), 400
+
+        # Create new user
+        password_hash = generate_password_hash(password)
+        if not name:
+            name = email.split('@')[0]
+            
+        # Generate verification token
+        verification_token = secrets.token_urlsafe(32)
+        
+        user_id = db.create_user_with_password(email, password_hash, name, verification_token)
+
+        # Log verification link (Mock Email Service)
+        frontend_url = os.getenv('FRONTEND_URL', 'http://localhost:5173')
+        verify_link = f"{frontend_url}/verify?token={verification_token}"
+        logger.info(f"==================================================")
+        logger.info(f"EMAIL VERIFICATION LINK FOR {email}:")
+        logger.info(verify_link)
+        logger.info(f"==================================================")
+
+        # Do NOT set session - require verification first
+        # session['user_id'] = user_id ...
+
+        return jsonify({
+            'message': 'Registration successful. Please check your email to verify your account.',
+            'user': {
+                'id': user_id,
+                'email': email,
+                'name': name
+            }
+        })
+
+    except Exception as e:
+        logger.error(f"Registration error: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/auth/login', methods=['POST'])
+def login():
+    """Login with email and password"""
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({'error': 'No data provided'}), 400
+
+        email = data.get('email')
+        password = data.get('password')
+
+        if not email or not password:
+            return jsonify({'error': 'Email and password are required'}), 400
+
+        # Get user
+        user = db.get_user_by_email(email)
+        if not user:
+            return jsonify({'error': 'Invalid email or password'}), 401
+            
+        # Verify password
+        # Users registered via Google might not have a password hash
+        if not user['password_hash']:
+             return jsonify({'error': 'Please sign in with Google'}), 401
+             
+        if not check_password_hash(user['password_hash'], password):
+            return jsonify({'error': 'Invalid email or password'}), 401
+
+        # Check verification status (safely handle missing column for old instances or google users)
+        if user.get('is_verified') is False:
+             return jsonify({'error': 'Email not verified. Please check your inbox.'}), 403
+
+        # Update last login
+        db.update_last_login(user['id'])
+
+        # Set session
+        session['user_id'] = user['id']
+        session['user_email'] = user['email']
+        session['user_name'] = user['name']
+        session['user_picture'] = user['picture']
+
+        return jsonify({
+            'message': 'Login successful',
+            'user': {
+                'id': user['id'],
+                'email': user['email'],
+                'name': user['name'],
+                'picture': user['picture']
+            }
+        })
+
+    except Exception as e:
+        logger.error(f"Login error: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/auth/verify', methods=['POST'])
+def verify_email():
+    """Verify user email with token"""
+    try:
+        data = request.get_json()
+        token = data.get('token')
+        
+        if not token:
+            logger.error("Verification failed: No token provided")
+            return jsonify({'error': 'Token is required'}), 400
+            
+        logger.info(f"Attempting to verify with token: {token}")
+        success = db.verify_user(token)
+        logger.info(f"Verification result for token {token}: {success}")
+        
+        if not success:
+             return jsonify({'error': 'Invalid or expired token'}), 400
+             
+        return jsonify({'message': 'Email verified successfully'})
+
+    except Exception as e:
+        logger.error(f"Verification error: {e}")
+        return jsonify({'error': str(e)}), 500
 
 
 @app.route('/api/auth/test-login', methods=['POST'])

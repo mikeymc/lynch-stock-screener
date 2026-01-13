@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect, useRef, useCallback } from 'react'
-import { Routes, Route, useNavigate, useSearchParams, useLocation } from 'react-router-dom'
+import { Routes, Route, useNavigate, useSearchParams, useLocation, Navigate } from 'react-router-dom'
 import AppShell from './components/layout/AppShell'
 import { Line } from 'react-chartjs-2'
 import {
@@ -18,7 +18,8 @@ import StockListCard from './components/StockListCard'
 
 
 import AlgorithmTuning from './pages/AlgorithmTuning'
-import LoginModal from './components/LoginModal'
+import LoginPage from './pages/LoginPage'
+import VerifyEmailPage from './pages/VerifyEmailPage'
 import AdvancedFilter from './components/AdvancedFilter'
 import SearchPopover from './components/SearchPopover'
 import { useAuth } from './context/AuthContext'
@@ -1319,11 +1320,18 @@ function App() {
   }
 
   if (!user) {
-    return <LoginModal />
+    return (
+      <Routes>
+        <Route path="/login" element={<LoginPage />} />
+        <Route path="/verify" element={<VerifyEmailPage />} />
+        <Route path="*" element={<Navigate to="/login" replace />} />
+      </Routes>
+    )
   }
 
   return (
     <Routes>
+      <Route path="/verify" element={<VerifyEmailPage />} />
       <Route element={
         <AppShell
           filter={filter}
@@ -1383,6 +1391,7 @@ function App() {
         <Route path="/economy" element={<Economy />} />
         <Route path="/help" element={<Help />} />
       </Route>
+      <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   )
 }

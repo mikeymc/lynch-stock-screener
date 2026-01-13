@@ -709,6 +709,39 @@ class Database:
             END $$;
         """)
 
+        # Migration: Add password_hash column to users table
+        cursor.execute("""
+            DO $$
+            BEGIN
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                               WHERE table_name = 'users' AND column_name = 'password_hash') THEN
+                    ALTER TABLE users ADD COLUMN password_hash TEXT;
+                END IF;
+            END $$;
+        """)
+
+        # Migration: Make google_id nullable for email/password users
+        cursor.execute("""
+            ALTER TABLE users ALTER COLUMN google_id DROP NOT NULL;
+        """)
+
+        # Migration: Make google_id nullable for email/password users
+        cursor.execute("""
+            ALTER TABLE users ALTER COLUMN google_id DROP NOT NULL;
+        """)
+
+        # Migration: Add is_verified and verification_token to users table
+        cursor.execute("""
+            DO $$
+            BEGIN
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                               WHERE table_name = 'users' AND column_name = 'is_verified') THEN
+                    ALTER TABLE users ADD COLUMN is_verified BOOLEAN DEFAULT TRUE;
+                    ALTER TABLE users ADD COLUMN verification_token TEXT;
+                END IF;
+            END $$;
+        """)
+
         # Migration: Add character column to algorithm_configurations for per-character tuning
         cursor.execute("""
             DO $$
@@ -2707,6 +2740,53 @@ class Database:
             user_id = cursor.fetchone()[0]
             conn.commit()
             return user_id
+        finally:
+            self.return_connection(conn)
+
+    def create_user_with_password(self, email: str, password_hash: str, name: str = None, verification_token: str = None) -> int:
+        """Create a new user with email/password and return their user_id"""
+        conn = self.get_connection()
+        try:
+            cursor = conn.cursor()
+            # is_verified defaults to False for password users (if token provided), True otherwise (e.g. legacy/google)
+            # Actually, per plan, new password users are unverified.
+            is_verified = False if verification_token else True
+            
+            cursor.execute("""
+                INSERT INTO users (email, password_hash, name, created_at, last_login, is_verified, verification_token)
+                VALUES (%s, %s, %s, %s, %s, %s, %s)
+                RETURNING id
+            """, (email, password_hash, name, datetime.now(), datetime.now(), is_verified, verification_token))
+            user_id = cursor.fetchone()[0]
+            conn.commit()
+            return user_id
+        finally:
+            self.return_connection(conn)
+
+    def verify_user(self, token: str) -> bool:
+        """Verify a user by token"""
+        conn = self.get_connection()
+        try:
+            cursor = conn.cursor()
+            cursor.execute("""
+                UPDATE users 
+                SET is_verified = TRUE, verification_token = NULL 
+                WHERE verification_token = %s
+                RETURNING id
+            """, (token,))
+            row = cursor.fetchone()
+            conn.commit()
+            return row is not None
+        finally:
+            self.return_connection(conn)
+
+    def get_user_by_email(self, email: str) -> Optional[Dict[str, Any]]:
+        """Get user by email"""
+        conn = self.get_connection()
+        try:
+            cursor = conn.cursor(row_factory=psycopg.rows.dict_row)
+            cursor.execute("SELECT * FROM users WHERE email = %s", (email,))
+            return cursor.fetchone()
         finally:
             self.return_connection(conn)
 
