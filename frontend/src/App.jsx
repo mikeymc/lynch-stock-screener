@@ -107,6 +107,7 @@ function FilingSections({ sections }) {
 
 function StockListView({
   stocks, setStocks,
+  allStocks, setAllStocks,
   summary, setSummary,
   filter, setFilter,
   searchQuery, setSearchQuery,
@@ -154,6 +155,13 @@ function StockListView({
       }
 
       if (stocks.length === 0) return
+
+      // Safety check: Don't client-side re-evaluate huge lists to prevent browser hang/rate limits
+      if (stocks.length > 200) {
+        console.warn('Skipping client-side re-evaluation for large dataset (>200 items). Please run a new screen.')
+        // Optionally we could force a refresh or show a toast, but for now just skip to prevent crash
+        return
+      }
 
       setLoading(true)
       setProgress('Re-evaluating stocks with new algorithm...')
@@ -265,6 +273,7 @@ function StockListView({
           if (cachedData) {
             console.log('[App] Loaded screening results from cache')
             setStocks(cachedData.results)
+            setAllStocks(cachedData.results)
             setTotalPages(cachedData.total_pages || 1)
             setTotalCount(cachedData.total_count || 0)
 
@@ -276,13 +285,14 @@ function StockListView({
           }
         }
 
-        const response = await fetch(`${API_BASE}/sessions/latest`, { signal })
+        const response = await fetch(`${API_BASE}/sessions/latest?limit=10000`, { signal })
 
         if (response.ok) {
           const sessionData = await response.json()
           const results = sessionData.results || []
 
           setStocks(results)
+          setAllStocks(results)
           setTotalPages(sessionData.total_pages || 1)
           setTotalCount(sessionData.total_count || 0)
 
@@ -302,6 +312,7 @@ function StockListView({
         } else if (response.status === 404) {
           // No sessions yet, this is okay
           setStocks([])
+          setAllStocks([])
           setSummary(null)
         } else {
           throw new Error(`Failed to load session: ${response.status}`)
@@ -311,6 +322,7 @@ function StockListView({
           console.error('Error loading latest session:', err)
           // Don't show error to user on initial load, just start with empty state
           setStocks([])
+          setAllStocks([])
           setSummary(null)
         }
       } finally {
@@ -362,46 +374,13 @@ function StockListView({
   const [totalCount, setTotalCount] = useState(0)
 
   // Fetch stocks from backend with all parameters
+  // Fetch stocks from backend - disable for client side optimization or strictly for initial search if needed
+  // We repurpose this to strictly handle external triggers if necessary, but mostly we rely on client state
   const fetchStocks = useCallback((options = {}) => {
-    const {
-      search = searchQuery,
-      page = currentPage,
-      sort = sortBy,
-      dir = sortDir,
-      status = filter !== 'watchlist' && filter !== 'all' ? filter : null,
-      showLoading = true
-    } = options
-
-    if (showLoading) {
-      setSearchLoading(true)
-    }
-
-    const params = new URLSearchParams()
-    if (search) params.set('search', search)
-    if (status) params.set('status', status)
-    params.set('page', page)
-    params.set('limit', itemsPerPage)
-    params.set('sort_by', sort)
-    params.set('sort_dir', dir)
-
-    const url = `${API_BASE}/sessions/latest?${params.toString()}`
-
-    return fetch(url)
-      .then(response => response.json())
-      .then(data => {
-        if (data.results) {
-          setStocks(data.results)
-          setTotalPages(data.total_pages || 1)
-          setTotalCount(data.total_count || 0)
-        }
-        if (data.active_character) {
-          setActiveCharacter(data.active_character)
-        }
-        return data
-      })
-      .catch(err => console.error('Error fetching stocks:', err))
-      .finally(() => setSearchLoading(false))
-  }, [searchQuery, currentPage, sortBy, sortDir, setStocks, setActiveCharacter])
+    // No-op: Data is loaded once and filtered client-side
+    // We keep the function signature to avoid breaking dependencies
+    console.log('Client-side interaction: fetchStocks skipped')
+  }, [])
 
 
   // Watchlist fetching logic
@@ -462,38 +441,27 @@ function StockListView({
     }
     // If switching FROM watchlist back to other filters, OR changing status filter
     else if (filter !== 'watchlist') {
-      // If we were on watchlist, clear stale items
-      if (prevFilter === 'watchlist') {
-        setStocks([])
+      // If we were on watchlist (or accidentally empty), restore from master list
+      if (prevFilter === 'watchlist' || (stocks.length === 0 && allStocks.length > 0)) {
+        setStocks(allStocks)
       }
-      fetchStocks({ page: 1, status: filter !== 'all' ? filter : null })
+      // We don't fetch from backend because we have all stocks client-side (unless allStocks is empty)
+      if (allStocks.length === 0) {
+        fetchStocks({ page: 1, status: filter !== 'all' ? filter : null })
+      }
+
       setCurrentPage(1)
     }
 
     prevFilterRef.current = filter
-  }, [filter, watchlist, algorithm, fetchStocks])
+  }, [filter, watchlist, algorithm, fetchStocks, allStocks])
 
   // Debounced search handler - calls backend API after delay
+  // Client-side search handler
   const handleSearchChange = useCallback((value) => {
     setSearchQuery(value)
-    setCurrentPage(1) // Reset to first page on new search
-
-    // Clear previous debounce timer
-    if (debounceTimerRef.current) {
-      clearTimeout(debounceTimerRef.current)
-    }
-
-    // If search is cleared, reload immediately
-    if (!value.trim()) {
-      fetchStocks({ search: '', page: 1 })
-      return
-    }
-
-    // Set debounce timer for search
-    debounceTimerRef.current = setTimeout(() => {
-      fetchStocks({ search: value, page: 1 })
-    }, 200) // 200ms debounce
-  }, [setSearchQuery, setCurrentPage, fetchStocks])
+    setCurrentPage(1) // Reset to first page
+  }, [setSearchQuery, setCurrentPage])
 
   // Resume polling if there's an active screening session
   useEffect(() => {
@@ -935,16 +903,119 @@ function StockListView({
   // Use backend pagination - stocks already come paginated and sorted
   // Note: totalPages comes from the API response and is set in fetchStocks
 
+  // Client-side Filtering & Sorting
+  const processedStocks = useMemo(() => {
+    let result = [...stocks]
+
+    // Watchlist filter
+    if (filter === 'watchlist') {
+      result = result.filter(s => watchlist.has(s.symbol))
+    }
+    // Status filter
+    else if (filter !== 'all') {
+      result = result.filter(s => s.overall_status === filter)
+    }
+
+    // Search filter
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase()
+      result = result.filter(s =>
+        s.symbol.toLowerCase().includes(q) ||
+        (s.company_name && s.company_name.toLowerCase().includes(q))
+      )
+    }
+
+    // Advanced filters (Region, etc.)
+    if (advancedFilters.regions.length > 0 || advancedFilters.countries.length > 0) {
+      result = result.filter(stock => {
+        const stockCountry = stock.country || ''
+        let matchesRegion = false
+        const REGION_COUNTRIES = {
+          'USA': ['US'],
+          'Canada': ['CA'],
+          'Central/South America': ['MX', 'BR', 'AR', 'CL', 'PE', 'CO', 'VE', 'EC', 'BO', 'PY', 'UY', 'CR', 'PA', 'GT', 'HN', 'SV', 'NI'],
+          'Europe': ['GB', 'DE', 'FR', 'IT', 'ES', 'NL', 'CH', 'IE', 'BE', 'SE', 'NO', 'DK', 'FI', 'AT', 'PL', 'PT', 'GR', 'CZ', 'HU', 'RO', 'LU', 'IS'],
+          'Asia': ['CN', 'JP', 'KR', 'IN', 'SG', 'HK', 'TW', 'TH', 'MY', 'ID', 'PH', 'VN', 'IL'],
+          'Other': []
+        }
+        // Region check
+        for (const region of advancedFilters.regions) {
+          if ((REGION_COUNTRIES[region] || []).includes(stockCountry)) {
+            matchesRegion = true; break;
+          }
+        }
+        // Country check
+        const matchesCountry = advancedFilters.countries.includes(stockCountry)
+        return matchesRegion || matchesCountry
+      })
+    }
+    // Institutional ownership
+    if (advancedFilters.institutionalOwnership?.max !== null) {
+      result = result.filter(s => s.institutional_ownership <= advancedFilters.institutionalOwnership.max / 100)
+    }
+    // Revenue Growth
+    if (advancedFilters.revenueGrowth.min !== null) {
+      result = result.filter(s => s.revenue_cagr >= advancedFilters.revenueGrowth.min)
+    }
+    // Income Growth
+    if (advancedFilters.incomeGrowth.min !== null) {
+      result = result.filter(s => s.earnings_cagr >= advancedFilters.incomeGrowth.min)
+    }
+    // Debt/Equity
+    if (advancedFilters.debtToEquity.max !== null) {
+      result = result.filter(s => s.debt_to_equity <= advancedFilters.debtToEquity.max)
+    }
+    // Market Cap
+    if (advancedFilters.marketCap?.max !== null) {
+      result = result.filter(s => (s.market_cap / 1e9) <= advancedFilters.marketCap.max)
+    }
+
+    // Sorting
+    result.sort((a, b) => {
+      let valA = a[sortBy]
+      let valB = b[sortBy]
+
+      // Null handling
+      if (valA == null && valB == null) return 0
+      if (valA == null) return 1
+      if (valB == null) return -1
+
+      if (sortBy === 'overall_score') {
+        valA = a.evaluation?.score || a.overall_score || 0
+        valB = b.evaluation?.score || b.overall_score || 0
+      } else if (typeof valA === 'string') {
+        valA = valA.toLowerCase()
+        valB = (valB || '').toLowerCase()
+      }
+
+      if (valA < valB) return sortDir === 'asc' ? -1 : 1
+      if (valA > valB) return sortDir === 'asc' ? 1 : -1
+      return 0
+    })
+
+    return result
+  }, [stocks, filter, searchQuery, sortBy, sortDir, advancedFilters, watchlist])
+
+  // Pagination Slice
+  const visibleStocks = useMemo(() => {
+    const start = (currentPage - 1) * itemsPerPage
+    return processedStocks.slice(start, start + itemsPerPage)
+  }, [processedStocks, currentPage])
+
+  // Update counts
+  useEffect(() => {
+    setTotalPages(Math.ceil(processedStocks.length / itemsPerPage) || 1)
+    setTotalCount(processedStocks.length)
+    if (currentPage > Math.ceil(processedStocks.length / itemsPerPage)) {
+      setCurrentPage(1)
+    }
+  }, [processedStocks.length])
+
   const toggleSort = (column) => {
     const newDir = sortBy === column ? (sortDir === 'asc' ? 'desc' : 'asc') : 'desc'
-    const newSortBy = column
-
-    setSortBy(newSortBy)
+    setSortBy(column)
     setSortDir(newDir)
-    setCurrentPage(1) // Reset to first page on sort change
-
-    // Fetch with new sort params
-    fetchStocks({ sort: newSortBy, dir: newDir, page: 1 })
+    setCurrentPage(1)
   }
 
   const handleStockClick = (symbol) => {
@@ -1051,10 +1122,10 @@ function StockListView({
         onToggle={() => setShowAdvancedFilters(!showAdvancedFilters)}
       />
 
-      {filteredStocks.length > 0 && (
+      {visibleStocks.length > 0 && (
         <>
           <div className="space-y-3 pb-4">
-            {filteredStocks.map(stock => (
+            {visibleStocks.map(stock => (
               <StockListCard
                 key={stock.symbol}
                 stock={stock}
@@ -1107,13 +1178,13 @@ function StockListView({
         </div>
       )}
 
-      {!loadingSession && !loading && filteredStocks.length === 0 && stocks.length === 0 && (
+      {!loadingSession && !loading && stocks.length === 0 && (
         <div className="empty-state">
           No stocks loaded. Click "Screen Stocks" to begin.
         </div>
       )}
 
-      {!loading && filteredStocks.length === 0 && stocks.length > 0 && (
+      {!loading && processedStocks.length === 0 && stocks.length > 0 && (
         <div className="empty-state">
           No stocks match the current {searchQuery ? 'search and filter' : 'filter'}.
         </div>
@@ -1127,6 +1198,7 @@ function App() {
   const navigate = useNavigate()
   const location = useLocation()
   const [stocks, setStocks] = useState([])
+  const [allStocks, setAllStocks] = useState([]) // Master list of all stocks for the session
   const [summary, setSummary] = useState(null)
   const [filter, setFilter] = useState('all')
   const [searchQuery, setSearchQuery] = useState('')
@@ -1257,6 +1329,8 @@ function App() {
           <StockListView
             stocks={stocks}
             setStocks={setStocks}
+            allStocks={allStocks}
+            setAllStocks={setAllStocks}
             summary={summary}
             setSummary={setSummary}
             filter={filter}
