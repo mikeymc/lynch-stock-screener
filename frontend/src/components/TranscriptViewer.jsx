@@ -3,6 +3,7 @@
 
 import { useState, useEffect } from 'react'
 import ReactMarkdown from 'react-markdown'
+import remarkGfm from 'remark-gfm'
 import { Sparkles, FileText, Loader2 } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
@@ -275,7 +276,7 @@ export default function TranscriptViewer({ symbol }) {
                 <div className="min-h-[400px]">
                     {viewMode === 'summary' && summary ? (
                         <div className="prose prose-sm dark:prose-invert max-w-none">
-                            <ReactMarkdown>{summary}</ReactMarkdown>
+                            <ReactMarkdown remarkPlugins={[remarkGfm]}>{summary}</ReactMarkdown>
                         </div>
                     ) : (
                         <div className="space-y-2">
