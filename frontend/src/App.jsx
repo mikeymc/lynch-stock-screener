@@ -384,9 +384,12 @@ function StockListView({
 
 
   // Watchlist fetching logic
+  // Watchlist fetching logic
   const prevFilterRef = useRef(filter)
   useEffect(() => {
     const prevFilter = prevFilterRef.current
+    const controller = new AbortController()
+    const signal = controller.signal
 
     // If switching to watchlist, fetch watchlist items manually
     if (filter === 'watchlist') {
@@ -396,9 +399,11 @@ function StockListView({
 
         try {
           if (watchlist.size === 0) {
-            setStocks([])
-            setLoading(false)
-            setProgress('')
+            if (!signal.aborted) {
+              setStocks([])
+              setLoading(false)
+              setProgress('')
+            }
             return
           }
 
@@ -411,26 +416,28 @@ function StockListView({
             body: JSON.stringify({
               symbols: symbols,
               algorithm: algorithm
-            })
+            }),
+            signal // effective cancellation
           })
 
           if (res.ok) {
             const data = await res.json()
-            // Only update if we are still on the watchlist filter
-            if (filter === 'watchlist') {
+            if (!signal.aborted) {
               setStocks(data.results || [])
               setTotalPages(1)
               setTotalCount(data.results?.length || 0)
             }
           } else {
             console.error('Batch fetch failed', res.status)
-            setError('Failed to load watchlist items')
+            if (!signal.aborted) setError('Failed to load watchlist items')
           }
         } catch (e) {
-          console.error('Error fetching watchlist:', e)
-          setError('Failed to load watchlist items')
+          if (e.name !== 'AbortError') {
+            console.error('Error fetching watchlist:', e)
+            if (!signal.aborted) setError('Failed to load watchlist items')
+          }
         } finally {
-          if (filter === 'watchlist') {
+          if (!signal.aborted) {
             setLoading(false)
             setProgress('')
           }
@@ -441,6 +448,10 @@ function StockListView({
     }
     // If switching FROM watchlist back to other filters, OR changing status filter
     else if (filter !== 'watchlist') {
+      // Force cleanup of any lingering loading state from quick switches
+      setLoading(false)
+      setProgress('')
+
       // If we were on watchlist (or accidentally empty), restore from master list
       if (prevFilter === 'watchlist' || (stocks.length === 0 && allStocks.length > 0)) {
         setStocks(allStocks)
@@ -454,6 +465,8 @@ function StockListView({
     }
 
     prevFilterRef.current = filter
+
+    return () => controller.abort()
   }, [filter, watchlist, algorithm, fetchStocks, allStocks])
 
   // Debounced search handler - calls backend API after delay
