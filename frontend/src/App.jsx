@@ -19,7 +19,7 @@ import StockListCard from './components/StockListCard'
 
 import AlgorithmTuning from './pages/AlgorithmTuning'
 import LoginPage from './pages/LoginPage'
-import VerifyEmailPage from './pages/VerifyEmailPage'
+
 import AdvancedFilter from './components/AdvancedFilter'
 import SearchPopover from './components/SearchPopover'
 import { useAuth } from './context/AuthContext'
@@ -1323,7 +1323,7 @@ function App() {
     return (
       <Routes>
         <Route path="/login" element={<LoginPage />} />
-        <Route path="/verify" element={<VerifyEmailPage />} />
+
         <Route path="*" element={<Navigate to="/login" replace />} />
       </Routes>
     )
@@ -1331,7 +1331,7 @@ function App() {
 
   return (
     <Routes>
-      <Route path="/verify" element={<VerifyEmailPage />} />
+
       <Route element={
         <AppShell
           filter={filter}

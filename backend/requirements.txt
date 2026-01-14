@@ -23,3 +23,4 @@ pytest-playwright
 scikit-optimize
 debugpy
 fredapi
+resend

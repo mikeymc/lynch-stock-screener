@@ -25,8 +25,10 @@ const API_BASE = '/api';
 export function AuthForms() {
     const [isLoading, setIsLoading] = useState(false)
     const [error, setError] = useState(null)
+    const [successMessage, setSuccessMessage] = useState(null)
     const [activeTab, setActiveTab] = useState("login")
     const [verificationSent, setVerificationSent] = useState(false)
+    const [otpCode, setOtpCode] = useState("")
     const [email, setEmail] = useState("")
 
     const { checkAuth } = useAuth()
@@ -98,28 +100,87 @@ export function AuthForms() {
         }
     };
 
+    const handleVerifyOtp = async (e) => {
+        e.preventDefault();
+        setIsLoading(true);
+        setError(null);
+
+        try {
+            const response = await fetch(`${API_BASE}/auth/verify`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ email, code: otpCode }),
+            });
+
+            const data = await response.json();
+
+            if (!response.ok) {
+                throw new Error(data.error || 'Verification failed');
+            }
+
+            // Success: Switch to login
+            setVerificationSent(false);
+            setSuccessMessage("Verification successful! Please sign in.");
+            setActiveTab("login");
+            setOtpCode("");
+
+        } catch (err) {
+            console.error('Verification error:', err);
+            setError(err.message);
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
     if (verificationSent) {
         return (
             <Card className="w-full">
                 <CardHeader>
-                    <CardTitle>Check your email</CardTitle>
+                    <CardTitle>Verify your account</CardTitle>
                     <CardDescription>
-                        We've sent a verification link to <span className="font-medium text-foreground">{email}</span>.
+                        Enter the 6-digit code sent to <span className="font-medium text-foreground">{email}</span>.
                     </CardDescription>
                 </CardHeader>
-                <CardContent>
-                    <p className="text-sm text-muted-foreground mb-4">
-                        Please check your inbox and click the link to verify your account. You won't be able to log in until you verify your email.
-                    </p>
+                <CardContent className="space-y-4">
+                    {error && (
+                        <Alert variant="destructive" className="mb-2">
+                            <AlertDescription>{error}</AlertDescription>
+                        </Alert>
+                    )}
+
+                    <div className="space-y-2">
+                        <Label htmlFor="otp">Verification Code</Label>
+                        <Input
+                            id="otp"
+                            placeholder="123456"
+                            value={otpCode}
+                            onChange={(e) => setOtpCode(e.target.value)}
+                            maxLength={6}
+                            className="text-center text-lg tracking-widest"
+                            disabled={isLoading}
+                        />
+                    </div>
+
                     <Button
-                        variant="outline"
+                        className="w-full"
+                        onClick={handleVerifyOtp}
+                        disabled={isLoading || otpCode.length < 6}
+                    >
+                        {isLoading ? "Verifying..." : "Verify Account"}
+                    </Button>
+
+                    <Button
+                        variant="ghost"
                         className="w-full"
                         onClick={() => {
                             setVerificationSent(false);
-                            setActiveTab("login");
+                            setActiveTab("signup");
                         }}
+                        disabled={isLoading}
                     >
-                        Back to Login
+                        Back
                     </Button>
                 </CardContent>
             </Card>
@@ -128,7 +189,11 @@ export function AuthForms() {
 
     return (
         <div className="w-full max-w-[400px]">
-            <Tabs defaultValue="login" value={activeTab} className="w-full" onValueChange={setActiveTab}>
+            <Tabs defaultValue="login" value={activeTab} className="w-full" onValueChange={(val) => {
+                setActiveTab(val);
+                setError(null);
+                setSuccessMessage(null);
+            }}>
                 <TabsList className="grid w-full grid-cols-2 mb-4">
                     <TabsTrigger value="login">Login</TabsTrigger>
                     <TabsTrigger value="signup">Sign Up</TabsTrigger>
@@ -146,6 +211,12 @@ export function AuthForms() {
                             {error && (
                                 <Alert variant="destructive" className="mb-2">
                                     <AlertDescription>{error}</AlertDescription>
+                                </Alert>
+                            )}
+
+                            {successMessage && (
+                                <Alert className="mb-2 border-green-500 text-green-500">
+                                    <AlertDescription>{successMessage}</AlertDescription>
                                 </Alert>
                             )}
 
@@ -175,7 +246,14 @@ export function AuthForms() {
                             <form onSubmit={(e) => handleEmailAuth(e, 'login')} className="space-y-4">
                                 <div className="space-y-2">
                                     <Label htmlFor="email">Email</Label>
-                                    <Input id="email" type="email" placeholder="m@example.com" disabled={isLoading} />
+                                    <Input
+                                        id="email"
+                                        type="email"
+                                        placeholder="m@example.com"
+                                        disabled={isLoading}
+                                        value={email}
+                                        onChange={(e) => setEmail(e.target.value)}
+                                    />
                                 </div>
                                 <div className="space-y-2">
                                     <Label htmlFor="password">Password</Label>

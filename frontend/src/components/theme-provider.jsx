@@ -61,14 +61,14 @@ export function ThemeProvider({
                 }
             })
             .catch(() => {
-                // Fallback to localStorage if not authenticated
+                // Fallback to localStorage on error
                 const localTheme = localStorage.getItem(storageKey) || defaultTheme
                 setTheme(localTheme)
             })
             .finally(() => {
                 setIsLoading(false)
             })
-    }, [storageKey, defaultTheme])
+    }, [storageKey, defaultTheme, user, authLoading])
 
     useEffect(() => {
         const root = window.document.documentElement

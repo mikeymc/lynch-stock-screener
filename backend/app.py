@@ -14,12 +14,14 @@ import math
 import time
 import os
 import secrets
+import string
 import numpy as np
 import pandas as pd
 import yfinance as yf
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from dotenv import load_dotenv
 from database import Database
+from email_service import send_verification_email
 
 # Load environment variables from .env file
 load_dotenv()
@@ -373,24 +375,26 @@ def register():
         if not name:
             name = email.split('@')[0]
             
-        # Generate verification token
-        verification_token = secrets.token_urlsafe(32)
+        # Generate 6-digit numeric verification code
+        verification_code = ''.join(secrets.choice(string.digits) for _ in range(6))
+        code_expires_at = datetime.now(timezone.utc) + timedelta(minutes=15)
         
-        user_id = db.create_user_with_password(email, password_hash, name, verification_token)
+        user_id = db.create_user_with_password(email, password_hash, name, verification_code, code_expires_at)
 
-        # Log verification link (Mock Email Service)
-        frontend_url = os.getenv('FRONTEND_URL', 'http://localhost:5173')
-        verify_link = f"{frontend_url}/verify?token={verification_token}"
-        logger.info(f"==================================================")
-        logger.info(f"EMAIL VERIFICATION LINK FOR {email}:")
-        logger.info(verify_link)
-        logger.info(f"==================================================")
+        # Send Verification Email
+        email_sent = send_verification_email(email, verification_code)
+        if email_sent:
+            logger.info(f"Verification email sent to {email}")
+        else:
+            logger.error(f"Failed to send verification email to {email}")
+            # Fallback log for dev
+            logger.info(f"EMAILS FAILED - VERIFICATION CODE FOR {email}: {verification_code}")
 
         # Do NOT set session - require verification first
         # session['user_id'] = user_id ...
 
         return jsonify({
-            'message': 'Registration successful. Please check your email to verify your account.',
+            'message': 'Registration successful. Please check your email for the verification code.',
             'user': {
                 'id': user_id,
                 'email': email,
@@ -463,21 +467,19 @@ def login():
 
 @app.route('/api/auth/verify', methods=['POST'])
 def verify_email():
-    """Verify user email with token"""
+    """Verify user email with OTP code"""
     try:
         data = request.get_json()
-        token = data.get('token')
+        email = data.get('email')
+        code = data.get('code')
         
-        if not token:
-            logger.error("Verification failed: No token provided")
-            return jsonify({'error': 'Token is required'}), 400
+        if not email or not code:
+            return jsonify({'error': 'Email and code are required'}), 400
             
-        logger.info(f"Attempting to verify with token: {token}")
-        success = db.verify_user(token)
-        logger.info(f"Verification result for token {token}: {success}")
+        success = db.verify_user_otp(email, code)
         
         if not success:
-             return jsonify({'error': 'Invalid or expired token'}), 400
+             return jsonify({'error': 'Invalid, expired, or incorrect code'}), 400
              
         return jsonify({'message': 'Email verified successfully'})
 

@@ -742,6 +742,18 @@ class Database:
             END $$;
         """)
 
+        # Migration: Add verification_code and code_expires_at to users table
+        cursor.execute("""
+            DO $$
+            BEGIN
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                               WHERE table_name = 'users' AND column_name = 'verification_code') THEN
+                    ALTER TABLE users ADD COLUMN verification_code VARCHAR(6);
+                    ALTER TABLE users ADD COLUMN code_expires_at TIMESTAMP;
+                END IF;
+            END $$;
+        """)
+
         # Migration: Add character column to algorithm_configurations for per-character tuning
         cursor.execute("""
             DO $$
@@ -2743,40 +2755,65 @@ class Database:
         finally:
             self.return_connection(conn)
 
-    def create_user_with_password(self, email: str, password_hash: str, name: str = None, verification_token: str = None) -> int:
+    def create_user_with_password(self, email: str, password_hash: str, name: str = None, verification_code: str = None, code_expires_at: datetime = None) -> int:
         """Create a new user with email/password and return their user_id"""
         conn = self.get_connection()
         try:
             cursor = conn.cursor()
-            # is_verified defaults to False for password users (if token provided), True otherwise (e.g. legacy/google)
-            # Actually, per plan, new password users are unverified.
-            is_verified = False if verification_token else True
+            # is_verified defaults to False for password users (if code provided), True otherwise
+            is_verified = False if verification_code else True
             
             cursor.execute("""
-                INSERT INTO users (email, password_hash, name, created_at, last_login, is_verified, verification_token)
-                VALUES (%s, %s, %s, %s, %s, %s, %s)
+                INSERT INTO users (email, password_hash, name, created_at, last_login, is_verified, verification_code, code_expires_at)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
                 RETURNING id
-            """, (email, password_hash, name, datetime.now(), datetime.now(), is_verified, verification_token))
+            """, (email, password_hash, name, datetime.now(), datetime.now(), is_verified, verification_code, code_expires_at))
             user_id = cursor.fetchone()[0]
             conn.commit()
             return user_id
         finally:
             self.return_connection(conn)
 
-    def verify_user(self, token: str) -> bool:
-        """Verify a user by token"""
+    def verify_user_otp(self, email: str, code: str) -> bool:
+        """Verify a user by email and OTP code"""
         conn = self.get_connection()
         try:
             cursor = conn.cursor()
+            
+            # Debug: Check what's in the DB for this email
             cursor.execute("""
-                UPDATE users 
-                SET is_verified = TRUE, verification_token = NULL 
-                WHERE verification_token = %s
-                RETURNING id
-            """, (token,))
-            row = cursor.fetchone()
-            conn.commit()
-            return row is not None
+                SELECT verification_code, code_expires_at, is_verified, NOW() 
+                FROM users WHERE email = %s
+            """, (email,))
+            debug_row = cursor.fetchone()
+            if debug_row:
+                logger.info(f"OTP DEBUG: Email={email}, StoredCode={debug_row[0]}, Expires={debug_row[1]}, Verified={debug_row[2]}, DB_NOW={debug_row[3]}")
+                logger.info(f"OTP DEBUG: InputCode={code}")
+            else:
+                logger.info(f"OTP DEBUG: Email={email} NOT FOUND")
+
+            # Check if code matches and is not expired
+            cursor.execute("""
+                SELECT id FROM users 
+                WHERE email = %s 
+                AND verification_code = %s 
+                AND code_expires_at > NOW()
+                AND is_verified = FALSE
+            """, (email, code))
+            
+            user = cursor.fetchone()
+            
+            if user:
+                # Mark as verified and clear code
+                cursor.execute("""
+                    UPDATE users 
+                    SET is_verified = TRUE, verification_code = NULL, code_expires_at = NULL 
+                    WHERE id = %s
+                """, (user[0],))
+                conn.commit()
+                return True
+                
+            return False
         finally:
             self.return_connection(conn)
 
