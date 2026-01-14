@@ -1234,11 +1234,13 @@ function App() {
   useEffect(() => {
     if (!user || loading) return
 
-    const hasVisited = localStorage.getItem('hasVisitedApp')
+    if (!user.has_completed_onboarding && location.pathname === '/') {
+      // Call endpoint to mark as complete
+      fetch(`${API_BASE}/user/complete_onboarding`, {
+        method: 'POST',
+        credentials: 'include'
+      }).catch(err => console.error('Failed to complete onboarding:', err))
 
-    if (!hasVisited && location.pathname === '/') {
-      // Mark as visited before redirecting
-      localStorage.setItem('hasVisitedApp', 'true')
       navigate('/help')
     }
   }, [user, loading, navigate, location.pathname])

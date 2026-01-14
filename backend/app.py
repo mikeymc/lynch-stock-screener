@@ -335,11 +335,17 @@ def get_current_user():
     if 'user_id' not in session:
         return jsonify({'error': 'Not authenticated'}), 401
 
+    user = db.get_user_by_id(session.get('user_id'))
+    if not user:
+        session.clear()
+        return jsonify({'error': 'User not found'}), 401
+
     return jsonify({
-        'id': session.get('user_id'),
-        'email': session.get('user_email'),
-        'name': session.get('user_name'),
-        'picture': session.get('user_picture')
+        'id': user['id'],
+        'email': user['email'],
+        'name': user['name'],
+        'picture': user['picture'],
+        'has_completed_onboarding': user.get('has_completed_onboarding', False)
     })
 
 
@@ -398,7 +404,8 @@ def register():
             'user': {
                 'id': user_id,
                 'email': email,
-                'name': name
+                'name': name,
+                'has_completed_onboarding': False
             }
         })
 
@@ -453,7 +460,8 @@ def login():
                 'id': user['id'],
                 'email': user['email'],
                 'name': user['name'],
-                'picture': user['picture']
+                'picture': user['picture'],
+                'has_completed_onboarding': user.get('has_completed_onboarding', False)
             }
         })
 
@@ -486,7 +494,21 @@ def verify_email():
     except Exception as e:
         logger.error(f"Verification error: {e}")
         return jsonify({'error': str(e)}), 500
+        return jsonify({'message': 'Email verified successfully'})
 
+
+@app.route('/api/user/complete_onboarding', methods=['POST'])
+def complete_onboarding():
+    """Mark the current user's onboarding as complete"""
+    if 'user_id' not in session:
+        return jsonify({'error': 'Not authenticated'}), 401
+        
+    try:
+        db.mark_onboarding_complete(session['user_id'])
+        return jsonify({'message': 'Onboarding completed'})
+    except Exception as e:
+        logger.error(f"Error completing onboarding: {e}")
+        return jsonify({'error': str(e)}), 500
 
 @app.route('/api/auth/test-login', methods=['POST'])
 def test_login():

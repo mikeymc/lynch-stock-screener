@@ -754,6 +754,17 @@ class Database:
             END $$;
         """)
 
+        # Migration: Add has_completed_onboarding to users table
+        cursor.execute("""
+            DO $$
+            BEGIN
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                               WHERE table_name = 'users' AND column_name = 'has_completed_onboarding') THEN
+                    ALTER TABLE users ADD COLUMN has_completed_onboarding BOOLEAN DEFAULT FALSE;
+                END IF;
+            END $$;
+        """)
+
         # Migration: Add character column to algorithm_configurations for per-character tuning
         cursor.execute("""
             DO $$
@@ -2885,6 +2896,12 @@ class Database:
         """Set user's active theme"""
         sql = "UPDATE users SET theme = %s WHERE id = %s"
         args = (theme, user_id)
+        self.write_queue.put((sql, args))
+
+    def mark_onboarding_complete(self, user_id: int):
+        """Mark user as having completed the onboarding flow"""
+        sql = "UPDATE users SET has_completed_onboarding = TRUE WHERE id = %s"
+        args = (user_id,)
         self.write_queue.put((sql, args))
 
     def add_to_watchlist(self, user_id: int, symbol: str):
