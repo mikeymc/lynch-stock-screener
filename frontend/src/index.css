@@ -4,52 +4,58 @@
 
 @layer base {
   :root {
-    /* Paper Theme - Light Mode */
+    /* Paper Theme - Light Mode (True Original) */
     --background: 30 6% 98%;
     /* #fafaf9 off-white */
     --foreground: 209 44% 25%;
     /* #1e3a5f deep navy */
+
     --card: 0 0% 100%;
     /* #ffffff white */
     --card-foreground: 209 44% 25%;
-    /* #1e3a5f deep navy */
+
     --popover: 0 0% 100%;
     --popover-foreground: 209 44% 25%;
+
     --primary: 209 44% 25%;
     /* #1e3a5f deep navy */
     --primary-foreground: 0 0% 100%;
+
     --secondary: 215 16% 47%;
     /* #64748b slate gray */
     --secondary-foreground: 0 0% 100%;
+
     --muted: 30 6% 96%;
     --muted-foreground: 215 16% 47%;
-    /* #64748b slate gray */
+
     --accent: 30 6% 96%;
     --accent-foreground: 209 44% 25%;
+
     --destructive: 0 72% 51%;
-    /* #dc2626 crimson (losses) */
+    /* #dc2626 crimson */
     --destructive-foreground: 0 0% 100%;
+
     --border: 0 0% 90%;
     /* #e5e5e5 light gray */
     --input: 0 0% 90%;
     --ring: 209 44% 25%;
+
     /* Custom chart colors */
     --chart-1: 160 84% 39%;
-    /* #059669 emerald (gains) */
+    /* #059669 emerald */
     --chart-2: 0 72% 51%;
-    /* #dc2626 crimson (losses) */
+    /* #dc2626 crimson */
     --chart-3: 209 44% 25%;
     /* #1e3a5f deep navy */
     --chart-4: 215 16% 47%;
     /* #64748b slate */
     --chart-5: 30 6% 70%;
     /* muted */
+
     --radius: 0.5rem;
-    /* Gains/Losses semantic colors */
     --success: 160 84% 39%;
-    /* #059669 emerald */
     --danger: 0 72% 51%;
-    /* #dc2626 crimson */
+
     /* Sidebar */
     --sidebar-background: 30 6% 98%;
     --sidebar-foreground: 209 44% 25%;
@@ -62,42 +68,127 @@
   }
 
   .dark {
-    /* Keep dark mode for future if needed */
-    --background: 20 14.3% 4.1%;
-    --foreground: 60 9.1% 97.8%;
-    --card: 20 14.3% 4.1%;
-    --card-foreground: 60 9.1% 97.8%;
-    --popover: 20 14.3% 4.1%;
-    --popover-foreground: 60 9.1% 97.8%;
-    --primary: 60 9.1% 97.8%;
-    --primary-foreground: 24 9.8% 10%;
-    --secondary: 12 6.5% 15.1%;
-    --secondary-foreground: 60 9.1% 97.8%;
-    --muted: 12 6.5% 15.1%;
-    --muted-foreground: 24 5.4% 63.9%;
-    --accent: 12 6.5% 15.1%;
-    --accent-foreground: 60 9.1% 97.8%;
-    --destructive: 0 62.8% 30.6%;
-    --destructive-foreground: 60 9.1% 97.8%;
-    --border: 12 6.5% 15.1%;
-    --input: 12 6.5% 15.1%;
-    --ring: 24 5.7% 82.9%;
-    --chart-1: 160 60% 45%;
-    --chart-2: 0 70% 50%;
-    --chart-3: 220 70% 50%;
-    --chart-4: 280 65% 60%;
-    --chart-5: 30 80% 55%;
-    --success: 160 60% 45%;
-    --danger: 0 70% 50%;
-    --sidebar-background: 240 5.9% 10%;
-    --sidebar-foreground: 240 4.8% 95.9%;
-    --sidebar-primary: 224.3 76.3% 48%;
+    /* Midnight Theme (Default Dark) - Sophisticated Deep Blue with Electric Cyan Acent */
+    /* Richer, deeper blue background */
+    --background: 224 71% 4%;
+    /* Deepest Navy */
+    --foreground: 210 40% 98%;
+
+    /* Distinct card color for depth (lighter navy) */
+    --card: 222 47% 11%;
+    --card-foreground: 210 40% 98%;
+    --popover: 222 47% 11%;
+    --popover-foreground: 210 40% 98%;
+
+    /* Vibrant Cyan/Teal Primary - Darkened per user request (was 48%L) */
+    --primary: 199 89% 35%;
+    /* White text for contrast on darker primary */
+    --primary-foreground: 0 0% 100%;
+
+    --secondary: 217 33% 15%;
+    /* Muted Blue-Grey */
+    --secondary-foreground: 210 40% 98%;
+    --muted: 217 33% 15%;
+    --muted-foreground: 215 20% 70%;
+    --accent: 217 33% 15%;
+    --accent-foreground: 210 40% 98%;
+
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 210 40% 98%;
+
+    /* Subtle borders */
+    --border: 217 33% 20%;
+    --input: 217 33% 20%;
+    --ring: 199 89% 35%;
+
+    --chart-1: 199 89% 35%;
+    --chart-2: 160 84% 39%;
+    --chart-3: 0 84% 60%;
+    --chart-4: 260 60% 65%;
+    --chart-5: 35 90% 60%;
+
+    --sidebar-background: 224 71% 3%;
+    --sidebar-foreground: 210 40% 98%;
+    --sidebar-primary: 199 89% 60%;
     --sidebar-primary-foreground: 0 0% 100%;
-    --sidebar-accent: 240 3.7% 15.9%;
-    --sidebar-accent-foreground: 240 4.8% 95.9%;
-    --sidebar-border: 240 3.7% 15.9%;
-    --sidebar-ring: 217.2 91.2% 59.8%;
+    --sidebar-accent: 217 33% 15%;
+    --sidebar-accent-foreground: 210 40% 98%;
+    --sidebar-border: 217 33% 15%;
+    --sidebar-ring: 199 89% 35%;
   }
+
+
+
+  /* Classic 2 Theme - Monochrome / Off-White Accents */
+  .theme-classic2 {
+    /* Vite Dark Background #242424 -> 0 0% 14% */
+    --background: 0 0% 14%;
+    /* Vite Text Color rgba(255, 255, 255, 0.87) -> 0 0% 87% */
+    --foreground: 0 0% 87%;
+
+    /* Vite Button/Card Background #1a1a1a -> 0 0% 10% -> Adjusted to 12% per user request */
+    --card: 0 0% 12%;
+    --card-foreground: 0 0% 87%;
+    --popover: 0 0% 12%;
+    --popover-foreground: 0 0% 87%;
+
+    /* Buttons match Agent Bubble (Dark Grey) */
+    --primary: 0 0% 20%;
+    /* Matches --muted */
+    --primary-foreground: 0 0% 87%;
+    /* Light text for buttons */
+
+    --secondary: 0 0% 20%;
+    --secondary-foreground: 0 0% 87%;
+    --muted: 0 0% 20%;
+    --muted-foreground: 0 0% 60%;
+    --accent: 0 0% 20%;
+    --accent-foreground: 0 0% 87%;
+
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 210 40% 98%;
+
+    --border: 0 0% 20%;
+    --input: 0 0% 20%;
+    --ring: 0 0% 20%;
+
+    --chart-1: 0 0% 87%;
+    --chart-2: 160 84% 39%;
+    --chart-3: 0 84% 60%;
+    --chart-4: 260 60% 65%;
+    --chart-5: 35 90% 60%;
+
+    /* Sidebar - Same as BG */
+    --sidebar-background: 0 0% 12%;
+    --sidebar-foreground: 0 0% 87%;
+    --sidebar-primary: 0 0% 20%;
+    /* Sidebar primary matches buttons */
+    --sidebar-primary-foreground: 0 0% 87%;
+
+    --sidebar-accent: 0 0% 18%;
+    --sidebar-accent-foreground: 0 0% 87%;
+    --sidebar-border: 0 0% 20%;
+    --sidebar-ring: 0 0% 87%;
+  }
+
+  /* Override text-primary for Classic 2 to keep links light */
+  .theme-classic2 .text-primary {
+    color: hsl(0 0% 87%) !important;
+  }
+
+  /* Ensure active data state in sidebar also respects this if using text-primary */
+  .theme-classic2 [data-active="true"] .text-primary {
+    color: hsl(0 0% 87%) !important;
+  }
+
+  /* Specific override for User Chat Bubbles in Classic 2 */
+  /* Lighter than AI response (20%) but distinct from buttons */
+  .theme-classic2 .user-message {
+    background-color: hsl(0 0% 30%) !important;
+  }
+
+
+
 }
 
 @layer base {
@@ -126,5 +217,11 @@
 @layer components {
   .chart-container {
     @apply w-full max-w-4xl mx-auto;
+  }
+}
+
+@layer utilities {
+  .bg-sidebar-primary {
+    background-color: hsl(var(--sidebar-primary));
   }
 }

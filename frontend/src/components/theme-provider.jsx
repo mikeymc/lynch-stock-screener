@@ -73,19 +73,31 @@ export function ThemeProvider({
     useEffect(() => {
         const root = window.document.documentElement
 
-        root.classList.remove("light", "dark")
+        // Remove all known theme classes
+        root.classList.remove("light", "dark", "theme-paper", "theme-classic2")
 
+        // Handle System preference
         if (theme === "system") {
             const systemTheme = window.matchMedia("(prefers-color-scheme: dark)")
                 .matches
                 ? "dark"
                 : "light"
-
             root.classList.add(systemTheme)
             return
         }
 
-        root.classList.add(theme)
+        // Handle Explicit Themes
+        if (theme === "dark" || theme === "midnight") {
+            // Midnight is the new default dark
+            root.classList.add("dark")
+        } else if (theme === "paper") {
+            root.classList.add("light", "theme-paper")
+        } else if (theme === "classic2") {
+            root.classList.add("dark", "theme-classic2")
+        } else {
+            // Default light (Original Paper in :root)
+            root.classList.add("light")
+        }
     }, [theme])
 
     const value = {

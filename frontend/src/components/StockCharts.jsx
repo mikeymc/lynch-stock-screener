@@ -206,7 +206,7 @@ export default function StockCharts({ historyData, loading, symbol }) {
         display: true,
         text: title,
         font: { size: 14, weight: '600' },
-        color: '#1e3a5f' // Deep navy from Paper theme
+        color: '#999999' // Medium Grey for headers
       },
       legend: {
         display: false
@@ -327,7 +327,7 @@ export default function StockCharts({ historyData, loading, symbol }) {
                 {/* SECTION 1: Profitability & Growth */}
                 <Card className="mb-6">
                   <CardHeader className="pb-2">
-                    <CardTitle className="text-lg font-semibold">Profitability & Growth</CardTitle>
+                    <CardTitle className="text-lg font-semibold" style={{ color: '#999999' }}>Profitability & Growth</CardTitle>
                   </CardHeader>
                   <CardContent>
 
@@ -494,7 +494,7 @@ export default function StockCharts({ historyData, loading, symbol }) {
                 {/* SECTION 2: Cash & Capital Efficiency */}
                 <Card className="mb-6">
                   <CardHeader className="pb-2">
-                    <CardTitle className="text-lg font-semibold">Cash & Capital Efficiency</CardTitle>
+                    <CardTitle className="text-lg font-semibold" style={{ color: '#999999' }}>Cash & Capital Efficiency</CardTitle>
                   </CardHeader>
                   <CardContent>
 
@@ -591,7 +591,7 @@ export default function StockCharts({ historyData, loading, symbol }) {
                 {/* SECTION 3: Market Valuation */}
                 <Card className="mb-6">
                   <CardHeader className="pb-2">
-                    <CardTitle className="text-lg font-semibold">Market Valuation</CardTitle>
+                    <CardTitle className="text-lg font-semibold" style={{ color: '#999999' }}>Market Valuation</CardTitle>
                   </CardHeader>
                   <CardContent>
                     <div className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,350px),1fr))] gap-4 mb-4">

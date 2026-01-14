@@ -191,7 +191,8 @@ export default function ChartNarrativeRenderer({ narrative, historyData }) {
                 display: true,
                 text: title,
                 font: { size: 14, weight: '600' },
-                color: '#1e3a5f'
+                font: { size: 14, weight: '600' },
+                color: '#999999'
             },
             legend: {
                 display: false
@@ -667,7 +668,7 @@ export default function ChartNarrativeRenderer({ narrative, historyData }) {
                     className="overflow-hidden border-border bg-card shadow-md transition-all duration-300 hover:shadow-lg"
                 >
                     <div className="px-6 py-4 border-b border-border bg-muted/30">
-                        <h3 className="text-lg font-bold text-foreground">
+                        <h3 className="text-lg font-bold" style={{ color: '#999999' }}>
                             {section.title}
                         </h3>
                     </div>

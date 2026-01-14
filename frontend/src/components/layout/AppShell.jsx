@@ -186,7 +186,7 @@ function AppShellContent({
             <Sidebar className="border-r">
                 <SidebarHeader className="p-4">
                     <div className="flex items-center gap-2">
-                        <img src="/papertree_icon.svg" className="h-6 w-6" alt="Logo" />
+                        <img src="/logo-sidebar.png" className="h-8 w-8" alt="Logo" />
                         <span className="font-semibold text-lg tracking-tight">papertree.ai</span>
                     </div>
                 </SidebarHeader>
@@ -206,7 +206,7 @@ function AppShellContent({
                                                 onNavClick()
                                             }}
                                             isActive={location.pathname === '/' && filter === 'all'}
-                                            className="pl-4 font-normal text-muted-foreground data-[active=true]:font-medium data-[active=true]:text-primary"
+                                            className="pl-4 font-normal text-muted-foreground data-[active=true]:font-medium data-[active=true]:text-sidebar-primary"
                                         >
                                             <span>All Stocks</span>
                                         </SidebarMenuButton>
@@ -219,7 +219,7 @@ function AppShellContent({
                                                     onNavClick()
                                                 }}
                                                 isActive={isEconomyPage}
-                                                className="pl-4 font-normal text-muted-foreground data-[active=true]:font-medium data-[active=true]:text-primary"
+                                                className="pl-4 font-normal text-muted-foreground data-[active=true]:font-medium data-[active=true]:text-sidebar-primary"
                                             >
                                                 <span>Economy</span>
                                             </SidebarMenuButton>
@@ -252,7 +252,7 @@ function AppShellContent({
                                                             onNavClick()
                                                         }}
                                                         isActive={filter === 'watchlist'}
-                                                        className="pl-6 font-normal text-muted-foreground data-[active=true]:font-medium data-[active=true]:text-primary"
+                                                        className="pl-6 font-normal text-muted-foreground data-[active=true]:font-medium data-[active=true]:text-sidebar-primary"
                                                     >
                                                         <span className="flex-1">Watchlist</span>
                                                         {watchlistCount > 0 && (
@@ -272,7 +272,7 @@ function AppShellContent({
                                                                     onNavClick()
                                                                 }}
                                                                 isActive={filter === 'PASS'}
-                                                                className="pl-6 font-normal text-muted-foreground data-[active=true]:font-medium data-[active=true]:text-primary"
+                                                                className="pl-6 font-normal text-muted-foreground data-[active=true]:font-medium data-[active=true]:text-sidebar-primary"
                                                             >
                                                                 <span className="flex-1">Pass</span>
                                                                 <span className="text-xs text-muted-foreground opacity-50">{getCount('PASS')}</span>
@@ -285,7 +285,7 @@ function AppShellContent({
                                                                     onNavClick()
                                                                 }}
                                                                 isActive={filter === 'CLOSE'}
-                                                                className="pl-6 font-normal text-muted-foreground data-[active=true]:font-medium data-[active=true]:text-primary"
+                                                                className="pl-6 font-normal text-muted-foreground data-[active=true]:font-medium data-[active=true]:text-sidebar-primary"
                                                             >
                                                                 <span className="flex-1">Close</span>
                                                                 <span className="text-xs text-muted-foreground opacity-50">{getCount('CLOSE')}</span>
@@ -298,7 +298,7 @@ function AppShellContent({
                                                                     onNavClick()
                                                                 }}
                                                                 isActive={filter === 'FAIL'}
-                                                                className="pl-6 font-normal text-muted-foreground data-[active=true]:font-medium data-[active=true]:text-primary"
+                                                                className="pl-6 font-normal text-muted-foreground data-[active=true]:font-medium data-[active=true]:text-sidebar-primary"
                                                             >
                                                                 <span className="flex-1">Fail</span>
                                                                 <span className="text-xs text-muted-foreground opacity-50">{getCount('FAIL')}</span>
@@ -314,7 +314,7 @@ function AppShellContent({
                                                                     onNavClick()
                                                                 }}
                                                                 isActive={filter === 'STRONG_BUY'}
-                                                                className="pl-6 font-normal text-muted-foreground data-[active=true]:font-medium data-[active=true]:text-primary"
+                                                                className="pl-6 font-normal text-muted-foreground data-[active=true]:font-medium data-[active=true]:text-sidebar-primary"
                                                             >
                                                                 <span className="flex-1">Excellent</span>
                                                                 <span className="text-xs text-muted-foreground opacity-50">{getCount('STRONG_BUY')}</span>
@@ -327,7 +327,7 @@ function AppShellContent({
                                                                     onNavClick()
                                                                 }}
                                                                 isActive={filter === 'BUY'}
-                                                                className="pl-6 font-normal text-muted-foreground data-[active=true]:font-medium data-[active=true]:text-primary"
+                                                                className="pl-6 font-normal text-muted-foreground data-[active=true]:font-medium data-[active=true]:text-sidebar-primary"
                                                             >
                                                                 <span className="flex-1">Good</span>
                                                                 <span className="text-xs text-muted-foreground opacity-50">{getCount('BUY')}</span>
@@ -340,7 +340,7 @@ function AppShellContent({
                                                                     onNavClick()
                                                                 }}
                                                                 isActive={filter === 'HOLD'}
-                                                                className="pl-6 font-normal text-muted-foreground data-[active=true]:font-medium data-[active=true]:text-primary"
+                                                                className="pl-6 font-normal text-muted-foreground data-[active=true]:font-medium data-[active=true]:text-sidebar-primary"
                                                             >
                                                                 <span className="flex-1">Fair</span>
                                                                 <span className="text-xs text-muted-foreground opacity-50">{getCount('HOLD')}</span>
@@ -353,7 +353,7 @@ function AppShellContent({
                                                                     onNavClick()
                                                                 }}
                                                                 isActive={filter === 'CAUTION'}
-                                                                className="pl-6 font-normal text-muted-foreground data-[active=true]:font-medium data-[active=true]:text-primary"
+                                                                className="pl-6 font-normal text-muted-foreground data-[active=true]:font-medium data-[active=true]:text-sidebar-primary"
                                                             >
                                                                 <span className="flex-1">Weak</span>
                                                                 <span className="text-xs text-muted-foreground opacity-50">{getCount('CAUTION')}</span>
@@ -366,7 +366,7 @@ function AppShellContent({
                                                                     onNavClick()
                                                                 }}
                                                                 isActive={filter === 'AVOID'}
-                                                                className="pl-6 font-normal text-muted-foreground data-[active=true]:font-medium data-[active=true]:text-primary"
+                                                                className="pl-6 font-normal text-muted-foreground data-[active=true]:font-medium data-[active=true]:text-sidebar-primary"
                                                             >
                                                                 <span className="flex-1">Poor</span>
                                                                 <span className="text-xs text-muted-foreground opacity-50">{getCount('AVOID')}</span>
@@ -409,7 +409,7 @@ function AppShellContent({
                                                                 }}
                                                                 isActive={algorithm === key}
                                                                 title={algo.description}
-                                                                className="pl-6 font-normal text-muted-foreground data-[active=true]:font-medium data-[active=true]:text-primary"
+                                                                className="pl-6 font-normal text-muted-foreground data-[active=true]:font-medium data-[active=true]:text-sidebar-primary"
                                                             >
                                                                 <span>{algo.name}</span>
                                                             </SidebarMenuButton>
@@ -450,7 +450,7 @@ function AppShellContent({
                                                             onNavClick()
                                                         }}
                                                         isActive={location.search.includes('tab=overview') || (!location.search && location.pathname === `/stock/${symbol}`)}
-                                                        className="pl-6 font-normal text-muted-foreground data-[active=true]:font-medium data-[active=true]:text-primary"
+                                                        className="pl-6 font-normal text-muted-foreground data-[active=true]:font-medium data-[active=true]:text-sidebar-primary"
                                                     >
                                                         <span>Overview</span>
                                                     </SidebarMenuButton>
@@ -462,7 +462,7 @@ function AppShellContent({
                                                             onNavClick()
                                                         }}
                                                         isActive={location.search.includes('tab=analysis')}
-                                                        className="pl-6 font-normal text-muted-foreground data-[active=true]:font-medium data-[active=true]:text-primary"
+                                                        className="pl-6 font-normal text-muted-foreground data-[active=true]:font-medium data-[active=true]:text-sidebar-primary"
                                                     >
                                                         <span>Brief</span>
                                                     </SidebarMenuButton>
@@ -474,7 +474,7 @@ function AppShellContent({
                                                             onNavClick()
                                                         }}
                                                         isActive={location.search.includes('tab=charts')}
-                                                        className="pl-6 font-normal text-muted-foreground data-[active=true]:font-medium data-[active=true]:text-primary"
+                                                        className="pl-6 font-normal text-muted-foreground data-[active=true]:font-medium data-[active=true]:text-sidebar-primary"
                                                     >
                                                         <span>Financials</span>
                                                     </SidebarMenuButton>
@@ -486,7 +486,7 @@ function AppShellContent({
                                                             onNavClick()
                                                         }}
                                                         isActive={location.search.includes('tab=sentiment')}
-                                                        className="pl-6 font-normal text-muted-foreground data-[active=true]:font-medium data-[active=true]:text-primary"
+                                                        className="pl-6 font-normal text-muted-foreground data-[active=true]:font-medium data-[active=true]:text-sidebar-primary"
                                                     >
                                                         <span>Wall Street Sentiment</span>
                                                     </SidebarMenuButton>
@@ -498,7 +498,7 @@ function AppShellContent({
                                                             onNavClick()
                                                         }}
                                                         isActive={location.search.includes('tab=health')}
-                                                        className="pl-6 font-normal text-muted-foreground data-[active=true]:font-medium data-[active=true]:text-primary"
+                                                        className="pl-6 font-normal text-muted-foreground data-[active=true]:font-medium data-[active=true]:text-sidebar-primary"
                                                     >
                                                         <span>Business Health Indicators</span>
                                                     </SidebarMenuButton>
@@ -510,7 +510,7 @@ function AppShellContent({
                                                             onNavClick()
                                                         }}
                                                         isActive={location.search.includes('tab=dcf')}
-                                                        className="pl-6 font-normal text-muted-foreground data-[active=true]:font-medium data-[active=true]:text-primary"
+                                                        className="pl-6 font-normal text-muted-foreground data-[active=true]:font-medium data-[active=true]:text-sidebar-primary"
                                                     >
                                                         <span>DCF Analysis</span>
                                                     </SidebarMenuButton>
@@ -522,7 +522,7 @@ function AppShellContent({
                                                             onNavClick()
                                                         }}
                                                         isActive={location.search.includes('tab=news')}
-                                                        className="pl-6 font-normal text-muted-foreground data-[active=true]:font-medium data-[active=true]:text-primary"
+                                                        className="pl-6 font-normal text-muted-foreground data-[active=true]:font-medium data-[active=true]:text-sidebar-primary"
                                                     >
                                                         <span>News</span>
                                                     </SidebarMenuButton>
@@ -534,7 +534,7 @@ function AppShellContent({
                                                             onNavClick()
                                                         }}
                                                         isActive={location.search.includes('tab=transcripts')}
-                                                        className="pl-6 font-normal text-muted-foreground data-[active=true]:font-medium data-[active=true]:text-primary"
+                                                        className="pl-6 font-normal text-muted-foreground data-[active=true]:font-medium data-[active=true]:text-sidebar-primary"
                                                     >
                                                         <span>Earnings Transcript</span>
                                                     </SidebarMenuButton>
@@ -546,7 +546,7 @@ function AppShellContent({
                                                             onNavClick()
                                                         }}
                                                         isActive={location.search.includes('tab=reddit')}
-                                                        className="pl-6 font-normal text-muted-foreground data-[active=true]:font-medium data-[active=true]:text-primary"
+                                                        className="pl-6 font-normal text-muted-foreground data-[active=true]:font-medium data-[active=true]:text-sidebar-primary"
                                                     >
                                                         <span>Reddit</span>
                                                     </SidebarMenuButton>

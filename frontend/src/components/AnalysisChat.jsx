@@ -191,7 +191,7 @@ const ChatMessage = memo(function ChatMessage({ role, content, sources, componen
       {/* Message Bubble */}
       <div className={`flex flex-col max-w-[85%] min-w-0 ${isUser ? 'items-end' : 'items-start'}`}>
         <div className={`rounded-lg px-4 py-3 ${isUser
-          ? 'bg-primary text-primary-foreground'
+          ? 'bg-primary text-primary-foreground user-message'
           : isError
             ? 'bg-destructive/10 text-destructive border border-destructive/20'
             : 'bg-muted'

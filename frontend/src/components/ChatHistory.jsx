@@ -56,7 +56,7 @@ export default function ChatHistory({ onSelectConversation, onDeleteConversation
             <SidebarMenuButton
               onClick={() => handleSelect(conv.id)}
               isActive={activeConversationId === conv.id}
-              className="pl-6 font-normal text-muted-foreground data-[active=true]:font-medium data-[active=true]:text-primary"
+              className="pl-6 font-normal text-muted-foreground data-[active=true]:font-medium data-[active=true]:text-sidebar-primary"
               title={conv.title || 'New Chat'}
             >
               <span className="flex-1 truncate min-w-0">{truncateTitle(conv.title)}</span>
