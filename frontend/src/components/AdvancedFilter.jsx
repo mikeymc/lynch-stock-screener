@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
+import { RotateCcw } from 'lucide-react'
 
 // Region to country mappings (using 2-letter country codes)
 const REGION_COUNTRIES = {
@@ -13,7 +14,7 @@ const REGION_COUNTRIES = {
     'Other': []
 }
 
-export default function AdvancedFilter({ filters, onFiltersChange, isOpen, onToggle }) {
+export default function AdvancedFilter({ filters, onFiltersChange, isOpen, onToggle, usStocksOnly = true }) {
     const [localFilters, setLocalFilters] = useState(filters)
 
     // Sync local state with props when filters change externally
@@ -107,8 +108,11 @@ export default function AdvancedFilter({ filters, onFiltersChange, isOpen, onTog
 
     const getActiveFilterCount = () => {
         let count = 0
-        if (localFilters.regions.length > 0) count++
-        if (localFilters.countries.length > 0) count++
+        // Only count country/region filters if they're visible (not US-only mode)
+        if (!usStocksOnly) {
+            if (localFilters.regions.length > 0) count++
+            if (localFilters.countries.length > 0) count++
+        }
         if (localFilters.institutionalOwnership?.max !== null) count++
         if (localFilters.revenueGrowth.min !== null) count++
         if (localFilters.incomeGrowth.min !== null) count++
@@ -120,97 +124,140 @@ export default function AdvancedFilter({ filters, onFiltersChange, isOpen, onTog
     if (!isOpen) return null
 
     return (
-        <div className="bg-card rounded-lg border p-4 mb-4">
-            <div className="flex flex-wrap gap-4">
-                {/* Region/Country Filters */}
+        <div className="bg-card rounded-lg border p-6 mb-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-6">
+                {/* Region/Country Filters - Only show if not US-only mode */}
+                {!usStocksOnly && (
+                    <div className="flex flex-col gap-2">
+                        <Label className="text-sm font-medium">Region</Label>
+                        <div className="flex flex-wrap gap-2">
+                            {Object.keys(REGION_COUNTRIES).map(region => (
+                                <Button
+                                    key={region}
+                                    variant={localFilters.regions.includes(region) ? 'default' : 'outline'}
+                                    size="sm"
+                                    onClick={() => handleRegionToggle(region)}
+                                >
+                                    {region}
+                                </Button>
+                            ))}
+                        </div>
+                    </div>
+                )}
+
+                {/* Institutional Ownership */}
                 <div className="flex flex-col gap-2">
-                    <Label className="text-sm font-medium">Region</Label>
-                    <div className="flex flex-wrap gap-2">
-                        {Object.keys(REGION_COUNTRIES).map(region => (
-                            <Button
-                                key={region}
-                                variant={localFilters.regions.includes(region) ? 'default' : 'outline'}
-                                size="sm"
-                                onClick={() => handleRegionToggle(region)}
-                            >
-                                {region}
-                            </Button>
-                        ))}
+                    <Label htmlFor="inst-ownership" className="text-sm font-medium">
+                        Institutional Ownership
+                    </Label>
+                    <div className="flex items-center gap-2">
+                        <span className="text-sm text-muted-foreground whitespace-nowrap">Max</span>
+                        <Input
+                            id="inst-ownership"
+                            type="number"
+                            placeholder="75"
+                            min="0"
+                            max="100"
+                            step="1"
+                            value={localFilters.institutionalOwnership?.max ?? ''}
+                            onChange={(e) => handleInstOwnershipChange(e.target.value)}
+                            className="w-24"
+                        />
+                        <span className="text-sm text-muted-foreground">%</span>
                     </div>
                 </div>
 
-                {/* Institutional Ownership */}
-                <div className="flex flex-col gap-1">
-                    <Label className="text-sm font-medium">Inst. Own (max%)</Label>
-                    <Input
-                        type="number"
-                        placeholder="75"
-                        min="0"
-                        max="100"
-                        step="1"
-                        value={localFilters.institutionalOwnership?.max ?? ''}
-                        onChange={(e) => handleInstOwnershipChange(e.target.value)}
-                        className="w-20"
-                    />
-                </div>
-
                 {/* Revenue Growth */}
-                <div className="flex flex-col gap-1">
-                    <Label className="text-sm font-medium">Rev. Growth (min%)</Label>
-                    <Input
-                        type="number"
-                        placeholder="15"
-                        step="0.1"
-                        value={localFilters.revenueGrowth.min ?? ''}
-                        onChange={(e) => handleRevenueGrowthChange(e.target.value)}
-                        className="w-20"
-                    />
+                <div className="flex flex-col gap-2">
+                    <Label htmlFor="revenue-growth" className="text-sm font-medium">
+                        Revenue Growth
+                    </Label>
+                    <div className="flex items-center gap-2">
+                        <span className="text-sm text-muted-foreground whitespace-nowrap">Min</span>
+                        <Input
+                            id="revenue-growth"
+                            type="number"
+                            placeholder="15"
+                            step="0.1"
+                            value={localFilters.revenueGrowth.min ?? ''}
+                            onChange={(e) => handleRevenueGrowthChange(e.target.value)}
+                            className="w-24"
+                        />
+                        <span className="text-sm text-muted-foreground">%</span>
+                    </div>
                 </div>
 
                 {/* Income Growth */}
-                <div className="flex flex-col gap-1">
-                    <Label className="text-sm font-medium">Inc. Growth (min%)</Label>
-                    <Input
-                        type="number"
-                        placeholder="15"
-                        step="0.1"
-                        value={localFilters.incomeGrowth.min ?? ''}
-                        onChange={(e) => handleIncomeGrowthChange(e.target.value)}
-                        className="w-20"
-                    />
+                <div className="flex flex-col gap-2">
+                    <Label htmlFor="income-growth" className="text-sm font-medium">
+                        Income Growth
+                    </Label>
+                    <div className="flex items-center gap-2">
+                        <span className="text-sm text-muted-foreground whitespace-nowrap">Min</span>
+                        <Input
+                            id="income-growth"
+                            type="number"
+                            placeholder="15"
+                            step="0.1"
+                            value={localFilters.incomeGrowth.min ?? ''}
+                            onChange={(e) => handleIncomeGrowthChange(e.target.value)}
+                            className="w-24"
+                        />
+                        <span className="text-sm text-muted-foreground">%</span>
+                    </div>
                 </div>
 
                 {/* Debt to Equity */}
-                <div className="flex flex-col gap-1">
-                    <Label className="text-sm font-medium">D/E (max)</Label>
-                    <Input
-                        type="number"
-                        placeholder="0.6"
-                        step="0.1"
-                        value={localFilters.debtToEquity.max ?? ''}
-                        onChange={(e) => handleDebtToEquityChange(e.target.value)}
-                        className="w-20"
-                    />
+                <div className="flex flex-col gap-2">
+                    <Label htmlFor="debt-equity" className="text-sm font-medium">
+                        Debt to Equity
+                    </Label>
+                    <div className="flex items-center gap-2">
+                        <span className="text-sm text-muted-foreground whitespace-nowrap">Max</span>
+                        <Input
+                            id="debt-equity"
+                            type="number"
+                            placeholder="0.6"
+                            step="0.1"
+                            value={localFilters.debtToEquity.max ?? ''}
+                            onChange={(e) => handleDebtToEquityChange(e.target.value)}
+                            className="w-24"
+                        />
+                    </div>
                 </div>
 
                 {/* Market Cap */}
-                <div className="flex flex-col gap-1">
-                    <Label className="text-sm font-medium">Mkt Cap (max $B)</Label>
-                    <Input
-                        type="number"
-                        placeholder="10"
-                        step="0.1"
-                        value={localFilters.marketCap?.max ?? ''}
-                        onChange={(e) => handleMarketCapChange(e.target.value)}
-                        className="w-20"
-                    />
+                <div className="flex flex-col gap-2">
+                    <Label htmlFor="market-cap" className="text-sm font-medium">
+                        Market Cap
+                    </Label>
+                    <div className="flex items-center gap-2">
+                        <span className="text-sm text-muted-foreground whitespace-nowrap">Max</span>
+                        <Input
+                            id="market-cap"
+                            type="number"
+                            placeholder="10"
+                            step="0.1"
+                            value={localFilters.marketCap?.max ?? ''}
+                            onChange={(e) => handleMarketCapChange(e.target.value)}
+                            className="w-24"
+                        />
+                        <span className="text-sm text-muted-foreground">$B</span>
+                    </div>
                 </div>
+            </div>
 
-                <div className="flex items-end">
-                    <Button variant="ghost" size="sm" onClick={handleClearFilters}>
-                        Reset
-                    </Button>
-                </div>
+            {/* Reset Button */}
+            <div className="mt-6 flex justify-end">
+                <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleClearFilters}
+                    className="gap-2"
+                >
+                    <RotateCcw className="h-4 w-4" />
+                    Reset Filters
+                </Button>
             </div>
         </div>
     )

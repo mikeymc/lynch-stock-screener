@@ -1462,6 +1462,15 @@ class Database:
             """)
             conn.commit()
 
+        # Initialize us_stocks_only setting (default: true for production)
+        cursor.execute("SELECT 1 FROM app_settings WHERE key = 'us_stocks_only'")
+        if not cursor.fetchone():
+            cursor.execute("""
+                INSERT INTO app_settings (key, value, description)
+                VALUES ('us_stocks_only', 'true', 'Filter to show only US stocks (hides country filters in UI)')
+            """)
+            conn.commit()
+
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS news_articles (
                 id SERIAL PRIMARY KEY,

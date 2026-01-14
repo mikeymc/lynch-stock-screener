@@ -229,6 +229,7 @@ function StockListView({
 
 
   // Load advanced filters on mount
+  const [usStocksOnly, setUsStocksOnly] = useState(true) // Default to true
   useEffect(() => {
     const controller = new AbortController()
     const signal = controller.signal
@@ -240,6 +241,10 @@ function StockListView({
           const settings = await response.json()
           if (settings.advanced_filters && settings.advanced_filters.value) {
             setAdvancedFilters(settings.advanced_filters.value)
+          }
+          // Load us_stocks_only setting
+          if (settings.us_stocks_only && settings.us_stocks_only.value !== undefined) {
+            setUsStocksOnly(settings.us_stocks_only.value)
           }
         }
       } catch (err) {
@@ -1134,6 +1139,7 @@ function StockListView({
         onFiltersChange={handleAdvancedFiltersChange}
         isOpen={showAdvancedFilters}
         onToggle={() => setShowAdvancedFilters(!showAdvancedFilters)}
+        usStocksOnly={usStocksOnly}
       />
 
       {visibleStocks.length > 0 && (
