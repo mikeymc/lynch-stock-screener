@@ -615,6 +615,13 @@ function AppShellContent({
                                 <span>Settings</span>
                             </SidebarMenuButton>
                         </SidebarMenuItem>
+                        <SidebarMenuItem>
+                            <SidebarMenuButton asChild>
+                                <a href="mailto:info@papertree.ai">
+                                    <span>info@papertree.ai</span>
+                                </a>
+                            </SidebarMenuButton>
+                        </SidebarMenuItem>
                     </SidebarMenu>
                 </div>
             </Sidebar>
