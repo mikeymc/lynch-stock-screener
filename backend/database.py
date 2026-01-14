@@ -704,7 +704,7 @@ class Database:
             BEGIN
                 IF NOT EXISTS (SELECT 1 FROM information_schema.columns
                                WHERE table_name = 'users' AND column_name = 'theme') THEN
-                    ALTER TABLE users ADD COLUMN theme TEXT DEFAULT 'light';
+                    ALTER TABLE users ADD COLUMN theme TEXT DEFAULT 'midnight';
                 END IF;
             END $$;
         """)
@@ -2751,8 +2751,8 @@ class Database:
         try:
             cursor = conn.cursor()
             cursor.execute("""
-                INSERT INTO users (google_id, email, name, picture, created_at, last_login)
-                VALUES (%s, %s, %s, %s, %s, %s)
+                INSERT INTO users (google_id, email, name, picture, created_at, last_login, theme)
+                VALUES (%s, %s, %s, %s, %s, %s, 'midnight')
                 ON CONFLICT (google_id) DO UPDATE SET
                     email = EXCLUDED.email,
                     name = EXCLUDED.name,
@@ -2775,8 +2775,8 @@ class Database:
             is_verified = False if verification_code else True
             
             cursor.execute("""
-                INSERT INTO users (email, password_hash, name, created_at, last_login, is_verified, verification_code, code_expires_at)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                INSERT INTO users (email, password_hash, name, created_at, last_login, is_verified, verification_code, code_expires_at, theme)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, 'midnight')
                 RETURNING id
             """, (email, password_hash, name, datetime.now(), datetime.now(), is_verified, verification_code, code_expires_at))
             user_id = cursor.fetchone()[0]
@@ -2903,6 +2903,7 @@ class Database:
         sql = "UPDATE users SET has_completed_onboarding = TRUE WHERE id = %s"
         args = (user_id,)
         self.write_queue.put((sql, args))
+        self.flush()
 
     def add_to_watchlist(self, user_id: int, symbol: str):
         sql = """

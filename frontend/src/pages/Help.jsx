@@ -1,13 +1,39 @@
 // ABOUTME: Help and onboarding page for new users
 // ABOUTME: Provides guides, explanations, and screenshots for app features
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 
+import { useAuth } from "../context/AuthContext"
+
+const API_BASE = '/api'
+
 export default function Help() {
+    const { user, checkAuth } = useAuth()
     const [activeTab, setActiveTab] = useState("quick-start")
+    const [hasTriggeredOnboarding, setHasTriggeredOnboarding] = useState(false)
+
+    // Mark onboarding as complete when visiting this page
+    useEffect(() => {
+        if (user && !user.has_completed_onboarding && !hasTriggeredOnboarding) {
+            setHasTriggeredOnboarding(true) // Prevent multiple calls
+            fetch(`${API_BASE}/user/complete_onboarding`, {
+                method: 'POST',
+                credentials: 'include'
+            })
+                .then(() => {
+                    // Refresh local user state so we don't get redirected back here
+                    checkAuth()
+                })
+                .catch(err => {
+                    console.error('Failed to complete onboarding:', err)
+                    setHasTriggeredOnboarding(false) // Allow retry on error? Or keep blocked to prevent spam?
+                    // If it's a 405 or persistent error, retry might just spam. Better to keep it blocked for this session.
+                })
+        }
+    }, [user, checkAuth, hasTriggeredOnboarding])
 
     const sidebarItems = [
         {
@@ -142,10 +168,13 @@ export default function Help() {
                                 </CardHeader>
                                 <CardContent className="space-y-4">
                                     <p className="text-sm">
-                                        papertree.ai is a stock screening and analysis tool that helps you discover investment opportunities using time-tested strategies from legendary investors like Peter Lynch and Warren Buffett.
+                                        We believe that it is always possible to find investment opportunities that can provide long-term returns. papertree.ai helps you find these opportunities by using time-tested fundamental investment strategies from legendary investors like Peter Lynch and Warren Buffett.
                                     </p>
                                     <p className="text-sm">
-                                        The app automatically screens thousands of stocks, scores them based on fundamental analysis, and provides detailed reports with AI-powered insights. It also enables chatting with an AI agent who is steeped in Lynch and Buffett's approaches who can provide deep and broad analysis and take actions on behalf of the user. It defaults to the Lynch configuration.
+                                        There is no need to
+                                    </p>
+                                    <p className="text-sm">
+                                        The app automatically screens thousands of stocks and scores them based on fundamental financial metrics. And for each, it provides detailed AI-powered insights and the ability to communicate with an AI agent who is deeply trained in Lynch and Buffett's approaches.
                                     </p>
                                 </CardContent>
                             </Card>

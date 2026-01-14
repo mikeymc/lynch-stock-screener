@@ -9,6 +9,7 @@ import ChatHistory from '@/components/ChatHistory'
 import SearchPopover from '@/components/SearchPopover'
 import UserAvatar from '@/components/UserAvatar'
 import { useChatContext } from '@/context/ChatContext'
+import { useTheme } from '../theme-provider'
 import {
     Sidebar,
     SidebarContent,
@@ -50,7 +51,18 @@ function AppShellContent({
 }) {
     const { isMobile, setOpenMobile } = useSidebar()
     const { agentMode, conversations, removeConversation, activeConversationId, setActiveConversationId } = useChatContext()
+    const { theme } = useTheme()
     const [chatsOpen, setChatsOpen] = useState(true)
+
+    // Determine effective theme for logo
+    const [isDark, setIsDark] = useState(false)
+    useEffect(() => {
+        if (theme === 'system') {
+            setIsDark(window.matchMedia('(prefers-color-scheme: dark)').matches)
+        } else {
+            setIsDark(['dark', 'midnight', 'classic2'].includes(theme))
+        }
+    }, [theme])
 
     const handleNewChat = () => {
         // Setting activeConversationId to null triggers AnalysisChat to create a new conversation
@@ -186,7 +198,11 @@ function AppShellContent({
             <Sidebar className="border-r">
                 <SidebarHeader className="p-4">
                     <div className="flex items-center gap-2">
-                        <img src="/logo-sidebar.png" className="h-8 w-8" alt="Logo" />
+                        <img
+                            src={`/icons/bonsai_${isDark ? 'white' : 'black'}.png`}
+                            className="h-8 w-8 object-contain"
+                            alt="Logo"
+                        />
                         <span className="font-semibold text-lg tracking-tight">papertree.ai</span>
                     </div>
                 </SidebarHeader>

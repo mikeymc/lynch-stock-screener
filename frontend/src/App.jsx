@@ -1208,7 +1208,7 @@ function StockListView({
 }
 
 function App() {
-  const { user, loading } = useAuth()
+  const { user, loading, checkAuth } = useAuth()
   const navigate = useNavigate()
   const location = useLocation()
   const [stocks, setStocks] = useState([])
@@ -1235,12 +1235,6 @@ function App() {
     if (!user || loading) return
 
     if (!user.has_completed_onboarding && location.pathname === '/') {
-      // Call endpoint to mark as complete
-      fetch(`${API_BASE}/user/complete_onboarding`, {
-        method: 'POST',
-        credentials: 'include'
-      }).catch(err => console.error('Failed to complete onboarding:', err))
-
       navigate('/help')
     }
   }, [user, loading, navigate, location.pathname])
