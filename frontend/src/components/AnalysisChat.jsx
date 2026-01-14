@@ -488,7 +488,6 @@ const AnalysisChat = forwardRef(function AnalysisChat({ symbol, stockName, chatO
           const msgResponse = await fetch(`${API_BASE}/agent/conversation/${conv.id}/messages`, { credentials: 'include' })
           if (msgResponse.ok) {
             const msgData = await msgResponse.json()
-            console.log('[Agent] Loaded messages from DB:', msgData.messages)
             setMessages(msgData.messages || [])
             // Scroll to bottom after messages load
             setTimeout(() => {
@@ -728,10 +727,7 @@ const AnalysisChat = forwardRef(function AnalysisChat({ symbol, stockName, chatO
 
   // Helper to save agent messages to database
   const saveAgentMessage = async (role, content, toolCalls = null) => {
-    console.log('[Agent] saveAgentMessage called:', { role, contentLength: content?.length, agentMode, conversationId })
-
     if (!agentMode || !conversationId) {
-      console.warn('[Agent] Skipping save - agentMode:', agentMode, 'conversationId:', conversationId)
       return
     }
 
