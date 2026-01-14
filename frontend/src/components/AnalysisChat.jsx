@@ -85,7 +85,8 @@ function SourceCitation({ sources }) {
 }
 
 // Custom markdown components
-const MarkdownComponents = ({ navigate }) => useMemo(() => ({
+// isStreaming: when true, show placeholders for charts to avoid dimension measurement issues
+const MarkdownComponents = ({ navigate, isStreaming = false }) => useMemo(() => ({
   h1: (props) => (
     <h1 className="scroll-m-20 text-2xl font-semibold tracking-tight mb-4" {...props} />
   ),
@@ -122,6 +123,14 @@ const MarkdownComponents = ({ navigate }) => useMemo(() => ({
 
     // Render chart blocks with ChatChart component
     if (language === 'chart' && !inline) {
+      // During streaming, show a placeholder to avoid dimension measurement issues
+      if (isStreaming) {
+        return (
+          <div className="w-full h-[300px] flex items-center justify-center bg-muted/30 rounded-lg border border-dashed border-muted-foreground/30">
+            <div className="text-sm text-muted-foreground animate-pulse">Loading chart...</div>
+          </div>
+        )
+      }
       return <ChatChart chartJson={String(children).replace(/\n$/, '')} />
     }
 
@@ -155,7 +164,7 @@ const MarkdownComponents = ({ navigate }) => useMemo(() => ({
       </a>
     )
   }
-}), [navigate])
+}), [navigate, isStreaming])
 
 // Memoized ChatMessage component - only re-renders when content changes
 const ChatMessage = memo(function ChatMessage({ role, content, sources, components }) {
@@ -165,7 +174,7 @@ const ChatMessage = memo(function ChatMessage({ role, content, sources, componen
   const isAssistant = role === 'assistant'
 
   return (
-    <div className={`flex gap-3 mb-6 ${isUser ? 'flex-row-reverse' : 'flex-row'}`}>
+    <div className={`chat-message flex gap-3 mb-6 ${isUser ? 'flex-row-reverse' : 'flex-row'}`}>
       {/* Avatar/Icon */}
       <div className="flex-shrink-0 mt-1">
         {isUser ? (
@@ -212,7 +221,10 @@ const ChatMessage = memo(function ChatMessage({ role, content, sources, componen
 const AnalysisChat = forwardRef(function AnalysisChat({ symbol, stockName, chatOnly = false, hideChat = false, contextType = 'brief' }, ref) {
   // Navigation for internal links
   const navigate = useNavigate()
-  const components = MarkdownComponents({ navigate })
+  // Components for finalized messages (charts render normally)
+  const components = MarkdownComponents({ navigate, isStreaming: false })
+  // Components for streaming messages (charts show placeholder)
+  const streamingComponents = MarkdownComponents({ navigate, isStreaming: true })
 
   // Shared chat context for sidebar integration
   const {
@@ -384,9 +396,7 @@ const AnalysisChat = forwardRef(function AnalysisChat({ symbol, stockName, chatO
     handleScroll()
   }, [analysis, messages, analysisLoading])
 
-  // When a new message is added, scroll appropriately:
-  // - User messages: scroll to bottom (so user sees their message)
-  // - Assistant messages: scroll to show the START of the message (so user can read from beginning)
+  // Auto-scroll when new messages are added
   const prevMessagesLengthRef = useRef(messages.length)
 
   useEffect(() => {
@@ -399,22 +409,25 @@ const AnalysisChat = forwardRef(function AnalysisChat({ symbol, stockName, chatO
 
       if (lastMessage?.role === 'user') {
         // User message: scroll to bottom to show their message
-        container.scrollTop = container.scrollHeight
+        container.scrollTo({ top: container.scrollHeight, behavior: 'smooth' })
       } else if (lastMessage?.role === 'assistant') {
-        // Assistant message: scroll the USER's question to the TOP
-        // so both the question and response are visible
+        // Assistant message: scroll to show the USER'S QUESTION at the top
+        // This provides context by showing both the question and the start of the answer
         const allMessages = container.querySelectorAll('.chat-message')
         if (allMessages.length >= 2) {
           // Get the second-to-last message (the user's question)
           const userQuestionEl = allMessages[allMessages.length - 2]
-          // Use offsetTop instead of scrollIntoView to avoid scrolling the page
-          container.scrollTop = userQuestionEl.offsetTop - container.offsetTop
+
+          // Scroll so the user's question is at the top, with a small buffer for spacing
+          // Using offsetTop positions it exactly at the top container edge
+          // Subtracting 24px gives it a nice breathing room like the prompt provided
+          const targetScroll = Math.max(0, userQuestionEl.offsetTop - 24)
+          container.scrollTo({ top: targetScroll, behavior: 'smooth' })
         }
       }
     }
 
     prevMessagesLengthRef.current = messages.length
-    handleScroll()
   }, [messages.length])
 
   // Restore focus to input after chat response completes
@@ -1011,7 +1024,7 @@ const AnalysisChat = forwardRef(function AnalysisChat({ symbol, stockName, chatO
               <div className="rounded-lg px-4 py-3 max-w-[85%] bg-muted">
                 {streamingMessage ? (
                   <div className="prose prose-sm max-w-none">
-                    <ReactMarkdown remarkPlugins={[remarkGfm]} components={components}>{streamingMessage}</ReactMarkdown>
+                    <ReactMarkdown remarkPlugins={[remarkGfm]} components={streamingComponents}>{streamingMessage}</ReactMarkdown>
                   </div>
                 ) : (
                   <div className="flex gap-1">

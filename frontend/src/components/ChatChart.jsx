@@ -64,17 +64,42 @@ const CustomTooltip = ({ active, payload, label }) => {
  * }
  */
 export default function ChatChart({ chartJson }) {
+    // Don't attempt to render if we don't have any data
+    if (!chartJson) return null
+
+    // If it's a string, check if it looks like complete JSON before parsing
+    // This prevents errors during streaming when we receive incomplete JSON chunks
+    if (typeof chartJson === 'string') {
+        const trimmed = chartJson.trim()
+
+        // Basic validation: must start with { and end with }
+        // and have balanced braces (simple heuristic)
+        if (!trimmed.startsWith('{') || !trimmed.endsWith('}')) {
+            // Incomplete JSON during streaming - silently skip rendering
+            return null
+        }
+
+        // Count braces to check if they're balanced
+        const openBraces = (trimmed.match(/{/g) || []).length
+        const closeBraces = (trimmed.match(/}/g) || []).length
+        if (openBraces !== closeBraces) {
+            // Incomplete JSON during streaming - silently skip rendering
+            return null
+        }
+    }
+
     let chartData
 
     try {
         chartData = typeof chartJson === 'string' ? JSON.parse(chartJson) : chartJson
     } catch (e) {
-        console.error('Failed to parse chart JSON:', e)
-        return (
-            <div className="chat-chart-error">
-                Unable to render chart: Invalid JSON
-            </div>
-        )
+        // Only log error if it looks like it should be complete JSON
+        // (to avoid spamming console during streaming)
+        if (typeof chartJson === 'string' && chartJson.trim().endsWith('}')) {
+            console.error('Failed to parse chart JSON:', e)
+        }
+        // Silently return null - likely incomplete streaming data
+        return null
     }
 
     const { type = 'bar', title, data, series, xKey = 'name', yLabel } = chartData
