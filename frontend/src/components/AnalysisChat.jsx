@@ -37,6 +37,7 @@ const TOOL_DESCRIPTIONS = {
   get_price_history: "Analyzing price trends",
   get_growth_rates: "Calculating growth metrics",
   get_dividend_analysis: "Checking dividend safety",
+  get_cash_flow_analysis: "Analyzing cash flow trends",
   compare_stocks: "Comparing against peers",
   search_company: "Finding ticker symbol",
   screen_stocks: "Screening the market",
@@ -48,6 +49,8 @@ const TOOL_DESCRIPTIONS = {
   get_filing_section: "Reading SEC filing details",
   get_stock_metrics: "Analyzing key metrics",
   get_historical_pe: "Analyzing valuation history",
+  get_insider_activity: "Analyzing insider trading patterns",
+  manage_alerts: "Managing user alerts",
   // FRED macroeconomic tools
   get_fred_series: "Fetching economic data",
   get_economic_indicators: "Checking economic indicators"
