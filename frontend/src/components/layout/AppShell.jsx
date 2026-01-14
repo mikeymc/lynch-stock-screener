@@ -197,7 +197,14 @@ function AppShellContent({
             {/* Left Sidebar - Navigation */}
             <Sidebar className="border-r">
                 <SidebarHeader className="p-4">
-                    <div className="flex items-center gap-2">
+                    <div
+                        className="flex items-center gap-2 cursor-pointer"
+                        onClick={() => {
+                            navigate('/')
+                            setFilter('all')
+                            onNavClick()
+                        }}
+                    >
                         <img
                             src={`/icons/bonsai_${isDark ? 'white' : 'black'}.png`}
                             className="h-8 w-8 object-contain"
