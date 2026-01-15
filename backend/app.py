@@ -4193,6 +4193,49 @@ def delete_alert(alert_id, user_id):
         return jsonify({'error': str(e)}), 500
 
 
+
+@app.route('/api/feedback', methods=['POST'])
+@require_user_auth
+def submit_feedback(user_id=None):
+    """Submit application feedback"""
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({'error': 'No data provided'}), 400
+
+        feedback_text = data.get('feedback_text')
+        if not feedback_text:
+            return jsonify({'error': 'Feedback text is required'}), 400
+
+        # Create localized metadata including user info if available
+        meta = data.get('metadata', {})
+        
+        # Handle 'dev-user-bypass' from auth middleware
+        if user_id == 'dev-user-bypass':
+            user_id = None
+            email = data.get('email', 'dev-user@localhost')
+        elif user_id:
+            user = db.get_user_by_id(user_id)
+            email = user['email'] if user else None
+        else:
+            email = data.get('email')
+
+        feedback_id = db.create_feedback(
+            user_id=user_id,
+            email=email,
+            feedback_text=feedback_text,
+            screenshot_data=data.get('screenshot_data'),
+            page_url=data.get('page_url'),
+            metadata=meta
+        )
+
+        return jsonify({'message': 'Feedback submitted successfully', 'id': feedback_id})
+
+    except Exception as e:
+        logger.error(f"Error submitting feedback: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
 if __name__ == '__main__':
     # Start debugpy if ENABLE_DEBUGPY environment variable is set
     if os.environ.get('ENABLE_DEBUGPY', 'false').lower() == 'true':

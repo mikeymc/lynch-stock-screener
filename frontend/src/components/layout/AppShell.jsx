@@ -8,6 +8,7 @@ import AnalysisChat from '@/components/AnalysisChat'
 import ChatHistory from '@/components/ChatHistory'
 import SearchPopover from '@/components/SearchPopover'
 import UserAvatar from '@/components/UserAvatar'
+import { FeedbackWidget } from '@/components/FeedbackWidget'
 import { useChatContext } from '@/context/ChatContext'
 import { useTheme } from '../theme-provider'
 import {
@@ -52,9 +53,10 @@ function AppShellContent({
     const { isMobile, setOpenMobile } = useSidebar()
     const { agentMode, conversations, removeConversation, activeConversationId, setActiveConversationId } = useChatContext()
     const { theme } = useTheme()
-    const [chatsOpen, setChatsOpen] = useState(true)
+    const [feedbackOpen, setFeedbackOpen] = useState(false)
 
-    // Determine effective theme for logo
+    // ... existing content ...
+
     const [isDark, setIsDark] = useState(false)
     useEffect(() => {
         if (theme === 'system') {
@@ -110,6 +112,7 @@ function AppShellContent({
     const [alertsCount, setAlertsCount] = useState(0)
     const [alertsEnabled, setAlertsEnabled] = useState(false)
     const [fredEnabled, setFredEnabled] = useState(false)
+    const [chatsOpen, setChatsOpen] = useState(true) // State for chat history collapsible
 
     useEffect(() => {
         const fetchSettings = async () => {
@@ -150,7 +153,7 @@ function AppShellContent({
         // Poll every minute
         const interval = setInterval(fetchAlertsCount, 60000)
         return () => clearInterval(interval)
-    }, [])
+    }, [alertsEnabled])
 
 
     // Detect screen size for responsive chat sidebar - initialize synchronously if possible
@@ -616,6 +619,14 @@ function AppShellContent({
                         </SidebarMenuItem>
                         <SidebarMenuItem>
                             <SidebarMenuButton onClick={() => {
+                                setFeedbackOpen(true)
+                                onNavClick()
+                            }}>
+                                <span>Send Feedback</span>
+                            </SidebarMenuButton>
+                        </SidebarMenuItem>
+                        <SidebarMenuItem>
+                            <SidebarMenuButton onClick={() => {
                                 navigate('/settings')
                                 onNavClick()
                             }}>
@@ -634,7 +645,7 @@ function AppShellContent({
             </Sidebar>
 
             {/* Main Content */}
-            <SidebarInset className="flex-1 flex flex-col min-w-0 overflow-hidden">
+            <SidebarInset className="flex-1 flex flex-col min-w-0 overflow-hidden relative">
                 {/* Top bar with triggers */}
                 <header className="flex h-12 items-center justify-between border-b px-4 shrink-0">
                     {/* Left side - Sidebar trigger and Search */}
@@ -730,6 +741,7 @@ function AppShellContent({
                         </>
                     )}
                 </ResizablePanelGroup>
+                <FeedbackWidget isOpen={feedbackOpen} onClose={() => setFeedbackOpen(false)} />
             </SidebarInset>
         </div>
     )

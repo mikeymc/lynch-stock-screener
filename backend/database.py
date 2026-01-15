@@ -676,6 +676,21 @@ class Database:
         """)
 
         cursor.execute("""
+            CREATE TABLE IF NOT EXISTS app_feedback (
+                id SERIAL PRIMARY KEY,
+                user_id INTEGER,
+                email TEXT,
+                feedback_text TEXT,
+                screenshot_data TEXT,
+                page_url TEXT,
+                metadata JSONB,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                status TEXT DEFAULT 'new',
+                FOREIGN KEY (user_id) REFERENCES users(id)
+            )
+        """)
+
+        cursor.execute("""
             CREATE TABLE IF NOT EXISTS users (
                 id SERIAL PRIMARY KEY,
                 google_id TEXT UNIQUE NOT NULL,
@@ -4362,8 +4377,47 @@ class Database:
             job_id = cursor.fetchone()[0]
             conn.commit()
             return job_id
+        except Exception:
+            conn.rollback()
+            raise
         finally:
             self.return_connection(conn)
+
+    def create_feedback(self, 
+                        user_id: Optional[int], 
+                        email: Optional[str],
+                        feedback_text: str,
+                        screenshot_data: Optional[str] = None,
+                        page_url: Optional[str] = None,
+                        metadata: Optional[Dict[str, Any]] = None) -> int:
+        """Create a new feedback entry"""
+        import json
+        
+        conn = self.get_connection()
+        try:
+            cursor = conn.cursor()
+            cursor.execute("""
+                INSERT INTO app_feedback (
+                    user_id, email, feedback_text, screenshot_data, page_url, metadata, status
+                ) VALUES (%s, %s, %s, %s, %s, %s, 'new')
+                RETURNING id
+            """, (
+                user_id, 
+                email, 
+                feedback_text, 
+                screenshot_data, 
+                page_url, 
+                json.dumps(metadata) if metadata else None
+            ))
+            feedback_id = cursor.fetchone()[0]
+            conn.commit()
+            return feedback_id
+        except Exception:
+            conn.rollback()
+            raise
+        finally:
+            self.return_connection(conn)
+
 
     def get_background_job(self, job_id: int) -> Optional[Dict[str, Any]]:
         """Get a background job by ID"""
