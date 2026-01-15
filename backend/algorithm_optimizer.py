@@ -16,20 +16,17 @@ class AlgorithmOptimizer:
         self.db = db
         self.analyzer = CorrelationAnalyzer(db)
         
-    def optimize(self, years_back: int, method: str = 'gradient_descent',
-                 max_iterations: int = 100, learning_rate: float = 0.01,
+    def optimize(self, years_back: int, character_id: str = 'lynch', user_id: Optional[int] = None, 
+                 method: str = 'gradient_descent', max_iterations: int = 100, learning_rate: float = 0.01,
                  progress_callback: Optional[Callable[[Dict[str, Any]], None]] = None) -> Dict[str, Any]:
         """
         Optimize algorithm weights to maximize correlation with returns
-
+        
         Args:
             years_back: Which backtest timeframe to optimize for
+            character_id: Character to optimize ('lynch', 'buffett', etc.)
+            user_id: User performing the optimization (for config lookup)
             method: 'gradient_descent', 'grid_search', or 'bayesian'
-            max_iterations: Maximum optimization iterations
-            learning_rate: Step size for gradient descent
-
-        Returns:
-            Dict with best configuration and optimization history
         """
         # Get backtest results
         results = self.db.get_backtest_results(years_back=years_back)
@@ -37,112 +34,123 @@ class AlgorithmOptimizer:
         if len(results) < 10:
             return {'error': f'Insufficient data: only {len(results)} results found'}
         
-        logger.info(f"Starting optimization with {len(results)} backtest results")
+        logger.info(f"Starting optimization for {character_id} (User {user_id}) with {len(results)} results")
         
         # Get current configuration
-        current_config = self._get_current_config()
-        initial_correlation = self._calculate_correlation_with_config(results, current_config)
+        current_config = self._get_current_config(user_id, character_id)
         
+        # Determine tunable parameters based on character
+        weight_keys = self._get_weight_keys(character_id)
+        threshold_keys = self._get_threshold_keys(character_id)
+        
+        initial_correlation = self._calculate_correlation_with_config(results, current_config, character_id)
         logger.info(f"Initial correlation: {initial_correlation:.4f}")
         
         if method == 'gradient_descent':
             best_config, history = self._gradient_descent_optimize(
-                results, current_config, max_iterations, learning_rate
+                results, current_config, character_id, weight_keys, max_iterations, learning_rate, progress_callback
             )
         elif method == 'grid_search':
-            best_config, history = self._grid_search_optimize(results)
+            best_config, history = self._grid_search_optimize(results, character_id)
         elif method == 'bayesian':
-            best_config, history = self._bayesian_optimize(results, max_iterations, progress_callback)
+            best_config, history = self._bayesian_optimize(results, character_id, current_config, weight_keys, threshold_keys, max_iterations, progress_callback)
         else:
             return {'error': f'Unknown optimization method: {method}'}
         
         # Calculate final correlation
-        final_correlation = self._calculate_correlation_with_config(results, best_config)
+        final_correlation = self._calculate_correlation_with_config(results, best_config, character_id)
         improvement = final_correlation - initial_correlation
         
         logger.info(f"Optimization complete. Final correlation: {final_correlation:.4f}, Improvement: {improvement:.4f}")
         
-        # NOTE: Config is NOT auto-saved here. User must explicitly click "Save" 
-        # to persist the optimized config to algorithm_configurations table.
-        
         return {
+            'character_id': character_id,
             'initial_config': current_config,
             'best_config': best_config,
             'initial_correlation': initial_correlation,
             'final_correlation': final_correlation,
             'improvement': improvement,
             'iterations': len(history),
-            'history': history[-10:],  # Last 10 iterations for display
+            'history': history[-10:],
         }
     
-    def _get_current_config(self) -> Dict[str, float]:
-        """Get current algorithm weights and thresholds from database.
-        
-        Source of truth: algorithm_configurations table (highest id = current config)
-        """
-        configs = self.db.get_algorithm_configs()
-        algo_config = configs[0] if configs else None
+    def _get_current_config(self, user_id: Optional[int], character_id: str) -> Dict[str, float]:
+        """Get current algorithm weights and thresholds from database."""
+        # Use simple method first, we can expand later
+        # We need a robust 'defaults' map if nothing is found
+        algo_config = self.db.get_user_algorithm_config(user_id, character_id)
         
         if algo_config:
-            logger.info(f"Using algorithm config: {algo_config.get('name', 'unnamed')} (id={algo_config.get('id')})")
+             # Filter out non-numeric fields
+             return {k: float(v) for k, v in algo_config.items() if isinstance(v, (int, float)) and k != 'id'}
+             
+        # Fallback Defaults
+        if character_id == 'buffett':
             return {
-                'weight_peg': algo_config.get('weight_peg', 0.50),
-                'weight_consistency': algo_config.get('weight_consistency', 0.25),
-                'weight_debt': algo_config.get('weight_debt', 0.15),
-                'weight_ownership': algo_config.get('weight_ownership', 0.10),
-                'peg_excellent': algo_config.get('peg_excellent', 1.0),
-                'peg_good': algo_config.get('peg_good', 1.5),
-                'peg_fair': algo_config.get('peg_fair', 2.0),
-                'debt_excellent': algo_config.get('debt_excellent', 0.5),
-                'debt_good': algo_config.get('debt_good', 1.0),
-                'debt_moderate': algo_config.get('debt_moderate', 2.0),
-                'inst_own_min': algo_config.get('inst_own_min', 0.20),
-                'inst_own_max': algo_config.get('inst_own_max', 0.60),
-                'revenue_growth_excellent': algo_config.get('revenue_growth_excellent', 15.0),
-                'revenue_growth_good': algo_config.get('revenue_growth_good', 10.0),
-                'revenue_growth_fair': algo_config.get('revenue_growth_fair', 5.0),
-                'income_growth_excellent': algo_config.get('income_growth_excellent', 15.0),
-                'income_growth_good': algo_config.get('income_growth_good', 10.0),
-                'income_growth_fair': algo_config.get('income_growth_fair', 5.0),
+                'weight_roe': 0.35,
+                'weight_consistency': 0.25,
+                'weight_debt_to_earnings': 0.20,
+                'weight_gross_margin': 0.20,
+                'roe_excellent': 20.0,
+                'roe_good': 15.0,
+                'roe_fair': 10.0,
+                'debt_to_earnings_excellent': 2.0,
+                'debt_to_earnings_good': 4.0,
+                'debt_to_earnings_fair': 7.0,
+                'gross_margin_excellent': 50.0,
+                'gross_margin_good': 40.0,
+                'gross_margin_fair': 30.0
             }
-        
-        # No config exists - use hardcoded defaults
-        logger.warning("No algorithm configuration found - using hardcoded defaults")
-        return {
-            'weight_peg': 0.50,
-            'weight_consistency': 0.25,
-            'weight_debt': 0.15,
-            'weight_ownership': 0.10,
-            'peg_excellent': 1.0,
-            'peg_good': 1.5,
-            'peg_fair': 2.0,
-            'debt_excellent': 0.5,
-            'debt_good': 1.0,
-            'debt_moderate': 2.0,
-            'inst_own_min': 0.20,
-            'inst_own_max': 0.60,
-            'revenue_growth_excellent': 15.0,
-            'revenue_growth_good': 10.0,
-            'revenue_growth_fair': 5.0,
-            'income_growth_excellent': 15.0,
-            'income_growth_good': 10.0,
-            'income_growth_fair': 5.0,
-        }
-    
+        else: # Lynch default
+            return {
+                'weight_peg': 0.50,
+                'weight_consistency': 0.25,
+                'weight_debt': 0.15,
+                'weight_ownership': 0.10,
+                'peg_excellent': 1.0,
+                'peg_good': 1.5,
+                'peg_fair': 2.0,
+                'debt_excellent': 0.5,
+                'debt_good': 1.0,
+                'debt_moderate': 2.0,
+                'inst_own_min': 0.20,
+                'inst_own_max': 0.60
+            }
+
+    def _get_weight_keys(self, character_id: str) -> List[str]:
+        if character_id == 'buffett':
+            return ['weight_roe', 'weight_consistency', 'weight_debt_to_earnings', 'weight_gross_margin']
+        return ['weight_peg', 'weight_consistency', 'weight_debt', 'weight_ownership']
+
+    def _get_threshold_keys(self, character_id: str) -> List[str]:
+         if character_id == 'buffett':
+             return [
+                 'roe_excellent', 'roe_good', 'roe_fair', 
+                 'debt_to_earnings_excellent', 'debt_to_earnings_good', 'debt_to_earnings_fair',
+                 'gross_margin_excellent', 'gross_margin_good', 'gross_margin_fair',
+                 'revenue_growth_excellent', 'revenue_growth_good', 'revenue_growth_fair',
+                 'income_growth_excellent', 'income_growth_good', 'income_growth_fair'
+             ]
+         return [
+             'peg_excellent', 'peg_good', 'peg_fair', 
+             'debt_excellent', 'debt_good', 'debt_moderate', 
+             'inst_own_min', 'inst_own_max',
+             'revenue_growth_excellent', 'revenue_growth_good', 'revenue_growth_fair',
+             'income_growth_excellent', 'income_growth_good', 'income_growth_fair'
+         ]
+
     def _calculate_correlation_with_config(self, results: List[Dict[str, Any]], 
-                                          config: Dict[str, float]) -> float:
-        """
-        Calculate correlation between returns and scores recalculated with given weights
-        """
+                                         config: Dict[str, float], character_id: str) -> float:
+        """Calculate correlation between scores generated with config and actual returns"""
         scores = []
         returns = []
         
         for result in results:
-            if result.get('total_return') is None:
-                continue
+            hist_data = result.get('historical_data', {})
+            # Merge flat historical data with the result for easy access
+            combined_data = {**result, **hist_data}
             
-            # Recalculate score with new weights
-            score = self._recalculate_score(result, config)
+            score = self._recalculate_score(combined_data, config, character_id)
             if score is not None:
                 scores.append(score)
                 returns.append(result['total_return'])
@@ -156,593 +164,385 @@ class AlgorithmOptimizer:
         except:
             return 0.0
     
-    def _recalculate_score(self, result: Dict[str, Any], 
-                          config: Dict[str, float]) -> Optional[float]:
-        """
-        Recalculate overall score using new weights AND thresholds
-        
-        Recalculates component scores from raw metrics using threshold overrides
-        """
-        # Extract raw metrics from backtest result
+    def _recalculate_score(self, result: Dict[str, Any], config: Dict[str, float], character_id: str) -> Optional[float]:
+        if character_id == 'buffett':
+            return self._recalculate_score_buffett(result, config)
+        return self._recalculate_score_lynch(result, config)
+
+    def _recalculate_score_lynch(self, result: Dict[str, Any], config: Dict[str, float]) -> Optional[float]:
+        # Extract raw metrics
         peg_ratio = result.get('peg_ratio')
         debt_to_equity = result.get('debt_to_equity')
         institutional_ownership = result.get('institutional_ownership')
-        revenue_cagr = result.get('revenue_cagr')
-        earnings_cagr = result.get('earnings_cagr')
-        consistency_score = result.get('consistency_score', 50) or 50  # This doesn't depend on thresholds
-        
-        # Recalculate PEG score with new thresholds
-        peg_score = self._calculate_peg_score_with_thresholds(
-            peg_ratio,
-            config.get('peg_excellent', 1.0),
-            config.get('peg_good', 1.5),
-            config.get('peg_fair', 2.0)
-        )
-        
-        # Recalculate debt score with new thresholds
-        debt_score = self._calculate_debt_score_with_thresholds(
-            debt_to_equity,
-            config.get('debt_excellent', 0.5),
-            config.get('debt_good', 1.0),
-            config.get('debt_moderate', 2.0)
-        )
-        
-        # Recalculate institutional ownership score with new thresholds
-        ownership_score = self._calculate_ownership_score_with_thresholds(
-            institutional_ownership,
-            config.get('inst_own_min', 0.20),
-            config.get('inst_own_max', 0.60)
-        )
-        
-        # Recalculate revenue growth score with new thresholds
-        revenue_growth_score = self._calculate_growth_score_with_thresholds(
-            revenue_cagr,
+        # Recalculate Consistency (Growth) Score from raw CAGRs
+        revenue_score = self._calculate_growth_score_with_thresholds(
+            result.get('revenue_cagr'),
             config.get('revenue_growth_excellent', 15.0),
             config.get('revenue_growth_good', 10.0),
             config.get('revenue_growth_fair', 5.0)
         )
-        
-        # Recalculate income growth score with new thresholds
-        income_growth_score = self._calculate_growth_score_with_thresholds(
-            earnings_cagr,
+        income_score = self._calculate_growth_score_with_thresholds(
+            result.get('earnings_cagr'),
             config.get('income_growth_excellent', 15.0),
             config.get('income_growth_good', 10.0),
             config.get('income_growth_fair', 5.0)
         )
+        consistency_score = (revenue_score + income_score) / 2
         
-        # Weighted score calculation (currently only uses the original 4 components)
-        # Note: growth scores are calculated but not yet weighted in the overall score
-        # This can be added later if desired
-        overall_score = (
-            config['weight_peg'] * peg_score +
-            config['weight_consistency'] * consistency_score +
-            config['weight_debt'] * debt_score +
-            config['weight_ownership'] * ownership_score
+        # Calculate other component scores
+        peg_score = self._calculate_peg_score_with_thresholds(
+            peg_ratio, 
+            config.get('peg_excellent') if config.get('peg_excellent') is not None else 1.0, 
+            config.get('peg_good') if config.get('peg_good') is not None else 1.5, 
+            config.get('peg_fair') if config.get('peg_fair') is not None else 2.0
+        )
+        debt_score = self._calculate_debt_score_with_thresholds(
+            debt_to_equity, 
+            config.get('debt_excellent') if config.get('debt_excellent') is not None else 0.5, 
+            config.get('debt_good') if config.get('debt_good') is not None else 1.0, 
+            config.get('debt_moderate') if config.get('debt_moderate') is not None else 2.0
+        )
+        ownership_score = self._calculate_ownership_score_with_thresholds(
+            institutional_ownership, 
+            config.get('inst_own_min') if config.get('inst_own_min') is not None else 0.20, 
+            config.get('inst_own_max') if config.get('inst_own_max') is not None else 0.60
         )
         
+        overall_score = (
+            (config.get('weight_peg') if config.get('weight_peg') is not None else 0.5) * peg_score +
+            (config.get('weight_consistency') if config.get('weight_consistency') is not None else 0.25) * consistency_score +
+            (config.get('weight_debt') if config.get('weight_debt') is not None else 0.15) * debt_score +
+            (config.get('weight_ownership') if config.get('weight_ownership') is not None else 0.1) * ownership_score
+        )
         return round(overall_score, 1)
-    
-    def _gradient_descent_optimize(self, results: List[Dict[str, Any]], 
-                                   initial_config: Dict[str, float],
-                                   max_iterations: int, learning_rate: float) -> Tuple[Dict[str, float], List[Dict[str, Any]]]:
-        """
-        Gradient descent optimization
+
+    def _recalculate_score_buffett(self, result: Dict[str, Any], config: Dict[str, float]) -> Optional[float]:
+        # Buffett Metrics: ROE, Debt/Earnings, Consistency
+        roe = result.get('roe')
+        debt_to_earnings = result.get('debt_to_earnings')
+        consistency_score = result.get('consistency_score', 50) if result.get('consistency_score') is not None else 50
         
-        Iteratively adjusts weights in direction that improves correlation
-        """
+        # Defensive check: ensure metrics are numeric (not datetimes or strings)
+        def to_float(val):
+            if val is None: return None
+            try: return float(val)
+            except (TypeError, ValueError): return None
+
+        roe = to_float(roe)
+        debt_to_earnings = to_float(debt_to_earnings)
+        
+        # Recalculate Consistency (Growth) Score from raw CAGRs
+        revenue_score = self._calculate_growth_score_with_thresholds(
+            result.get('revenue_cagr'),
+            config.get('revenue_growth_excellent', 15.0),
+            config.get('revenue_growth_good', 10.0),
+            config.get('revenue_growth_fair', 5.0)
+        )
+        income_score = self._calculate_growth_score_with_thresholds(
+            result.get('earnings_cagr'),
+            config.get('income_growth_excellent', 15.0),
+            config.get('income_growth_good', 10.0),
+            config.get('income_growth_fair', 5.0)
+        )
+        consistency_score = (revenue_score + income_score) / 2
+        
+        roe_score = 0
+        if roe is not None:
+            if roe >= (config.get('roe_excellent') if config.get('roe_excellent') is not None else 20.0): roe_score = 100
+            elif roe >= (config.get('roe_good') if config.get('roe_good') is not None else 15.0): roe_score = 75
+            elif roe >= (config.get('roe_fair') if config.get('roe_fair') is not None else 10.0): roe_score = 50
+            else: roe_score = 25
+            
+        # Debt/Earnings Score (Lower is better)
+        de_score = 0
+        if debt_to_earnings is not None:
+            if debt_to_earnings <= (config.get('debt_to_earnings_excellent') if config.get('debt_to_earnings_excellent') is not None else 2.0): de_score = 100
+            elif debt_to_earnings <= (config.get('debt_to_earnings_good') if config.get('debt_to_earnings_good') is not None else 4.0): de_score = 75
+            elif debt_to_earnings <= (config.get('debt_to_earnings_fair') if config.get('debt_to_earnings_fair') is not None else 7.0): de_score = 50
+            else: de_score = 25
+        else:
+             # Penalize missing debt/earnings data 
+             de_score = 0
+        
+        # Gross Margin Score (Higher is better)
+        gm_score = 0
+        gm = to_float(result.get('gross_margin'))
+        if gm is not None:
+            if gm >= (config.get('gross_margin_excellent') if config.get('gross_margin_excellent') is not None else 50.0): gm_score = 100
+            elif gm >= (config.get('gross_margin_good') if config.get('gross_margin_good') is not None else 40.0): gm_score = 75
+            elif gm >= (config.get('gross_margin_fair') if config.get('gross_margin_fair') is not None else 30.0): gm_score = 50
+            else: gm_score = 25
+
+        overall_score = (
+            (config.get('weight_roe') if config.get('weight_roe') is not None else 0.35) * roe_score +
+            (config.get('weight_consistency') if config.get('weight_consistency') is not None else 0.25) * consistency_score +
+            (config.get('weight_debt_to_earnings') if config.get('weight_debt_to_earnings') is not None else 0.20) * de_score +
+            (config.get('weight_gross_margin') if config.get('weight_gross_margin') is not None else 0.20) * gm_score
+        )
+        return round(overall_score, 1)
+
+    def _normalize_weights(self, config: Dict[str, float], keys: List[str] = None) -> Dict[str, float]:
+        """Ensure specific weights sum to 1.0"""
+        new_config = config.copy()
+        
+        if not keys:
+             # Detect keys if not provided (fallback)
+             if 'weight_roe' in config:
+                 keys = ['weight_roe', 'weight_consistency', 'weight_debt_to_earnings', 'weight_gross_margin']
+             else:
+                 keys = ['weight_peg', 'weight_consistency', 'weight_debt', 'weight_ownership']
+
+        total_weight = sum(new_config.get(k, 0) for k in keys)
+        
+        if total_weight > 0:
+            for k in keys:
+                new_config[k] = new_config.get(k, 0) / total_weight
+        
+        return new_config
+
+    def _gradient_descent_optimize(self, results: List[Dict[str, Any]], 
+                                   initial_config: Dict[str, float], character_id: str,
+                                   weight_keys: List[str], max_iterations: int, learning_rate: float,
+                                   progress_callback=None) -> Tuple[Dict[str, float], List[Dict[str, Any]]]:
         config = initial_config.copy()
         history = []
         
         best_config = config.copy()
-        best_correlation = self._calculate_correlation_with_config(results, config)
+        best_correlation = self._calculate_correlation_with_config(results, config, character_id)
+        
+        # Report initial baseline
+        if progress_callback:
+            progress_callback({
+                'iteration': 0,
+                'correlation': best_correlation,
+                'config': best_config.copy(),
+                'best_correlation': best_correlation,
+                'best_config': best_config.copy()
+            })
         
         for iteration in range(max_iterations):
-            # Calculate gradients by finite differences
             gradients = {}
             epsilon = 0.01
             
-            for key in ['weight_peg', 'weight_consistency', 'weight_debt', 'weight_ownership']:
-                # Try increasing this weight
+            for key in weight_keys:
                 test_config = config.copy()
                 test_config[key] += epsilon
-                test_config = self._normalize_weights(test_config)
+                test_config = self._normalize_weights(test_config, weight_keys)
                 
-                correlation_plus = self._calculate_correlation_with_config(results, test_config)
-                
-                # Try decreasing this weight
-                test_config = config.copy()
-                test_config[key] -= epsilon
-                test_config = self._normalize_weights(test_config)
-                
-                correlation_minus = self._calculate_correlation_with_config(results, test_config)
-                
-                # Gradient is (f(x+ε) - f(x-ε)) / (2ε)
-                gradients[key] = (correlation_plus - correlation_minus) / (2 * epsilon)
+                correlation_plus = self._calculate_correlation_with_config(results, test_config, character_id)
+                gradients[key] = (correlation_plus - best_correlation) / epsilon
             
-            # Update weights in direction of gradient
-            for key in ['weight_peg', 'weight_consistency', 'weight_debt', 'weight_ownership']:
-                config[key] += learning_rate * gradients[key]
+            # Apply gradients
+            changed = False
+            for key, grad in gradients.items():
+                if abs(grad) > 0.0001:
+                    config[key] += grad * learning_rate
+                    changed = True
             
-            # Normalize to ensure weights sum to 1
-            config = self._normalize_weights(config)
+            config = self._normalize_weights(config, weight_keys)
             
-            # Calculate new correlation
-            current_correlation = self._calculate_correlation_with_config(results, config)
+            new_correlation = self._calculate_correlation_with_config(results, config, character_id)
             
-            # Track history
+            if new_correlation > best_correlation:
+                best_correlation = new_correlation
+                best_config = config.copy()
+            
             history.append({
                 'iteration': iteration,
-                'correlation': current_correlation,
+                'correlation': new_correlation,
                 'config': config.copy()
             })
             
-            # Update best if improved
-            if current_correlation > best_correlation:
-                best_correlation = current_correlation
-                best_config = config.copy()
-                logger.info(f"Iteration {iteration}: New best correlation {current_correlation:.4f}")
-            
-            # Early stopping if no improvement
-            if iteration > 10 and current_correlation < best_correlation - 0.01:
-                logger.info(f"Early stopping at iteration {iteration}")
-                break
-        
-        return best_config, history
-    
-    def _grid_search_optimize(self, results: List[Dict[str, Any]]) -> Tuple[Dict[str, float], List[Dict[str, Any]]]:
-        """
-        Grid search optimization
-        
-        Tests many weight combinations to find the best
-        """
-        best_config = None
-        best_correlation = -1
-        history = []
-        
-        # Search grid (coarse)
-        peg_weights = [0.2, 0.3, 0.4, 0.5, 0.6, 0.7]
-        consistency_weights = [0.1, 0.2, 0.3, 0.4]
-        
-        iteration = 0
-        for peg_w in peg_weights:
-            for cons_w in consistency_weights:
-                # Remaining weight split between debt and ownership
-                remaining = 1.0 - peg_w - cons_w
-                if remaining < 0:
-                    continue
-                
-                debt_w = remaining * 0.6  # 60% of remaining to debt
-                own_w = remaining * 0.4   # 40% to ownership
-                
-                config = {
-                    'weight_peg': peg_w,
-                    'weight_consistency': cons_w,
-                    'weight_debt': debt_w,
-                    'weight_ownership': own_w
-                }
-                
-                correlation = self._calculate_correlation_with_config(results, config)
-                
-                history.append({
-                    'iteration': iteration,
-                    'correlation': correlation,
-                    'config': config.copy()
+            if progress_callback:
+                progress_callback({
+                    'iteration': iteration + 1,
+                    'correlation': new_correlation,
+                    'config': config.copy(),
+                    'best_correlation': best_correlation,
+                    'best_config': best_config.copy()
                 })
+            
+            if not changed:
+                break
                 
-                if correlation > best_correlation:
-                    best_correlation = correlation
-                    best_config = config.copy()
-                    logger.info(f"Grid iteration {iteration}: New best {correlation:.4f}")
-                
-                iteration += 1
-        
         return best_config, history
 
-    def _bayesian_optimize(self, results: List[Dict[str, Any]],
-                          n_calls: int = 500,
-                          progress_callback: Optional[Callable[[Dict[str, Any]], None]] = None) -> Tuple[Dict[str, float], List[Dict[str, Any]]]:
+    def _bayesian_optimize(self, results: List[Dict[str, Any]], character_id: str,
+                          initial_config: Dict[str, float], weight_keys: List[str], threshold_keys: List[str],
+                          max_iterations: int, progress_callback=None) -> Tuple[Dict[str, float], List[Dict[str, Any]]]:
         """
-        Enhanced Bayesian optimization using Gaussian processes
+        Bayesian optimization using Gaussian Processes
+        Optimizes both WEIGHTS and THRESHOLDS
+        """
         
-        Enhancements:
-        - Adaptive acquisition function (gp_hedge)
-        - Latin Hypercube Sampling for initial points
-        - Warm starting from previous best configs
-        - Parallel evaluation support (n_jobs=-1)
-        """
+        # Define search space
+        dimensions = []
+        param_names = []
+        
+        # Weights (0.0 to 1.0)
+        for key in weight_keys:
+            dimensions.append(Real(0.01, 0.99, name=key))
+            param_names.append(key)
+            
+        # Thresholds (Variable ranges)
+        for key in threshold_keys:
+            # Dynamic ranges based on parameter type
+            if 'peg' in key:
+                dimensions.append(Real(0.5, 3.0, name=key))
+            elif 'debt' in key and 'earnings' not in key: # Debt/Equity
+                dimensions.append(Real(0.1, 3.0, name=key))
+            elif 'debt_to_earnings' in key:
+                dimensions.append(Real(0.5, 10.0, name=key))
+            elif 'roe' in key:
+                dimensions.append(Real(5.0, 30.0, name=key))
+            elif 'own' in key: # Ownership
+                dimensions.append(Real(0.05, 0.9, name=key))
+            elif 'growth' in key:
+                dimensions.append(Real(2.0, 30.0, name=key))
+            else:
+                 dimensions.append(Real(0.0, 100.0, name=key))
+            param_names.append(key)
+
         history = []
+        n_seeds = 50  # Fixed seed count
+        
+        # Track best so far manually for reporting
+        best_so_far_corr = self._calculate_correlation_with_config(results, initial_config, character_id)
+        best_so_far_config = initial_config.copy()
+        
+        @use_named_args(dimensions=dimensions)
+        def objective(**params):
+            nonlocal best_so_far_corr, best_so_far_config
+            
+            config = initial_config.copy()
+            config.update(params)
+            config = self._normalize_weights(config, weight_keys)
+            
+            correlation = self._calculate_correlation_with_config(results, config, character_id)
+            
+            if correlation > best_so_far_corr:
+                best_so_far_corr = correlation
+                best_so_far_config = config.copy()
 
-        # Define search space for weights and thresholds
-        space = [
-            # Weights
-            Real(0.1, 0.8, name='weight_peg'),
-            Real(0.05, 0.5, name='weight_consistency'),
-            Real(0.05, 0.4, name='weight_debt'),
-            
-            # PEG thresholds
-            Real(0.5, 1.5, name='peg_excellent'),
-            Real(1.0, 2.5, name='peg_good'),
-            Real(1.5, 3.0, name='peg_fair'),
-            
-            # Debt thresholds
-            Real(0.2, 1.0, name='debt_excellent'),
-            Real(0.5, 1.5, name='debt_good'),
-            Real(1.0, 3.0, name='debt_moderate'),
-            
-            # Institutional ownership thresholds
-            Real(0.0, 0.60, name='inst_own_min'),
-            Real(0.50, 1.10, name='inst_own_max'),
-            
-            # Revenue growth thresholds
-            Real(10.0, 25.0, name='revenue_growth_excellent'),
-            Real(5.0, 20.0, name='revenue_growth_good'),
-            Real(0.0, 15.0, name='revenue_growth_fair'),
-            
-            # Income growth thresholds
-            Real(10.0, 25.0, name='income_growth_excellent'),
-            Real(5.0, 20.0, name='income_growth_good'),
-            Real(0.0, 15.0, name='income_growth_fair'),
-        ]
-
-        # Warm starting: Get previous best configurations
-        x0 = None
-        y0 = None
-        try:
-            previous_configs = self.db.get_algorithm_configs()
-            if previous_configs and len(previous_configs) > 0:
-                # Take top 5 configs by correlation
-                sorted_configs = sorted(
-                    previous_configs,
-                    key=lambda x: x.get('correlation_5yr', x.get('correlation_3yr', x.get('correlation_1yr', 0))),
-                    reverse=True
-                )[:5]
-                
-                x0 = []
-                y0 = []
-                for cfg in sorted_configs:
-                    # Build parameter vector in same order as space
-                    params = [
-                        cfg['weight_peg'],
-                        cfg['weight_consistency'],
-                        cfg['weight_debt'],
-                        cfg.get('peg_excellent', 1.0),
-                        cfg.get('peg_good', 1.5),
-                        cfg.get('peg_fair', 2.0),
-                        cfg.get('debt_excellent', 0.5),
-                        cfg.get('debt_good', 1.0),
-                        cfg.get('debt_moderate', 2.0),
-                        cfg.get('inst_own_min', 0.20),
-                        cfg.get('inst_own_max', 0.60),
-                        cfg.get('revenue_growth_excellent', 15.0),
-                        cfg.get('revenue_growth_good', 10.0),
-                        cfg.get('revenue_growth_fair', 5.0),
-                        cfg.get('income_growth_excellent', 15.0),
-                        cfg.get('income_growth_good', 10.0),
-                        cfg.get('income_growth_fair', 5.0),
-                    ]
-                    x0.append(params)
-                    # Negate correlation since we minimize
-                    corr = cfg.get('correlation_5yr', cfg.get('correlation_3yr', cfg.get('correlation_1yr', 0)))
-                    y0.append(-corr)
-                
-                logger.info(f"Warm starting with {len(x0)} previous configurations")
-        except Exception as e:
-            logger.warning(f"Could not load previous configs for warm start: {e}")
-            x0 = None
-            y0 = None
-
-        # Objective function to minimize (we negate correlation since we want to maximize it)
-        @use_named_args(space)
-        def objective(weight_peg, weight_consistency, weight_debt,
-                     peg_excellent, peg_good, peg_fair,
-                     debt_excellent, debt_good, debt_moderate,
-                     inst_own_min, inst_own_max,
-                     revenue_growth_excellent, revenue_growth_good, revenue_growth_fair,
-                     income_growth_excellent, income_growth_good, income_growth_fair):
-            
-            # Calculate ownership weight to ensure sum = 1
-            weight_ownership = 1.0 - (weight_peg + weight_consistency + weight_debt)
-
-            # Validate weight constraints
-            if weight_ownership < 0.01 or weight_ownership > 0.5:
-                return 1.0  # Return high value (bad) for invalid configs
-            
-            # Validate threshold ordering constraints
-            if peg_excellent >= peg_good or peg_good >= peg_fair:
-                return 1.0  # PEG thresholds must be in ascending order
-            
-            if debt_excellent >= debt_good or debt_good >= debt_moderate:
-                return 1.0  # Debt thresholds must be in ascending order
-            
-            if inst_own_min >= inst_own_max:
-                return 1.0  # Inst own min must be less than max
-            
-            if revenue_growth_excellent <= revenue_growth_good or revenue_growth_good <= revenue_growth_fair:
-                return 1.0  # Revenue growth thresholds must be in descending order
-            
-            if income_growth_excellent <= income_growth_good or income_growth_good <= income_growth_fair:
-                return 1.0  # Income growth thresholds must be in descending order
-
-            config = {
-                # Weights
-                'weight_peg': weight_peg,
-                'weight_consistency': weight_consistency,
-                'weight_debt': weight_debt,
-                'weight_ownership': weight_ownership,
-                
-                # PEG thresholds
-                'peg_excellent': peg_excellent,
-                'peg_good': peg_good,
-                'peg_fair': peg_fair,
-                
-                # Debt thresholds
-                'debt_excellent': debt_excellent,
-                'debt_good': debt_good,
-                'debt_moderate': debt_moderate,
-                
-                # Institutional ownership thresholds
-                'inst_own_min': inst_own_min,
-                'inst_own_max': inst_own_max,
-                
-                # Revenue growth thresholds
-                'revenue_growth_excellent': revenue_growth_excellent,
-                'revenue_growth_good': revenue_growth_good,
-                'revenue_growth_fair': revenue_growth_fair,
-                
-                # Income growth thresholds
-                'income_growth_excellent': income_growth_excellent,
-                'income_growth_good': income_growth_good,
-                'income_growth_fair': income_growth_fair,
-            }
-
-            correlation = self._calculate_correlation_with_config(results, config)
-
-            # Track history
             history.append({
-                'iteration': len(history),
+                'iteration': len(history) + 1,
                 'correlation': correlation,
                 'config': config.copy()
             })
-
-            # Log progress
-            if correlation > 0:
-                logger.info(f"Bayesian iteration {len(history)}: correlation {correlation:.4f}")
-
-            # Return negative correlation (we're minimizing, but want to maximize correlation)
-            return -correlation
-
-        # n_initial_points is for exploration, n_calls is the user's requested optimization iterations
-        n_initial_points = 50
+            
+            # Only report progress after seed phase
+            # Iteration count: 0-based during seeds, then 1-max_iterations for guided
+            current_iter = len(history)
+            if current_iter > n_seeds and progress_callback:
+                progress_callback({
+                    'iteration': current_iter - n_seeds,  # Start from 1 after seeds
+                    'correlation': correlation,
+                    'config': config.copy(),
+                    'best_correlation': best_so_far_corr,
+                    'best_config': best_so_far_config.copy()
+                })
+                
+            return -correlation # Minimize negative correlation
         
-        # Callback for progress reporting
-        def on_step(res):
-            if progress_callback:
-                try:
-                    # Map parameters to config
-                    current_best_params = {dim.name: val for dim, val in zip(space, res.x)}
-                    
-                    # Calculate derived weight for best
-                    w_peg = current_best_params['weight_peg']
-                    w_cons = current_best_params['weight_consistency']
-                    w_debt = current_best_params['weight_debt']
-                    w_own = 1.0 - (w_peg + w_cons + w_debt)
-                    current_best_params['weight_ownership'] = w_own
-                    
-                    # Calculate derived weights for CURRENT (just evaluated)
-                    current_params = {}
-                    if len(res.x_iters) > 0:
-                        last_point = res.x_iters[-1]
-                        current_params = {dim.name: val for dim, val in zip(space, last_point)}
-                        
-                        cw_peg = current_params['weight_peg']
-                        cw_cons = current_params['weight_consistency']
-                        cw_debt = current_params['weight_debt']
-                        cw_own = 1.0 - (cw_peg + cw_cons + cw_debt)
-                        current_params['weight_ownership'] = cw_own
-
-                    # len(res.x_iters) = total evaluations (initial + optimization)
-                    total_evals = len(res.x_iters)
-                    # Optimization iterations = total minus initial sampling
-                    opt_iteration = max(0, total_evals - n_initial_points)
-                    
-                    progress_callback({
-                        'iteration': opt_iteration,
-                        'total_evals': total_evals,
-                        'best_score': -res.fun, # We minimized negative correlation
-                        'best_config': current_best_params,
-                        'current_config': current_params  # Include the config currently being tested
-                    })
-                except Exception as e:
-                    logger.error(f"Error in progress callback: {e}")
-
-        # Total calls = n_initial_points + n_calls (user's requested iterations)
-        total_calls = n_calls + n_initial_points
+        # Seed the optimizer with current configuration (x0)
+        # Clamp values to dimension bounds to avoid "not within bounds" error
+        x0 = []
+        for i, key in enumerate(param_names):
+            val = initial_config.get(key, 0.0)
+            # Clamp to dimension bounds
+            dim = dimensions[i]
+            val = max(dim.low, min(dim.high, val))
+            x0.append(val)
         
-        logger.info(f"Starting Enhanced Bayesian optimization: {n_initial_points} initial + {n_calls} optimization = {total_calls} total evaluations")
-        logger.info("Enhancements: gp_hedge acquisition, LHS initial sampling, warm starting")
+        # Run optimization
+        # Use fixed 50 initial random samples (matching Lynch behavior)
+        # Then run max_iterations guided trials
         
-        result = gp_minimize(
-            objective,
-            space,
-            n_calls=total_calls,
-            n_initial_points=n_initial_points,
-            initial_point_generator='lhs',  # Latin Hypercube Sampling
-            acq_func='gp_hedge',  # Adaptive acquisition function
-            x0=x0,  # Warm start from previous best configs
-            y0=y0,  # Their known correlations
-            n_jobs=-1,  # Parallel evaluation (use all CPU cores)
-            verbose=False,
-            callback=on_step
+        res = gp_minimize(
+            objective, 
+            dimensions, 
+            n_calls=max_iterations + n_seeds,  # Total = 50 seeds + max_iterations
+            n_initial_points=n_seeds,
+            x0=x0,
+            y0=-best_so_far_corr,
+            random_state=42
         )
-
-        # Extract best configuration from all parameters
-        (best_weight_peg, best_weight_consistency, best_weight_debt,
-         best_peg_excellent, best_peg_good, best_peg_fair,
-         best_debt_excellent, best_debt_good, best_debt_moderate,
-         best_inst_own_min, best_inst_own_max,
-         best_revenue_growth_excellent, best_revenue_growth_good, best_revenue_growth_fair,
-         best_income_growth_excellent, best_income_growth_good, best_income_growth_fair) = result.x
         
-        best_weight_ownership = 1.0 - (best_weight_peg + best_weight_consistency + best_weight_debt)
+        return best_so_far_config, history
 
-        best_config = {
-            # Weights
-            'weight_peg': best_weight_peg,
-            'weight_consistency': best_weight_consistency,
-            'weight_debt': best_weight_debt,
-            'weight_ownership': best_weight_ownership,
-            
-            # PEG thresholds
-            'peg_excellent': best_peg_excellent,
-            'peg_good': best_peg_good,
-            'peg_fair': best_peg_fair,
-            
-            # Debt thresholds
-            'debt_excellent': best_debt_excellent,
-            'debt_good': best_debt_good,
-            'debt_moderate': best_debt_moderate,
-            
-            # Institutional ownership thresholds
-            'inst_own_min': best_inst_own_min,
-            'inst_own_max': best_inst_own_max,
-            
-            # Revenue growth thresholds
-            'revenue_growth_excellent': best_revenue_growth_excellent,
-            'revenue_growth_good': best_revenue_growth_good,
-            'revenue_growth_fair': best_revenue_growth_fair,
-            
-            # Income growth thresholds
-            'income_growth_excellent': best_income_growth_excellent,
-            'income_growth_good': best_income_growth_good,
-            'income_growth_fair': best_income_growth_fair,
-        }
+    # --- Helper Calculation Methods (unchanged/adapted) ---
 
-        gp_best_correlation = -result.fun  # Negate since we minimized negative correlation
-        logger.info(f"Bayesian gp_minimize reports best correlation: {gp_best_correlation:.4f}")
+    def _calculate_peg_score_with_thresholds(self, peg_ratio, excellent, good, fair):
+        if peg_ratio is None or peg_ratio <= 0: return 0
+        
+        # Safety defaults for thresholds
+        excellent = excellent if excellent is not None else 1.0
+        good = good if good is not None else 1.5
+        fair = fair if fair is not None else 2.0
+        
+        if peg_ratio <= excellent: return 100
+        if peg_ratio <= good: return 75
+        if peg_ratio <= fair: return 50
+        return 25
 
-        # Also check history for the actual best - gp_minimize's result.x may not be the true max
-        if history:
-            history_best = max(history, key=lambda h: h['correlation'])
-            history_best_corr = history_best['correlation']
-            logger.info(f"History shows best correlation: {history_best_corr:.4f}")
-            
-            if history_best_corr > gp_best_correlation:
-                logger.info(f"Using history best (higher than gp_minimize result)")
-                best_config = history_best['config'].copy()
-                best_correlation = history_best_corr
-            else:
-                best_correlation = gp_best_correlation
-        else:
-            best_correlation = gp_best_correlation
+    def _calculate_debt_score_with_thresholds(self, debt_ratio, excellent, good, moderate):
+        if debt_ratio is None: return 50 # Neutral if unknown
+        
+        # Safety defaults
+        excellent = excellent if excellent is not None else 0.5
+        good = good if good is not None else 1.0
+        moderate = moderate if moderate is not None else 2.0
+        
+        if debt_ratio <= excellent: return 100
+        if debt_ratio <= good: return 75
+        if debt_ratio <= moderate: return 50
+        return 25
 
-        logger.info(f"Bayesian optimization complete. Best correlation: {best_correlation:.4f}")
+    def _calculate_ownership_score_with_thresholds(self, ownership, minimum, maximum):
+        if ownership is None: return 50
+        
+        # Safety defaults
+        minimum = minimum if minimum is not None else 0.20
+        maximum = maximum if maximum is not None else 0.60
+        
+        if ownership < minimum: return 25 # Too low (unnoticed)
+        if ownership > maximum: return 25 # Too high (overcrowded)
+        return 100 # Sweet spot
 
-        return best_config, history
-
-
-    def _normalize_weights(self, config: Dict[str, float]) -> Dict[str, float]:
-        """Ensure all weights are positive and sum to 1"""
-        weight_keys = ['weight_peg', 'weight_consistency', 'weight_debt', 'weight_ownership']
-
-        # Make all weights positive
-        for key in weight_keys:
-            config[key] = max(0.01, config[key])  # Minimum 1%
-
-        # Normalize to sum to 1
-        total = sum(config[key] for key in weight_keys)
-        for key in weight_keys:
-            config[key] /= total
-
-        return config
-
-    def _calculate_peg_score_with_thresholds(self, value: float, excellent: float, good: float, fair: float) -> float:
-        """Calculate PEG score using custom thresholds"""
-        if value is None:
-            return 0.0
-        if value <= excellent:
-            return 100.0
-        elif value <= good:
-            range_size = good - excellent
-            position = (good - value) / range_size
-            return 75.0 + (25.0 * position)
-        elif value <= fair:
-            range_size = fair - good
-            position = (fair - value) / range_size
-            return 25.0 + (50.0 * position)
-        else:
-            max_poor = 4.0
-            if value >= max_poor:
-                return 0.0
-            range_size = max_poor - fair
-            position = (max_poor - value) / range_size
-            return 25.0 * position
+    def _calculate_growth_score_with_thresholds(self, cagr, excellent, good, fair):
+        if cagr is None: return 0
+        
+        # Safety defaults
+        excellent = excellent if excellent is not None else 15.0
+        good = good if good is not None else 10.0
+        fair = fair if fair is not None else 5.0
+        
+        if cagr >= excellent: return 100
+        if cagr >= good: return 75
+        if cagr >= fair: return 50
+        return 25
     
-    def _calculate_debt_score_with_thresholds(self, value: float, excellent: float, good: float, moderate: float) -> float:
-        """Calculate debt score using custom thresholds"""
-        if value is None:
-            return 0.0
-        if value <= excellent:
-            return 100.0
-        elif value <= good:
-            range_size = good - excellent
-            position = (good - value) / range_size
-            return 75.0 + (25.0 * position)
-        elif value <= moderate:
-            range_size = moderate - good
-            position = (moderate - value) / range_size
-            return 25.0 + (50.0 * position)
-        else:
-            max_high = 5.0
-            if value >= max_high:
-                return 0.0
-            range_size = max_high - moderate
-            position = (max_high - value) / range_size
-            return 25.0 * position
-    
-    def _calculate_ownership_score_with_thresholds(self, value: float, min_threshold: float, max_threshold: float) -> float:
-        """Calculate institutional ownership score using custom thresholds"""
-        if value is None:
-            return 0.0
+    def save_config(self, config: Dict[str, Any], name: str = "Optimized Config", 
+                   user_id: Optional[int] = None, character_id: str = 'lynch'):
+        """Save configuration to database"""
+        # Clean config to only valid columns
+        valid_keys = [
+            'weight_peg', 'weight_consistency', 'weight_debt', 'weight_ownership',
+            'peg_excellent', 'peg_good', 'peg_fair',
+            'debt_excellent', 'debt_good', 'debt_moderate',
+            'inst_own_min', 'inst_own_max',
+            'weight_roe', 'weight_debt_to_earnings',
+            'roe_excellent', 'roe_good', 'roe_fair',
+            'debt_to_earnings_excellent', 'debt_to_earnings_good', 'debt_to_earnings_fair'
+        ]
         
-        ideal_center = (min_threshold + max_threshold) / 2
+        filtered_config = {k: v for k, v in config.items() if k in valid_keys}
         
-        if min_threshold <= value <= max_threshold:
-            distance_from_center = abs(value - ideal_center)
-            max_distance = ideal_center - min_threshold
-            position = 1.0 - (distance_from_center / max_distance)
-            return 75.0 + (25.0 * position)
-        elif value < min_threshold:
-            if value <= 0:
-                return 0.0
-            position = value / min_threshold
-            return 75.0 * position
-        else:
-            if value >= 1.0:
-                return 0.0
-            range_size = 1.0 - max_threshold
-            position = (1.0 - value) / range_size
-            return 75.0 * position
-    
-    def _calculate_growth_score_with_thresholds(self, value: float, excellent: float, good: float, fair: float) -> float:
-        """Calculate growth score using custom thresholds"""
-        if value is None:
-            return 50.0
+        # Add metadata
+        filtered_config['name'] = name
+        filtered_config['character'] = character_id
+        filtered_config['description'] = f"Optimized via {config.get('method', 'algorithm')} for {character_id}"
         
-        if value < 0:
-            return 0.0
-        
-        if value >= excellent:
-            return 100.0
-        elif value >= good:
-            range_size = excellent - good
-            position = (value - good) / range_size
-            return 75.0 + (25.0 * position)
-        elif value >= fair:
-            range_size = good - fair
-            position = (value - fair) / range_size
-            return 25.0 + (50.0 * position)
-        else:
-            if value <= 0:
-                return 0.0
-            position = value / fair
-            return 25.0 * position
+        self.db.save_algorithm_config(filtered_config, user_id=user_id)
+        logger.info(f"Saved optimized configuration '{name}' for user {user_id}")
+

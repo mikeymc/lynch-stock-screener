@@ -25,25 +25,34 @@ class StockEvaluator:
         self.character = character
         self.metric_calculator = MetricCalculator(db)
 
-    def evaluate_stock(self, symbol: str) -> Optional[Dict[str, Any]]:
+    def evaluate_stock(self, symbol: str, overrides: Dict[str, Any] = None, custom_metrics: Dict[str, Any] = None) -> Optional[Dict[str, Any]]:
         """Evaluate a stock using the character's scoring configuration.
+
+        Args:
+            symbol: Stock ticker
+            overrides: Optional dictionary of weight/threshold overrides
+            custom_metrics: Optional pre-calculated metrics (e.g., from backtester)
 
         Returns:
             Dictionary with evaluation results including overall_score, rating, and breakdown
         """
+        
         # Get base metrics
-        base_data = self._get_base_metrics(symbol)
-        if not base_data:
-            return None
+        if custom_metrics:
+            base_data = custom_metrics
+        else:
+            base_data = self._get_base_metrics(symbol)
+            if not base_data:
+                return None
 
-        # Calculate character-specific metrics
-        character_metrics = self._get_character_metrics(symbol)
+            # Calculate character-specific metrics
+            character_metrics = self._get_character_metrics(symbol)
 
-        # Merge into base data
-        base_data.update(character_metrics)
+            # Merge into base data
+            base_data.update(character_metrics)
 
         # Calculate weighted score
-        return self._evaluate_weighted(base_data)
+        return self._evaluate_weighted(base_data, overrides)
 
     def _get_base_metrics(self, symbol: str) -> Optional[Dict[str, Any]]:
         """Get base metrics from database."""
@@ -110,9 +119,13 @@ class StockEvaluator:
             oe_data = self.metric_calculator.calculate_owner_earnings(symbol)
             result['owner_earnings'] = oe_data.get('owner_earnings')
 
+        if 'gross_margin' in needed_metrics:
+            gm_data = self.metric_calculator.calculate_gross_margin(symbol)
+            result['gross_margin'] = gm_data.get('current')
+
         return result
 
-    def _evaluate_weighted(self, base_data: Dict[str, Any]) -> Dict[str, Any]:
+    def _evaluate_weighted(self, base_data: Dict[str, Any], overrides: Dict[str, Any] = None) -> Dict[str, Any]:
         """Calculate weighted score based on character's configuration."""
         component_scores = {}
         breakdown = {}
@@ -120,15 +133,35 @@ class StockEvaluator:
         total_weight = 0.0
 
         for sw in self.character.scoring_weights:
+            # Determine weight
+            weight_key = f"weight_{sw.metric}"
+            weight = overrides.get(weight_key, sw.weight) if overrides else sw.weight
+
+            # Determine threshold
+            threshold = sw.threshold
+            if overrides:
+                 t_excellent = overrides.get(f"{sw.metric}_excellent")
+                 t_good = overrides.get(f"{sw.metric}_good")
+                 t_fair = overrides.get(f"{sw.metric}_fair")
+                 
+                 if t_excellent is not None or t_good is not None or t_fair is not None:
+                     # Create new Threshold with overrides, falling back to character defaults if override is None
+                     threshold = Threshold(
+                         excellent=t_excellent if t_excellent is not None else threshold.excellent,
+                         good=t_good if t_good is not None else threshold.good,
+                         fair=t_fair if t_fair is not None else threshold.fair,
+                         lower_is_better=threshold.lower_is_better
+                     )
+
             metric_value = base_data.get(sw.metric)
-            score = self._calculate_metric_score(metric_value, sw.threshold)
+            score = self._calculate_metric_score(metric_value, threshold)
 
             component_scores[f'{sw.metric}_score'] = score
-            contribution = score * sw.weight
+            contribution = score * weight
             breakdown[f'{sw.metric}_contribution'] = round(contribution, 1)
 
             total_score += contribution
-            total_weight += sw.weight
+            total_weight += weight
 
         # Normalize if weights don't sum to 1.0 (shouldn't happen, but safe)
         if total_weight > 0 and abs(total_weight - 1.0) > 0.01:
@@ -170,28 +203,32 @@ class StockEvaluator:
 
     def _score_lower_is_better(self, value: float, t: Threshold) -> float:
         """Score a metric where lower values are better (e.g., PEG, debt)."""
-        if value <= t.excellent:
+        excellent = t.excellent if t.excellent is not None else 1.0
+        good = t.good if t.good is not None else 1.5
+        fair = t.fair if t.fair is not None else 2.0
+        
+        if value <= excellent:
             return 100.0
-        elif value <= t.good:
+        elif value <= good:
             # 75-100 range
-            range_size = t.good - t.excellent
+            range_size = good - excellent
             if range_size == 0:
                 return 87.5
-            position = (t.good - value) / range_size
+            position = (good - value) / range_size
             return 75.0 + (25.0 * position)
-        elif value <= t.fair:
+        elif value <= fair:
             # 25-75 range
-            range_size = t.fair - t.good
+            range_size = fair - good
             if range_size == 0:
                 return 50.0
-            position = (t.fair - value) / range_size
+            position = (fair - value) / range_size
             return 25.0 + (50.0 * position)
         else:
             # 0-25 range, cap at 2x fair
-            max_poor = t.fair * 2
+            max_poor = fair * 2
             if value >= max_poor:
                 return 0.0
-            range_size = max_poor - t.fair
+            range_size = max_poor - fair
             if range_size == 0:
                 return 12.5
             position = (max_poor - value) / range_size
@@ -199,28 +236,32 @@ class StockEvaluator:
 
     def _score_higher_is_better(self, value: float, t: Threshold) -> float:
         """Score a metric where higher values are better (e.g., ROE, growth)."""
-        if value >= t.excellent:
+        excellent = t.excellent if t.excellent is not None else 20.0
+        good = t.good if t.good is not None else 15.0
+        fair = t.fair if t.fair is not None else 10.0
+        
+        if value >= excellent:
             return 100.0
-        elif value >= t.good:
+        elif value >= good:
             # 75-100 range
-            range_size = t.excellent - t.good
+            range_size = excellent - good
             if range_size == 0:
                 return 87.5
-            position = (value - t.good) / range_size
+            position = (value - good) / range_size
             return 75.0 + (25.0 * position)
-        elif value >= t.fair:
+        elif value >= fair:
             # 25-75 range
-            range_size = t.good - t.fair
+            range_size = good - fair
             if range_size == 0:
                 return 50.0
-            position = (value - t.fair) / range_size
+            position = (value - fair) / range_size
             return 25.0 + (50.0 * position)
         else:
             # 0-25 range, cap at 0
             min_poor = 0.0
             if value <= min_poor:
                 return 0.0
-            range_size = t.fair - min_poor
+            range_size = fair - min_poor
             if range_size == 0:
                 return 12.5
             position = value / range_size

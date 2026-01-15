@@ -1148,6 +1148,91 @@ class EdgarFetcher:
         net_income_annual = self.parse_net_income_history(company_facts)
 
         # Get shares outstanding (split-adjusted)
+        
+    def parse_shareholder_equity_history(self, company_facts: Dict[str, Any]) -> List[Dict[str, Any]]:
+        """
+        Extract Shareholder Equity history from company facts.
+        
+        Args:
+            company_facts: Company facts data from EDGAR API
+            
+        Returns:
+            List of dictionaries with year, shareholder_equity, and fiscal_end values
+        """
+        equity_data_list = None
+        
+        # Try US-GAAP first
+        try:
+            # Try StockholdersEquity first (most common)
+            if 'us-gaap' in company_facts['facts']:
+                if 'StockholdersEquity' in company_facts['facts']['us-gaap']:
+                    units = company_facts['facts']['us-gaap']['StockholdersEquity']['units']
+                    if 'USD' in units:
+                        equity_data_list = units['USD']
+                
+                # Fallback: StockholdersEquityIncludingPortionAttributableToNoncontrollingInterest
+                if equity_data_list is None and 'StockholdersEquityIncludingPortionAttributableToNoncontrollingInterest' in company_facts['facts']['us-gaap']:
+                    units = company_facts['facts']['us-gaap']['StockholdersEquityIncludingPortionAttributableToNoncontrollingInterest']['units']
+                    if 'USD' in units:
+                         equity_data_list = units['USD']
+
+        except (KeyError, TypeError):
+            pass
+            
+        # Try IFRS
+        if equity_data_list is None:
+            try:
+                if 'ifrs-full' in company_facts['facts']:
+                    if 'Equity' in company_facts['facts']['ifrs-full']:
+                        units = company_facts['facts']['ifrs-full']['Equity']['units']
+                        if 'USD' in units:
+                            equity_data_list = units['USD']
+                        else:
+                            # Find first currency unit
+                            currency_units = [u for u in units.keys() if len(u) == 3 and u.isupper()]
+                            if currency_units:
+                                equity_data_list = units[currency_units[0]]
+            except (KeyError, TypeError):
+                pass
+                
+        if equity_data_list is None:
+            logger.debug("Could not parse Shareholder Equity history from EDGAR")
+            return []
+            
+        # Process and filter for annual data
+        annual_equity_by_year = {}
+        
+        for entry in equity_data_list:
+            if entry.get('form') in ['10-K', '20-F']:
+                fiscal_end = entry.get('end')
+                val = entry.get('val')
+                start = entry.get('start')  # Equity is a point-in-time metric, but EDGAR might provide period
+                
+                # For point-in-time metrics like Equity, we care about the 'end' date matching the fiscal year end
+                if val is not None and fiscal_end:
+                     year = int(fiscal_end[:4])
+                     
+                     # Keep entry for each unique fiscal_end, preferring later entries (restatements)
+                     if fiscal_end not in annual_equity_by_year:
+                         annual_equity_by_year[fiscal_end] = {
+                             'year': year,
+                             'shareholder_equity': val,
+                             'fiscal_end': fiscal_end
+                         }
+        
+        # Group by year
+        by_year = {}
+        for fiscal_end, entry in annual_equity_by_year.items():
+            year = entry['year']
+            # Prefer the latest fiscal_end for the year if duplicates exist (unlikely for annual)
+            if year not in by_year:
+                by_year[year] = entry
+                
+        annual_equity = list(by_year.values())
+        annual_equity.sort(key=lambda x: x['year'], reverse=True)
+        
+        logger.info(f"Successfully parsed {len(annual_equity)} years of Shareholder Equity from EDGAR")
+        return annual_equity
         shares_annual = self.parse_shares_outstanding_history(company_facts)
 
         # Create lookup dict for shares by year
@@ -1622,6 +1707,7 @@ class EdgarFetcher:
         revenue_history = self.parse_revenue_history(company_facts)
         debt_to_equity = self.parse_debt_to_equity(company_facts)
         debt_to_equity_history = self.parse_debt_to_equity_history(company_facts)
+        shareholder_equity_history = self.parse_shareholder_equity_history(company_facts)
         cash_flow_history = self.parse_cash_flow_history(company_facts)
 
         # Calculate split-adjusted EPS from Net Income / Shares Outstanding
@@ -1634,7 +1720,7 @@ class EdgarFetcher:
         # Parse dividend history
         dividend_history = self.parse_dividend_history(company_facts)
 
-        logger.info(f"[{ticker}] EDGAR fetch complete: {len(eps_history)} EPS years, {len(calculated_eps_history)} calculated EPS years, {len(net_income_annual)} annual NI, {len(net_income_quarterly)} quarterly NI, {len(revenue_history)} revenue years, {len(debt_to_equity_history)} D/E years, {len(cash_flow_history)} cash flow years, {len(dividend_history)} dividend entries, current D/E: {debt_to_equity}")
+        logger.info(f"[{ticker}] EDGAR fetch complete: {len(eps_history)} EPS years, {len(calculated_eps_history)} calculated EPS years, {len(net_income_annual)} annual NI, {len(net_income_quarterly)} quarterly NI, {len(revenue_history)} revenue years, {len(debt_to_equity_history)} D/E years, {len(shareholder_equity_history)} Equity years, {len(cash_flow_history)} cash flow years, {len(dividend_history)} dividend entries, current D/E: {debt_to_equity}")
 
         fundamentals = {
             'ticker': ticker,
@@ -1643,6 +1729,7 @@ class EdgarFetcher:
             'eps_history': eps_history,
             'calculated_eps_history': calculated_eps_history,
             'net_income_annual': net_income_annual,
+            'shareholder_equity_history': shareholder_equity_history,
             'net_income_quarterly': net_income_quarterly,
             'revenue_history': revenue_history,
             'debt_to_equity': debt_to_equity,

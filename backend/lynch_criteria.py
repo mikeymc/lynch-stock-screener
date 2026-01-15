@@ -121,24 +121,24 @@ class LynchCriteria:
         if algo_config:
             logger.info(f"Using algorithm config: {algo_config.get('name', 'unnamed')} (id={algo_config.get('id')})")
             self.settings = {
-                'peg_excellent': {'value': algo_config.get('peg_excellent', 1.0)},
-                'peg_good': {'value': algo_config.get('peg_good', 1.5)},
-                'peg_fair': {'value': algo_config.get('peg_fair', 2.0)},
-                'debt_excellent': {'value': algo_config.get('debt_excellent', 0.5)},
-                'debt_good': {'value': algo_config.get('debt_good', 1.0)},
-                'debt_moderate': {'value': algo_config.get('debt_moderate', 2.0)},
-                'inst_own_min': {'value': algo_config.get('inst_own_min', 0.20)},
-                'inst_own_max': {'value': algo_config.get('inst_own_max', 0.60)},
-                'revenue_growth_excellent': {'value': algo_config.get('revenue_growth_excellent', 15.0)},
-                'revenue_growth_good': {'value': algo_config.get('revenue_growth_good', 10.0)},
-                'revenue_growth_fair': {'value': algo_config.get('revenue_growth_fair', 5.0)},
-                'income_growth_excellent': {'value': algo_config.get('income_growth_excellent', 15.0)},
-                'income_growth_good': {'value': algo_config.get('income_growth_good', 10.0)},
-                'income_growth_fair': {'value': algo_config.get('income_growth_fair', 5.0)},
-                'weight_peg': {'value': algo_config.get('weight_peg', 0.50)},
-                'weight_consistency': {'value': algo_config.get('weight_consistency', 0.25)},
-                'weight_debt': {'value': algo_config.get('weight_debt', 0.15)},
-                'weight_ownership': {'value': algo_config.get('weight_ownership', 0.10)},
+                'peg_excellent': {'value': algo_config.get('peg_excellent') if algo_config.get('peg_excellent') is not None else 1.0},
+                'peg_good': {'value': algo_config.get('peg_good') if algo_config.get('peg_good') is not None else 1.5},
+                'peg_fair': {'value': algo_config.get('peg_fair') if algo_config.get('peg_fair') is not None else 2.0},
+                'debt_excellent': {'value': algo_config.get('debt_excellent') if algo_config.get('debt_excellent') is not None else 0.5},
+                'debt_good': {'value': algo_config.get('debt_good') if algo_config.get('debt_good') is not None else 1.0},
+                'debt_moderate': {'value': algo_config.get('debt_moderate') if algo_config.get('debt_moderate') is not None else 2.0},
+                'inst_own_min': {'value': algo_config.get('inst_own_min') if algo_config.get('inst_own_min') is not None else 0.20},
+                'inst_own_max': {'value': algo_config.get('inst_own_max') if algo_config.get('inst_own_max') is not None else 0.60},
+                'revenue_growth_excellent': {'value': algo_config.get('revenue_growth_excellent') if algo_config.get('revenue_growth_excellent') is not None else 15.0},
+                'revenue_growth_good': {'value': algo_config.get('revenue_growth_good') if algo_config.get('revenue_growth_good') is not None else 10.0},
+                'revenue_growth_fair': {'value': algo_config.get('revenue_growth_fair') if algo_config.get('revenue_growth_fair') is not None else 5.0},
+                'income_growth_excellent': {'value': algo_config.get('income_growth_excellent') if algo_config.get('income_growth_excellent') is not None else 15.0},
+                'income_growth_good': {'value': algo_config.get('income_growth_good') if algo_config.get('income_growth_good') is not None else 10.0},
+                'income_growth_fair': {'value': algo_config.get('income_growth_fair') if algo_config.get('income_growth_fair') is not None else 5.0},
+                'weight_peg': {'value': algo_config.get('weight_peg') if algo_config.get('weight_peg') is not None else 0.50},
+                'weight_consistency': {'value': algo_config.get('weight_consistency') if algo_config.get('weight_consistency') is not None else 0.25},
+                'weight_debt': {'value': algo_config.get('weight_debt') if algo_config.get('weight_debt') is not None else 0.15},
+                'weight_ownership': {'value': algo_config.get('weight_ownership') if algo_config.get('weight_ownership') is not None else 0.10},
             }
         else:
             logger.warning("No algorithm configuration found - using hardcoded defaults")
@@ -184,25 +184,26 @@ class LynchCriteria:
         self.income_growth_good = self.settings['income_growth_good']['value']
         self.income_growth_fair = self.settings['income_growth_fair']['value']
 
-    def evaluate_stock(self, symbol: str, algorithm: str = 'weighted', overrides: Dict[str, float] = None, custom_metrics: Dict[str, Any] = None, stock_metrics: Dict[str, Any] = None) -> Optional[Dict[str, Any]]:
+    def evaluate_stock(self, symbol: str, algorithm: str = 'weighted', overrides: Dict[str, float] = None, custom_metrics: Dict[str, Any] = None, stock_metrics: Dict[str, Any] = None, character_id: str = None) -> Optional[Dict[str, Any]]:
         """
         Evaluate a stock using the specified algorithm.
 
-        Checks the active character setting and routes to character-specific
-        evaluation when appropriate.
-
         Args:
-            symbol: Stock ticker symbol
+            symbol: Stock ticker
             algorithm: One of 'weighted', 'two_tier', 'category_based', 'critical_factors', 'classic'
-            stock_metrics: Optional pre-fetched stock metrics to avoid re-querying DB
+            overrides: Optional scoring weight/threshold overrides
+            stock_metrics: Optional pre-fetched stock metrics
+            character_id: Optional character ID override (bypasses global setting)
 
         Returns:
             Dictionary with evaluation results including algorithm-specific scoring
         """
         # Check active character - delegate to StockEvaluator for non-Lynch characters
-        active_character = self._get_active_character()
+        # Prioritize passed character_id, else fallback to global setting
+        active_character = character_id if character_id else self._get_active_character()
+        
         if active_character != 'lynch':
-            return self._evaluate_with_character(symbol, active_character)
+            return self._evaluate_with_character(symbol, active_character, overrides, custom_metrics)
 
         # Lynch evaluation (original logic)
         # Get base metrics and growth data
@@ -215,19 +216,29 @@ class LynchCriteria:
             return None
 
         # Route to appropriate algorithm
-        if algorithm == 'weighted':
-            return self._evaluate_weighted(symbol, base_data, overrides)
-        elif algorithm == 'two_tier':
-            return self._evaluate_two_tier(symbol, base_data)
-        elif algorithm == 'category_based':
-            return self._evaluate_category_based(symbol, base_data)
-        elif algorithm == 'critical_factors':
-            return self._evaluate_critical_factors(symbol, base_data)
-        elif algorithm == 'classic':
-            return self._evaluate_classic(symbol, base_data)
-        else:
-            # Default to weighted if unknown algorithm
-            return self._evaluate_weighted(symbol, base_data, overrides)
+        logger.debug(f"Evaluating {symbol} using {algorithm} algorithm. Base data keys: {list(base_data.keys())}")
+        
+        try:
+            if algorithm == 'weighted':
+                return self._evaluate_weighted(symbol, base_data, overrides)
+            elif algorithm == 'two_tier':
+                return self._evaluate_two_tier(symbol, base_data)
+            elif algorithm == 'category_based':
+                return self._evaluate_category_based(symbol, base_data)
+            elif algorithm == 'critical_factors':
+                return self._evaluate_critical_factors(symbol, base_data)
+            elif algorithm == 'classic':
+                return self._evaluate_classic(symbol, base_data)
+            else:
+                # Default to weighted if unknown algorithm
+                return self._evaluate_weighted(symbol, base_data, overrides)
+        except TypeError as te:
+            logger.error(f"TypeError evaluating {symbol} with {algorithm}: {te}")
+            # Log all relevant values for debugging
+            logger.error(f"DEBUG: peg_ratio={base_data.get('peg_ratio')}, debt_equity={base_data.get('debt_to_equity')}, inst_own={base_data.get('institutional_ownership')}")
+            # Log threshold values
+            logger.error(f"DEBUG THRESHOLDS: peg_exc={self.peg_excellent}, peg_good={self.peg_good}, debt_exc={self.debt_excellent}, inst_min={self.inst_own_min}")
+            raise te
 
     def _get_active_character(self) -> str:
         """Get the currently active investment character from settings."""
@@ -237,7 +248,7 @@ class LynchCriteria:
         except Exception:
             return 'lynch'
 
-    def _evaluate_with_character(self, symbol: str, character_id: str) -> Optional[Dict[str, Any]]:
+    def _evaluate_with_character(self, symbol: str, character_id: str, overrides: Dict[str, Any] = None, custom_metrics: Dict[str, Any] = None) -> Optional[Dict[str, Any]]:
         """Evaluate a stock using a non-Lynch character via StockEvaluator."""
         try:
             from stock_evaluator import StockEvaluator
@@ -249,9 +260,12 @@ class LynchCriteria:
                 return None
 
             evaluator = StockEvaluator(self.db, self.analyzer, character)
-            return evaluator.evaluate_stock(symbol)
+            result = evaluator.evaluate_stock(symbol, overrides, custom_metrics)
+            return result
         except Exception as e:
             logger.error(f"Error evaluating with character {character_id}: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
             return None
 
 
@@ -404,10 +418,14 @@ class LynchCriteria:
         """
         # Get weights (from overrides or defaults)
         if overrides:
-            peg_weight = overrides.get('weight_peg', self.settings['weight_peg']['value'])
-            consistency_weight = overrides.get('weight_consistency', self.settings['weight_consistency']['value'])
-            debt_weight = overrides.get('weight_debt', self.settings['weight_debt']['value'])
-            ownership_weight = overrides.get('weight_ownership', self.settings['weight_ownership']['value'])
+            peg_weight = overrides.get('weight_peg') if overrides.get('weight_peg') is not None else self.settings['weight_peg']['value']
+            consistency_weight = overrides.get('weight_consistency') if overrides.get('weight_consistency') is not None else self.settings['weight_consistency']['value']
+            debt_weight = overrides.get('weight_debt') if overrides.get('weight_debt') is not None else self.settings['weight_debt']['value']
+            ownership_weight = overrides.get('weight_ownership') if overrides.get('weight_ownership') is not None else self.settings['weight_ownership']['value']
+            
+            # Log weights if they look suspicious
+            if any(w is None for w in [peg_weight, consistency_weight, debt_weight, ownership_weight]):
+                logger.error(f"SUSPICIOUS WEIGHTS for {symbol}: peg={peg_weight}, c={consistency_weight}, d={debt_weight}, o={ownership_weight}")
         else:
             peg_weight = self.settings['weight_peg']['value']
             consistency_weight = self.settings['weight_consistency']['value']
@@ -430,22 +448,22 @@ class LynchCriteria:
             
             # PEG score with threshold overrides
             peg_ratio = base_data.get('peg_ratio')
-            peg_excellent = overrides.get('peg_excellent', self.peg_excellent)
-            peg_good = overrides.get('peg_good', self.peg_good)
-            peg_fair = overrides.get('peg_fair', self.peg_fair)
+            peg_excellent = overrides.get('peg_excellent') if overrides.get('peg_excellent') is not None else self.peg_excellent
+            peg_good = overrides.get('peg_good') if overrides.get('peg_good') is not None else self.peg_good
+            peg_fair = overrides.get('peg_fair') if overrides.get('peg_fair') is not None else self.peg_fair
             peg_score = self._calculate_peg_score_with_thresholds(peg_ratio, peg_excellent, peg_good, peg_fair)
             
             # Debt score with threshold overrides
             debt_to_equity = base_data.get('debt_to_equity')
-            debt_excellent = overrides.get('debt_excellent', self.debt_excellent)
-            debt_good = overrides.get('debt_good', self.debt_good)
-            debt_moderate = overrides.get('debt_moderate', self.debt_moderate)
+            debt_excellent = overrides.get('debt_excellent') if overrides.get('debt_excellent') is not None else self.debt_excellent
+            debt_good = overrides.get('debt_good') if overrides.get('debt_good') is not None else self.debt_good
+            debt_moderate = overrides.get('debt_moderate') if overrides.get('debt_moderate') is not None else self.debt_moderate
             debt_score = self._calculate_debt_score_with_thresholds(debt_to_equity, debt_excellent, debt_good, debt_moderate)
             
             # Institutional ownership score with threshold overrides
             inst_own = base_data.get('institutional_ownership')
-            inst_own_min = overrides.get('inst_own_min', self.inst_own_min)
-            inst_own_max = overrides.get('inst_own_max', self.inst_own_max)
+            inst_own_min = overrides.get('inst_own_min') if overrides.get('inst_own_min') is not None else self.inst_own_min
+            inst_own_max = overrides.get('inst_own_max') if overrides.get('inst_own_max') is not None else self.inst_own_max
             ownership_score = self._calculate_ownership_score_with_thresholds(inst_own, inst_own_min, inst_own_max)
         else:
             # Use pre-calculated component scores from base_data
@@ -500,14 +518,14 @@ class LynchCriteria:
         """Two-tier: Must-have criteria first, then nice-to-have scoring."""
         # Must-have criteria (deal breakers)
         peg_ratio = base_data.get('peg_ratio')
-        debt_to_equity = base_data.get('debt_to_equity', 0)
+        debt_to_equity = base_data.get('debt_to_equity') if base_data.get('debt_to_equity') is not None else 0.0
 
         # Check deal breakers
         deal_breakers = []
         if peg_ratio is None or peg_ratio > 2.0:
-            deal_breakers.append('PEG > 2.0')
+            deal_breakers.append(f'PEG > 2.0 (Value: {peg_ratio})')
         if debt_to_equity > 1.0:
-            deal_breakers.append('Debt/Equity > 1.0')
+            deal_breakers.append(f'Debt/Equity > 1.0 (Value: {debt_to_equity})')
 
         if deal_breakers:
             # Failed must-haves = automatic AVOID
@@ -524,10 +542,16 @@ class LynchCriteria:
 
         # Passed must-haves, now score on nice-to-haves
         # PEG < 1.0: 40 points, Consistency: 30 points, Ownership: 30 points
-        peg_nice_score = 40 if peg_ratio <= 1.0 else max(0, 40 * (2.0 - peg_ratio) / 1.0)
+        if peg_ratio is not None:
+             peg_nice_score = 40 if peg_ratio <= 1.0 else max(0, 40 * (2.0 - peg_ratio) / 1.0)
+        else:
+             peg_nice_score = 0
+             
         consistency_score = base_data.get('consistency_score', 50) if base_data.get('consistency_score') is not None else 50
         consistency_nice_score = (consistency_score / 100) * 30
-        ownership_nice_score = (base_data['institutional_ownership_score'] / 100) * 30
+        
+        ownership_base_score = base_data.get('institutional_ownership_score', 50) if base_data.get('institutional_ownership_score') is not None else 50
+        ownership_nice_score = (ownership_base_score / 100) * 30
 
         overall_score = peg_nice_score + consistency_nice_score + ownership_nice_score
 
@@ -600,9 +624,12 @@ class LynchCriteria:
             growth_weight = 0.25
             debt_weight = 0.25
 
-        # Calculate category-specific scores
-        peg_category_score = 100 if peg_ratio and peg_ratio <= peg_threshold else (base_data['peg_score'] * 0.8)
-        debt_category_score = 100 if debt_to_equity and debt_to_equity <= debt_threshold else (base_data['debt_score'] * 0.8)
+        # Apply category-specific scoring
+        peg_category_score = 100 if peg_ratio is not None and peg_ratio <= peg_threshold else (base_data.get('peg_score', 0) * 0.8)
+        
+        debt_val = debt_to_equity if debt_to_equity is not None else 0.0
+        debt_category_score = 100 if debt_val <= debt_threshold else (base_data.get('debt_score', 0) * 0.8)
+        
         consistency_score = base_data.get('consistency_score', 50) if base_data.get('consistency_score') is not None else 50
 
         overall_score = (
@@ -689,18 +716,19 @@ class LynchCriteria:
             reasons.append(f"Negative earnings growth ({earnings_cagr:.1f}%)")
 
         # Factor 3: Manageable debt (0-25 points)
-        if debt_to_equity <= 0.3:
+        debt_val = debt_to_equity if debt_to_equity is not None else 0.0
+        if debt_val <= 0.3:
             debt_points = 25
-            reasons.append(f"Minimal debt ({debt_to_equity:.2f})")
-        elif debt_to_equity <= 0.6:
+            reasons.append(f"Minimal debt ({debt_val:.2f})")
+        elif debt_val <= 0.6:
             debt_points = 20
-            reasons.append(f"Moderate debt ({debt_to_equity:.2f})")
-        elif debt_to_equity <= 1.0:
+            reasons.append(f"Moderate debt ({debt_val:.2f})")
+        elif debt_val <= 1.0:
             debt_points = 10
-            reasons.append(f"Elevated debt ({debt_to_equity:.2f})")
+            reasons.append(f"Elevated debt ({debt_val:.2f})")
         else:
             debt_points = 0
-            reasons.append(f"High debt ({debt_to_equity:.2f})")
+            reasons.append(f"High debt ({debt_val:.2f})")
 
         overall_score = peg_points + earnings_points + debt_points
 
@@ -768,12 +796,21 @@ class LynchCriteria:
         """Evaluate PEG ratio: lower is better"""
         if value is None:
             return "FAIL"
-        if value <= self.peg_excellent:
-            return "PASS"
-        elif value <= self.peg_good:
-            return "CLOSE"
-        else:
-            return "FAIL"
+        
+        # Safety: use defaults if loaded from non-Lynch character config
+        peg_excellent = self.peg_excellent if self.peg_excellent is not None else 1.0
+        peg_good = self.peg_good if self.peg_good is not None else 1.5
+
+        try:
+            if value <= peg_excellent:
+                return "PASS"
+            elif value <= peg_good:
+                return "CLOSE"
+            else:
+                return "FAIL"
+        except TypeError as e:
+            logger.error(f"TypeError in evaluate_peg: value={value} ({type(value)}), excellent={peg_excellent} ({type(peg_excellent)}), good={peg_good} ({type(peg_good)})")
+            raise e
 
     def calculate_peg_score(self, value: float) -> float:
         """
@@ -785,116 +822,137 @@ class LynchCriteria:
         """
         if value is None:
             return 0.0
-        if value <= self.peg_excellent:
+            
+        # Safety defaults
+        peg_excellent = self.peg_excellent if self.peg_excellent is not None else 1.0
+        peg_good = self.peg_good if self.peg_good is not None else 1.5
+        peg_fair = self.peg_fair if self.peg_fair is not None else 2.0
+
+        if value <= peg_excellent:
             return 100.0
-        elif value <= self.peg_good:
+        elif value <= peg_good:
             # 75-100 range
-            range_size = self.peg_good - self.peg_excellent
-            position = (self.peg_good - value) / range_size
+            range_size = peg_good - peg_excellent
+            position = (peg_good - value) / range_size if range_size > 0 else 1.0
             return 75.0 + (25.0 * position)
-        elif value <= self.peg_fair:
+        elif value <= peg_fair:
             # 25-75 range
-            range_size = self.peg_fair - self.peg_good
-            position = (self.peg_fair - value) / range_size
+            range_size = peg_fair - peg_good
+            position = (peg_fair - value) / range_size if range_size > 0 else 1.0
             return 25.0 + (50.0 * position)
         else:
             # 0-25 range, cap at 4.0
             max_poor = 4.0
             if value >= max_poor:
                 return 0.0
-            range_size = max_poor - self.peg_fair
+            range_size = max_poor - peg_fair
             position = (max_poor - value) / range_size
             return 25.0 * position
 
     def evaluate_debt(self, value: float) -> str:
-        """Evaluate Debt to Equity: lower is better"""
+        """Evaluate debt-to-equity: lower is better"""
         if value is None:
-            return "FAIL"
-        if value <= self.debt_excellent:
-            return "PASS"
-        elif value <= self.debt_good:
-            return "CLOSE"
-        else:
-            return "FAIL"
+            return "PASS"  # Lynch liked no debt
+            
+        # Safety defaults
+        debt_excellent = self.debt_excellent if self.debt_excellent is not None else 0.5
+        debt_good = self.debt_good if self.debt_good is not None else 1.0
+
+        try:
+            if value <= debt_excellent:
+                return "PASS"
+            elif value <= debt_good:
+                return "CLOSE"
+            else:
+                return "FAIL"
+        except TypeError as e:
+            logger.error(f"TypeError in evaluate_debt: value={value} ({type(value)}), excellent={debt_excellent}, good={debt_good}")
+            raise e
 
     def calculate_debt_score(self, value: float) -> float:
         """
-        Calculate Debt score (0-100).
+        Calculate debt score (0-100).
         Excellent (0-0.5): 100
         Good (0.5-1.0): 75-100
         Moderate (1.0-2.0): 25-75
         High (2.0+): 0-25
         """
         if value is None:
-            return 0.0
-        if value <= self.debt_excellent:
+            return 100.0  # No debt is great
+            
+        # Safety defaults
+        debt_excellent = self.debt_excellent if self.debt_excellent is not None else 0.5
+        debt_good = self.debt_good if self.debt_good is not None else 1.0
+        debt_moderate = self.debt_moderate if self.debt_moderate is not None else 2.0
+
+        if value <= debt_excellent:
             return 100.0
-        elif value <= self.debt_good:
+        elif value <= debt_good:
             # 75-100 range
-            range_size = self.debt_good - self.debt_excellent
-            position = (self.debt_good - value) / range_size
+            range_size = debt_good - debt_excellent
+            position = (debt_good - value) / range_size if range_size > 0 else 1.0
             return 75.0 + (25.0 * position)
-        elif value <= self.debt_moderate:
+        elif value <= debt_moderate:
             # 25-75 range
-            range_size = self.debt_moderate - self.debt_good
-            position = (self.debt_moderate - value) / range_size
+            range_size = debt_moderate - debt_good
+            position = (debt_moderate - value) / range_size if range_size > 0 else 1.0
             return 25.0 + (50.0 * position)
         else:
             # 0-25 range, cap at 5.0
             max_high = 5.0
             if value >= max_high:
                 return 0.0
-            range_size = max_high - self.debt_moderate
+            range_size = max_high - debt_moderate
             position = (max_high - value) / range_size
             return 25.0 * position
 
     def evaluate_institutional_ownership(self, value: float) -> str:
-        """Evaluate Institutional Ownership: sweet spot in middle (20%-60%)"""
+        """Evaluate institutional ownership: sweet spot is around 40%"""
         if value is None:
-            return "FAIL"
-        if self.inst_own_min <= value <= self.inst_own_max:
             return "PASS"
-        else:
-            # Check if it's close to either boundary (within 5 percentage points)
-            close_to_min = abs(value - self.inst_own_min) <= 0.05
-            close_to_max = abs(value - self.inst_own_max) <= 0.05
-            if close_to_min or close_to_max:
+            
+        # Safety defaults
+        inst_own_min = self.inst_own_min if self.inst_own_min is not None else 0.20
+        inst_own_max = self.inst_own_max if self.inst_own_max is not None else 0.60
+
+        try:
+            if inst_own_min <= value <= inst_own_max:
+                return "PASS"
+            elif value < inst_own_min:
                 return "CLOSE"
-            return "FAIL"
+            else:
+                return "FAIL"
+        except TypeError as e:
+            logger.error(f"TypeError in evaluate_institutional_ownership: value={value}, min={inst_own_min}, max={inst_own_max}")
+            raise e
 
     def calculate_institutional_ownership_score(self, value: float) -> float:
         """
-        Calculate Institutional Ownership score (0-100).
-        Sweet spot (20%-60%): 100 at center (40%), tapering to 75 at edges
-        Too low (0-20%): 0-75
-        Too high (60%-100%): 75-0
+        Calculate institutional ownership score (0-100).
+        Sweet spot (20%-60%): 100
+        Under-owned (< 20%): 50-100
+        Over-owned (> 60%): 0-50
         """
         if value is None:
-            return 0.0
+            return 75.0  # Neutral
+            
+        # Safety defaults
+        inst_own_min = self.inst_own_min if self.inst_own_min is not None else 0.20
+        inst_own_max = self.inst_own_max if self.inst_own_max is not None else 0.60
 
-        # Ideal range: peak at center of min/max
-        ideal_center = (self.inst_own_min + self.inst_own_max) / 2
-
-        if self.inst_own_min <= value <= self.inst_own_max:
-            # In ideal range: score 75-100
-            # Calculate distance from center
-            distance_from_center = abs(value - ideal_center)
-            max_distance = ideal_center - self.inst_own_min
-            position = 1.0 - (distance_from_center / max_distance)
-            return 75.0 + (25.0 * position)
-        elif value < self.inst_own_min:
-            # Too low: 0-75
-            if value <= 0:
-                return 0.0
-            position = value / self.inst_own_min
-            return 75.0 * position
+        if inst_own_min <= value <= inst_own_max:
+            return 100.0
+        elif value < inst_own_min:
+            # Under-owned is okay (50-100)
+            return 50.0 + (value / inst_own_min) * 50.0 if inst_own_min > 0 else 100.0
         else:
-            # Too high: 75-0
-            if value >= 1.0:
-                return 0.0
-            range_size = 1.0 - self.inst_own_max
-            position = (1.0 - value) / range_size
-            return 75.0 * position
+            # Over-owned is bad (0-50)
+            # Dips to 0 at 100% ownership
+            range_size = 1.0 - inst_own_max
+            if range_size > 0:
+                position = (1.0 - value) / range_size
+                return max(0.0, 50.0 * position)
+            return 0.0
 
     def calculate_revenue_growth_score(self, value: float) -> float:
         """
@@ -910,24 +968,29 @@ class LynchCriteria:
         
         if value < 0:
             return 0.0  # Negative growth = 0 score
+            
+        # Safety defaults
+        rev_excellent = self.revenue_growth_excellent if self.revenue_growth_excellent is not None else 15.0
+        rev_good = self.revenue_growth_good if self.revenue_growth_good is not None else 10.0
+        rev_fair = self.revenue_growth_fair if self.revenue_growth_fair is not None else 5.0
         
-        if value >= self.revenue_growth_excellent:
+        if value >= rev_excellent:
             return 100.0
-        elif value >= self.revenue_growth_good:
+        elif value >= rev_good:
             # 75-100 range
-            range_size = self.revenue_growth_excellent - self.revenue_growth_good
-            position = (value - self.revenue_growth_good) / range_size
+            range_size = rev_excellent - rev_good
+            position = (value - rev_good) / range_size if range_size > 0 else 1.0
             return 75.0 + (25.0 * position)
-        elif value >= self.revenue_growth_fair:
+        elif value >= rev_fair:
             # 25-75 range
-            range_size = self.revenue_growth_good - self.revenue_growth_fair
-            position = (value - self.revenue_growth_fair) / range_size
+            range_size = rev_good - rev_fair
+            position = (value - rev_fair) / range_size if range_size > 0 else 1.0
             return 25.0 + (50.0 * position)
         else:
             # 0-25 range
             if value <= 0:
                 return 0.0
-            position = value / self.revenue_growth_fair
+            position = value / rev_fair if rev_fair > 0 else 0.0
             return 25.0 * position
     
     def calculate_income_growth_score(self, value: float) -> float:
@@ -944,24 +1007,29 @@ class LynchCriteria:
         
         if value < 0:
             return 0.0  # Negative growth = 0 score
+            
+        # Safety defaults
+        inc_excellent = self.income_growth_excellent if self.income_growth_excellent is not None else 15.0
+        inc_good = self.income_growth_good if self.income_growth_good is not None else 10.0
+        inc_fair = self.income_growth_fair if self.income_growth_fair is not None else 5.0
         
-        if value >= self.income_growth_excellent:
+        if value >= inc_excellent:
             return 100.0
-        elif value >= self.income_growth_good:
+        elif value >= inc_good:
             # 75-100 range
-            range_size = self.income_growth_excellent - self.income_growth_good
-            position = (value - self.income_growth_good) / range_size
+            range_size = inc_excellent - inc_good
+            position = (value - inc_good) / range_size if range_size > 0 else 1.0
             return 75.0 + (25.0 * position)
-        elif value >= self.income_growth_fair:
+        elif value >= inc_fair:
             # 25-75 range
-            range_size = self.income_growth_good - self.income_growth_fair
-            position = (value - self.income_growth_fair) / range_size
+            range_size = inc_good - inc_fair
+            position = (value - inc_fair) / range_size if range_size > 0 else 1.0
             return 25.0 + (50.0 * position)
         else:
             # 0-25 range
             if value <= 0:
                 return 0.0
-            position = value / self.income_growth_fair
+            position = value / inc_fair if inc_fair > 0 else 0.0
             return 25.0 * position
 
     # ========== Threshold-aware scoring methods (for optimizer overrides) ==========
@@ -970,68 +1038,84 @@ class LynchCriteria:
         """Calculate PEG score using custom thresholds (for optimizer overrides)"""
         if value is None:
             return 0.0
+            
+        # Safety defaults
+        excellent = excellent if excellent is not None else 1.0
+        good = good if good is not None else 1.5
+        fair = fair if fair is not None else 2.0
+
         if value <= excellent:
             return 100.0
         elif value <= good:
             range_size = good - excellent
-            position = (good - value) / range_size
+            position = (good - value) / range_size if range_size > 0 else 1.0
             return 75.0 + (25.0 * position)
         elif value <= fair:
             range_size = fair - good
-            position = (fair - value) / range_size
+            position = (fair - value) / range_size if range_size > 0 else 1.0
             return 25.0 + (50.0 * position)
         else:
             max_poor = 4.0
             if value >= max_poor:
                 return 0.0
             range_size = max_poor - fair
-            position = (max_poor - value) / range_size
+            position = (max_poor - value) / range_size if range_size > 0 else 1.0
             return 25.0 * position
 
     def _calculate_debt_score_with_thresholds(self, value: float, excellent: float, good: float, moderate: float) -> float:
         """Calculate debt score using custom thresholds (for optimizer overrides)"""
         if value is None:
-            return 0.0
+            return 100.0
+            
+        # Safety defaults
+        excellent = excellent if excellent is not None else 0.5
+        good = good if good is not None else 1.0
+        moderate = moderate if moderate is not None else 2.0
+
         if value <= excellent:
             return 100.0
         elif value <= good:
             range_size = good - excellent
-            position = (good - value) / range_size
+            position = (good - value) / range_size if range_size > 0 else 1.0
             return 75.0 + (25.0 * position)
         elif value <= moderate:
             range_size = moderate - good
-            position = (moderate - value) / range_size
+            position = (moderate - value) / range_size if range_size > 0 else 1.0
             return 25.0 + (50.0 * position)
         else:
             max_high = 5.0
             if value >= max_high:
                 return 0.0
             range_size = max_high - moderate
-            position = (max_high - value) / range_size
+            position = (max_high - value) / range_size if range_size > 0 else 1.0
             return 25.0 * position
 
     def _calculate_ownership_score_with_thresholds(self, value: float, min_threshold: float, max_threshold: float) -> float:
         """Calculate institutional ownership score using custom thresholds (for optimizer overrides)"""
         if value is None:
-            return 0.0
+            return 75.0
+            
+        # Safety defaults
+        min_threshold = min_threshold if min_threshold is not None else 0.20
+        max_threshold = max_threshold if max_threshold is not None else 0.60
         
         ideal_center = (min_threshold + max_threshold) / 2
         
         if min_threshold <= value <= max_threshold:
             distance_from_center = abs(value - ideal_center)
             max_distance = ideal_center - min_threshold
-            position = 1.0 - (distance_from_center / max_distance)
+            position = 1.0 - (distance_from_center / max_distance) if max_distance > 0 else 1.0
             return 75.0 + (25.0 * position)
         elif value < min_threshold:
             if value <= 0:
                 return 0.0
-            position = value / min_threshold
+            position = value / min_threshold if min_threshold > 0 else 0.0
             return 75.0 * position
         else:
             if value >= 1.0:
                 return 0.0
             range_size = 1.0 - max_threshold
-            position = (1.0 - value) / range_size
+            position = (1.0 - value) / range_size if range_size > 0 else 0.0
             return 75.0 * position
 
     # =========================================================================
@@ -1054,26 +1138,27 @@ class LynchCriteria:
             DataFrame with [symbol, overall_score, overall_status, ...] sorted by score desc
         """
         # Extract thresholds from config (with defaults)
-        peg_excellent = config.get('peg_excellent', 1.0)
-        peg_good = config.get('peg_good', 1.5)
-        peg_fair = config.get('peg_fair', 2.0)
+        peg_excellent = config.get('peg_excellent') if config.get('peg_excellent') is not None else 1.0
+        peg_good = config.get('peg_good') if config.get('peg_good') is not None else 1.5
+        peg_fair = config.get('peg_fair') if config.get('peg_fair') is not None else 2.0
         
-        debt_excellent = config.get('debt_excellent', 0.5)
-        debt_good = config.get('debt_good', 1.0)
-        debt_moderate = config.get('debt_moderate', 2.0)
+        debt_excellent = config.get('debt_excellent') if config.get('debt_excellent') is not None else 0.5
+        debt_good = config.get('debt_good') if config.get('debt_good') is not None else 1.0
+        debt_moderate = config.get('debt_moderate') if config.get('debt_moderate') is not None else 2.0
         
-        inst_own_min = config.get('inst_own_min', 0.20)
-        inst_own_max = config.get('inst_own_max', 0.60)
+        inst_own_min = config.get('inst_own_min') if config.get('inst_own_min') is not None else 0.20
+        inst_own_max = config.get('inst_own_max') if config.get('inst_own_max') is not None else 0.60
         
         # Extract weights (default to 0 if not present to support dynamic composition)
-        weight_peg = config.get('weight_peg', 0.0)
-        weight_consistency = config.get('weight_consistency', 0.0)
-        weight_debt = config.get('weight_debt', 0.0)
-        weight_ownership = config.get('weight_ownership', 0.0)
+        weight_peg = config.get('weight_peg') if config.get('weight_peg') is not None else 0.0
+        weight_consistency = config.get('weight_consistency') if config.get('weight_consistency') is not None else 0.0
+        weight_debt = config.get('weight_debt') if config.get('weight_debt') is not None else 0.0
+        weight_ownership = config.get('weight_ownership') if config.get('weight_ownership') is not None else 0.0
         
         # Buffett Weights
-        weight_roe = config.get('weight_roe', 0.0)
-        weight_debt_earnings = config.get('weight_debt_earnings', 0.0)
+        weight_roe = config.get('weight_roe') if config.get('weight_roe') is not None else 0.0
+        weight_debt_earnings = config.get('weight_debt_earnings') if config.get('weight_debt_earnings') is not None else 0.0
+        weight_gross_margin = config.get('weight_gross_margin') if config.get('weight_gross_margin') is not None else 0.0
         
         # Initialize overall score
         overall_score = pd.Series(0.0, index=df.index)
@@ -1141,9 +1226,9 @@ class LynchCriteria:
         roe_score = pd.Series(0.0, index=df.index)
         if weight_roe > 0:
             # ROE Thresholds (fetching from config or defaults)
-            roe_excellent = config.get('roe_excellent', 20.0)
-            roe_good = config.get('roe_good', 15.0)
-            roe_fair = config.get('roe_fair', 10.0)
+            roe_excellent = config.get('roe_excellent') if config.get('roe_excellent') is not None else 20.0
+            roe_good = config.get('roe_good') if config.get('roe_good') is not None else 15.0
+            roe_fair = config.get('roe_fair') if config.get('roe_fair') is not None else 10.0
             
             roe_score = self._vectorized_roe_score(
                 df['roe'], roe_excellent, roe_good, roe_fair
@@ -1153,9 +1238,9 @@ class LynchCriteria:
         debt_earnings_score = pd.Series(0.0, index=df.index)
         if weight_debt_earnings > 0:
             # Debt/Earnings Thresholds
-            de_excellent = config.get('de_excellent', 2.0)
-            de_good = config.get('de_good', 4.0)
-            de_fair = config.get('de_fair', 7.0)
+            de_excellent = config.get('de_excellent') if config.get('de_excellent') is not None else 2.0
+            de_good = config.get('de_good') if config.get('de_good') is not None else 4.0
+            de_fair = config.get('de_fair') if config.get('de_fair') is not None else 7.0
             
             debt_earnings_score = self._vectorized_debt_earnings_score(
                 df['debt_to_earnings'], de_excellent, de_good, de_fair

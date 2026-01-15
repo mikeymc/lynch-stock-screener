@@ -55,7 +55,7 @@ class Backtester:
         except Exception as e:
             logger.error(f"Error fetching history for {symbol}: {e}")
 
-    def get_historical_score(self, symbol: str, date: str, overrides: Dict[str, float] = None) -> Optional[Dict[str, Any]]:
+    def get_historical_score(self, symbol: str, date: str, overrides: Dict[str, float] = None, character_id: str = 'lynch') -> Optional[Dict[str, Any]]:
         """
         Reconstruct the Lynch Score for a stock as it would have appeared on a specific date.
         """
@@ -168,6 +168,52 @@ class Backtester:
             if years > 0 and oldest_rev and oldest_rev > 0 and latest_rev and latest_rev > 0:
                 revenue_cagr = ((latest_rev / oldest_rev) ** (1/years) - 1) * 100
 
+        # Calculate Buffett Metrics: ROE, Debt-to-Earnings, Gross Margin
+        
+        # FALLBACK: Use MetricCalculator to compute Buffett metrics from current stock data
+        # This is a limitation of backtesting - we use current ratios as a proxy
+        roe = None
+        if latest_earnings.get('net_income') and latest_earnings.get('shareholder_equity'):
+            se = latest_earnings['shareholder_equity']
+            if se > 0:
+                roe = (latest_earnings['net_income'] / se) * 100
+        else:
+            # Calculate from current stock data using MetricCalculator
+            try:
+                roe_result = self.criteria.metric_calculator.calculate_roe(symbol)
+                if roe_result and 'current_roe' in roe_result:
+                    roe = roe_result['current_roe']
+            except Exception as e:
+                logger.warning(f"{symbol} Could not calculate ROE: {e}")
+
+        debt_to_earnings = None
+        if latest_earnings.get('net_income') and latest_earnings.get('long_term_debt'):
+            ni = latest_earnings['net_income']
+            if ni > 0:
+                debt_to_earnings = latest_earnings['long_term_debt'] / ni
+        else:
+            # Calculate from current stock data
+            try:
+                de_result = self.criteria.metric_calculator.calculate_debt_to_earnings(symbol)
+                if de_result and 'debt_to_earnings' in de_result:
+                    debt_to_earnings = de_result['debt_to_earnings']
+            except Exception as e:
+                logger.warning(f"{symbol} Could not calculate Debt-to-Earnings: {e}")
+
+        gross_margin = None
+        if latest_earnings.get('revenue') and latest_earnings.get('gross_profit'):
+            rev = latest_earnings['revenue']
+            if rev > 0:
+                gross_margin = (latest_earnings['gross_profit'] / rev) * 100
+        else:
+            # Calculate from current stock data
+            try:
+                gm_result = self.criteria.metric_calculator.calculate_gross_margin(symbol)
+                if gm_result and 'current_gross_margin' in gm_result:
+                    gross_margin = gm_result['current_gross_margin']
+            except Exception as e:
+                logger.warning(f"{symbol} Could not calculate Gross Margin: {e}")
+
         # Calculate market cap using estimated shares
         if current_metrics and current_metrics.get('price') and current_metrics.get('market_cap'):
             shares_outstanding = current_metrics['market_cap'] / current_metrics['price']
@@ -188,6 +234,9 @@ class Backtester:
             'market_cap': market_cap,
             'sector': current_metrics.get('sector'),
             'country': current_metrics.get('country'),
+            'roe': roe,
+            'debt_to_earnings': debt_to_earnings,
+            'gross_margin': gross_margin,
             'consistency_score': 50, # Placeholder
             'institutional_ownership_score': 50, # Placeholder
             'debt_score': 50, # Placeholder
@@ -196,20 +245,29 @@ class Backtester:
         
         # Recalculate derived scores using LynchCriteria logic
         # We need to manually call the scoring methods because evaluate_stock fetches fresh data
+        current_char = self.criteria._get_active_character()
         
-        # PEG
-        base_data['peg_ratio'] = self.criteria.calculate_peg_ratio(pe_ratio, earnings_cagr)
-        base_data['peg_status'] = self.criteria.evaluate_peg(base_data['peg_ratio'])
-        base_data['peg_score'] = self.criteria.calculate_peg_score(base_data['peg_ratio'])
-        logger.debug(f"{symbol}: PEG Ratio={base_data['peg_ratio']}, Score={base_data['peg_score']}, CAGR={earnings_cagr}")
-        
-        # Debt
-        base_data['debt_status'] = self.criteria.evaluate_debt(base_data['debt_to_equity'])
-        base_data['debt_score'] = self.criteria.calculate_debt_score(base_data['debt_to_equity'])
-        
-        # Ownership (using current as proxy, known limitation)
-        base_data['institutional_ownership_status'] = self.criteria.evaluate_institutional_ownership(base_data['institutional_ownership'])
-        base_data['institutional_ownership_score'] = self.criteria.calculate_institutional_ownership_score(base_data['institutional_ownership'])
+        if current_char == 'lynch':
+            # PEG
+            base_data['peg_ratio'] = self.criteria.calculate_peg_ratio(pe_ratio, earnings_cagr)
+            base_data['peg_status'] = self.criteria.evaluate_peg(base_data['peg_ratio'])
+            base_data['peg_score'] = self.criteria.calculate_peg_score(base_data['peg_ratio'])
+            logger.debug(f"{symbol}: PEG Ratio={base_data['peg_ratio']}, Score={base_data['peg_score']}, CAGR={earnings_cagr}")
+            
+            # Debt
+            base_data['debt_status'] = self.criteria.evaluate_debt(base_data['debt_to_equity'])
+            base_data['debt_score'] = self.criteria.calculate_debt_score(base_data['debt_to_equity'])
+            
+            # Ownership (using current as proxy, known limitation)
+            base_data['institutional_ownership_status'] = self.criteria.evaluate_institutional_ownership(base_data['institutional_ownership'])
+            base_data['institutional_ownership_score'] = self.criteria.calculate_institutional_ownership_score(base_data['institutional_ownership'])
+        else:
+            # Buffett or other: evaluate_stock will handle character-specific scoring
+            # but we still want some basic fields populated for DB storage
+            base_data['peg_ratio'] = self.criteria.calculate_peg_ratio(pe_ratio, earnings_cagr)
+            base_data['peg_score'] = 0
+            base_data['debt_score'] = 0
+            base_data['institutional_ownership_score'] = 0
 
         # 4. Calculate Score using historical data
         # We pass the reconstructed historical data as custom_metrics to avoid fetching current data
@@ -217,11 +275,12 @@ class Backtester:
             symbol, 
             algorithm='weighted', 
             overrides=overrides,
-            custom_metrics=base_data
+            custom_metrics=base_data,
+            character_id=character_id
         )
         return score_result
 
-    def run_backtest(self, symbol: str, years_back: int = 1, overrides: Dict[str, float] = None) -> Dict[str, Any]:
+    def run_backtest(self, symbol: str, years_back: int = 1, overrides: Dict[str, float] = None, character_id: str = 'lynch') -> Dict[str, Any]:
         """
         Run a backtest for a single stock.
         
@@ -233,10 +292,11 @@ class Backtester:
         
         # 3. Calculate Historical Score (at start date)
         # This returns the full scoring result including the score
-        historical_analysis = self.get_historical_score(symbol, start_date_str, overrides=overrides)
+        historical_analysis = self.get_historical_score(symbol, start_date_str, overrides=overrides, character_id=character_id)
         
         if not historical_analysis:
             return {'error': 'Insufficient historical data'}
+        
             
         # 3. Calculate Return
         start_price = historical_analysis['price']

@@ -163,28 +163,37 @@ export default function OptimizationTab() {
 
 
 
-    // Load current configuration and character on mount
+    // Initialize on mount
     useEffect(() => {
         const controller = new AbortController()
-        loadCurrentConfig(controller.signal)
+        initialize(controller.signal)
         return () => controller.abort()
     }, [])
 
-    const loadCurrentConfig = async (signal) => {
+    const initialize = async (signal) => {
         try {
-            // Fetch character setting first
+            // Fetch character setting first to set initial state
             const charResponse = await fetch('/api/settings/character', { signal, credentials: 'include' })
             const charData = await charResponse.json()
             const character = charData.active_character || 'lynch'
-            setActiveCharacter(character)
 
-            // Fetch algorithm config (now character-aware on backend)
-            const response = await fetch('/api/algorithm/config', { signal, credentials: 'include' })
+            setActiveCharacter(character)
+            loadConfigForCharacter(character, signal)
+        } catch (error) {
+            // Ignore abort errors (component unmounted)
+            if (error.name === 'AbortError') return
+            console.error('Error initializing:', error)
+        }
+    }
+
+    const loadConfigForCharacter = async (character, signal) => {
+        try {
+            // Fetch algorithm config for specific character
+            const response = await fetch(`/api/algorithm/config?character_id=${character}`, { signal, credentials: 'include' })
             const data = await response.json()
             if (data.current) {
                 setConfig(data.current)
-                // Auto-run validation to show analysis for current config
-                runValidationForConfig(data.current, signal)
+                // Auto-validation removed - users can manually trigger validation if needed
             } else {
                 // No saved config, use defaults for character
                 setConfig(buildDefaultConfig(character))
@@ -196,6 +205,13 @@ export default function OptimizationTab() {
         }
     }
 
+    const handleCharacterChange = (newCharacter) => {
+        setActiveCharacter(newCharacter)
+        setAnalysis(null)
+        setOptimizationResult(null)
+        loadConfigForCharacter(newCharacter)
+    }
+
     // Separate function to run validation with a specific config (used on load)
     const runValidationForConfig = async (configToValidate, signal) => {
         try {
@@ -205,7 +221,8 @@ export default function OptimizationTab() {
                 body: JSON.stringify({
                     years_back: parseInt(yearsBack),
                     limit: null,
-                    config: configToValidate
+                    config: configToValidate,
+                    character_id: activeCharacter
                 }),
                 signal
             })
@@ -255,7 +272,8 @@ export default function OptimizationTab() {
                 body: JSON.stringify({
                     years_back: parseInt(yearsBack),
                     limit: null,
-                    config: configToUse
+                    config: configToUse,
+                    character_id: activeCharacter
                 })
             })
 
@@ -301,7 +319,8 @@ export default function OptimizationTab() {
                     years_back: parseInt(yearsBack),
                     method: optimizationMethod,
                     max_iterations: parseInt(maxIterations),
-                    limit: null
+                    limit: null,
+                    character_id: activeCharacter
                 })
             })
             const data = await response.json()
@@ -369,9 +388,9 @@ export default function OptimizationTab() {
             let correlation = null
 
             // 1. If we have an optimization result and we are saving THAT config
-            if (optimizationResult?.result?.best_score &&
+            if (optimizationResult?.result?.final_correlation &&
                 JSON.stringify(configToUse) === JSON.stringify(optimizationResult.result.best_config)) {
-                correlation = optimizationResult.result.best_score
+                correlation = optimizationResult.result.final_correlation
             }
             // 2. Fallback: use current analysis if available
             else if (analysis?.overall_correlation?.coefficient) {
@@ -386,7 +405,10 @@ export default function OptimizationTab() {
             const response = await fetch('/api/algorithm/config', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ config: configToSave })
+                body: JSON.stringify({
+                    config: configToSave,
+                    character_id: activeCharacter
+                })
             })
 
             const data = await response.json()
@@ -398,7 +420,8 @@ export default function OptimizationTab() {
                 setRescoringRunning(false)
             }
 
-            loadCurrentConfig()
+            // Reload to ensure sync
+            loadConfigForCharacter(activeCharacter)
         } catch (error) {
             console.error('Error saving configuration:', error)
             setRescoringRunning(false)
@@ -487,12 +510,25 @@ export default function OptimizationTab() {
     return (
         <div className="space-y-6">
             <div>
-                <h3 className="text-lg font-medium">
-                    Algorithm Tuning: {CHARACTER_SLIDER_CONFIGS[activeCharacter]?.displayName || 'Peter Lynch'}
-                </h3>
-                <p className="text-sm text-muted-foreground">
-                    Configure scoring weights and thresholds for {CHARACTER_SLIDER_CONFIGS[activeCharacter]?.displayName || 'Peter Lynch'}-style screening.
-                </p>
+                <div className="flex items-center justify-between">
+                    <div>
+                        <h3 className="text-lg font-medium">
+                            Algorithm Tuning
+                        </h3>
+                        <p className="text-sm text-muted-foreground">
+                            Configure scoring weights and thresholds
+                        </p>
+                    </div>
+                    <Select value={activeCharacter} onValueChange={handleCharacterChange}>
+                        <SelectTrigger className="w-[180px]">
+                            <SelectValue placeholder="Select Character" />
+                        </SelectTrigger>
+                        <SelectContent>
+                            <SelectItem value="lynch">Peter Lynch</SelectItem>
+                            <SelectItem value="buffett">Warren Buffett</SelectItem>
+                        </SelectContent>
+                    </Select>
+                </div>
             </div>
             <div className="border-t" />
 
@@ -846,126 +882,141 @@ export default function OptimizationTab() {
             </Tabs>
 
             {/* Analysis Results */}
-            {/* Analysis Results */}
-            {
-                analysis && (
-                    <Card className="overflow-hidden border-2">
-                        <CardHeader className="bg-muted/50 border-b pb-4">
-                            <CardTitle className="flex items-center gap-2">
-                                <TrendingUp className="h-5 w-5 text-primary" />
-                                Analysis Results
-                            </CardTitle>
-                        </CardHeader>
-                        <CardContent className="p-6">
-                            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-                                {/* Overall Correlation */}
-                                <div className="flex flex-col items-center justify-center p-4 rounded-xl border bg-card shadow-sm">
-                                    <span className="text-sm font-medium text-muted-foreground mb-1">Overall Correlation</span>
-                                    <div className={cn(
-                                        "text-3xl font-bold mb-1",
-                                        (analysis.overall_correlation?.coefficient || 0) > 0.1 ? "text-green-600" :
-                                            (analysis.overall_correlation?.coefficient || 0) > 0.05 ? "text-blue-600" : "text-muted-foreground"
-                                    )}>
+            <Card className="overflow-hidden border-2">
+                <CardHeader className="bg-muted/50 border-b pb-4">
+                    <CardTitle className="flex items-center gap-2">
+                        <TrendingUp className="h-5 w-5 text-primary" />
+                        Analysis Results
+                    </CardTitle>
+                </CardHeader>
+                <CardContent className="p-6">
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+                        {/* Overall Correlation */}
+                        <div className="flex flex-col items-center justify-center p-4 rounded-xl border bg-card shadow-sm">
+                            {analysis ? (
+                                <>
+                                    <div className="text-sm text-muted-foreground">Current Correlation</div>
+                                    <div className={`text-2xl font-bold ${(analysis.overall_correlation?.coefficient || 0) > 0.1 ? "text-green-600" :
+                                        (analysis.overall_correlation?.coefficient || 0) > 0.05 ? "text-blue-600" : "text-muted-foreground"
+                                        }`}>
                                         {analysis.overall_correlation?.coefficient?.toFixed(4)}
                                     </div>
-                                    <span className="text-xs px-2 py-0.5 rounded-full bg-muted font-medium uppercase tracking-wide">
+                                    <div className="text-xs text-muted-foreground">
                                         {analysis.overall_correlation?.interpretation}
-                                    </span>
-                                </div>
-
-                                {/* Stocks Analyzed */}
-                                <div className="flex flex-col items-center justify-center p-4 rounded-xl border bg-card shadow-sm">
-                                    <span className="text-sm font-medium text-muted-foreground mb-1">Stocks Analyzed</span>
-                                    <div className="text-3xl font-bold text-foreground mb-1">
-                                        {analysis.total_stocks}
                                     </div>
-                                    <span className="text-xs text-muted-foreground">
-                                        Unique tickers
-                                    </span>
-                                </div>
-
-                                {/* Significance */}
-                                <div className="flex flex-col items-center justify-center p-4 rounded-xl border bg-card shadow-sm">
-                                    <span className="text-sm font-medium text-muted-foreground mb-1">Significance</span>
-                                    <div className="flex items-center gap-2 mb-1">
-                                        {analysis.overall_correlation?.significant ? (
-                                            <>
-                                                <CheckCircle2 className="h-6 w-6 text-green-600" />
-                                                <span className="text-2xl font-bold text-green-600">Yes</span>
-                                            </>
-                                        ) : (
-                                            <>
-                                                <XCircle className="h-6 w-6 text-muted-foreground" />
-                                                <span className="text-2xl font-bold text-muted-foreground">No</span>
-                                            </>
-                                        )}
+                                </>
+                            ) : (
+                                <>
+                                    <div className="text-sm text-muted-foreground">Saved Correlation</div>
+                                    <div className={`text-2xl font-bold ${((config.correlation_10yr || config.correlation_5yr) || 0) > 0.1 ? "text-green-600" :
+                                        ((config.correlation_10yr || config.correlation_5yr) || 0) > 0.05 ? "text-blue-600" : "text-muted-foreground"
+                                        }`}>
+                                        {(config.correlation_10yr || config.correlation_5yr)?.toFixed(4) || 'N/A'}
                                     </div>
-                                    <span className="text-xs text-muted-foreground font-mono">
-                                        p = {analysis.overall_correlation?.p_value?.toFixed(4)}
-                                    </span>
-                                </div>
-                            </div>
-
-                            {/* Component Correlations */}
-                            <div className="mb-8">
-                                <h4 className="text-sm font-semibold mb-4 flex items-center gap-2">
-                                    <BarChart3 className="h-4 w-4" /> Component Correlations
-                                </h4>
-                                <div className="space-y-4">
-                                    {Object.entries(analysis.component_correlations || {})
-                                        .sort(([, a], [, b]) => Math.abs(b.coefficient) - Math.abs(a.coefficient))
-                                        .map(([component, corr]) => (
-                                            <div key={component} className="group">
-                                                <div className="flex items-center justify-between text-sm mb-1.5">
-                                                    <span className="font-medium text-muted-foreground group-hover:text-foreground transition-colors">
-                                                        {component.replace('_score', '').replace(/_/g, ' ').toUpperCase()}
-                                                    </span>
-                                                    <span className="font-mono font-medium">
-                                                        {(corr.coefficient || 0).toFixed(3)}
-                                                    </span>
-                                                </div>
-                                                <div className="h-2 w-full bg-secondary rounded-full overflow-hidden">
-                                                    <div
-                                                        className={cn("h-full rounded-full transition-all duration-500",
-                                                            corr.coefficient > 0 ? "bg-primary" : "bg-destructive"
-                                                        )}
-                                                        style={{ width: `${Math.min(Math.abs(corr.coefficient || 0) * 100 * 3, 100)}%` }} // Scaled specifically for visibility
-                                                    />
-                                                </div>
-                                            </div>
-                                        ))}
-                                </div>
-                            </div>
-
-                            {/* Insights */}
-                            {analysis.insights?.length > 0 && (
-                                <div className="rounded-lg border bg-muted/30 p-4">
-                                    <h4 className="text-sm font-semibold mb-3 flex items-center gap-2">
-                                        <Sparkles className="h-4 w-4 text-amber-500" /> Key Insights
-                                    </h4>
-                                    <div className="space-y-3">
-                                        {analysis.insights.map((insight, idx) => {
-                                            // Simple heuristic to strip potential leading emojis and assign icons
-                                            const cleanText = insight.replace(/^[\u{1F300}-\u{1F9FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}]\s*/u, '');
-                                            let Icon = Info;
-                                            if (insight.includes('Best predictor')) Icon = Target;
-                                            if (insight.includes('Best performing')) Icon = TrendingUp;
-                                            if (insight.toLowerCase().includes('significant')) Icon = CheckCircle2;
-
-                                            return (
-                                                <div key={idx} className="flex gap-3 text-sm">
-                                                    <Icon className="h-4 w-4 text-muted-foreground shrink-0 mt-0.5" />
-                                                    <span className="text-muted-foreground leading-relaxed">{cleanText}</span>
-                                                </div>
-                                            );
-                                        })}
+                                    <div className="text-xs text-muted-foreground">
+                                        {config.correlation_10yr ? '10-year backtest' : config.correlation_5yr ? '5-year backtest' : 'Run validation to calculate'}
                                     </div>
-                                </div>
+                                </>
                             )}
-                        </CardContent>
-                    </Card>
-                )
-            }
+                        </div>
+
+                        {/* Stocks Analyzed */}
+                        {analysis && (
+                            <div className="flex flex-col items-center justify-center p-4 rounded-xl border bg-card shadow-sm">
+                                <span className="text-sm font-medium text-muted-foreground mb-1">Stocks Analyzed</span>
+                                <div className="text-3xl font-bold text-foreground mb-1">
+                                    {analysis.total_stocks}
+                                </div>
+                                <span className="text-xs text-muted-foreground">
+                                    {analysis.years_back} year backtest
+                                </span>
+                            </div>
+                        )}
+
+                        {/* Significance */}
+                        {analysis && (
+                            <div className="flex flex-col items-center justify-center p-4 rounded-xl border bg-card shadow-sm">
+                                <span className="text-sm font-medium text-muted-foreground mb-1">Significance</span>
+                                <div className="flex items-center gap-2 mb-1">
+                                    {analysis.overall_correlation?.significant ? (
+                                        <>
+                                            <CheckCircle2 className="h-6 w-6 text-green-600" />
+                                            <span className="text-2xl font-bold text-green-600">Yes</span>
+                                        </>
+                                    ) : (
+                                        <>
+                                            <XCircle className="h-6 w-6 text-muted-foreground" />
+                                            <span className="text-2xl font-bold text-muted-foreground">No</span>
+                                        </>
+                                    )}
+                                </div>
+                                <span className="text-xs text-muted-foreground font-mono">
+                                    p = {analysis.overall_correlation?.p_value?.toFixed(4)}
+                                </span>
+                            </div>
+                        )}
+                    </div>
+
+                    {/* Component Correlations */}
+                    {analysis && (
+                        <div className="mb-8">
+                            <h4 className="text-sm font-semibold mb-4 flex items-center gap-2">
+                                <BarChart3 className="h-4 w-4" /> Component Correlations
+                            </h4>
+                            <div className="space-y-4">
+                                {Object.entries(analysis.component_correlations || {})
+                                    .sort(([, a], [, b]) => Math.abs(b.coefficient) - Math.abs(a.coefficient))
+                                    .map(([component, corr]) => (
+                                        <div key={component} className="group">
+                                            <div className="flex items-center justify-between text-sm mb-1.5">
+                                                <span className="font-medium text-muted-foreground group-hover:text-foreground transition-colors">
+                                                    {component.replace('_score', '').replace(/_/g, ' ').toUpperCase()}
+                                                </span>
+                                                <span className="font-mono font-medium">
+                                                    {(corr.coefficient || 0).toFixed(3)}
+                                                </span>
+                                            </div>
+                                            <div className="h-2 w-full bg-secondary rounded-full overflow-hidden">
+                                                <div
+                                                    className={cn("h-full rounded-full transition-all duration-500",
+                                                        corr.coefficient > 0 ? "bg-primary" : "bg-destructive"
+                                                    )}
+                                                    style={{ width: `${Math.min(Math.abs(corr.coefficient || 0) * 100 * 3, 100)}%` }} // Scaled specifically for visibility
+                                                />
+                                            </div>
+                                        </div>
+                                    ))}
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Insights */}
+                    {analysis?.insights?.length > 0 && (
+                        <div className="rounded-lg border bg-muted/30 p-4">
+                            <h4 className="text-sm font-semibold mb-3 flex items-center gap-2">
+                                <Sparkles className="h-4 w-4 text-amber-500" /> Key Insights
+                            </h4>
+                            <div className="space-y-3">
+                                {analysis.insights.map((insight, idx) => {
+                                    // Simple heuristic to strip potential leading emojis and assign icons
+                                    const cleanText = insight.replace(/^[\u{1F300}-\u{1F9FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}]\s*/u, '');
+                                    let Icon = Info;
+                                    if (insight.includes('Best predictor')) Icon = Target;
+                                    if (insight.includes('Best performing')) Icon = TrendingUp;
+                                    if (insight.toLowerCase().includes('significant')) Icon = CheckCircle2;
+
+                                    return (
+                                        <div key={idx} className="flex gap-3 text-sm">
+                                            <Icon className="h-4 w-4 text-muted-foreground shrink-0 mt-0.5" />
+                                            <span className="text-muted-foreground leading-relaxed">{cleanText}</span>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        </div>
+                    )}
+                </CardContent>
+            </Card>
 
             {/* Correlation Guide Card */}
             <Card className="border-l-4 border-l-primary">

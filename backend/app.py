@@ -1371,11 +1371,16 @@ def screen_stocks_v2():
 
 
 @app.route('/api/screen', methods=['GET'])
-def screen_stocks():
+@require_user_auth
+def screen_stocks(user_id):
     limit_param = request.args.get('limit')
     limit = int(limit_param) if limit_param else None
     force_refresh = request.args.get('refresh', 'false').lower() == 'true'
     algorithm = request.args.get('algorithm', 'weighted')
+
+    # Fetch user settings once
+    character_id = db.get_user_character(user_id) if user_id else 'lynch'
+    overrides = db.get_user_algorithm_config(user_id, character_id) if user_id else None
 
     def generate():
         session_id = None
@@ -1406,7 +1411,13 @@ def screen_stocks():
                         print(f"No stock data returned for {symbol}")
                         return None
 
-                    evaluation = criteria.evaluate_stock(symbol, algorithm=algorithm)
+                    # Pass user overrides and character context
+                    evaluation = criteria.evaluate_stock(
+                        symbol, 
+                        algorithm=algorithm, 
+                        overrides=overrides,
+                        character_id=character_id
+                    )
                     if not evaluation:
                         print(f"No evaluation returned for {symbol}")
                         return None
@@ -3535,6 +3546,7 @@ def serve_react_app(path):
 
 
 @app.route('/api/backtest', methods=['POST'])
+@require_user_auth
 def run_backtest():
     """Run a backtest for a specific stock."""
     try:
@@ -3544,8 +3556,28 @@ def run_backtest():
         
         if not symbol:
             return jsonify({'error': 'Symbol is required'}), 400
-            
-        result = backtester.run_backtest(symbol.upper(), years_back)
+        
+        # Get user's active character
+        user_id = g.user['id']
+        character_setting = db.get_user_setting(user_id, 'active_character')
+        character_id = character_setting['value'] if character_setting else 'lynch'
+        
+        # Load the saved configuration for this character
+        configs = db.get_algorithm_configs()
+        character_config = None
+        for config in configs:
+            if config.get('character') == character_id:
+                character_config = config
+                logger.info(f"Using config ID {config.get('id')} for character {character_id}, correlation_5yr: {config.get('correlation_5yr')}")
+                break
+        
+        if not character_config:
+            logger.warning(f"No saved configuration found for character {character_id}, using defaults")
+        
+        # Convert config to overrides format (if found)
+        overrides = character_config if character_config else None
+        
+        result = backtester.run_backtest(symbol.upper(), years_back, overrides=overrides, character_id=character_id)
         
         if 'error' in result:
             return jsonify(result), 400
@@ -3596,6 +3628,7 @@ def start_validation():
                     limit=limit,
                     force_rerun=force,
                     overrides=config,
+                    character_id=data.get('character_id', 'lynch'),  # Use character from request or default to lynch
                     progress_callback=on_progress
                 )
                 
@@ -3649,7 +3682,8 @@ def get_validation_results(years_back):
         return jsonify({'error': str(e)}), 500
 
 @app.route('/api/optimize/run', methods=['POST'])
-def start_optimization():
+@require_user_auth
+def start_optimization(user_id=None):
     """Start auto-optimization to find best weights"""
     try:
         data = request.get_json()
@@ -3657,6 +3691,7 @@ def start_optimization():
         method = data.get('method', 'gradient_descent')
         max_iterations = int(data.get('max_iterations', 50))
         limit = data.get('limit')  # Capture limit for use in background thread
+        character_id = data.get('character_id', 'lynch') # Default to Lynch if not specified
 
         # Generate unique job ID
         import uuid
@@ -3667,22 +3702,35 @@ def start_optimization():
             try:
                 optimization_jobs[job_id] = {'status': 'running', 'progress': 0, 'total': max_iterations, 'stage': 'optimizing'}
 
-                # Get baseline analysis
-                baseline_analysis = analyzer_corr.analyze_results(years_back=years_back)
+                # Get baseline correlation from most recent saved config for this character
+                latest_config = db.get_user_algorithm_config(user_id, character_id)
+                baseline_correlation = None
+                if latest_config:
+                    # Prefer correlation_10yr over correlation_5yr
+                    baseline_correlation = latest_config.get('correlation_10yr') or latest_config.get('correlation_5yr')
+                
+                # Create a simple baseline_analysis object with the saved correlation
+                baseline_analysis = {
+                    'overall_correlation': {
+                        'coefficient': baseline_correlation if baseline_correlation else 0.0
+                    }
+                }
 
                 # Progress callback
                 def on_progress(data):
                     optimization_jobs[job_id].update({
                         'progress': data['iteration'],
                         'total': max_iterations,
-                        'best_score': data['best_score'],
-                        'best_config': data['best_config'],
-                        'current_config': data.get('current_config')
+                        'best_score': data.get('best_correlation', data.get('correlation', 0)),
+                        'best_config': data.get('best_config', data['config']),
+                        'current_config': data.get('config')
                     })
 
                 # Run optimization
                 result = optimizer.optimize(
                     years_back=years_back,
+                    character_id=character_id,
+                    user_id=user_id,
                     method=method,
                     max_iterations=max_iterations,
                     progress_callback=on_progress
@@ -3711,7 +3759,8 @@ def start_optimization():
                     max_workers=5,
                     limit=limit,  # Use same limit as original validation
                     force_rerun=True,
-                    overrides=result['best_config']
+                    overrides=result['best_config'],
+                    character_id=character_id
                 )
 
                 # Get optimized analysis
@@ -3812,17 +3861,21 @@ def get_rescoring_progress(job_id):
 
 @app.route('/api/algorithm/config', methods=['GET', 'POST'])
 @require_user_auth
-def algorithm_config(user_id):
+def algorithm_config(user_id=None):
     """Get or update algorithm configuration for the user's active character.
-
-    Source of truth: algorithm_configurations table (filtered by character)
+    
+    Source of truth: algorithm_configurations table (filtered by character and user)
     """
-    # Determine active character
-    character_id = db.get_user_character(user_id)
-
     if request.method == 'GET':
+        # Check for character_id override in query params
+        character_id = request.args.get('character_id')
+        
+        # If not provided, fallback to user's active character
+        if not character_id:
+            character_id = db.get_user_character(user_id)
+            
         # Load config for user's character
-        latest_config = db.get_algorithm_config_for_character(character_id)
+        latest_config = db.get_user_algorithm_config(user_id, character_id)
 
         if latest_config:
             config = {
@@ -3830,6 +3883,8 @@ def algorithm_config(user_id):
                 'weight_consistency': latest_config.get('weight_consistency', 0.25),
                 'weight_debt': latest_config.get('weight_debt', 0.15),
                 'weight_ownership': latest_config.get('weight_ownership', 0.10),
+                'weight_roe': latest_config.get('weight_roe', 0.0),
+                'weight_debt_to_earnings': latest_config.get('weight_debt_to_earnings', 0.0),
                 'peg_excellent': latest_config.get('peg_excellent', 1.0),
                 'peg_good': latest_config.get('peg_good', 1.5),
                 'peg_fair': latest_config.get('peg_fair', 2.0),
@@ -3844,6 +3899,19 @@ def algorithm_config(user_id):
                 'income_growth_excellent': latest_config.get('income_growth_excellent', 15.0),
                 'income_growth_good': latest_config.get('income_growth_good', 10.0),
                 'income_growth_fair': latest_config.get('income_growth_fair', 5.0),
+                'roe_excellent': latest_config.get('roe_excellent', 20.0),
+                'roe_good': latest_config.get('roe_good', 15.0),
+                'roe_fair': latest_config.get('roe_fair', 10.0),
+                'debt_to_earnings_excellent': latest_config.get('debt_to_earnings_excellent', 3.0),
+                'debt_to_earnings_good': latest_config.get('debt_to_earnings_good', 5.0),
+                'debt_to_earnings_fair': latest_config.get('debt_to_earnings_fair', 8.0),
+                'gross_margin_excellent': latest_config.get('gross_margin_excellent', 50.0),
+                'gross_margin_good': latest_config.get('gross_margin_good', 40.0),
+                'gross_margin_fair': latest_config.get('gross_margin_fair', 30.0),
+                # Include metadata fields
+                'id': latest_config.get('id'),
+                'correlation_5yr': latest_config.get('correlation_5yr'),
+                'correlation_10yr': latest_config.get('correlation_10yr'),
             }
         else:
             # No configs exist for this character - return hardcoded defaults
@@ -3852,6 +3920,8 @@ def algorithm_config(user_id):
                 'weight_consistency': 0.25,
                 'weight_debt': 0.15,
                 'weight_ownership': 0.10,
+                'weight_roe': 0.0,
+                'weight_debt_to_earnings': 0.0,
                 'peg_excellent': 1.0,
                 'peg_good': 1.5,
                 'peg_fair': 2.0,
@@ -3866,92 +3936,73 @@ def algorithm_config(user_id):
                 'income_growth_excellent': 15.0,
                 'income_growth_good': 10.0,
                 'income_growth_fair': 5.0,
+                'roe_excellent': 20.0,
+                'roe_good': 15.0,
+                'roe_fair': 10.0,
+                'debt_to_earnings_excellent': 3.0,
+                'debt_to_earnings_good': 5.0,
+                'debt_to_earnings_fair': 8.0,
             }
 
         return jsonify({'current': config, 'character': character_id})
 
     elif request.method == 'POST':
-        # Save new config for user's character
         data = request.get_json()
-
         if 'config' not in data:
             return jsonify({'error': 'No config provided'}), 400
-
+            
         config = data['config']
-
-        # Create new algorithm configuration row
-        config_data = {
-            'name': config.get('name', 'Manual Save'),
-            'weight_peg': config.get('weight_peg', 0.50),
-            'weight_consistency': config.get('weight_consistency', 0.25),
-            'weight_debt': config.get('weight_debt', 0.15),
-            'weight_ownership': config.get('weight_ownership', 0.10),
-            'peg_excellent': config.get('peg_excellent', 1.0),
-            'peg_good': config.get('peg_good', 1.5),
-            'peg_fair': config.get('peg_fair', 2.0),
-            'debt_excellent': config.get('debt_excellent', 0.5),
-            'debt_good': config.get('debt_good', 1.0),
-            'debt_moderate': config.get('debt_moderate', 2.0),
-            'inst_own_min': config.get('inst_own_min', 0.20),
-            'inst_own_max': config.get('inst_own_max', 0.60),
-            'revenue_growth_excellent': config.get('revenue_growth_excellent', 15.0),
-            'revenue_growth_good': config.get('revenue_growth_good', 10.0),
-            'revenue_growth_fair': config.get('revenue_growth_fair', 5.0),
-            'income_growth_excellent': config.get('income_growth_excellent', 15.0),
-            'income_growth_good': config.get('income_growth_good', 10.0),
-            'income_growth_fair': config.get('income_growth_fair', 5.0),
-            'correlation_5yr': config.get('correlation_5yr'),
-            'correlation_10yr': config.get('correlation_10yr'),
-        }
-
-        config_id = db.save_algorithm_config(config_data, character=character_id)
-        logger.info(f"Saved algorithm config id={config_id} for character={character_id}")
-
-        # Reload settings in LynchCriteria to pick up new config
-        criteria.reload_settings()
-
-        # Start async rescoring job
+        
+        # Check for character_id in body
+        character_id = data.get('character_id')
+        if not character_id:
+             # Fallback to active char if not provided/embedded
+             character_id = config.get('character', db.get_user_character(user_id))
+        
+        # Ensure character_id is in config for saving
+        config['character'] = character_id
+        
+        db.save_algorithm_config(config, character=character_id, user_id=user_id)
+        
+        # Start background rescoring job
         import uuid
         job_id = str(uuid.uuid4())
         
-        def run_rescoring_background():
+        def run_rescoring_background_job():
             try:
-                rescoring_jobs[job_id] = {
-                    'status': 'running',
-                    'progress': 0,
-                    'total': 0
-                }
+                # Update status
+                rescoring_jobs[job_id] = {'status': 'running', 'progress': 0, 'total': 0}
                 
                 def on_progress(current, total):
                     rescoring_jobs[job_id].update({
-                        'progress': current,
+                        'progress': current, 
                         'total': total
                     })
                 
+                # Rescore
                 rescorer = StockRescorer(db, criteria)
                 summary = rescorer.rescore_saved_stocks(
                     algorithm='weighted',
                     progress_callback=on_progress
                 )
                 
-                rescoring_jobs[job_id] = {
+                rescoring_jobs[job_id].update({
                     'status': 'complete',
                     'summary': summary
-                }
+                })
             except Exception as e:
-                logger.error(f"Rescoring failed: {e}", exc_info=True)
-                rescoring_jobs[job_id] = {
-                    'status': 'error',
+                logger.error(f"Rescoring failed: {e}")
+                rescoring_jobs[job_id].update({
+                    'status': 'error', 
                     'error': str(e)
-                }
-        
-        thread = threading.Thread(target=run_rescoring_background, daemon=True)
-        thread.start()
+                })
 
+        thread = threading.Thread(target=run_rescoring_background_job, daemon=True)
+        thread.start()
+        
         return jsonify({
-            'status': 'saved',
-            'config_id': config_id,
-            'config': config_data,
+            'success': True,
+            'character_id': character_id,
             'rescore_job_id': job_id
         })
 

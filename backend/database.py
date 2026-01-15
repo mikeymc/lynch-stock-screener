@@ -1163,19 +1163,56 @@ class Database:
                 revenue_cagr REAL,
                 debt_to_equity REAL,
                 institutional_ownership REAL,
+                roe REAL,
+                debt_to_earnings REAL,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 UNIQUE(symbol, years_back)
             )
         """)
 
+        # Migration: Add Buffett metrics to backtest_results
+        cursor.execute("""
+            DO $$
+            BEGIN
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                               WHERE table_name = 'backtest_results' AND column_name = 'roe') THEN
+                    ALTER TABLE backtest_results ADD COLUMN roe REAL;
+                END IF;
+
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                               WHERE table_name = 'backtest_results' AND column_name = 'debt_to_earnings') THEN
+                    ALTER TABLE backtest_results ADD COLUMN debt_to_earnings REAL;
+                END IF;
+
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                               WHERE table_name = 'backtest_results' AND column_name = 'gross_margin') THEN
+                    ALTER TABLE backtest_results ADD COLUMN gross_margin REAL;
+                END IF;
+            END $$;
+        """)
+
+        # Migration: Add shareholder_equity to earnings_history
+        cursor.execute("""
+            DO $$
+            BEGIN
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                               WHERE table_name = 'earnings_history' AND column_name = 'shareholder_equity') THEN
+                    ALTER TABLE earnings_history ADD COLUMN shareholder_equity REAL;
+                END IF;
+            END $$;
+        """)
+
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS algorithm_configurations (
                 id SERIAL PRIMARY KEY,
+                user_id INTEGER REFERENCES users(id),
                 name TEXT,
                 weight_peg REAL,
                 weight_consistency REAL,
                 weight_debt REAL,
                 weight_ownership REAL,
+                weight_roe REAL,
+                weight_debt_to_earnings REAL,
                 peg_excellent REAL DEFAULT 1.0,
                 peg_good REAL DEFAULT 1.5,
                 peg_fair REAL DEFAULT 2.0,
@@ -1190,10 +1227,17 @@ class Database:
                 income_growth_excellent REAL DEFAULT 15.0,
                 income_growth_good REAL DEFAULT 10.0,
                 income_growth_fair REAL DEFAULT 5.0,
+                roe_excellent REAL DEFAULT 20.0,
+                roe_good REAL DEFAULT 15.0,
+                roe_fair REAL DEFAULT 10.0,
+                debt_to_earnings_excellent REAL DEFAULT 3.0,
+                debt_to_earnings_good REAL DEFAULT 5.0,
+                debt_to_earnings_fair REAL DEFAULT 8.0,
                 correlation_5yr REAL,
                 correlation_10yr REAL,
                 is_active BOOLEAN DEFAULT FALSE,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                character TEXT DEFAULT 'lynch'
             )
         """)
 
@@ -1201,6 +1245,10 @@ class Database:
         try:
             # List of new columns to check/add
             new_columns = [
+                ('user_id', 'INTEGER REFERENCES users(id)'),
+                ('character', "TEXT DEFAULT 'lynch'"),
+                ('weight_roe', 'REAL'),
+                ('weight_debt_to_earnings', 'REAL'),
                 ('peg_excellent', 'REAL DEFAULT 1.0'),
                 ('peg_good', 'REAL DEFAULT 1.5'),
                 ('peg_fair', 'REAL DEFAULT 2.0'),
@@ -1215,6 +1263,12 @@ class Database:
                 ('income_growth_excellent', 'REAL DEFAULT 15.0'),
                 ('income_growth_good', 'REAL DEFAULT 10.0'),
                 ('income_growth_fair', 'REAL DEFAULT 5.0'),
+                ('roe_excellent', 'REAL DEFAULT 20.0'),
+                ('roe_good', 'REAL DEFAULT 15.0'),
+                ('roe_fair', 'REAL DEFAULT 10.0'),
+                ('debt_to_earnings_excellent', 'REAL DEFAULT 3.0'),
+                ('debt_to_earnings_good', 'REAL DEFAULT 5.0'),
+                ('debt_to_earnings_fair', 'REAL DEFAULT 8.0'),
                 ('correlation_5yr', 'REAL'),
                 ('correlation_10yr', 'REAL'),
             ]
@@ -1338,6 +1392,14 @@ class Database:
                 IF NOT EXISTS (SELECT 1 FROM information_schema.columns
                                WHERE table_name = 'screening_results' AND column_name = 'scored_at') THEN
                     ALTER TABLE screening_results ADD COLUMN scored_at TIMESTAMP;
+                END IF;
+
+                -- Migration: Add Gross Margin columns to algorithm_configurations (Buffett metrics)
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                               WHERE table_name = 'algorithm_configurations' AND column_name = 'gross_margin_excellent') THEN
+                    ALTER TABLE algorithm_configurations ADD COLUMN gross_margin_excellent REAL DEFAULT 50.0;
+                    ALTER TABLE algorithm_configurations ADD COLUMN gross_margin_good REAL DEFAULT 40.0;
+                    ALTER TABLE algorithm_configurations ADD COLUMN gross_margin_fair REAL DEFAULT 30.0;
                 END IF;
             END $$;
         """)
@@ -1950,24 +2012,28 @@ class Database:
         finally:
             self.return_connection(conn)
 
-    def save_earnings_history(self, symbol: str, year: int, eps: float, revenue: float, fiscal_end: Optional[str] = None, debt_to_equity: Optional[float] = None, period: str = 'annual', net_income: Optional[float] = None, dividend_amount: Optional[float] = None, operating_cash_flow: Optional[float] = None, capital_expenditures: Optional[float] = None, free_cash_flow: Optional[float] = None):
+    def save_earnings_history(self, symbol: str, year: int, eps: Optional[float], revenue: Optional[float], fiscal_end: str = None, debt_to_equity: float = None, period: str = 'annual', net_income: float = None, dividend_amount: float = None, operating_cash_flow: float = None, capital_expenditures: float = None, free_cash_flow: float = None, shareholder_equity: float = None):
+        """Save earnings history for a single year/period."""
         sql = """
-            INSERT INTO earnings_history
-            (symbol, year, earnings_per_share, revenue, fiscal_end, debt_to_equity, period, net_income, dividend_amount, operating_cash_flow, capital_expenditures, free_cash_flow, last_updated)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            INSERT INTO earnings_history (
+                symbol, year, earnings_per_share, revenue, fiscal_end, debt_to_equity, period, 
+                net_income, dividend_amount, operating_cash_flow, capital_expenditures, free_cash_flow, shareholder_equity, last_updated
+            )
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP)
             ON CONFLICT (symbol, year, period) DO UPDATE SET
                 earnings_per_share = EXCLUDED.earnings_per_share,
                 revenue = EXCLUDED.revenue,
-                fiscal_end = EXCLUDED.fiscal_end,
-                debt_to_equity = EXCLUDED.debt_to_equity,
-                net_income = EXCLUDED.net_income,
-                dividend_amount = EXCLUDED.dividend_amount,
-                operating_cash_flow = EXCLUDED.operating_cash_flow,
-                capital_expenditures = EXCLUDED.capital_expenditures,
-                free_cash_flow = EXCLUDED.free_cash_flow,
-                last_updated = EXCLUDED.last_updated
+                fiscal_end = COALESCE(EXCLUDED.fiscal_end, earnings_history.fiscal_end),
+                debt_to_equity = COALESCE(EXCLUDED.debt_to_equity, earnings_history.debt_to_equity),
+                net_income = COALESCE(EXCLUDED.net_income, earnings_history.net_income),
+                dividend_amount = COALESCE(EXCLUDED.dividend_amount, earnings_history.dividend_amount),
+                operating_cash_flow = COALESCE(EXCLUDED.operating_cash_flow, earnings_history.operating_cash_flow),
+                capital_expenditures = COALESCE(EXCLUDED.capital_expenditures, earnings_history.capital_expenditures),
+                free_cash_flow = COALESCE(EXCLUDED.free_cash_flow, earnings_history.free_cash_flow),
+                shareholder_equity = COALESCE(EXCLUDED.shareholder_equity, earnings_history.shareholder_equity),
+                last_updated = CURRENT_TIMESTAMP
         """
-        args = (symbol, year, eps, revenue, fiscal_end, debt_to_equity, period, net_income, dividend_amount, operating_cash_flow, capital_expenditures, free_cash_flow, datetime.now())
+        args = (symbol, year, eps, revenue, fiscal_end, debt_to_equity, period, net_income, dividend_amount, operating_cash_flow, capital_expenditures, free_cash_flow, shareholder_equity)
         self.write_queue.put((sql, args))
 
     def clear_quarterly_earnings(self, symbol: str) -> int:
@@ -4024,27 +4090,30 @@ class Database:
         """Save a backtest result"""
         sql = """
             INSERT INTO backtest_results
-            (symbol, backtest_date, years_back, start_price, end_price, total_return,
-             historical_score, historical_rating, peg_score, debt_score, ownership_score,
-             consistency_score, peg_ratio, earnings_cagr, revenue_cagr, debt_to_equity,
-             institutional_ownership)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-            ON CONFLICT (symbol, years_back) DO UPDATE SET
-                backtest_date = EXCLUDED.backtest_date,
-                start_price = EXCLUDED.start_price,
-                end_price = EXCLUDED.end_price,
-                total_return = EXCLUDED.total_return,
-                historical_score = EXCLUDED.historical_score,
-                historical_rating = EXCLUDED.historical_rating,
-                peg_score = EXCLUDED.peg_score,
-                debt_score = EXCLUDED.debt_score,
-                ownership_score = EXCLUDED.ownership_score,
-                consistency_score = EXCLUDED.consistency_score,
-                peg_ratio = EXCLUDED.peg_ratio,
-                earnings_cagr = EXCLUDED.earnings_cagr,
-                revenue_cagr = EXCLUDED.revenue_cagr,
-                debt_to_equity = EXCLUDED.debt_to_equity,
-                institutional_ownership = EXCLUDED.institutional_ownership
+             (symbol, backtest_date, years_back, start_price, end_price, total_return,
+              historical_score, historical_rating, peg_score, debt_score, ownership_score,
+              consistency_score, peg_ratio, earnings_cagr, revenue_cagr, debt_to_equity,
+              institutional_ownership, roe, debt_to_earnings, gross_margin)
+             VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+             ON CONFLICT (symbol, years_back) DO UPDATE SET
+                 backtest_date = EXCLUDED.backtest_date,
+                 start_price = EXCLUDED.start_price,
+                 end_price = EXCLUDED.end_price,
+                 total_return = EXCLUDED.total_return,
+                 historical_score = EXCLUDED.historical_score,
+                 historical_rating = EXCLUDED.historical_rating,
+                 peg_score = EXCLUDED.peg_score,
+                 debt_score = EXCLUDED.debt_score,
+                 ownership_score = EXCLUDED.ownership_score,
+                 consistency_score = EXCLUDED.consistency_score,
+                 peg_ratio = EXCLUDED.peg_ratio,
+                 earnings_cagr = EXCLUDED.earnings_cagr,
+                 revenue_cagr = EXCLUDED.revenue_cagr,
+                 debt_to_equity = EXCLUDED.debt_to_equity,
+                 institutional_ownership = EXCLUDED.institutional_ownership,
+                 roe = EXCLUDED.roe,
+                 debt_to_earnings = EXCLUDED.debt_to_earnings,
+                 gross_margin = EXCLUDED.gross_margin
         """
         hist_data = result.get('historical_data', {})
         args = (
@@ -4064,102 +4133,134 @@ class Database:
             hist_data.get('earnings_cagr'),
             hist_data.get('revenue_cagr'),
             hist_data.get('debt_to_equity'),
-            hist_data.get('institutional_ownership')
+            hist_data.get('institutional_ownership'),
+            hist_data.get('roe'),
+            hist_data.get('debt_to_earnings'),
+            hist_data.get('gross_margin')
         )
         self.write_queue.put((sql, args))
 
     def get_backtest_results(self, years_back: int = None) -> List[Dict[str, Any]]:
         """Get backtest results, optionally filtered by years_back"""
         conn = self.get_connection()
+    def get_backtest_results(self, years_back: int = None, symbol: str = None) -> List[Dict[str, Any]]:
+        """Fetch saved backtest results from database"""
+        conn = self.get_connection()
         cursor = conn.cursor()
         
-        if years_back:
-            query = "SELECT * FROM backtest_results WHERE years_back = %s ORDER BY symbol"
+        columns = [
+            'id', 'symbol', 'backtest_date', 'years_back', 'start_price', 'end_price', 
+            'total_return', 'historical_score', 'historical_rating', 'peg_score', 
+            'debt_score', 'ownership_score', 'consistency_score', 'peg_ratio', 
+            'earnings_cagr', 'revenue_cagr', 'debt_to_equity', 'institutional_ownership', 
+            'roe', 'debt_to_earnings', 'created_at', 'gross_margin'
+        ]
+        
+        query_cols = ", ".join(columns)
+        
+        if years_back and symbol:
+            query = f"SELECT {query_cols} FROM backtest_results WHERE years_back = %s AND symbol = %s"
+            cursor.execute(query, (years_back, symbol))
+        elif years_back:
+            query = f"SELECT {query_cols} FROM backtest_results WHERE years_back = %s ORDER BY symbol"
             cursor.execute(query, (years_back,))
+        elif symbol:
+            query = f"SELECT {query_cols} FROM backtest_results WHERE symbol = %s ORDER BY years_back DESC"
+            cursor.execute(query, (symbol,))
         else:
-            query = "SELECT * FROM backtest_results ORDER BY years_back, symbol"
+            query = f"SELECT {query_cols} FROM backtest_results ORDER BY years_back, symbol"
             cursor.execute(query)
         
         rows = cursor.fetchall()
         self.return_connection(conn)
         
-        return [
-            {
-                'id': row[0],
-                'symbol': row[1],
-                'backtest_date': row[2],
-                'years_back': row[3],
-                'start_price': row[4],
-                'end_price': row[5],
-                'total_return': row[6],
-                'historical_score': row[7],
-                'historical_rating': row[8],
-                'peg_score': row[9],
-                'debt_score': row[10],
-                'ownership_score': row[11],
-                'consistency_score': row[12],
-                'peg_ratio': row[13],
-                'earnings_cagr': row[14],
-                'revenue_cagr': row[15],
-                'debt_to_equity': row[16],
-                'institutional_ownership': row[17],
-                'created_at': row[18]
-            }
-            for row in rows
-        ]
+        return [dict(zip(columns, row)) for row in rows]
 
     # Algorithm Configuration Methods
-    def save_algorithm_config(self, config: Dict[str, Any], character: str = 'lynch') -> int:
+    def save_algorithm_config(self, config: Dict[str, Any], character: str = 'lynch', user_id: int = None) -> int:
         """Save an algorithm configuration and return its ID.
 
         Args:
             config: Configuration dict with weights and thresholds
             character: Character ID this config belongs to (default 'lynch')
+            user_id: Optional user ID to associate this config with
         """
         conn = self.get_connection()
         cursor = conn.cursor()
 
+        # Helper to get value only if relevant to character
+        def get_val(key, default, allowed_chars=None):
+            if allowed_chars and character not in allowed_chars:
+                return None
+            return config.get(key, default)
+
         cursor.execute("""
             INSERT INTO algorithm_configurations
-            (name, weight_peg, weight_consistency, weight_debt, weight_ownership,
+            (name, weight_peg, weight_consistency, weight_debt, weight_ownership, weight_roe, weight_debt_to_earnings,
              peg_excellent, peg_good, peg_fair,
              debt_excellent, debt_good, debt_moderate,
              inst_own_min, inst_own_max,
              revenue_growth_excellent, revenue_growth_good, revenue_growth_fair,
              income_growth_excellent, income_growth_good, income_growth_fair,
-             correlation_5yr, correlation_10yr, is_active, character)
-            VALUES (%s, %s, %s, %s, %s,
+             roe_excellent, roe_good, roe_fair,
+             debt_to_earnings_excellent, debt_to_earnings_good, debt_to_earnings_fair,
+             gross_margin_excellent, gross_margin_good, gross_margin_fair,
+             correlation_5yr, correlation_10yr, is_active, character, user_id)
+            VALUES (%s, %s, %s, %s, %s, %s, %s,
                     %s, %s, %s,
                     %s, %s, %s,
                     %s, %s,
                     %s, %s, %s,
                     %s, %s, %s,
-                    %s, %s, %s, %s)
+                    %s, %s, %s,
+                    %s, %s, %s,
+                    %s, %s, %s,
+                    %s, %s, %s, %s, %s)
             RETURNING id
         """, (
             config.get('name', 'Unnamed'),
-            config.get('weight_peg', 0.50),
-            config.get('weight_consistency', 0.25),
-            config.get('weight_debt', 0.15),
-            config.get('weight_ownership', 0.10),
-            config.get('peg_excellent', 1.0),
-            config.get('peg_good', 1.5),
-            config.get('peg_fair', 2.0),
-            config.get('debt_excellent', 0.5),
-            config.get('debt_good', 1.0),
-            config.get('debt_moderate', 2.0),
-            config.get('inst_own_min', 0.20),
-            config.get('inst_own_max', 0.60),
-            config.get('revenue_growth_excellent', 15.0),
-            config.get('revenue_growth_good', 10.0),
-            config.get('revenue_growth_fair', 5.0),
-            config.get('income_growth_excellent', 15.0),
-            config.get('income_growth_good', 10.0),
-            config.get('income_growth_fair', 5.0),
+            # Weights
+            get_val('weight_peg', 0.50, ['lynch']),
+            get_val('weight_consistency', 0.25, ['lynch', 'buffett']), # Common
+            get_val('weight_debt', 0.15, ['lynch']),
+            get_val('weight_ownership', 0.10, ['lynch']),
+            get_val('weight_roe', 0.40, ['buffett']),
+            get_val('weight_debt_to_earnings', 0.30, ['buffett']),
+            
+            # Lynch Thresholds
+            get_val('peg_excellent', 1.0, ['lynch']),
+            get_val('peg_good', 1.5, ['lynch']),
+            get_val('peg_fair', 2.0, ['lynch']),
+            get_val('debt_excellent', 0.5, ['lynch']),
+            get_val('debt_good', 1.0, ['lynch']),
+            get_val('debt_moderate', 2.0, ['lynch']),
+            get_val('inst_own_min', 0.20, ['lynch']),
+            get_val('inst_own_max', 0.60, ['lynch']),
+            
+            # Common Thresholds (Growth)
+            get_val('revenue_growth_excellent', 15.0, ['lynch', 'buffett']),
+            get_val('revenue_growth_good', 10.0, ['lynch', 'buffett']),
+            get_val('revenue_growth_fair', 5.0, ['lynch', 'buffett']),
+            get_val('income_growth_excellent', 15.0, ['lynch', 'buffett']),
+            get_val('income_growth_good', 10.0, ['lynch', 'buffett']),
+            get_val('income_growth_fair', 5.0, ['lynch', 'buffett']),
+            
+            # Buffett Thresholds
+            get_val('roe_excellent', 20.0, ['buffett']),
+            get_val('roe_good', 15.0, ['buffett']),
+            get_val('roe_fair', 10.0, ['buffett']),
+            get_val('debt_to_earnings_excellent', 3.0, ['buffett']),
+            get_val('debt_to_earnings_good', 5.0, ['buffett']),
+            get_val('debt_to_earnings_fair', 8.0, ['buffett']),
+            get_val('gross_margin_excellent', 50.0, ['buffett']),
+            get_val('gross_margin_good', 40.0, ['buffett']),
+            get_val('gross_margin_fair', 30.0, ['buffett']),
+            
             config.get('correlation_5yr'),
             config.get('correlation_10yr'),
-            config.get('is_active', False),
-            character
+            bool(config.get('is_active', False)),  # Explicitly cast to bool for PostgreSQL
+            character,
+            user_id
         ))
 
         config_id = cursor.fetchone()[0]
@@ -4186,8 +4287,42 @@ class Database:
 
         return results
 
+    def get_user_algorithm_config(self, user_id: int, character: str = 'lynch') -> Optional[Dict[str, Any]]:
+        """Get the most recent algorithm configuration for a specific user and character.
+           Falls back to the most recent system default (user_id IS NULL) if per-user config not found.
+
+        Args:
+            user_id: User ID to fetch configuration for
+            character: Character ID (e.g., 'lynch', 'buffett')
+
+        Returns:
+            Configuration dict or None if no config exists
+        """
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        
+        # Priority:
+        # 1. User specific config (user_id = X)
+        # 2. Global default (user_id IS NULL)
+        cursor.execute("""
+            SELECT * FROM algorithm_configurations
+            WHERE character = %s AND (user_id = %s OR user_id IS NULL)
+            ORDER BY user_id ASC NULLS LAST, id DESC
+            LIMIT 1
+        """, (character, user_id))
+        
+        row = cursor.fetchone()
+        self.return_connection(conn)
+
+        if not row:
+            return None
+
+        colnames = [desc[0] for desc in cursor.description]
+        return dict(zip(colnames, row))
+
     def get_algorithm_config_for_character(self, character_id: str) -> Optional[Dict[str, Any]]:
         """Get the most recent algorithm configuration for a specific character.
+           This returns global defaults only (where user_id is NULL).
 
         Args:
             character_id: Character ID (e.g., 'lynch', 'buffett')
@@ -4199,7 +4334,7 @@ class Database:
         cursor = conn.cursor()
         cursor.execute("""
             SELECT * FROM algorithm_configurations
-            WHERE character = %s
+            WHERE character = %s AND user_id IS NULL
             ORDER BY id DESC
             LIMIT 1
         """, (character_id,))

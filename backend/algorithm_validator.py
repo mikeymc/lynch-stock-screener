@@ -50,7 +50,7 @@ class AlgorithmValidator:
                 'NKE', 'DIS', 'CRM', 'CSCO', 'ACN', 'TMO', 'VZ', 'ABT', 'NFLX'
             ]
     
-    def run_sp500_backtests(self, years_back: int, max_workers: int = 5, limit: int = None, force_rerun: bool = False, overrides: Dict[str, float] = None, progress_callback=None) -> Dict[str, Any]:
+    def run_sp500_backtests(self, years_back: int, max_workers: int = 5, limit: int = None, force_rerun: bool = False, overrides: Dict[str, float] = None, character_id: str = 'lynch', progress_callback=None) -> Dict[str, Any]:
         """
         Run backtests on all S&P 500 stocks
 
@@ -73,9 +73,8 @@ class AlgorithmValidator:
         
         logger.info(f"Starting backtest validation for {total_symbols} stocks, {years_back} years back")
         
-        # Reload settings to ensure we use the latest configuration
-        self.backtester.criteria.reload_settings()
-        logger.info("Reloaded algorithm settings")
+        # Note: We don't reload settings here because we're using overrides from optimization
+        # reload_settings() would load the default config and overwrite our optimized parameters
         
         start_time = time.time()
         processed = 0
@@ -83,7 +82,7 @@ class AlgorithmValidator:
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
             # Submit all tasks
             future_to_symbol = {
-                executor.submit(self._backtest_with_cache, symbol, years_back, force_rerun, overrides): symbol  
+                executor.submit(self._backtest_with_cache, symbol, years_back, force_rerun, overrides, character_id): symbol  
                 for symbol in symbols
             }
             
@@ -139,7 +138,7 @@ class AlgorithmValidator:
         
         return summary
     
-    def _backtest_with_cache(self, symbol: str, years_back: int, force_rerun: bool = False, overrides: Dict[str, float] = None) -> Optional[Dict[str, Any]]:
+    def _backtest_with_cache(self, symbol: str, years_back: int, force_rerun: bool = False, overrides: Dict[str, float] = None, character_id: str = 'lynch') -> Optional[Dict[str, Any]]:
         """
         Run backtest with price caching
         
@@ -154,11 +153,10 @@ class AlgorithmValidator:
                         logger.debug(f"{symbol}: Using cached result")
                         return None  # Already have this result
             
-            # Run backtest - backtester handles its own price caching
-            result = self.backtester.run_backtest(symbol, years_back=years_back, overrides=overrides)
+            # Run backtest
+            result = self.backtester.run_backtest(symbol, years_back=years_back, overrides=overrides, character_id=character_id)
             
-            # Add years_back to result for database storage
-            if 'error' not in result:
+            if result:
                 result['years_back'] = years_back
             
             return result

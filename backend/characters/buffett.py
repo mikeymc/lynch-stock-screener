@@ -38,12 +38,22 @@ BUFFETT = CharacterConfig(
         ),
         ScoringWeight(
             metric='debt_to_earnings',
-            weight=0.30,
+            weight=0.20,
             threshold=Threshold(
                 excellent=2.0,   # Can pay off debt in 2 years = excellent
                 good=4.0,        # 4 years is good
                 fair=7.0,        # 7 years is fair (Buffett's outer limit is ~4)
                 lower_is_better=True,
+            ),
+        ),
+        ScoringWeight(
+            metric='gross_margin',
+            weight=0.10,
+            threshold=Threshold(
+                excellent=50.0,
+                good=40.0,
+                fair=30.0,
+                lower_is_better=False,
             ),
         ),
     ],
