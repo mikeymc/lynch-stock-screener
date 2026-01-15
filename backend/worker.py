@@ -297,7 +297,6 @@ class BackgroundWorker:
 
     def _run_screening(self, job_id: int, params: Dict[str, Any]):
         """Execute full stock screening"""
-        session_id = params.get('session_id')
         algorithm = params.get('algorithm', 'weighted')
         force_refresh = params.get('force_refresh', False)
         limit = params.get('limit')
@@ -307,13 +306,9 @@ class BackgroundWorker:
         from tradingview_fetcher import TradingViewFetcher
         from finviz_fetcher import FinvizFetcher
         from data_fetcher import DataFetcher
-        from earnings_analyzer import EarningsAnalyzer
-        from lynch_criteria import LynchCriteria
         
-        # Initialize fetchers
+        # Initialize fetcher (no longer need criteria/analyzer since we don't score)
         fetcher = DataFetcher(self.db)
-        analyzer = EarningsAnalyzer(self.db)
-        criteria = LynchCriteria(self.db, analyzer)
 
         # If specific symbols provided, use those directly (for testing)
         if specific_symbols:
@@ -365,58 +360,33 @@ class BackgroundWorker:
         self.db.update_job_progress(job_id, progress_pct=15, progress_message=f'Screening {total} stocks...',
                                     total_count=total)
 
-        # Create session if one wasn't provided (e.g., from GitHub Actions via /api/jobs)
-        if not session_id:
-            session_id = self.db.create_session(algorithm=algorithm, total_count=total)
-            logger.info(f"Created screening session {session_id}")
-        else:
-            # Update session total count if we have an existing session
-            self.db.update_session_total_count(session_id, total)
-
-        logger.info(f"Ready to screen {total} stocks (session_id={session_id})")
+        logger.info(f"Ready to screen {total} stocks")
 
         # Process stocks
         def process_stock(symbol):
             try:
-                # 1. Fetch stock data (uses TradingView cache for metrics)
+                # Fetch stock data (character-independent - just raw fundamentals)
                 stock_data = fetcher.fetch_stock_data(symbol, force_refresh,
                                                       market_data_cache=market_data_cache,
                                                       finviz_cache=finviz_cache)
                 if not stock_data:
                     return None
 
-                # 2. Evaluate stock against Lynch criteria
-                # Pass stock_data to avoid re-querying DB (write queue hasn't flushed yet)
-                evaluation = criteria.evaluate_stock(symbol, algorithm=algorithm, stock_metrics=stock_data)
-                if not evaluation:
-                    return None
-
-                # Log Buffett metrics being saved
-                debt_to_earnings = evaluation.get('debt_to_earnings')
-                roe = evaluation.get('roe')
-                if debt_to_earnings is not None or roe is not None:
-                    logger.info(f"[{symbol}] Buffett metrics - debt_to_earnings: {debt_to_earnings}, ROE: {roe}, gross_margin: {evaluation.get('gross_margin')}")
-
-                # NOTE: Price history and news caching are now handled by separate jobs:
+                # NOTE: Scoring is now done on-demand via /api/sessions/latest
+                # This screening job only fetches and caches raw data
+                # Price history and news caching are handled by separate jobs:
                 # - price_history_cache: Caches weekly price history
                 # - news_cache: Caches Finnhub news articles
                 # - 10k_cache: Caches 10-K/10-Q sections
                 # - 8k_cache: Caches 8-K material events
-                # This keeps screening fast - focused only on evaluation.
 
-                # 3. Save screening result
-                if session_id:
-                    self.db.save_screening_result(session_id, evaluation)
-                return evaluation
+                return {'symbol': symbol, 'success': True}
 
             except Exception as e:
                 logger.error(f"Error processing {symbol}: {e}")
                 return None
 
-        # Initialize counters
-        pass_count = 0
-        close_count = 0
-        fail_count = 0
+        # Initialize counters (no longer tracking pass/close/fail since we don't score)
         total_analyzed = 0
         processed_count = 0
         failed_symbols = []
@@ -424,26 +394,6 @@ class BackgroundWorker:
         BATCH_SIZE = 10
         MAX_WORKERS = 40
         BATCH_DELAY = 0.5
-
-        def update_counters(evaluation):
-            nonlocal pass_count, close_count, fail_count, total_analyzed
-            total_analyzed += 1
-            status = evaluation.get('overall_status')
-            
-            if algorithm == 'classic':
-                if status == 'PASS':
-                    pass_count += 1
-                elif status == 'CLOSE':
-                    close_count += 1
-                elif status == 'FAIL':
-                    fail_count += 1
-            else:
-                if status in ['STRONG_BUY', 'BUY']:
-                    pass_count += 1
-                elif status == 'HOLD':
-                    close_count += 1
-                elif status in ['CAUTION', 'AVOID']:
-                    fail_count += 1
 
         with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
             for batch_start in range(0, total, BATCH_SIZE):
@@ -468,9 +418,9 @@ class BackgroundWorker:
                     processed_count += 1
 
                     try:
-                        evaluation = future.result()
-                        if evaluation:
-                            update_counters(evaluation)
+                        result = future.result()
+                        if result and result.get('success'):
+                            total_analyzed += 1
                         else:
                             failed_symbols.append(symbol)
                         
@@ -495,11 +445,6 @@ class BackgroundWorker:
                 check_memory_warning(f"[screening {processed_count}/{total}]")
                 
                 # Periodic garbage collection to prevent memory buildup
-                if batch_start % 100 == 0:
-                    gc.collect()
-
-                if session_id:
-                    self.db.update_session_progress(session_id, processed_count, symbol)
 
                 self._send_heartbeat(job_id)
 
@@ -516,9 +461,9 @@ class BackgroundWorker:
                 if self.shutdown_requested:
                     break
                 try:
-                    evaluation = process_stock(symbol)
-                    if evaluation:
-                        update_counters(evaluation)
+                    result = process_stock(symbol)
+                    if result and result.get('success'):
+                        total_analyzed += 1
                         
                     # Also clear cache for retries
                     if symbol in market_data_cache:
@@ -533,10 +478,8 @@ class BackgroundWorker:
         # Complete job
         result = {
             'total_analyzed': total_analyzed,
-            'pass_count': pass_count,
-            'close_count': close_count,
-            'fail_count': fail_count,
-            'session_id': session_id
+            'total_symbols': total,
+            'failed_count': len(failed_symbols)
         }
         # Flush write queue before completing job
         self.db.flush()

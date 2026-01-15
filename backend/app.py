@@ -600,14 +600,6 @@ def create_job():
         job_type = data['type']
         params = data.get('params', {})
 
-        # For screening jobs, create session if not provided
-        session_id = params.get('session_id')  # Check if already provided
-        if job_type == 'full_screening' and not session_id:
-            algorithm = params.get('algorithm', 'weighted')
-            session_id = db.create_session(algorithm=algorithm, total_count=0)
-            params['session_id'] = session_id
-            logger.info(f"Created screening session {session_id} for job")
-
         # Check connection pool health before creating job
         pool_stats = db.get_pool_stats()
         if pool_stats['usage_percent'] >= 95:
@@ -630,10 +622,6 @@ def create_job():
             'job_id': job_id,
             'status': 'pending'
         }
-        
-        # Include session_id in response for screening jobs
-        if job_type == 'full_screening' and session_id:
-            response_data['session_id'] = session_id
 
         return jsonify(response_data)
 
@@ -1371,75 +1359,50 @@ def screen_stocks_v2():
 
 
 @app.route('/api/screen', methods=['GET'])
-@require_user_auth
-def screen_stocks(user_id):
+def screen_stocks():
+    """Fetch raw stock data for all NYSE/NASDAQ symbols.
+    
+    This endpoint ONLY fetches fundamental data and saves it to the database.
+    Scoring happens separately via /api/sessions/latest using vectorized evaluation.
+    """
     limit_param = request.args.get('limit')
     limit = int(limit_param) if limit_param else None
     force_refresh = request.args.get('refresh', 'false').lower() == 'true'
-    algorithm = request.args.get('algorithm', 'weighted')
-
-    # Fetch user settings once
-    character_id = db.get_user_character(user_id) if user_id else 'lynch'
-    overrides = db.get_user_algorithm_config(user_id, character_id) if user_id else None
 
     def generate():
-        session_id = None
         try:
-            yield f"data: {json.dumps({'type': 'progress', 'message': 'Fetching stock list...'})}\n\n"
+            yield f"data: {json.dumps({'type': 'progress', 'message': 'Fetching stock list...'})}\\n\\n"
 
             symbols = fetcher.get_nyse_nasdaq_symbols()
-            # symbols = ['AAPL', 'MSFT', 'GOOG', 'AMD', 'F', 'NVDA', 'ABNB', 'AMD']
-
             if not symbols:
-                yield f"data: {json.dumps({'type': 'error', 'message': 'Unable to fetch stock symbols'})}\n\n"
+                yield f"data: {json.dumps({'type': 'error', 'message': 'Unable to fetch stock symbols'})}\\n\\n"
                 return
 
             if limit:
                 symbols = symbols[:limit]
 
             total = len(symbols)
-            yield f"data: {json.dumps({'type': 'progress', 'message': f'Found {total} stocks to screen...'})}\n\n"
+            yield f"data: {json.dumps({'type': 'progress', 'message': f'Found {total} stocks to fetch data for...'})}\\n\\n"
 
-            # Create a new screening session
-            session_id = db.create_session(total_analyzed=0, pass_count=0, close_count=0, fail_count=0)
-
-            # Worker function to process a single stock
-            def process_stock(symbol):
+            # Worker function to fetch data for a single stock
+            def fetch_stock(symbol):
                 try:
                     stock_data = fetcher.fetch_stock_data(symbol, force_refresh)
-                    if not stock_data:
-                        print(f"No stock data returned for {symbol}")
-                        return None
-
-                    # Pass user overrides and character context
-                    evaluation = criteria.evaluate_stock(
-                        symbol, 
-                        algorithm=algorithm, 
-                        overrides=overrides,
-                        character_id=character_id
-                    )
-                    if not evaluation:
-                        print(f"No evaluation returned for {symbol}")
-                        return None
-
-                    # Save result to session
-                    db.save_screening_result(session_id, evaluation)
-                    return evaluation
+                    if stock_data:
+                        return {'symbol': symbol, 'success': True}
+                    else:
+                        return {'symbol': symbol, 'success': False, 'error': 'No data returned'}
                 except Exception as e:
-                    print(f"Error processing {symbol}: {e}")
-                    import traceback
-                    traceback.print_exc()
-                    return None
+                    return {'symbol': symbol, 'success': False, 'error': str(e)}
 
-            results = []
-            processed_count = 0
-            failed_symbols = []  # Track symbols that failed
+            fetched_count = 0
+            success_count = 0
+            failed_symbols = []
             
             # Process stocks in batches using parallel workers
-            # Increased parallelization since we're using local caches (TradingView + Finviz)
-            BATCH_SIZE = 10  # Increased from 3
-            MAX_WORKERS = 40  # Optimal for I/O-bound operations with cached data
-            BATCH_DELAY = 0.5  # Reduced from 1.5s since most data is cached
+            BATCH_SIZE = 10
+            MAX_WORKERS = 40
+            BATCH_DELAY = 0.5
             
             with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
                 for batch_start in range(0, total, BATCH_SIZE):
@@ -1447,143 +1410,73 @@ def screen_stocks(user_id):
                     batch = symbols[batch_start:batch_end]
                     
                     # Submit batch to thread pool
-                    future_to_symbol = {executor.submit(process_stock, symbol): symbol for symbol in batch}
+                    future_to_symbol = {executor.submit(fetch_stock, symbol): symbol for symbol in batch}
                     
                     # Collect results as they complete
                     for future in as_completed(future_to_symbol):
                         symbol = future_to_symbol[future]
-                        processed_count += 1
+                        fetched_count += 1
                         
                         try:
-                            evaluation = future.result()
-                            if evaluation:
-                                results.append(evaluation)
-                                clean_eval = clean_nan_values(evaluation)
-                                yield f"data: {json.dumps({'type': 'stock_result', 'stock': clean_eval})}\n\n"
+                            result = future.result()
+                            if result['success']:
+                                success_count += 1
                             else:
-                                # Track failed stocks for retry
                                 failed_symbols.append(symbol)
                             
                             # Send progress update
-                            yield f"data: {json.dumps({'type': 'progress', 'message': f'Analyzed {symbol} ({processed_count}/{total})...'})}\n\n"
+                            yield f"data: {json.dumps({'type': 'progress', 'message': f'Fetched {symbol} ({fetched_count}/{total})...'})}\\n\\n"
                             
-                            # Send keep-alive heartbeat every stock to prevent Fly.io auto-stop
-                            yield f": keep-alive\n\n"
+                            # Keep-alive heartbeat
+                            yield f": keep-alive\\n\\n"
                             
                         except Exception as e:
                             print(f"Error getting result for {symbol}: {e}")
                             failed_symbols.append(symbol)
-                            yield f"data: {json.dumps({'type': 'progress', 'message': f'Error with {symbol} ({processed_count}/{total})'})}\n\n"
+                            yield f"data: {json.dumps({'type': 'progress', 'message': f'Error with {symbol} ({fetched_count}/{total})'})}\\n\\n"
                     
-                    # Rate limiting delay between batches with heartbeat
+                    # Rate limiting delay between batches
                     if batch_end < total:
                         time.sleep(BATCH_DELAY)
-                        yield f": heartbeat-batch-delay\n\n"
+                        yield f": heartbeat-batch-delay\\n\\n"
 
-            # Automatic retry pass for failed stocks
+            # Retry failed stocks
             if failed_symbols:
                 retry_count = len(failed_symbols)
-                yield f"data: {json.dumps({'type': 'progress', 'message': f'Retrying {retry_count} failed stocks with conservative settings...'})}\n\n"
+                yield f"data: {json.dumps({'type': 'progress', 'message': f'Retrying {retry_count} failed stocks...'})}\\n\\n"
                 
-                # Wait a bit for rate limits to reset
                 time.sleep(5)
                 
-                # Retry failed stocks one at a time with longer delays
                 for i, symbol in enumerate(failed_symbols, 1):
                     try:
-                        yield f"data: {json.dumps({'type': 'progress', 'message': f'Retry {i}/{retry_count}: {symbol}...'})}\n\n"
+                        yield f"data: {json.dumps({'type': 'progress', 'message': f'Retry {i}/{retry_count}: {symbol}...'})}\\n\\n"
                         
-                        evaluation = process_stock(symbol)
-                        if evaluation:
-                            results.append(evaluation)
-                            clean_eval = clean_nan_values(evaluation)
-                            yield f"data: {json.dumps({'type': 'stock_result', 'stock': clean_eval})}\n\n"
-                            yield f"data: {json.dumps({'type': 'progress', 'message': f'✓ Retry succeeded for {symbol}'})}\n\n"
+                        result = fetch_stock(symbol)
+                        if result['success']:
+                            success_count += 1
+                            yield f"data: {json.dumps({'type': 'progress', 'message': f'✓ Retry succeeded for {symbol}'})}\\n\\n"
                         else:
-                            yield f"data: {json.dumps({'type': 'progress', 'message': f'✗ Retry failed for {symbol}'})}\n\n"
+                            yield f"data: {json.dumps({'type': 'progress', 'message': f'✗ Retry failed for {symbol}'})}\\n\\n"
                         
-                        # Keep-alive heartbeat during retry
-                        yield f": keep-alive-retry\n\n"
-                        
-                        # Longer delay between retries to avoid rate limits
+                        yield f": keep-alive-retry\\n\\n"
                         time.sleep(2)
                     except Exception as e:
                         print(f"Retry error for {symbol}: {e}")
-                        yield f"data: {json.dumps({'type': 'progress', 'message': f'✗ Retry error for {symbol}'})}\n\n"
+                        yield f"data: {json.dumps({'type': 'progress', 'message': f'✗ Retry error for {symbol}'})}\\n\\n"
                         time.sleep(2)
-                
-                yield f"data: {json.dumps({'type': 'progress', 'message': f'Retry pass complete. Successfully recovered {len(results) - (total - retry_count)} stocks.'})}\n\n"
 
-
-            # Group results by status - support both old and new status formats
-            results_by_status = {}
-            if algorithm == 'classic':
-                results_by_status = {
-                    'pass': [r for r in results if r['overall_status'] == 'PASS'],
-                    'close': [r for r in results if r['overall_status'] == 'CLOSE'],
-                    'fail': [r for r in results if r['overall_status'] == 'FAIL']
-                }
-            else:
-                # New algorithms use different statuses
-                results_by_status = {
-                    'strong_buy': [r for r in results if r['overall_status'] == 'STRONG_BUY'],
-                    'buy': [r for r in results if r['overall_status'] == 'BUY'],
-                    'hold': [r for r in results if r['overall_status'] == 'HOLD'],
-                    'caution': [r for r in results if r['overall_status'] == 'CAUTION'],
-                    'avoid': [r for r in results if r['overall_status'] == 'AVOID']
-                }
-
-            # Update session with final counts
-            conn = db.get_connection()
-            cursor = conn.cursor()
-            if algorithm == 'classic':
-                cursor.execute("""
-                    UPDATE screening_sessions
-                    SET total_analyzed = %s, pass_count = %s, close_count = %s, fail_count = %s
-                    WHERE id = %s
-                """, (len(results), len(results_by_status['pass']), len(results_by_status['close']), len(results_by_status['fail']), session_id))
-            else:
-                # For new algorithms, map to old schema for backward compatibility
-                pass_count = len(results_by_status.get('strong_buy', [])) + len(results_by_status.get('buy', []))
-                close_count = len(results_by_status.get('hold', []))
-                fail_count = len(results_by_status.get('caution', [])) + len(results_by_status.get('avoid', []))
-                cursor.execute("""
-                    UPDATE screening_sessions
-                    SET total_analyzed = %s, pass_count = %s, close_count = %s, fail_count = %s
-                    WHERE id = %s
-                """, (len(results), pass_count, close_count, fail_count, session_id))
-            conn.commit()
-            db.return_connection(conn)
-
-            # Cleanup old sessions, keeping only the 2 most recent
-            db.cleanup_old_sessions(keep_count=2)
-
-            # Build completion payload based on algorithm
+            # Send completion message
             completion_payload = {
                 'type': 'complete',
-                'total_analyzed': len(results),
-                'results': results_by_status,
-                'algorithm': algorithm
+                'total_symbols': total,
+                'success_count': success_count,
+                'failed_count': total - success_count,
+                'message': f'Data fetching complete. {success_count}/{total} stocks updated.'
             }
-            if algorithm == 'classic':
-                completion_payload.update({
-                    'pass_count': len(results_by_status['pass']),
-                    'close_count': len(results_by_status['close']),
-                    'fail_count': len(results_by_status['fail'])
-                })
-            else:
-                completion_payload.update({
-                    'strong_buy_count': len(results_by_status.get('strong_buy', [])),
-                    'buy_count': len(results_by_status.get('buy', [])),
-                    'hold_count': len(results_by_status.get('hold', [])),
-                    'caution_count': len(results_by_status.get('caution', [])),
-                    'avoid_count': len(results_by_status.get('avoid', []))
-                })
-
-            yield f"data: {json.dumps(completion_payload)}\n\n"
+            yield f"data: {json.dumps(completion_payload)}\\n\\n"
 
         except Exception as e:
-            yield f"data: {json.dumps({'type': 'error', 'message': str(e)})}\n\n"
+            yield f"data: {json.dumps({'type': 'error', 'message': str(e)})}\\n\\n"
 
     return Response(stream_with_context(generate()), content_type='text/event-stream')
 
@@ -1666,47 +1559,90 @@ def get_latest_session(user_id):
         # Build Config based on Active Character
         if character_id == 'lynch':
             if configs and len(configs) > 0:
-                # Todo: Filtering by character_id in DB would be better
-                # For now assume first config is Lynch or generic
-                db_config = configs[0]
-                config = {
-                    'peg_excellent': db_config.get('peg_excellent', 1.0),
-                    'peg_good': db_config.get('peg_good', 1.5),
-                    'peg_fair': db_config.get('peg_fair', 2.0),
-                    'debt_excellent': db_config.get('debt_excellent', 0.5),
-                    'debt_good': db_config.get('debt_good', 1.0),
-                    'debt_moderate': db_config.get('debt_moderate', 2.0),
-                    'inst_own_min': db_config.get('inst_own_min', 0.20),
-                    'inst_own_max': db_config.get('inst_own_max', 0.60),
-                    'weight_peg': db_config.get('weight_peg', 0.50),
-                    'weight_consistency': db_config.get('weight_consistency', 0.25),
-                    'weight_debt': db_config.get('weight_debt', 0.15),
-                    'weight_ownership': db_config.get('weight_ownership', 0.10),
-                }
+                # Filter for Lynch config
+                lynch_config = None
+                for cfg in configs:
+                    if cfg.get('character') == 'lynch':
+                        lynch_config = cfg
+                        break
+                
+                if lynch_config:
+                    config = {
+                        'peg_excellent': lynch_config.get('peg_excellent', 1.0),
+                        'peg_good': lynch_config.get('peg_good', 1.5),
+                        'peg_fair': lynch_config.get('peg_fair', 2.0),
+                        'debt_excellent': lynch_config.get('debt_excellent', 0.5),
+                        'debt_good': lynch_config.get('debt_good', 1.0),
+                        'debt_moderate': lynch_config.get('debt_moderate', 2.0),
+                        'inst_own_min': lynch_config.get('inst_own_min', 0.20),
+                        'inst_own_max': lynch_config.get('inst_own_max', 0.60),
+                        'weight_peg': lynch_config.get('weight_peg', 0.50),
+                        'weight_consistency': lynch_config.get('weight_consistency', 0.25),
+                        'weight_debt': lynch_config.get('weight_debt', 0.15),
+                        'weight_ownership': lynch_config.get('weight_ownership', 0.10),
+                    }
+                else:
+                    config = DEFAULT_ALGORITHM_CONFIG
             else:
                 config = DEFAULT_ALGORITHM_CONFIG
                 
         elif character_id == 'buffett':
-            # Buffett Configuration
-            # TODO: Fetch from DB in future if we allow tuning Buffett
-            config = {
-                'weight_roe': 0.40,
-                'weight_consistency': 0.30,
-                'weight_debt_earnings': 0.30,
-                
-                # Zero out Lynch weights
-                'weight_peg': 0.0,
-                'weight_debt': 0.0,
-                'weight_ownership': 0.0,
-                
-                # Thresholds
-                'roe_excellent': 20.0,
-                'roe_good': 15.0,
-                'roe_fair': 10.0,
-                'de_excellent': 2.0,
-                'de_good': 4.0,
-                'de_fair': 7.0,
-            }
+            # Load Buffett config from database
+            buffett_config = None
+            if configs:
+                for cfg in configs:
+                    if cfg.get('character') == 'buffett':
+                        buffett_config = cfg
+                        break
+            
+            if buffett_config:
+                # Use saved Buffett configuration
+                config = {
+                    'weight_roe': buffett_config.get('weight_roe', 0.35),
+                    'weight_consistency': buffett_config.get('weight_consistency', 0.25),
+                    'weight_debt_to_earnings': buffett_config.get('weight_debt_to_earnings', 0.20),
+                    'weight_gross_margin': buffett_config.get('weight_gross_margin', 0.20),
+                    
+                    # Zero out Lynch weights
+                    'weight_peg': 0.0,
+                    'weight_debt': 0.0,
+                    'weight_ownership': 0.0,
+                    
+                    # Thresholds
+                    'roe_excellent': buffett_config.get('roe_excellent', 20.0),
+                    'roe_good': buffett_config.get('roe_good', 15.0),
+                    'roe_fair': buffett_config.get('roe_fair', 10.0),
+                    'debt_to_earnings_excellent': buffett_config.get('debt_to_earnings_excellent', 3.0),
+                    'debt_to_earnings_good': buffett_config.get('debt_to_earnings_good', 5.0),
+                    'debt_to_earnings_fair': buffett_config.get('debt_to_earnings_fair', 8.0),
+                    'gross_margin_excellent': buffett_config.get('gross_margin_excellent', 50.0),
+                    'gross_margin_good': buffett_config.get('gross_margin_good', 40.0),
+                    'gross_margin_fair': buffett_config.get('gross_margin_fair', 30.0),
+                }
+            else:
+                # Fallback to defaults if no config found
+                config = {
+                    'weight_roe': 0.35,
+                    'weight_consistency': 0.25,
+                    'weight_debt_to_earnings': 0.20,
+                    'weight_gross_margin': 0.20,
+                    
+                    # Zero out Lynch weights
+                    'weight_peg': 0.0,
+                    'weight_debt': 0.0,
+                    'weight_ownership': 0.0,
+                    
+                    # Thresholds
+                    'roe_excellent': 20.0,
+                    'roe_good': 15.0,
+                    'roe_fair': 10.0,
+                    'debt_to_earnings_excellent': 3.0,
+                    'debt_to_earnings_good': 5.0,
+                    'debt_to_earnings_fair': 8.0,
+                    'gross_margin_excellent': 50.0,
+                    'gross_margin_good': 40.0,
+                    'gross_margin_fair': 30.0,
+                }
 
         try:
             # Load and score using vectorized engine

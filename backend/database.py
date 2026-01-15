@@ -76,7 +76,23 @@ class Database:
         init_conn = self.connection_pool.getconn()
         try:
             self._init_schema_with_connection(init_conn)
+            # The _init_schema_with_connection method should handle its own commits.
+            # If it doesn't, a commit here would be needed. Assuming it does for now.
             logger.info("Database schema initialized successfully")
+
+            # Migration: Drop unused screening tables (refactored to use on-demand scoring)
+            try:
+                cursor = init_conn.cursor() # Create a cursor for the migration
+                cursor.execute("""
+                    DROP TABLE IF EXISTS screening_results CASCADE;
+                    DROP TABLE IF EXISTS screening_sessions CASCADE;
+                """)
+                init_conn.commit()
+                logger.info("Migration: Dropped screening_sessions and screening_results tables")
+            except Exception as e:
+                logger.warning(f"Migration warning (drop screening tables): {e}")
+                init_conn.rollback() # Rollback only the migration if it fails
+
         except Exception as e:
             logger.error(f"Failed to initialize database schema: {e}", exc_info=True)
             raise
@@ -791,45 +807,6 @@ class Database:
             END $$;
         """)
 
-        # Migration: Add Buffett raw metric columns to screening_results
-        # These are computed during screening so we can re-score on the fly by character
-        cursor.execute("""
-            DO $$
-            BEGIN
-                IF NOT EXISTS (SELECT 1 FROM information_schema.columns
-                               WHERE table_name = 'screening_results' AND column_name = 'roe') THEN
-                    ALTER TABLE screening_results ADD COLUMN roe REAL;
-                END IF;
-            END $$;
-        """)
-        cursor.execute("""
-            DO $$
-            BEGIN
-                IF NOT EXISTS (SELECT 1 FROM information_schema.columns
-                               WHERE table_name = 'screening_results' AND column_name = 'owner_earnings') THEN
-                    ALTER TABLE screening_results ADD COLUMN owner_earnings REAL;
-                END IF;
-            END $$;
-        """)
-        cursor.execute("""
-            DO $$
-            BEGIN
-                IF NOT EXISTS (SELECT 1 FROM information_schema.columns
-                               WHERE table_name = 'screening_results' AND column_name = 'debt_to_earnings') THEN
-                    ALTER TABLE screening_results ADD COLUMN debt_to_earnings REAL;
-                END IF;
-            END $$;
-        """)
-        cursor.execute("""
-            DO $$
-            BEGIN
-                IF NOT EXISTS (SELECT 1 FROM information_schema.columns
-                               WHERE table_name = 'screening_results' AND column_name = 'gross_margin') THEN
-                    ALTER TABLE screening_results ADD COLUMN gross_margin REAL;
-                END IF;
-            END $$;
-        """)
-
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS watchlist (
                 symbol TEXT PRIMARY KEY,
@@ -1322,22 +1299,6 @@ class Database:
         """)
 
         cursor.execute("""
-            CREATE TABLE IF NOT EXISTS screening_sessions (
-                id SERIAL PRIMARY KEY,
-                created_at TIMESTAMP,
-                total_analyzed INTEGER,
-                pass_count INTEGER,
-                close_count INTEGER,
-                fail_count INTEGER,
-                status TEXT DEFAULT 'running',
-                processed_count INTEGER DEFAULT 0,
-                total_count INTEGER DEFAULT 0,
-                current_symbol TEXT,
-                algorithm TEXT
-            )
-        """)
-
-        cursor.execute("""
             CREATE TABLE IF NOT EXISTS background_jobs (
                 id SERIAL PRIMARY KEY,
                 job_type TEXT NOT NULL,
@@ -1365,50 +1326,8 @@ class Database:
         """)
 
         cursor.execute("""
-            CREATE TABLE IF NOT EXISTS screening_results (
-                id SERIAL PRIMARY KEY,
-                session_id INTEGER,
-                symbol TEXT,
-                company_name TEXT,
-                country TEXT,
-                market_cap REAL,
-                sector TEXT,
-                ipo_year INTEGER,
-                price REAL,
-                pe_ratio REAL,
-                peg_ratio REAL,
-                debt_to_equity REAL,
-                institutional_ownership REAL,
-                dividend_yield REAL,
-                earnings_cagr REAL,
-                revenue_cagr REAL,
-                consistency_score REAL,
-                peg_status TEXT,
-                peg_score REAL,
-                debt_status TEXT,
-                debt_score REAL,
-                institutional_ownership_status TEXT,
-                institutional_ownership_score REAL,
-                overall_status TEXT,
-                overall_score REAL,
-                scored_at TIMESTAMP,
-                FOREIGN KEY (session_id) REFERENCES screening_sessions(id) ON DELETE CASCADE
-            )
-        """)
-
-        # Migration: add overall_score and scored_at columns if missing
-        cursor.execute("""
             DO $$
             BEGIN
-                IF NOT EXISTS (SELECT 1 FROM information_schema.columns
-                               WHERE table_name = 'screening_results' AND column_name = 'overall_score') THEN
-                    ALTER TABLE screening_results ADD COLUMN overall_score REAL;
-                END IF;
-                IF NOT EXISTS (SELECT 1 FROM information_schema.columns
-                               WHERE table_name = 'screening_results' AND column_name = 'scored_at') THEN
-                    ALTER TABLE screening_results ADD COLUMN scored_at TIMESTAMP;
-                END IF;
-
                 -- Migration: Add Gross Margin columns to algorithm_configurations (Buffett metrics)
                 IF NOT EXISTS (SELECT 1 FROM information_schema.columns
                                WHERE table_name = 'algorithm_configurations' AND column_name = 'gross_margin_excellent') THEN
@@ -2095,23 +2014,12 @@ class Database:
             cursor = conn.cursor()
             cursor.execute("""
                 SELECT sm.*, s.company_name, s.exchange, 
-                       COALESCE(s.sector, sr.sector) as sector, 
-                       s.country, s.ipo_year,
-                       -- Prefer screening_results PEG if stock_metrics is null
-                       COALESCE(sm.forward_peg_ratio, sr.peg_ratio) as forward_peg_ratio,
-                       -- Also grab dividend_yield fallback just in case
-                       COALESCE(sm.dividend_yield, sr.dividend_yield) as dividend_yield
-                FROM stock_metrics sm
-                JOIN stocks s ON sm.symbol = s.symbol
-                LEFT JOIN (
-                    SELECT sector, peg_ratio, dividend_yield
-                    FROM screening_results 
-                    WHERE symbol = %s 
-                    ORDER BY scored_at DESC 
-                    LIMIT 1
-                ) sr ON true
-                WHERE sm.symbol = %s
-            """, (symbol, symbol))
+                       s.sector, 
+                       s.country, s.ipo_year
+                 FROM stock_metrics sm
+                 JOIN stocks s ON sm.symbol = s.symbol
+                 WHERE sm.symbol = %s
+            """, (symbol,))
             row = cursor.fetchone()
 
             if not row:
@@ -2539,52 +2447,52 @@ class Database:
         finally:
             self.return_connection(conn)
 
-    def get_session_results(self, session_id: int) -> List[Dict[str, Any]]:
-        """Get all results for a screening session"""
-        conn = self.get_connection()
-        try:
-            cursor = conn.cursor()
-            cursor.execute("""
-                SELECT symbol, company_name, country, market_cap, sector, ipo_year,
-                       price, pe_ratio, peg_ratio, debt_to_equity, institutional_ownership,
-                       dividend_yield, earnings_cagr, revenue_cagr, consistency_score,
-                       peg_status, debt_status, institutional_ownership_status, overall_status,
-                       overall_score, scored_at
-                FROM screening_results
-                WHERE session_id = %s
-                ORDER BY id ASC
-            """, (session_id,))
-            rows = cursor.fetchall()
+    # DEPRECATED: def get_session_results(self, session_id: int) -> List[Dict[str, Any]]:
+        # """Get all results for a screening session"""
+        # conn = self.get_connection()
+        # try:
+            # cursor = conn.cursor()
+            # cursor.execute("""
+                # SELECT symbol, company_name, country, market_cap, sector, ipo_year,
+                       # price, pe_ratio, peg_ratio, debt_to_equity, institutional_ownership,
+                       # dividend_yield, earnings_cagr, revenue_cagr, consistency_score,
+                       # peg_status, debt_status, institutional_ownership_status, overall_status,
+                       # overall_score, scored_at
+                # FROM screening_results
+                # WHERE session_id = %s
+                # ORDER BY id ASC
+            # """, (session_id,))
+            # rows = cursor.fetchall()
 
-            results = []
-            for row in rows:
-                results.append({
-                    'symbol': row[0],
-                    'company_name': row[1],
-                    'country': row[2],
-                    'market_cap': row[3],
-                    'sector': row[4],
-                    'ipo_year': row[5],
-                    'price': row[6],
-                    'pe_ratio': row[7],
-                    'peg_ratio': row[8],
-                    'debt_to_equity': row[9],
-                    'institutional_ownership': row[10],
-                    'dividend_yield': row[11],
-                    'earnings_cagr': row[12],
-                    'revenue_cagr': row[13],
-                    'consistency_score': row[14],
-                    'peg_status': row[15],
-                    'debt_status': row[16],
-                    'institutional_ownership_status': row[17],
-                    'overall_status': row[18],
-                    'overall_score': row[19],
-                    'scored_at': row[20]
-                })
+            # results = []
+            # for row in rows:
+                # results.append({
+                    # 'symbol': row[0],
+                    # 'company_name': row[1],
+                    # 'country': row[2],
+                    # 'market_cap': row[3],
+                    # 'sector': row[4],
+                    # 'ipo_year': row[5],
+                    # 'price': row[6],
+                    # 'pe_ratio': row[7],
+                    # 'peg_ratio': row[8],
+                    # 'debt_to_equity': row[9],
+                    # 'institutional_ownership': row[10],
+                    # 'dividend_yield': row[11],
+                    # 'earnings_cagr': row[12],
+                    # 'revenue_cagr': row[13],
+                    # 'consistency_score': row[14],
+                    # 'peg_status': row[15],
+                    # 'debt_status': row[16],
+                    # 'institutional_ownership_status': row[17],
+                    # 'overall_status': row[18],
+                    # 'overall_score': row[19],
+                    # 'scored_at': row[20]
+                # })
 
-            return results
-        finally:
-            self.return_connection(conn)
+            # return results
+        # finally:
+            # self.return_connection(conn)
 
     def save_screening_result(self, session_id: int, result_data: Dict[str, Any]):
         sql_delete = """
@@ -2816,24 +2724,24 @@ class Database:
         finally:
             self.return_connection(conn)
 
-    def cleanup_old_sessions(self, keep_count: int = 2):
-        conn = self.get_connection()
-        try:
-            cursor = conn.cursor()
+    # DEPRECATED: def cleanup_old_sessions(self, keep_count: int = 2):
+        # conn = self.get_connection()
+        # try:
+            # cursor = conn.cursor()
 
-            cursor.execute("""
-                SELECT id FROM screening_sessions
-                ORDER BY created_at DESC
-                OFFSET %s
-            """, (keep_count,))
-            old_session_ids = [row[0] for row in cursor.fetchall()]
+            # cursor.execute("""
+                # SELECT id FROM screening_sessions
+                # ORDER BY created_at DESC
+                # OFFSET %s
+            # """, (keep_count,))
+            # old_session_ids = [row[0] for row in cursor.fetchall()]
 
-            for session_id in old_session_ids:
-                cursor.execute("DELETE FROM screening_sessions WHERE id = %s", (session_id,))
+            # for session_id in old_session_ids:
+                # cursor.execute("DELETE FROM screening_sessions WHERE id = %s", (session_id,))
 
-            conn.commit()
-        finally:
-            self.return_connection(conn)
+            # conn.commit()
+        # finally:
+            # self.return_connection(conn)
 
     def create_user(self, google_id: str, email: str, name: str = None, picture: str = None) -> int:
         """Create a new user and return their user_id"""

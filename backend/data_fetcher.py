@@ -421,7 +421,7 @@ class DataFetcher:
         # Create mapping of year to EPS - prioritize calculated EPS, fallback to direct EPS
         # calculated_eps_history = Net Income / Shares Outstanding (split-adjusted)
         # eps_history = Direct EPS from SEC filings (may not be split-adjusted for older years)
-        calculated_eps_by_year = {entry['year']: entry['eps'] for entry in calculated_eps_history}
+        calculated_eps_by_year = {entry['year']: entry['eps'] for entry in (calculated_eps_history or [])}
         direct_eps_by_year = {entry['year']: entry['eps'] for entry in edgar_data.get('eps_history', [])}
         
         # Detect stock splits by looking for sudden large drops in direct EPS between adjacent years

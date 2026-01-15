@@ -191,7 +191,6 @@ export default function ChartNarrativeRenderer({ narrative, historyData }) {
                 display: true,
                 text: title,
                 font: { size: 14, weight: '600' },
-                font: { size: 14, weight: '600' },
                 color: '#999999'
             },
             legend: {
