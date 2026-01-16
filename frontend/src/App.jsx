@@ -261,12 +261,10 @@ function StockListView({
 
   // Start with empty state (don't load cached session since algorithm may have changed)
   const [loadingSession, setLoadingSession] = useState(stocks.length === 0 && !summary)
-  // Load latest session on mount
+  // Load latest session on mount AND when character changes
   useEffect(() => {
-    if (stocks.length > 0 || summary) {
-      setLoadingSession(false)
-      return
-    }
+    // Always load session data when component mounts or character changes
+    // The key={activeCharacter} on StockListView ensures this runs on character switch
 
     const controller = new AbortController()
     const signal = controller.signal
@@ -277,7 +275,6 @@ function StockListView({
         if (user && user.id && activeCharacter) {
           const cachedData = await screeningCache.getResults(user.id, activeCharacter)
           if (cachedData) {
-            console.log('[App] Loaded screening results from cache')
             setStocks(cachedData.results)
             setAllStocks(cachedData.results)
             setTotalPages(cachedData.total_pages || 1)
@@ -341,7 +338,7 @@ function StockListView({
 
       // Check if we have new algorithm statuses or old ones
       const hasNewStatuses = counts['STRONG_BUY'] !== undefined || counts['BUY'] !== undefined ||
-        counts['HOLD'] !== undefined || counts['AVOID'] !== undefined
+        counts['HOLD'] !== undefined || counts['CAUTION'] !== undefined || counts['AVOID'] !== undefined
 
       if (hasNewStatuses) {
         // New algorithm statuses
@@ -370,6 +367,29 @@ function StockListView({
 
     return () => controller.abort()
   }, [user, activeCharacter])
+
+  // Listen for character changes from Settings page
+  useEffect(() => {
+    const handleStorageChange = (e) => {
+      if (e.key === 'activeCharacter' && e.newValue !== activeCharacter) {
+        setActiveCharacter(e.newValue)
+      }
+    }
+
+    // Listen for storage events from other tabs/windows
+    window.addEventListener('storage', handleStorageChange)
+
+    // Also listen for custom event from same tab (Settings page)
+    const handleCustomCharacterChange = (e) => {
+      setActiveCharacter(e.detail.character)
+    }
+    window.addEventListener('characterChanged', handleCustomCharacterChange)
+
+    return () => {
+      window.removeEventListener('storage', handleStorageChange)
+      window.removeEventListener('characterChanged', handleCustomCharacterChange)
+    }
+  }, [activeCharacter])
 
   // State for backend pagination
   const [totalPages, setTotalPages] = useState(1)
@@ -985,28 +1005,6 @@ function StockListView({
       result = result.filter(s => (s.market_cap / 1e9) <= advancedFilters.marketCap.max)
     }
 
-    // Sorting
-    result.sort((a, b) => {
-      let valA = a[sortBy]
-      let valB = b[sortBy]
-
-      // Null handling
-      if (valA == null && valB == null) return 0
-      if (valA == null) return 1
-      if (valB == null) return -1
-
-      if (sortBy === 'overall_score') {
-        valA = a.evaluation?.score || a.overall_score || 0
-        valB = b.evaluation?.score || b.overall_score || 0
-      } else if (typeof valA === 'string') {
-        valA = valA.toLowerCase()
-        valB = (valB || '').toLowerCase()
-      }
-
-      if (valA < valB) return sortDir === 'asc' ? -1 : 1
-      if (valA > valB) return sortDir === 'asc' ? 1 : -1
-      return 0
-    })
 
     return result
   }, [stocks, filter, searchQuery, sortBy, sortDir, advancedFilters, watchlist])
@@ -1227,6 +1225,18 @@ function App() {
   const [showAdvancedFilters, setShowAdvancedFilters] = useState(false)
   const [activeCharacter, setActiveCharacter] = useState(() => localStorage.getItem('activeCharacter') || 'lynch')
 
+  // Sync activeCharacter from localStorage on navigation (e.g., coming back from Settings)
+  useEffect(() => {
+    const storedCharacter = localStorage.getItem('activeCharacter')
+    if (storedCharacter && storedCharacter !== activeCharacter) {
+      // Clear stocks immediately to prevent flash of old character's data
+      setStocks([])
+      setAllStocks([])
+      setSummary(null)
+      setActiveCharacter(storedCharacter)
+    }
+  }, [location.pathname, activeCharacter, setStocks, setAllStocks, setSummary])
+
   // Persist activeCharacter
   useEffect(() => {
     localStorage.setItem('activeCharacter', activeCharacter)
@@ -1346,6 +1356,7 @@ function App() {
       }>
         <Route path="/" element={
           <StockListView
+            key={activeCharacter} // Force remount when character changes
             stocks={stocks}
             setStocks={setStocks}
             allStocks={allStocks}

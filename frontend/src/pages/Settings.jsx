@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react"
 import { useTheme } from "@/components/theme-provider"
+import { useAuth } from "@/context/AuthContext"
 import { ModeToggle } from "@/components/mode-toggle"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -12,9 +13,11 @@ import { screeningCache } from "@/utils/cache"
 export default function Settings() {
     const [activeTab, setActiveTab] = useState("appearance")
     const { theme, setTheme } = useTheme()
+    const { user } = useAuth()
     const [characters, setCharacters] = useState([])
     const [activeCharacter, setActiveCharacter] = useState("lynch")
     const [characterLoading, setCharacterLoading] = useState(true)
+    const [switchingCharacter, setSwitchingCharacter] = useState(false)
 
     useEffect(() => {
         // Fetch available characters and current setting
@@ -32,23 +35,55 @@ export default function Settings() {
     }, [])
 
     const handleCharacterChange = async (characterId) => {
+        if (switchingCharacter) return // Prevent double-clicks
+
+        setSwitchingCharacter(true)
         try {
+            // 1. Save character preference to database
             const response = await fetch("/api/settings/character", {
                 method: "PUT",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ character_id: characterId }),
                 credentials: 'include'
             })
-            if (response.ok) {
-                setActiveCharacter(characterId)
-                // Update localStorage so App.jsx picks up the change
-                localStorage.setItem('activeCharacter', characterId)
-                // Clear the screening cache to force fresh data fetch for new character
-                await screeningCache.clear()
-                console.log('[Settings] Cleared screening cache after character switch to', characterId)
+
+            if (!response.ok) {
+                throw new Error('Failed to update character')
             }
+
+            // 2. Update local state
+            setActiveCharacter(characterId)
+
+            // 3. Update localStorage so App.jsx picks up the change
+            localStorage.setItem('activeCharacter', characterId)
+
+            // Dispatch custom event to notify App.jsx (storage event doesn't fire in same tab)
+            window.dispatchEvent(new CustomEvent('characterChanged', {
+                detail: { character: characterId }
+            }))
+
+            // 4. Clear the screening cache
+            await screeningCache.clear()
+
+            // 5. Prefetch fresh data for the new character
+            const dataResponse = await fetch(`/api/sessions/latest?limit=10000&character=${characterId}`, {
+                credentials: 'include'
+            })
+
+            if (dataResponse.ok) {
+                const sessionData = await dataResponse.json()
+
+                // 6. Cache the fresh data
+                if (user?.id) {
+                    await screeningCache.saveResults(user.id, characterId, sessionData)
+                }
+            }
+
         } catch (err) {
             console.error("Failed to update character:", err)
+            alert('Failed to switch character. Please try again.')
+        } finally {
+            setSwitchingCharacter(false)
         }
     }
 
@@ -155,7 +190,15 @@ export default function Settings() {
                                         Each character has a unique approach to evaluating stocks.
                                     </CardDescription>
                                 </CardHeader>
-                                <CardContent>
+                                <CardContent className="relative">
+                                    {switchingCharacter && (
+                                        <div className="absolute inset-0 bg-background/80 backdrop-blur-sm flex items-center justify-center z-10 rounded-lg">
+                                            <div className="flex flex-col items-center gap-2">
+                                                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+                                                <p className="text-sm text-muted-foreground">Switching character...</p>
+                                            </div>
+                                        </div>
+                                    )}
                                     {characterLoading ? (
                                         <div className="text-muted-foreground">Loading...</div>
                                     ) : (
@@ -163,10 +206,16 @@ export default function Settings() {
                                             value={activeCharacter}
                                             onValueChange={handleCharacterChange}
                                             className="gap-4"
+                                            disabled={switchingCharacter}
                                         >
                                             {characters.map((char) => (
                                                 <div key={char.id} className="flex items-start gap-3 space-x-0">
-                                                    <RadioGroupItem value={char.id} id={char.id} className="mt-1" />
+                                                    <RadioGroupItem
+                                                        value={char.id}
+                                                        id={char.id}
+                                                        className="mt-1"
+                                                        disabled={switchingCharacter}
+                                                    />
                                                     <div className="flex flex-col">
                                                         <Label htmlFor={char.id} className="font-medium cursor-pointer">
                                                             {char.name}
