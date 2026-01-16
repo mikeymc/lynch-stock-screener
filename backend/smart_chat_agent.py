@@ -364,7 +364,7 @@ class SmartChatAgent:
                         if is_overloaded and retry_count < max_retries:
                             sleep_time = base_delay * (2 ** retry_count)
                             # Yield a thinking status so the user knows we are retrying
-                            yield {"type": "thinking", "data": f"Model ({model}) overloaded, retrying in {sleep_time}s..."}
+                            yield {"type": "thinking", "data": f"Model overloaded, retrying in {sleep_time}s..."}
                             logger.warning(f"Gemini API ({model}) overloaded. Retrying in {sleep_time}s (attempt {retry_count + 1}/{max_retries})")
                             time.sleep(sleep_time)
                             retry_count += 1
