@@ -395,15 +395,6 @@ function StockListView({
   const [totalPages, setTotalPages] = useState(1)
   const [totalCount, setTotalCount] = useState(0)
 
-  // Fetch stocks from backend with all parameters
-  // Fetch stocks from backend - disable for client side optimization or strictly for initial search if needed
-  // We repurpose this to strictly handle external triggers if necessary, but mostly we rely on client state
-  const fetchStocks = useCallback((options = {}) => {
-    // No-op: Data is loaded once and filtered client-side
-    // We keep the function signature to avoid breaking dependencies
-    console.log('Client-side interaction: fetchStocks skipped')
-  }, [])
-
 
   // Watchlist fetching logic
   // Watchlist fetching logic
@@ -478,10 +469,7 @@ function StockListView({
       if (prevFilter === 'watchlist' || (stocks.length === 0 && allStocks.length > 0)) {
         setStocks(allStocks)
       }
-      // We don't fetch from backend because we have all stocks client-side (unless allStocks is empty)
-      if (allStocks.length === 0) {
-        fetchStocks({ page: 1, status: filter !== 'all' ? filter : null })
-      }
+      // All stocks are loaded client-side, no need to fetch
 
       setCurrentPage(1)
     }
@@ -489,7 +477,7 @@ function StockListView({
     prevFilterRef.current = filter
 
     return () => controller.abort()
-  }, [filter, watchlist, algorithm, fetchStocks, allStocks])
+  }, [filter, watchlist, algorithm, allStocks])
 
   // Debounced search handler - calls backend API after delay
   // Client-side search handler
@@ -1156,7 +1144,6 @@ function StockListView({
                 onClick={() => {
                   const newPage = Math.max(1, currentPage - 1)
                   setCurrentPage(newPage)
-                  fetchStocks({ page: newPage })
                 }}
                 disabled={currentPage === 1 || searchLoading}
                 className="px-4 py-2 text-sm font-medium border rounded-md bg-background hover:bg-accent disabled:opacity-50 disabled:cursor-not-allowed"
@@ -1172,7 +1159,6 @@ function StockListView({
                 onClick={() => {
                   const newPage = Math.min(totalPages, currentPage + 1)
                   setCurrentPage(newPage)
-                  fetchStocks({ page: newPage })
                 }}
                 disabled={currentPage === totalPages || searchLoading}
                 className="px-4 py-2 text-sm font-medium border rounded-md bg-background hover:bg-accent disabled:opacity-50 disabled:cursor-not-allowed"
