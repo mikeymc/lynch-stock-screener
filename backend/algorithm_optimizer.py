@@ -302,163 +302,182 @@ class AlgorithmOptimizer:
 
     def _enforce_threshold_constraints(self, config: Dict[str, float], character_id: str) -> Dict[str, float]:
         """
-        Enforce ordering constraints on thresholds to ensure they make real-world sense.
+        Enforce ordering constraints on thresholds with MINIMUM SEPERATION using a
+        'Sliding Window' / 'Rigid Body' strategy.
 
-        Constraints:
-        - Revenue/Income growth (both): Excellent > Good > Fair (higher is better)
-        - Institutional ownership (Lynch): min < max
-        - PEG, Debt/Equity (Lynch): Excellent < Good < Fair (lower is better)
-        - Debt/Earnings (Buffett): Excellent < Good < Fair (lower is better)
-        - ROE, Gross Margin (Buffett): Excellent > Good > Fair (higher is better)
+        This ensures that:
+        1. Excellent/Good/Fair are distinct by at least 'min_sep'.
+        2. The values respect the hierarchy (e.g. Exc > Good > Fair).
+        3. The entire chain stays within the global (min, max) bounds.
         """
         new_config = config.copy()
 
-        # Helper to sort three values and assign to keys
-        def sort_ascending(key_excellent: str, key_good: str, key_fair: str):
-            """For 'lower is better' metrics: excellent < good < fair"""
-            vals = [new_config.get(key_excellent), new_config.get(key_good), new_config.get(key_fair)]
-            if all(v is not None for v in vals):
-                sorted_vals = sorted(vals)
-                new_config[key_excellent] = sorted_vals[0]
-                new_config[key_good] = sorted_vals[1]
-                new_config[key_fair] = sorted_vals[2]
+        # Define Bound Rules per Metric Category
+        # (min_bound, max_bound, min_separation)
+        # These MUST match what is used in _bayesian_optimize bounds definition
+        BOUNDS = {
+             # Lynch
+            'peg': (0.5, 3.0, 0.4), # sep 0.4
+            'debt': (0.0, 2.5, 0.4), # Debt/Equity, sep 0.4
+            'inst_own': (0.05, 0.90, 0.3), # sep 0.3 between min/max
+            
+            # Buffett
+            'roe': (5.0, 40.0, 5.0), # sep 5.0
+            'debt_to_earnings': (0.0, 10.0, 2.0), # sep 2.0
+            'gross_margin': (10.0, 80.0, 10.0), # sep 10.0
+            
+            # Shared
+            'growth': (2.0, 35.0, 5.0) # sep 5.0
+        }
 
-        def sort_descending(key_excellent: str, key_good: str, key_fair: str):
-            """For 'higher is better' metrics: excellent > good > fair"""
-            vals = [new_config.get(key_excellent), new_config.get(key_good), new_config.get(key_fair)]
-            if all(v is not None for v in vals):
-                sorted_vals = sorted(vals, reverse=True)
-                new_config[key_excellent] = sorted_vals[0]
-                new_config[key_good] = sorted_vals[1]
-                new_config[key_fair] = sorted_vals[2]
+        def get_bounds_for_key(key):
+            if 'peg' in key: return BOUNDS['peg']
+            if 'debt_to_earnings' in key: return BOUNDS['debt_to_earnings']
+            if 'debt' in key: return BOUNDS['debt'] # strict prefix match matters here
+            if 'roe' in key: return BOUNDS['roe']
+            if 'gross_margin' in key: return BOUNDS['gross_margin']
+            if 'growth' in key: return BOUNDS['growth']
+            if 'inst_own' in key: return BOUNDS['inst_own']
+            return (0.0, 100.0, 1.0) # Fallback
 
-        # Revenue and Income growth: Excellent > Good > Fair (both characters)
-        sort_descending('revenue_growth_excellent', 'revenue_growth_good', 'revenue_growth_fair')
-        sort_descending('income_growth_excellent', 'income_growth_good', 'income_growth_fair')
+        def enforce_ascending(k_exc, k_good, k_fair):
+            """Lower is Better (e.g. PEG, Debt)"""
+            min_b, max_b, sep = get_bounds_for_key(k_exc)
+            
+            # Check for missing keys first
+            if k_exc not in new_config or k_good not in new_config or k_fair not in new_config:
+                return
+
+            # 1. Enforce Separation (Rigid Push)
+            # Excellent < Good < Fair
+            # Force Good to be at least Exc + sep
+            if new_config[k_good] < new_config[k_exc] + sep:
+                new_config[k_good] = new_config[k_exc] + sep
+            
+            # Force Fair to be at least Good + sep
+            if new_config[k_fair] < new_config[k_good] + sep:
+                new_config[k_fair] = new_config[k_good] + sep
+                
+            # 2. Check Bounds violation (Sliding Window)
+            # If Fair pushed above max, slide everything down
+            excess_high = new_config[k_fair] - max_b
+            if excess_high > 0:
+                new_config[k_fair] -= excess_high
+                new_config[k_good] -= excess_high
+                new_config[k_exc] -= excess_high
+                
+            # If Excellent pushed below min (rare but possible via optimizer), slide up
+            excess_low = min_b - new_config[k_exc]
+            if excess_low > 0:
+                new_config[k_exc] += excess_low
+                new_config[k_good] += excess_low
+                new_config[k_fair] += excess_low
+
+        def enforce_descending(k_exc, k_good, k_fair):
+            """Higher is Better (e.g. Margins, Growth)"""
+            min_b, max_b, sep = get_bounds_for_key(k_exc)
+
+            # Check for missing keys first
+            if k_exc not in new_config or k_good not in new_config or k_fair not in new_config:
+                return
+            
+            # 1. Enforce Separation
+            # Excellent > Good > Fair
+            # Force Good to be at most Exc - sep
+            if new_config[k_good] > new_config[k_exc] - sep:
+                new_config[k_good] = new_config[k_exc] - sep
+                
+            # Force Fair to be at most Good - sep
+            if new_config[k_fair] > new_config[k_good] - sep:
+                new_config[k_fair] = new_config[k_good] - sep
+                
+            # 2. Check Bounds
+            # If Fair pushed below min, slide everything up
+            excess_low = min_b - new_config[k_fair]
+            if excess_low > 0:
+                new_config[k_fair] += excess_low
+                new_config[k_good] += excess_low
+                new_config[k_exc] += excess_low
+                
+            # If Excellent pushed above max, slide everything down
+            excess_high = new_config[k_exc] - max_b
+            if excess_high > 0:
+                new_config[k_exc] -= excess_high
+                new_config[k_good] -= excess_high
+                new_config[k_fair] -= excess_high
+                
+        # Apply to all groups
+        enforce_descending('revenue_growth_excellent', 'revenue_growth_good', 'revenue_growth_fair')
+        enforce_descending('income_growth_excellent', 'income_growth_good', 'income_growth_fair')
 
         if character_id == 'lynch':
-            # PEG: Excellent < Good < Fair (lower is better)
-            sort_ascending('peg_excellent', 'peg_good', 'peg_fair')
-            # Debt/Equity: Excellent < Good < Fair (lower is better)
-            sort_ascending('debt_excellent', 'debt_good', 'debt_moderate')
-            # Institutional ownership: min < max
-            inst_min = new_config.get('inst_own_min')
-            inst_max = new_config.get('inst_own_max')
-            if inst_min is not None and inst_max is not None and inst_min > inst_max:
-                new_config['inst_own_min'] = inst_max
-                new_config['inst_own_max'] = inst_min
+            enforce_ascending('peg_excellent', 'peg_good', 'peg_fair')
+            enforce_ascending('debt_excellent', 'debt_good', 'debt_moderate')
+            
+            # Inst Own: min < max
+            k_min, k_max = 'inst_own_min', 'inst_own_max'
+            min_b, max_b, sep = get_bounds_for_key(k_min)
+            
+            # Force Max > Min + sep
+            if new_config[k_max] < new_config[k_min] + sep:
+                new_config[k_max] = new_config[k_min] + sep
+                
+            # Check Max bound
+            if new_config[k_max] > max_b:
+                diff = new_config[k_max] - max_b
+                new_config[k_max] -= diff
+                new_config[k_min] -= diff
+                
+            # Check Min bound
+            if new_config[k_min] < min_b:
+                diff = min_b - new_config[k_min]
+                new_config[k_min] += diff
+                new_config[k_max] += diff
 
         elif character_id == 'buffett':
-            # Debt/Earnings: Excellent < Good < Fair (lower is better)
-            sort_ascending('debt_to_earnings_excellent', 'debt_to_earnings_good', 'debt_to_earnings_fair')
-            # ROE: Excellent > Good > Fair (higher is better)
-            sort_descending('roe_excellent', 'roe_good', 'roe_fair')
-            # Gross Margin: Excellent > Good > Fair (higher is better)
-            sort_descending('gross_margin_excellent', 'gross_margin_good', 'gross_margin_fair')
+            enforce_ascending('debt_to_earnings_excellent', 'debt_to_earnings_good', 'debt_to_earnings_fair')
+            enforce_descending('roe_excellent', 'roe_good', 'roe_fair')
+            enforce_descending('gross_margin_excellent', 'gross_margin_good', 'gross_margin_fair')
 
         return new_config
-
-    def _gradient_descent_optimize(self, results: List[Dict[str, Any]], 
-                                   initial_config: Dict[str, float], character_id: str,
-                                   weight_keys: List[str], max_iterations: int, learning_rate: float,
-                                   progress_callback=None) -> Tuple[Dict[str, float], List[Dict[str, Any]]]:
-        config = initial_config.copy()
-        history = []
-        
-        best_config = config.copy()
-        best_correlation = self._calculate_correlation_with_config(results, config, character_id)
-        
-        # Report initial baseline
-        if progress_callback:
-            progress_callback({
-                'iteration': 0,
-                'correlation': best_correlation,
-                'config': best_config.copy(),
-                'best_correlation': best_correlation,
-                'best_config': best_config.copy()
-            })
-        
-        for iteration in range(max_iterations):
-            gradients = {}
-            epsilon = 0.01
-            
-            for key in weight_keys:
-                test_config = config.copy()
-                test_config[key] += epsilon
-                test_config = self._normalize_weights(test_config, weight_keys)
-                
-                correlation_plus = self._calculate_correlation_with_config(results, test_config, character_id)
-                gradients[key] = (correlation_plus - best_correlation) / epsilon
-            
-            # Apply gradients
-            changed = False
-            for key, grad in gradients.items():
-                if abs(grad) > 0.0001:
-                    config[key] += grad * learning_rate
-                    changed = True
-            
-            config = self._normalize_weights(config, weight_keys)
-            
-            new_correlation = self._calculate_correlation_with_config(results, config, character_id)
-            
-            if new_correlation > best_correlation:
-                best_correlation = new_correlation
-                best_config = config.copy()
-            
-            history.append({
-                'iteration': iteration,
-                'correlation': new_correlation,
-                'config': config.copy()
-            })
-            
-            if progress_callback:
-                progress_callback({
-                    'iteration': iteration + 1,
-                    'correlation': new_correlation,
-                    'config': config.copy(),
-                    'best_correlation': best_correlation,
-                    'best_config': best_config.copy()
-                })
-            
-            if not changed:
-                break
-                
-        return best_config, history
 
     def _bayesian_optimize(self, results: List[Dict[str, Any]], character_id: str,
                           initial_config: Dict[str, float], weight_keys: List[str], threshold_keys: List[str],
                           max_iterations: int, progress_callback=None) -> Tuple[Dict[str, float], List[Dict[str, Any]]]:
         """
         Bayesian optimization using Gaussian Processes
-        Optimizes both WEIGHTS and THRESHOLDS
+        Optimizes both WEIGHTS and THRESHOLDS using explicit bounds.
         """
         
-        # Define search space
+        # Define search space with realistic bounds
         dimensions = []
         param_names = []
         
-        # Weights (0.0 to 1.0)
+        # Weights (0.05 to 0.95 to avoid zeroing out completely)
         for key in weight_keys:
-            dimensions.append(Real(0.01, 0.99, name=key))
+            dimensions.append(Real(0.05, 0.95, name=key))
             param_names.append(key)
             
-        # Thresholds (Variable ranges)
+        # Thresholds (Specific Realistic Ranges)
         for key in threshold_keys:
-            # Dynamic ranges based on parameter type
             if 'peg' in key:
                 dimensions.append(Real(0.5, 3.0, name=key))
             elif 'debt' in key and 'earnings' not in key: # Debt/Equity
-                dimensions.append(Real(0.1, 3.0, name=key))
+                dimensions.append(Real(0.0, 2.5, name=key))
             elif 'debt_to_earnings' in key:
-                dimensions.append(Real(0.5, 10.0, name=key))
+                dimensions.append(Real(0.0, 10.0, name=key))
             elif 'roe' in key:
-                dimensions.append(Real(5.0, 30.0, name=key))
-            elif 'own' in key: # Ownership
-                dimensions.append(Real(0.05, 0.9, name=key))
-            elif 'growth' in key:
-                dimensions.append(Real(2.0, 30.0, name=key))
+                dimensions.append(Real(5.0, 40.0, name=key))
+            elif 'inst_own_min' in key:
+                dimensions.append(Real(0.05, 0.40, name=key))
+            elif 'inst_own_max' in key:
+                dimensions.append(Real(0.40, 0.90, name=key)) # Distinct from min
+            elif 'growth' in key: 
+                dimensions.append(Real(2.0, 35.0, name=key))
+            elif 'gross_margin' in key:
+                dimensions.append(Real(10.0, 80.0, name=key)) # Capped at 80%
             else:
-                 dimensions.append(Real(0.0, 100.0, name=key))
+                 dimensions.append(Real(0.0, 100.0, name=key)) # Fallback
             param_names.append(key)
 
         history = []
