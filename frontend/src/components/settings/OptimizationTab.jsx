@@ -5,7 +5,7 @@ import { useState, useEffect } from 'react'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
 import { Label } from "@/components/ui/label"
 import { Sparkles, Play, Save, Loader2, TrendingUp, CheckCircle2, XCircle, Target, BarChart3, Info, AlertCircle } from 'lucide-react'
@@ -519,15 +519,9 @@ export default function OptimizationTab() {
                             Configure scoring weights and thresholds
                         </p>
                     </div>
-                    <Select value={activeCharacter} onValueChange={handleCharacterChange}>
-                        <SelectTrigger className="w-[180px]">
-                            <SelectValue placeholder="Select Character" />
-                        </SelectTrigger>
-                        <SelectContent>
-                            <SelectItem value="lynch">Peter Lynch</SelectItem>
-                            <SelectItem value="buffett">Warren Buffett</SelectItem>
-                        </SelectContent>
-                    </Select>
+                    <div className="text-sm font-medium text-muted-foreground">
+                        {CHARACTER_SLIDER_CONFIGS[activeCharacter]?.displayName || 'Peter Lynch'}
+                    </div>
                 </div>
             </div>
             <div className="border-t" />
