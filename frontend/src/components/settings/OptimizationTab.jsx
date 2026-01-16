@@ -703,7 +703,7 @@ export default function OptimizationTab() {
                                             <Loader2 className="h-3 w-3 animate-spin" />
                                             {optimizationProgress?.stage === 'optimizing' ? `Optimizing... Iteration ${optimizationProgress.progress}/${optimizationProgress.total}`
                                                 : optimizationProgress?.stage === 'clearing_cache' ? 'Clearing cache...'
-                                                    : optimizationProgress?.stage === 'revalidating' ? 'Finalizing validation...'
+                                                    : optimizationProgress?.stage === 'revalidating' ? 'Backtesting against S&P 500...'
                                                         : 'Starting...'}
                                         </span>
                                         <span className="font-bold text-green-600">
