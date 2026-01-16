@@ -7,6 +7,7 @@ import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
 import { Label } from "@/components/ui/label"
 import { cn } from "@/lib/utils"
 import OptimizationTab from "@/components/settings/OptimizationTab"
+import { screeningCache } from "@/utils/cache"
 
 export default function Settings() {
     const [activeTab, setActiveTab] = useState("appearance")
@@ -40,6 +41,11 @@ export default function Settings() {
             })
             if (response.ok) {
                 setActiveCharacter(characterId)
+                // Update localStorage so App.jsx picks up the change
+                localStorage.setItem('activeCharacter', characterId)
+                // Clear the screening cache to force fresh data fetch for new character
+                await screeningCache.clear()
+                console.log('[Settings] Cleared screening cache after character switch to', characterId)
             }
         } catch (err) {
             console.error("Failed to update character:", err)

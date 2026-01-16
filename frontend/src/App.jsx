@@ -291,7 +291,7 @@ function StockListView({
           }
         }
 
-        const response = await fetch(`${API_BASE}/sessions/latest?limit=10000`, { signal })
+        const response = await fetch(`${API_BASE}/sessions/latest?limit=10000&character=${activeCharacter}`, { signal })
 
         if (response.ok) {
           const sessionData = await response.json()
@@ -302,10 +302,6 @@ function StockListView({
           setTotalPages(sessionData.total_pages || 1)
           setTotalCount(sessionData.total_count || 0)
 
-          // Capture active character from API
-          if (sessionData.active_character) {
-            setActiveCharacter(sessionData.active_character)
-          }
 
           updateSummaryFromData(sessionData)
 

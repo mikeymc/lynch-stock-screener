@@ -1543,7 +1543,8 @@ def get_latest_session(user_id):
     status_filter = request.args.get('status', None)
 
     # Determine active character for scoring
-    character_id = db.get_user_character(user_id)
+    # Check query parameter first (for instant character switching), fallback to database
+    character_id = request.args.get('character', None) or db.get_user_character(user_id)
     character = get_character(character_id)
 
     # Check if US-only filter is enabled (default: True for production)
