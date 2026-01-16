@@ -4092,7 +4092,7 @@ class Database:
 
         cursor.execute("""
             INSERT INTO algorithm_configurations
-            (name, weight_peg, weight_consistency, weight_debt, weight_ownership, weight_roe, weight_debt_to_earnings,
+            (name, weight_peg, weight_consistency, weight_debt, weight_ownership, weight_roe, weight_debt_to_earnings, weight_gross_margin,
              peg_excellent, peg_good, peg_fair,
              debt_excellent, debt_good, debt_moderate,
              inst_own_min, inst_own_max,
@@ -4102,7 +4102,7 @@ class Database:
              debt_to_earnings_excellent, debt_to_earnings_good, debt_to_earnings_fair,
              gross_margin_excellent, gross_margin_good, gross_margin_fair,
              correlation_5yr, correlation_10yr, is_active, character, user_id)
-            VALUES (%s, %s, %s, %s, %s, %s, %s,
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s,
                     %s, %s, %s,
                     %s, %s, %s,
                     %s, %s,
@@ -4120,8 +4120,9 @@ class Database:
             get_val('weight_consistency', 0.25, ['lynch', 'buffett']), # Common
             get_val('weight_debt', 0.15, ['lynch']),
             get_val('weight_ownership', 0.10, ['lynch']),
-            get_val('weight_roe', 0.40, ['buffett']),
-            get_val('weight_debt_to_earnings', 0.30, ['buffett']),
+            get_val('weight_roe', 0.35, ['buffett']),
+            get_val('weight_debt_to_earnings', 0.20, ['buffett']),
+            get_val('weight_gross_margin', 0.20, ['buffett']),
             
             # Lynch Thresholds
             get_val('peg_excellent', 1.0, ['lynch']),

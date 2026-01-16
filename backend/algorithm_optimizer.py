@@ -589,9 +589,10 @@ class AlgorithmOptimizer:
             'peg_excellent', 'peg_good', 'peg_fair',
             'debt_excellent', 'debt_good', 'debt_moderate',
             'inst_own_min', 'inst_own_max',
-            'weight_roe', 'weight_debt_to_earnings',
+            'weight_roe', 'weight_debt_to_earnings', 'weight_gross_margin',
             'roe_excellent', 'roe_good', 'roe_fair',
-            'debt_to_earnings_excellent', 'debt_to_earnings_good', 'debt_to_earnings_fair'
+            'debt_to_earnings_excellent', 'debt_to_earnings_good', 'debt_to_earnings_fair',
+            'gross_margin_excellent', 'gross_margin_good', 'gross_margin_fair'
         ]
         
         filtered_config = {k: v for k, v in config.items() if k in valid_keys}

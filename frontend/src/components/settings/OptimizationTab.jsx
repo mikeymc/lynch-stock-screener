@@ -71,9 +71,10 @@ const CHARACTER_SLIDER_CONFIGS = {
     buffett: {
         displayName: 'Warren Buffett',
         weights: [
-            { key: 'weight_roe', label: 'ROE Score', default: 0.40 },
-            { key: 'weight_consistency', label: 'Consistency', default: 0.30 },
-            { key: 'weight_debt_to_earnings', label: 'Debt-to-Earnings', default: 0.30 },
+            { key: 'weight_roe', label: 'ROE Score', default: 0.35 },
+            { key: 'weight_consistency', label: 'Consistency', default: 0.25 },
+            { key: 'weight_debt_to_earnings', label: 'Debt-to-Earnings', default: 0.20 },
+            { key: 'weight_gross_margin', label: 'Gross Margin', default: 0.20 },
         ],
         thresholdGroups: [
             {

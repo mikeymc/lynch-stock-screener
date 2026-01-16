@@ -90,8 +90,8 @@ class EarningsAnalyzer:
     def calculate_growth_consistency(self, values: List[float]) -> Optional[float]:
         if len(values) < 2:
             return None
-        # Check if the first value is None or <= 0, as it's used as a denominator in growth rate calculation
-        if values[0] is None or values[0] <= 0:
+        # Check if the first value is None (negative values are allowed for turnaround stories)
+        if values[0] is None:
             return None
 
         growth_rates = []
