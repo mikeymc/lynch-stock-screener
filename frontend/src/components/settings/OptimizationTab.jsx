@@ -695,6 +695,31 @@ export default function OptimizationTab() {
                                 </div>
                             </div>
 
+                            {/* Backtest Timeframe Selector */}
+                            <div className="pb-6 border-b">
+                                <Label className="mb-3 block">Backtest Timeframe</Label>
+                                <RadioGroup
+                                    value={yearsBack}
+                                    onValueChange={setYearsBack}
+                                    className="grid grid-cols-2 gap-4"
+                                >
+                                    <Label
+                                        htmlFor="5y-auto"
+                                        className="relative flex flex-col items-center justify-between rounded-md border-2 border-muted bg-popover p-4 hover:bg-accent hover:text-accent-foreground cursor-pointer has-[[data-state=checked]]:border-primary"
+                                    >
+                                        <RadioGroupItem value="5" id="5y-auto" className="absolute inset-0 opacity-0" />
+                                        <span className="font-semibold">5 Years</span>
+                                    </Label>
+                                    <Label
+                                        htmlFor="10y-auto"
+                                        className="relative flex flex-col items-center justify-between rounded-md border-2 border-muted bg-popover p-4 hover:bg-accent hover:text-accent-foreground cursor-pointer has-[[data-state=checked]]:border-primary"
+                                    >
+                                        <RadioGroupItem value="10" id="10y-auto" className="absolute inset-0 opacity-0" />
+                                        <span className="font-semibold">10 Years</span>
+                                    </Label>
+                                </RadioGroup>
+                            </div>
+
                             {/* Live Progress Bar */}
                             {optimizationRunning && optimizationProgress && (
                                 <div className="space-y-2">
@@ -784,31 +809,9 @@ export default function OptimizationTab() {
                                 </div>
                             )}
 
-                            {/* Timeframe Selector & Actions */}
-                            <div className="space-y-4 pt-6 border-t">
-                                <Label>Backtest Timeframe</Label>
-                                <RadioGroup
-                                    value={yearsBack}
-                                    onValueChange={setYearsBack}
-                                    className="grid grid-cols-2 gap-4"
-                                >
-                                    <Label
-                                        htmlFor="5y-auto"
-                                        className="relative flex flex-col items-center justify-between rounded-md border-2 border-muted bg-popover p-4 hover:bg-accent hover:text-accent-foreground cursor-pointer has-[[data-state=checked]]:border-primary"
-                                    >
-                                        <RadioGroupItem value="5" id="5y-auto" className="absolute inset-0 opacity-0" />
-                                        <span className="font-semibold">5 Years</span>
-                                    </Label>
-                                    <Label
-                                        htmlFor="10y-auto"
-                                        className="relative flex flex-col items-center justify-between rounded-md border-2 border-muted bg-popover p-4 hover:bg-accent hover:text-accent-foreground cursor-pointer has-[[data-state=checked]]:border-primary"
-                                    >
-                                        <RadioGroupItem value="10" id="10y-auto" className="absolute inset-0 opacity-0" />
-                                        <span className="font-semibold">10 Years</span>
-                                    </Label>
-                                </RadioGroup>
-
-                                {optimizationResult && !optimizationResult.error && (
+                            {/* Actions */}
+                            {optimizationResult && !optimizationResult.error && (
+                                <div className="space-y-4 pt-6 border-t">
                                     <div className="flex gap-4 pt-2">
                                         <Button
                                             onClick={() => {
@@ -844,8 +847,8 @@ export default function OptimizationTab() {
                                             )}
                                         </Button>
                                     </div>
-                                )}
-                            </div>
+                                </div>
+                            )}
                         </CardContent>
                     </Card>
                 </TabsContent>
