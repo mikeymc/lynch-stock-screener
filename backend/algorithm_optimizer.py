@@ -246,32 +246,30 @@ class AlgorithmOptimizer:
         )
         consistency_score = (revenue_score + income_score) / 2
         
-        roe_score = 0
-        if roe is not None:
-            if roe >= (config.get('roe_excellent') if config.get('roe_excellent') is not None else 20.0): roe_score = 100
-            elif roe >= (config.get('roe_good') if config.get('roe_good') is not None else 15.0): roe_score = 75
-            elif roe >= (config.get('roe_fair') if config.get('roe_fair') is not None else 10.0): roe_score = 50
-            else: roe_score = 25
-            
-        # Debt/Earnings Score (Lower is better)
-        de_score = 0
-        if debt_to_earnings is not None:
-            if debt_to_earnings <= (config.get('debt_to_earnings_excellent') if config.get('debt_to_earnings_excellent') is not None else 2.0): de_score = 100
-            elif debt_to_earnings <= (config.get('debt_to_earnings_good') if config.get('debt_to_earnings_good') is not None else 4.0): de_score = 75
-            elif debt_to_earnings <= (config.get('debt_to_earnings_fair') if config.get('debt_to_earnings_fair') is not None else 7.0): de_score = 50
-            else: de_score = 25
-        else:
-             # Penalize missing debt/earnings data 
-             de_score = 0
-        
-        # Gross Margin Score (Higher is better)
-        gm_score = 0
+        # ROE Score (Higher is better) - uses interpolation to match vectorized
+        roe_score = self._calculate_higher_is_better_score(
+            roe,
+            config.get('roe_excellent') if config.get('roe_excellent') is not None else 20.0,
+            config.get('roe_good') if config.get('roe_good') is not None else 15.0,
+            config.get('roe_fair') if config.get('roe_fair') is not None else 10.0
+        )
+
+        # Debt/Earnings Score (Lower is better) - uses interpolation to match vectorized
+        de_score = self._calculate_lower_is_better_score(
+            debt_to_earnings,
+            config.get('debt_to_earnings_excellent') if config.get('debt_to_earnings_excellent') is not None else 2.0,
+            config.get('debt_to_earnings_good') if config.get('debt_to_earnings_good') is not None else 4.0,
+            config.get('debt_to_earnings_fair') if config.get('debt_to_earnings_fair') is not None else 7.0
+        )
+
+        # Gross Margin Score (Higher is better) - uses interpolation to match vectorized
         gm = to_float(result.get('gross_margin'))
-        if gm is not None:
-            if gm >= (config.get('gross_margin_excellent') if config.get('gross_margin_excellent') is not None else 50.0): gm_score = 100
-            elif gm >= (config.get('gross_margin_good') if config.get('gross_margin_good') is not None else 40.0): gm_score = 75
-            elif gm >= (config.get('gross_margin_fair') if config.get('gross_margin_fair') is not None else 30.0): gm_score = 50
-            else: gm_score = 25
+        gm_score = self._calculate_higher_is_better_score(
+            gm,
+            config.get('gross_margin_excellent') if config.get('gross_margin_excellent') is not None else 50.0,
+            config.get('gross_margin_good') if config.get('gross_margin_good') is not None else 40.0,
+            config.get('gross_margin_fair') if config.get('gross_margin_fair') is not None else 30.0
+        )
 
         overall_score = (
             (config.get('weight_roe') if config.get('weight_roe') is not None else 0.35) * roe_score +
@@ -563,7 +561,8 @@ class AlgorithmOptimizer:
         return 25
 
     def _calculate_debt_score_with_thresholds(self, debt_ratio, excellent, good, moderate):
-        if debt_ratio is None: return 50 # Neutral if unknown
+        if debt_ratio is None:
+            return 100.0  # No debt is great
         
         # Safety defaults
         excellent = excellent if excellent is not None else 0.5
@@ -576,29 +575,112 @@ class AlgorithmOptimizer:
         return 25
 
     def _calculate_ownership_score_with_thresholds(self, ownership, minimum, maximum):
-        if ownership is None: return 50
-        
+        """
+        Institutional ownership score (0-100).
+        Sweet spot (min-max): 100
+        Under-owned (< min): 50-100 (interpolated)
+        Over-owned (> max): 0-50 (interpolated down to 0 at 100% ownership)
+        """
+        if ownership is None:
+            return 75.0  # Neutral
+
         # Safety defaults
         minimum = minimum if minimum is not None else 0.20
         maximum = maximum if maximum is not None else 0.60
-        
-        if ownership < minimum: return 25 # Too low (unnoticed)
-        if ownership > maximum: return 25 # Too high (overcrowded)
-        return 100 # Sweet spot
+
+        if minimum <= ownership <= maximum:
+            return 100.0  # Sweet spot
+        elif ownership < minimum:
+            # Under-owned: 50-100 interpolated
+            return 50.0 + (ownership / minimum) * 50.0 if minimum > 0 else 100.0
+        else:
+            # Over-owned: 0-50 interpolated (dips to 0 at 100% ownership)
+            range_size = 1.0 - maximum
+            if range_size > 0:
+                position = (1.0 - ownership) / range_size
+                return max(0.0, 50.0 * position)
+            return 0.0
 
     def _calculate_growth_score_with_thresholds(self, cagr, excellent, good, fair):
-        if cagr is None: return 0
-        
-        # Safety defaults
-        excellent = excellent if excellent is not None else 15.0
-        good = good if good is not None else 10.0
-        fair = fair if fair is not None else 5.0
-        
-        if cagr >= excellent: return 100
-        if cagr >= good: return 75
-        if cagr >= fair: return 50
-        return 25
-    
+        """Growth score using interpolation (higher is better)."""
+        return self._calculate_higher_is_better_score(cagr, excellent, good, fair)
+
+    def _calculate_higher_is_better_score(self, value, excellent, good, fair):
+        """
+        Score for metrics where higher is better (ROE, growth, gross margin).
+        Uses interpolation to match vectorized scoring.
+        """
+        if value is None:
+            return 50.0  # Neutral default
+
+        excellent = excellent if excellent is not None else 20.0
+        good = good if good is not None else 15.0
+        fair = fair if fair is not None else 10.0
+
+        if value >= excellent:
+            return 100.0
+        elif value >= good:
+            # 75-100 range (interpolated)
+            rng = excellent - good
+            if rng <= 0:
+                return 87.5
+            pos = (value - good) / rng
+            return 75.0 + (25.0 * pos)
+        elif value >= fair:
+            # 50-75 range (interpolated)
+            rng = good - fair
+            if rng <= 0:
+                return 62.5
+            pos = (value - fair) / rng
+            return 50.0 + (25.0 * pos)
+        elif value >= 0:
+            # 25-50 range (interpolated)
+            if fair <= 0:
+                return 37.5
+            pos = value / fair
+            return 25.0 + (25.0 * pos)
+        else:
+            return 25.0
+
+    def _calculate_lower_is_better_score(self, value, excellent, good, fair):
+        """
+        Score for metrics where lower is better (debt/earnings, PEG).
+        Uses interpolation to match vectorized scoring.
+        """
+        if value is None:
+            return 50.0  # Neutral default
+
+        excellent = excellent if excellent is not None else 2.0
+        good = good if good is not None else 4.0
+        fair = fair if fair is not None else 7.0
+
+        if value <= excellent:
+            return 100.0
+        elif value <= good:
+            # 75-100 range (interpolated)
+            rng = good - excellent
+            if rng <= 0:
+                return 87.5
+            pos = (good - value) / rng
+            return 75.0 + (25.0 * pos)
+        elif value <= fair:
+            # 50-75 range (interpolated)
+            rng = fair - good
+            if rng <= 0:
+                return 62.5
+            pos = (fair - value) / rng
+            return 50.0 + (25.0 * pos)
+        else:
+            # 0-50 range (cap at 2x fair)
+            max_poor = fair * 2
+            if value >= max_poor:
+                return 0.0
+            rng = max_poor - fair
+            if rng <= 0:
+                return 25.0
+            pos = (max_poor - value) / rng
+            return 50.0 * pos
+
     def save_config(self, config: Dict[str, Any], name: str = "Optimized Config", 
                    user_id: Optional[int] = None, character_id: str = 'lynch'):
         """Save configuration to database"""

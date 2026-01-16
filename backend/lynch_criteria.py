@@ -1091,32 +1091,32 @@ class LynchCriteria:
             return 25.0 * position
 
     def _calculate_ownership_score_with_thresholds(self, value: float, min_threshold: float, max_threshold: float) -> float:
-        """Calculate institutional ownership score using custom thresholds (for optimizer overrides)"""
+        """
+        Calculate institutional ownership score using custom thresholds.
+
+        Sweet spot (min-max): 100
+        Under-owned (< min): 50-100 (interpolated)
+        Over-owned (> max): 0-50 (interpolated down to 0 at 100% ownership)
+        """
         if value is None:
-            return 75.0
-            
+            return 75.0  # Neutral
+
         # Safety defaults
         min_threshold = min_threshold if min_threshold is not None else 0.20
         max_threshold = max_threshold if max_threshold is not None else 0.60
-        
-        ideal_center = (min_threshold + max_threshold) / 2
-        
+
         if min_threshold <= value <= max_threshold:
-            distance_from_center = abs(value - ideal_center)
-            max_distance = ideal_center - min_threshold
-            position = 1.0 - (distance_from_center / max_distance) if max_distance > 0 else 1.0
-            return 75.0 + (25.0 * position)
+            return 100.0  # Sweet spot
         elif value < min_threshold:
-            if value <= 0:
-                return 0.0
-            position = value / min_threshold if min_threshold > 0 else 0.0
-            return 75.0 * position
+            # Under-owned: 50-100 interpolated
+            return 50.0 + (value / min_threshold) * 50.0 if min_threshold > 0 else 100.0
         else:
-            if value >= 1.0:
-                return 0.0
+            # Over-owned: 0-50 interpolated (dips to 0 at 100% ownership)
             range_size = 1.0 - max_threshold
-            position = (1.0 - value) / range_size if range_size > 0 else 0.0
-            return 75.0 * position
+            if range_size > 0:
+                position = (1.0 - value) / range_size
+                return max(0.0, 50.0 * position)
+            return 0.0
 
     # =========================================================================
     # VECTORIZED BATCH SCORING
@@ -1364,10 +1364,13 @@ class LynchCriteria:
     def _vectorized_debt_score(self, debt: pd.Series, excellent: float, good: float, moderate: float) -> pd.Series:
         """
         Vectorized version of calculate_debt_score().
-        
-        Mirrors the exact interpolation logic from lines 842-871.
+
+        Excellent (0-excellent): 100
+        Good (excellent-good): 75-100
+        Moderate (good-moderate): 25-75
+        High (moderate+): 0-25
         """
-        result = pd.Series(50.0, index=debt.index)  # Default for None
+        result = pd.Series(100.0, index=debt.index)  # Default for None (no debt is great)
         
         # Excellent: 100
         mask_excellent = debt <= excellent
@@ -1397,51 +1400,47 @@ class LynchCriteria:
         
         # Very high: 0
         result[debt >= max_high] = 0.0
-        
-        # None/NaN gets neutral score
-        result[debt.isna()] = 50.0
-        
+
+        # None/NaN means no debt reported, which is great
+        result[debt.isna()] = 100.0
+
         return result
     
     def _vectorized_ownership_score(self, ownership: pd.Series, min_thresh: float, max_thresh: float) -> pd.Series:
         """
         Vectorized version of calculate_institutional_ownership_score().
-        
-        Mirrors the exact interpolation logic from lines 887-919.
-        Sweet spot is between min_thresh and max_thresh.
+
+        Sweet spot (min-max): 100
+        Under-owned (< min): 50-100 (interpolated)
+        Over-owned (> max): 0-50 (interpolated down to 0 at 100% ownership)
         """
-        result = pd.Series(0.0, index=ownership.index)
-        
-        ideal_center = (min_thresh + max_thresh) / 2
-        
-        # Ideal range: 75-100 (interpolate based on distance from center)
+        # Default to neutral (75) for missing values
+        result = pd.Series(75.0, index=ownership.index)
+
+        # Sweet spot: full score
         mask_ideal = (ownership >= min_thresh) & (ownership <= max_thresh)
-        if mask_ideal.any():
-            distance_from_center = (ownership[mask_ideal] - ideal_center).abs()
-            max_distance = ideal_center - min_thresh
-            position = 1.0 - (distance_from_center / max_distance)
-            result[mask_ideal] = 75.0 + (25.0 * position)
-        
-        # Below minimum: 0-75 (interpolate)
-        mask_low = (ownership < min_thresh) & (ownership > 0)
+        result[mask_ideal] = 100.0
+
+        # Under-owned (< min): 50-100 interpolated
+        # Lower ownership is okay but not ideal
+        mask_low = (ownership < min_thresh) & (ownership >= 0) & ownership.notna()
         if mask_low.any():
-            position = ownership[mask_low] / min_thresh
-            result[mask_low] = 75.0 * position
-        
-        # Above maximum: 0-75 (interpolate up to 1.0)
-        mask_high = (ownership > max_thresh) & (ownership < 1.0)
+            # Score = 50 + (value / min_thresh) * 50
+            # At 0% ownership: 50, at min_thresh: 100
+            result[mask_low] = 50.0 + (ownership[mask_low] / min_thresh) * 50.0
+
+        # Over-owned (> max): 0-50 interpolated
+        # Too much institutional ownership is bad (overcrowded)
+        mask_high = (ownership > max_thresh) & (ownership < 1.0) & ownership.notna()
         if mask_high.any():
+            # Score = 50 * (1.0 - value) / (1.0 - max_thresh)
+            # At max_thresh: 50, at 100% ownership: 0
             range_size = 1.0 - max_thresh
-            position = (1.0 - ownership[mask_high]) / range_size
-            result[mask_high] = 75.0 * position
-        
-        # At extremes: 0
-        result[ownership <= 0] = 0.0
+            result[mask_high] = 50.0 * (1.0 - ownership[mask_high]) / range_size
+
+        # At 100% ownership: 0
         result[ownership >= 1.0] = 0.0
-        
-        # None/NaN gets 0
-        result[ownership.isna()] = 0.0
-        
+
         return result
     
     def _vectorized_roe_score(self, roe: pd.Series, excellent: float, good: float, fair: float) -> pd.Series:

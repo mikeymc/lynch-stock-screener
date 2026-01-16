@@ -846,7 +846,53 @@ def get_stock(symbol):
     if not stock_data:
         return jsonify({'error': f'Stock {symbol} not found'}), 404
 
-    evaluation = criteria.evaluate_stock(symbol.upper(), algorithm=algorithm)
+    # Get active character to load appropriate config
+    active_character = db.get_setting('active_character') or 'lynch'
+
+    # Load fresh character-specific config from DB (same as screen/v2) to ensure consistency
+    configs = db.get_algorithm_configs()
+    # Filter by character
+    char_configs = [c for c in configs if c.get('character') == active_character]
+    db_config = char_configs[0] if char_configs else (configs[0] if configs else None)
+
+    overrides = None
+    if db_config:
+        if active_character == 'lynch':
+            # Lynch-specific overrides
+            overrides = {
+                'peg_excellent': db_config.get('peg_excellent'),
+                'peg_good': db_config.get('peg_good'),
+                'peg_fair': db_config.get('peg_fair'),
+                'debt_excellent': db_config.get('debt_excellent'),
+                'debt_good': db_config.get('debt_good'),
+                'debt_moderate': db_config.get('debt_moderate'),
+                'inst_own_min': db_config.get('inst_own_min'),
+                'inst_own_max': db_config.get('inst_own_max'),
+                'weight_peg': db_config.get('weight_peg'),
+                'weight_consistency': db_config.get('weight_consistency'),
+                'weight_debt': db_config.get('weight_debt'),
+                'weight_ownership': db_config.get('weight_ownership'),
+            }
+        elif active_character == 'buffett':
+            # Buffett-specific overrides
+            # Note: StockEvaluator looks for {metric}_excellent where metric matches character config
+            overrides = {
+                'weight_roe': db_config.get('weight_roe'),
+                'weight_earnings_consistency': db_config.get('weight_consistency'),
+                'weight_debt_to_earnings': db_config.get('weight_debt_to_earnings'),
+                'weight_gross_margin': db_config.get('weight_gross_margin'),
+                'roe_excellent': db_config.get('roe_excellent'),
+                'roe_good': db_config.get('roe_good'),
+                'roe_fair': db_config.get('roe_fair'),
+                'debt_to_earnings_excellent': db_config.get('debt_to_earnings_excellent'),
+                'debt_to_earnings_good': db_config.get('debt_to_earnings_good'),
+                'debt_to_earnings_fair': db_config.get('debt_to_earnings_fair'),
+                'gross_margin_excellent': db_config.get('gross_margin_excellent'),
+                'gross_margin_good': db_config.get('gross_margin_good'),
+                'gross_margin_fair': db_config.get('gross_margin_fair'),
+            }
+
+    evaluation = criteria.evaluate_stock(symbol.upper(), algorithm=algorithm, overrides=overrides)
 
     return jsonify({
         'stock_data': clean_nan_values(stock_data),
@@ -1262,14 +1308,18 @@ def screen_stocks_v2():
     us_stocks_only = db.get_setting('us_stocks_only', True)
     country_filter = 'US' if us_stocks_only else None
     
-    # Get user's algorithm config
-    # For now (pre-auth), use the most recent config from DB to match evaluate_stock() behavior
-    # Default to hardcoded values only if DB is empty
+    # Get active character to load appropriate config
+    active_character = db.get_setting('active_character') or 'lynch'
+
+    # Get user's algorithm config filtered by character
     configs = db.get_algorithm_configs()
-    if configs and len(configs) > 0:
-        db_config = configs[0]
-        # Map DB keys to config keys (DB has flattened keys already)
+    char_configs = [c for c in configs if c.get('character') == active_character]
+    db_config = char_configs[0] if char_configs else (configs[0] if configs else None)
+
+    if db_config:
+        # Build config with both Lynch and Buffett keys (evaluate_batch handles both)
         config = {
+            # Lynch keys
             'peg_excellent': db_config.get('peg_excellent', 1.0),
             'peg_good': db_config.get('peg_good', 1.5),
             'peg_fair': db_config.get('peg_fair', 2.0),
@@ -1282,8 +1332,19 @@ def screen_stocks_v2():
             'weight_consistency': db_config.get('weight_consistency', 0.25),
             'weight_debt': db_config.get('weight_debt', 0.15),
             'weight_ownership': db_config.get('weight_ownership', 0.10),
-            # Growth thresholds are hardcoded in scalar version (reload_settings), so we keep them hardcoded here too
-            # unless we add them to DB schema later
+            # Buffett keys
+            'weight_roe': db_config.get('weight_roe', 0.0),
+            'weight_debt_earnings': db_config.get('weight_debt_to_earnings', 0.0),
+            'weight_gross_margin': db_config.get('weight_gross_margin', 0.0),
+            'roe_excellent': db_config.get('roe_excellent', 20.0),
+            'roe_good': db_config.get('roe_good', 15.0),
+            'roe_fair': db_config.get('roe_fair', 10.0),
+            'de_excellent': db_config.get('debt_to_earnings_excellent', 2.0),
+            'de_good': db_config.get('debt_to_earnings_good', 4.0),
+            'de_fair': db_config.get('debt_to_earnings_fair', 7.0),
+            'gm_excellent': db_config.get('gross_margin_excellent', 50.0),
+            'gm_good': db_config.get('gross_margin_good', 40.0),
+            'gm_fair': db_config.get('gross_margin_fair', 30.0),
         }
     else:
         config = DEFAULT_ALGORITHM_CONFIG
@@ -3851,9 +3912,11 @@ def algorithm_config(user_id=None):
         config['character'] = character_id
         
         db.save_algorithm_config(config, character=character_id, user_id=user_id)
-        
-        # DEPRECATED: Rescoring is no longer needed - scoring is done on-demand
-        # Return immediately without rescoring
+
+        # Reload cached settings so detail page uses updated config
+        criteria.reload_settings()
+
+        # Return immediately (no rescoring needed - scoring is done on-demand)
         import uuid
         job_id = str(uuid.uuid4())
         
