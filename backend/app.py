@@ -1598,11 +1598,12 @@ def get_latest_session(user_id):
             
             if buffett_config:
                 # Use saved Buffett configuration
+                # Note: DB has 'weight_debt_to_earnings' but scoring expects 'weight_debt_earnings'
                 config = {
                     'weight_roe': buffett_config.get('weight_roe', 0.35),
                     'weight_consistency': buffett_config.get('weight_consistency', 0.25),
-                    'weight_debt_to_earnings': buffett_config.get('weight_debt_to_earnings', 0.20),
-                    'weight_gross_margin': buffett_config.get('weight_gross_margin', 0.20),
+                    'weight_debt_earnings': buffett_config.get('weight_debt_to_earnings', 0.20),  # Map from DB name
+                    'weight_gross_margin': buffett_config.get('weight_gross_margin', 0.20),  # Column doesn't exist yet
                     
                     # Zero out Lynch weights
                     'weight_peg': 0.0,
@@ -1625,7 +1626,7 @@ def get_latest_session(user_id):
                 config = {
                     'weight_roe': 0.35,
                     'weight_consistency': 0.25,
-                    'weight_debt_to_earnings': 0.20,
+                    'weight_debt_earnings': 0.20,  # Fixed: was weight_debt_to_earnings
                     'weight_gross_margin': 0.20,
                     
                     # Zero out Lynch weights

@@ -526,6 +526,12 @@ class Database:
                                WHERE table_name = 'stock_metrics' AND column_name = 'next_earnings_date') THEN
                     ALTER TABLE stock_metrics ADD COLUMN next_earnings_date DATE;
                 END IF;
+                
+                -- gross_margin (for Buffett scoring)
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns 
+                               WHERE table_name = 'stock_metrics' AND column_name = 'gross_margin') THEN
+                    ALTER TABLE stock_metrics ADD COLUMN gross_margin REAL;
+                END IF;
             END $$;
         """)
 
@@ -1334,6 +1340,13 @@ class Database:
                     ALTER TABLE algorithm_configurations ADD COLUMN gross_margin_excellent REAL DEFAULT 50.0;
                     ALTER TABLE algorithm_configurations ADD COLUMN gross_margin_good REAL DEFAULT 40.0;
                     ALTER TABLE algorithm_configurations ADD COLUMN gross_margin_fair REAL DEFAULT 30.0;
+                    ALTER TABLE algorithm_configurations ADD COLUMN weight_gross_margin REAL DEFAULT 0.0;
+                END IF;
+                
+                -- Migration: Add weight_gross_margin column (separate check since thresholds already exist)
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns 
+                               WHERE table_name = 'algorithm_configurations' AND column_name = 'weight_gross_margin') THEN
+                    ALTER TABLE algorithm_configurations ADD COLUMN weight_gross_margin REAL DEFAULT 0.0;
                 END IF;
             END $$;
         """)
@@ -1677,6 +1690,7 @@ class Database:
             'price', 'pe_ratio', 'market_cap', 'debt_to_equity', 
             'institutional_ownership', 'revenue', 'dividend_yield', 
             'beta', 'total_debt', 'interest_expense', 'effective_tax_rate',
+            'gross_margin',  # For Buffett scoring
             'forward_pe', 'forward_peg_ratio', 'forward_eps',
             'insider_net_buying_6m', 'last_updated',
             'analyst_rating', 'analyst_rating_score', 'analyst_count',

@@ -1247,6 +1247,18 @@ class LynchCriteria:
             )
             overall_score += debt_earnings_score * weight_debt_earnings
 
+        gross_margin_score = pd.Series(0.0, index=df.index)
+        if weight_gross_margin > 0 and 'gross_margin' in df.columns:
+            # Gross Margin Thresholds
+            gm_excellent = config.get('gm_excellent') if config.get('gm_excellent') is not None else 50.0
+            gm_good = config.get('gm_good') if config.get('gm_good') is not None else 40.0
+            gm_fair = config.get('gm_fair') if config.get('gm_fair') is not None else 30.0
+            
+            gross_margin_score = self._vectorized_gross_margin_score(
+                df['gross_margin'], gm_excellent, gm_good, gm_fair
+            )
+            overall_score += gross_margin_score * weight_gross_margin
+
         # --- Shared Components ---
 
         consistency_score = pd.Series(0.0, index=df.index)
@@ -1275,8 +1287,8 @@ class LynchCriteria:
                 'income_consistency_score', 'revenue_consistency_score',
                 'pe_52_week_min', 'pe_52_week_max', 'pe_52_week_position']
         
-        # Add Buffer metrics if they exist in df
-        for col in ['roe', 'debt_to_earnings', 'owner_earnings']:
+        # Add Buffett metrics if they exist in df
+        for col in ['roe', 'debt_to_earnings', 'owner_earnings', 'gross_margin']:
             if col in df.columns:
                 cols.append(col)
                 
@@ -1294,9 +1306,13 @@ class LynchCriteria:
         result['consistency_score'] = consistency_score.round(1)
         
         # Add Buffett Scores
-        if weight_roe > 0 or weight_debt_earnings > 0:
-            result['roe_score'] = roe_score.round(1)
-            result['debt_earnings_score'] = debt_earnings_score.round(1)
+        if weight_roe > 0 or weight_debt_earnings > 0 or weight_gross_margin > 0:
+            if weight_roe > 0:
+                result['roe_score'] = roe_score.round(1)
+            if weight_debt_earnings > 0:
+                result['debt_earnings_score'] = debt_earnings_score.round(1)
+            if weight_gross_margin > 0:
+                result['gross_margin_score'] = gross_margin_score.round(1)
         
         # Sort by overall_score descending
         result = result.sort_values('overall_score', ascending=False)
@@ -1507,5 +1523,48 @@ class LynchCriteria:
             result[mask_poor] = 25.0 * pos
             
         result[de >= max_poor] = 0.0
+        
+        return result
+    def _vectorized_gross_margin_score(self, gm: pd.Series, excellent: float, good: float, fair: float) -> pd.Series:
+        """
+        Vectorized Gross Margin score (Higher is Better).
+        Similar to ROE scoring - higher margins indicate pricing power and competitive advantage.
+        
+        excellent (50%) -> 100
+        good (40%) -> 75
+        fair (30%) -> 50
+        poor (0%) -> 25
+        """
+        result = pd.Series(50.0, index=gm.index)  # Default neutral
+        
+        # Excellent: 100
+        mask_exc = gm >= excellent
+        result[mask_exc] = 100.0
+        
+        # Good: 75-100
+        mask_good = (gm >= good) & (gm < excellent)
+        if mask_good.any():
+            rng = excellent - good
+            pos = (gm[mask_good] - good) / rng
+            result[mask_good] = 75.0 + (25.0 * pos)
+        
+        # Fair: 50-75
+        mask_fair = (gm >= fair) & (gm < good)
+        if mask_fair.any():
+            rng = good - fair
+            pos = (gm[mask_fair] - fair) / rng
+            result[mask_fair] = 50.0 + (25.0 * pos)
+        
+        # Poor: 25-50
+        mask_poor = (gm >= 0) & (gm < fair)
+        if mask_poor.any():
+            pos = gm[mask_poor] / fair
+            result[mask_poor] = 25.0 + (25.0 * pos)
+        
+        # Negative margins: 0
+        result[gm < 0] = 0.0
+        
+        # None/NaN gets 50 (neutral default)
+        result[gm.isna()] = 50.0
         
         return result

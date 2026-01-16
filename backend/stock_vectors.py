@@ -139,6 +139,7 @@ class StockVectors:
                     sm.dividend_yield,
                     sm.institutional_ownership,
                     sm.total_debt,
+                    sm.gross_margin,
                     s.sector,
                     s.company_name,
                     s.country,

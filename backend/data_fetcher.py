@@ -272,6 +272,34 @@ class DataFetcher:
                 except Exception as e:
                     logger.debug(f"Could not calculate tax rate for {symbol}: {e}")
 
+            # Calculate Gross Margin (for Buffett scoring)
+            # Always calculate this regardless of cache since it's critical for Buffett scoring
+            gross_margin = None
+            try:
+                ticker = yf.Ticker(symbol)
+                income_stmt = ticker.income_stmt
+                
+                if income_stmt is not None and not income_stmt.empty:
+                    # Look for gross profit and revenue
+                    gross_profit = None
+                    revenue = None
+                    
+                    for key in ['Gross Profit', 'GrossProfit']:
+                        if key in income_stmt.index:
+                            gross_profit = income_stmt.loc[key].iloc[0]
+                            break
+                    
+                    for key in ['Total Revenue', 'TotalRevenue', 'Revenue']:
+                        if key in income_stmt.index:
+                            revenue = income_stmt.loc[key].iloc[0]
+                            break
+                    
+                    if gross_profit is not None and revenue is not None and revenue > 0:
+                        gross_margin = (gross_profit / revenue) * 100  # as percentage
+                        logger.info(f"[{symbol}] Calculated gross margin: {gross_margin:.2f}%")
+            except Exception as e:
+                logger.warning(f"[{symbol}] Could not calculate gross margin: {e}")
+
             metrics = {
                 'price': info.get('currentPrice'),
                 'pe_ratio': info.get('trailingPE'),
@@ -284,6 +312,7 @@ class DataFetcher:
                 'total_debt': total_debt,
                 'interest_expense': interest_expense,
                 'effective_tax_rate': effective_tax_rate,
+                'gross_margin': gross_margin,
                 # New Future Indicators
                 'forward_pe': info.get('forwardPE'),
                 'forward_peg_ratio': info.get('pegRatio') if info.get('pegRatio') else info.get('trailingPegRatio'), # Prefer 5yr exepcted, fallback to trailing
