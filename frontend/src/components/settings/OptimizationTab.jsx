@@ -527,9 +527,10 @@ export default function OptimizationTab() {
             <div className="border-t" />
 
             <Tabs defaultValue="manual" className="w-full">
-                <TabsList className="grid w-full grid-cols-2">
+                <TabsList className="grid w-full grid-cols-3">
                     <TabsTrigger value="manual">Manual</TabsTrigger>
                     <TabsTrigger value="auto">Auto</TabsTrigger>
+                    <TabsTrigger value="help">Help</TabsTrigger>
                 </TabsList>
 
                 <TabsContent value="manual" className="mt-6">
@@ -873,182 +874,46 @@ export default function OptimizationTab() {
                         </CardContent>
                     </Card>
                 </TabsContent>
-            </Tabs>
 
-            {/* Analysis Results */}
-            <Card className="overflow-hidden border-2">
-                <CardHeader className="bg-muted/50 border-b pb-4">
-                    <CardTitle className="flex items-center gap-2">
-                        <TrendingUp className="h-5 w-5 text-primary" />
-                        Analysis Results
-                    </CardTitle>
-                </CardHeader>
-                <CardContent className="p-6">
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-                        {/* Overall Correlation */}
-                        <div className="flex flex-col items-center justify-center p-4 rounded-xl border bg-card shadow-sm">
-                            {analysis ? (
-                                <>
-                                    <div className="text-sm text-muted-foreground">Current Correlation</div>
-                                    <div className={`text-2xl font-bold ${(analysis.overall_correlation?.coefficient || 0) > 0.1 ? "text-green-600" :
-                                        (analysis.overall_correlation?.coefficient || 0) > 0.05 ? "text-blue-600" : "text-muted-foreground"
-                                        }`}>
-                                        {analysis.overall_correlation?.coefficient?.toFixed(4)}
-                                    </div>
-                                    <div className="text-xs text-muted-foreground">
-                                        {analysis.overall_correlation?.interpretation}
-                                    </div>
-                                </>
-                            ) : (
-                                <>
-                                    <div className="text-sm text-muted-foreground">Saved Correlation</div>
-                                    <div className={`text-2xl font-bold ${((config.correlation_10yr || config.correlation_5yr) || 0) > 0.1 ? "text-green-600" :
-                                        ((config.correlation_10yr || config.correlation_5yr) || 0) > 0.05 ? "text-blue-600" : "text-muted-foreground"
-                                        }`}>
-                                        {(config.correlation_10yr || config.correlation_5yr)?.toFixed(4) || 'N/A'}
-                                    </div>
-                                    <div className="text-xs text-muted-foreground">
-                                        {config.correlation_10yr ? '10-year backtest' : config.correlation_5yr ? '5-year backtest' : 'Run validation to calculate'}
-                                    </div>
-                                </>
-                            )}
-                        </div>
-
-                        {/* Stocks Analyzed */}
-                        {analysis && (
-                            <div className="flex flex-col items-center justify-center p-4 rounded-xl border bg-card shadow-sm">
-                                <span className="text-sm font-medium text-muted-foreground mb-1">Stocks Analyzed</span>
-                                <div className="text-3xl font-bold text-foreground mb-1">
-                                    {analysis.total_stocks}
-                                </div>
-                                <span className="text-xs text-muted-foreground">
-                                    {analysis.years_back} year backtest
-                                </span>
+                <TabsContent value="help" className="mt-6">
+                    {/* Correlation Guide Card */}
+                    <Card className="border-l-4 border-l-primary">
+                        <CardHeader>
+                            <CardTitle>Understanding Correlation</CardTitle>
+                        </CardHeader>
+                        <CardContent>
+                            <div className="mb-4 text-sm text-muted-foreground space-y-2">
+                                <p>
+                                    <strong>What we're measuring:</strong> We backtest our algorithm by calculating what each stock's <strong>Overall Score</strong> would have been in the past, then comparing those scores to the stock's <strong>actual price performance</strong> over that time period.
+                                </p>
+                                <p>
+                                    <strong>What correlation means:</strong> A value from 0 to 1 measuring how strongly two things are related. A correlation of <strong>0</strong> means no relationship (random). A correlation of <strong>1</strong> means perfect relationship (higher scores always meant higher returns). In finance, even small positive correlations are valuable.
+                                </p>
                             </div>
-                        )}
-
-                        {/* Significance */}
-                        {analysis && (
-                            <div className="flex flex-col items-center justify-center p-4 rounded-xl border bg-card shadow-sm">
-                                <span className="text-sm font-medium text-muted-foreground mb-1">Significance</span>
-                                <div className="flex items-center gap-2 mb-1">
-                                    {analysis.overall_correlation?.significant ? (
-                                        <>
-                                            <CheckCircle2 className="h-6 w-6 text-green-600" />
-                                            <span className="text-2xl font-bold text-green-600">Yes</span>
-                                        </>
-                                    ) : (
-                                        <>
-                                            <XCircle className="h-6 w-6 text-muted-foreground" />
-                                            <span className="text-2xl font-bold text-muted-foreground">No</span>
-                                        </>
-                                    )}
-                                </div>
-                                <span className="text-xs text-muted-foreground font-mono">
-                                    p = {analysis.overall_correlation?.p_value?.toFixed(4)}
-                                </span>
-                            </div>
-                        )}
-                    </div>
-
-                    {/* Component Correlations */}
-                    {analysis && (
-                        <div className="mb-8">
-                            <h4 className="text-sm font-semibold mb-4 flex items-center gap-2">
-                                <BarChart3 className="h-4 w-4" /> Component Correlations
-                            </h4>
-                            <div className="space-y-4">
-                                {Object.entries(analysis.component_correlations || {})
-                                    .sort(([, a], [, b]) => Math.abs(b.coefficient) - Math.abs(a.coefficient))
-                                    .map(([component, corr]) => (
-                                        <div key={component} className="group">
-                                            <div className="flex items-center justify-between text-sm mb-1.5">
-                                                <span className="font-medium text-muted-foreground group-hover:text-foreground transition-colors">
-                                                    {component.replace('_score', '').replace(/_/g, ' ').toUpperCase()}
-                                                </span>
-                                                <span className="font-mono font-medium">
-                                                    {(corr.coefficient || 0).toFixed(3)}
-                                                </span>
-                                            </div>
-                                            <div className="h-2 w-full bg-secondary rounded-full overflow-hidden">
-                                                <div
-                                                    className={cn("h-full rounded-full transition-all duration-500",
-                                                        corr.coefficient > 0 ? "bg-primary" : "bg-destructive"
-                                                    )}
-                                                    style={{ width: `${Math.min(Math.abs(corr.coefficient || 0) * 100 * 3, 100)}%` }} // Scaled specifically for visibility
-                                                />
-                                            </div>
-                                        </div>
-                                    ))}
-                            </div>
-                        </div>
-                    )}
-
-                    {/* Insights */}
-                    {analysis?.insights?.length > 0 && (
-                        <div className="rounded-lg border bg-muted/30 p-4">
-                            <h4 className="text-sm font-semibold mb-3 flex items-center gap-2">
-                                <Sparkles className="h-4 w-4 text-amber-500" /> Key Insights
-                            </h4>
                             <div className="space-y-3">
-                                {analysis.insights.map((insight, idx) => {
-                                    // Simple heuristic to strip potential leading emojis and assign icons
-                                    const cleanText = insight.replace(/^[\u{1F300}-\u{1F9FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}]\s*/u, '');
-                                    let Icon = Info;
-                                    if (insight.includes('Best predictor')) Icon = Target;
-                                    if (insight.includes('Best performing')) Icon = TrendingUp;
-                                    if (insight.toLowerCase().includes('significant')) Icon = CheckCircle2;
-
-                                    return (
-                                        <div key={idx} className="flex gap-3 text-sm">
-                                            <Icon className="h-4 w-4 text-muted-foreground shrink-0 mt-0.5" />
-                                            <span className="text-muted-foreground leading-relaxed">{cleanText}</span>
+                                {[
+                                    { range: '0.00 - 0.05', label: 'Noise (Random)', desc: 'No predictive power' },
+                                    { range: '0.05 - 0.10', label: 'Weak Signal', desc: 'Better than a coin flip' },
+                                    { range: '0.10 - 0.15', label: 'Good (Respectable)', desc: 'A genuine edge' },
+                                    { range: '0.15 - 0.25', label: 'Excellent', desc: 'Very strong signal' },
+                                    { range: '> 0.30', label: 'Suspicious', desc: 'Likely overfitting' },
+                                ].map(item => (
+                                    <div key={item.range} className="flex items-center gap-4 p-2 bg-muted/50 rounded hover:bg-muted transition-colors">
+                                        <code className="text-primary font-mono text-sm w-24">{item.range}</code>
+                                        <div>
+                                            <div className="font-medium text-sm">{item.label}</div>
+                                            <div className="text-xs text-muted-foreground">{item.desc}</div>
                                         </div>
-                                    );
-                                })}
+                                    </div>
+                                ))}\n                            </div>
+                            <div className="mt-4 bg-blue-50 dark:bg-blue-950 p-3 rounded-lg text-sm">
+                                <strong>Timeframe Selection:</strong> We recommend <strong>5 years</strong> for most analysis.
+                                For a longer-term view, try <strong>10 years</strong> (but beware of survivorship bias).
                             </div>
-                        </div>
-                    )}
-                </CardContent>
-            </Card>
-
-            {/* Correlation Guide Card */}
-            <Card className="border-l-4 border-l-primary">
-                <CardHeader>
-                    <CardTitle>Understanding Correlation</CardTitle>
-                </CardHeader>
-                <CardContent>
-                    <div className="mb-4 text-sm text-muted-foreground space-y-2">
-                        <p>
-                            <strong>What we're measuring:</strong> We backtest our algorithm by calculating what each stock's <strong>Overall Score</strong> would have been in the past, then comparing those scores to the stock's <strong>actual price performance</strong> over that time period.
-                        </p>
-                        <p>
-                            <strong>What correlation means:</strong> A value from 0 to 1 measuring how strongly two things are related. A correlation of <strong>0</strong> means no relationship (random). A correlation of <strong>1</strong> means perfect relationship (higher scores always meant higher returns). In finance, even small positive correlations are valuable.
-                        </p>
-                    </div>
-                    <div className="space-y-3">
-                        {[
-                            { range: '0.00 - 0.05', label: 'Noise (Random)', desc: 'No predictive power' },
-                            { range: '0.05 - 0.10', label: 'Weak Signal', desc: 'Better than a coin flip' },
-                            { range: '0.10 - 0.15', label: 'Good (Respectable)', desc: 'A genuine edge' },
-                            { range: '0.15 - 0.25', label: 'Excellent', desc: 'Very strong signal' },
-                            { range: '> 0.30', label: 'Suspicious', desc: 'Likely overfitting' },
-                        ].map(item => (
-                            <div key={item.range} className="flex items-center gap-4 p-2 bg-muted/50 rounded hover:bg-muted transition-colors">
-                                <code className="text-primary font-mono text-sm w-24">{item.range}</code>
-                                <div>
-                                    <div className="font-medium text-sm">{item.label}</div>
-                                    <div className="text-xs text-muted-foreground">{item.desc}</div>
-                                </div>
-                            </div>
-                        ))}
-                    </div>
-                    <div className="mt-4 bg-blue-50 dark:bg-blue-950 p-3 rounded-lg text-sm">
-                        <strong>Timeframe Selection:</strong> We recommend <strong>5 years</strong> for most analysis.
-                        For a longer-term view, try <strong>10 years</strong> (but beware of survivorship bias).
-                    </div>
-                </CardContent>
-            </Card>
-        </div>
+                        </CardContent>
+                    </Card>
+                </TabsContent>
+            </Tabs>
+        </div >
     )
 }
