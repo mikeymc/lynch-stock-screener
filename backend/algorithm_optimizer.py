@@ -518,13 +518,12 @@ class AlgorithmOptimizer:
         # Then run max_iterations guided trials
         
         res = gp_minimize(
-            objective, 
-            dimensions, 
+            objective,
+            dimensions,
             n_calls=max_iterations + n_seeds,  # Total = 50 seeds + max_iterations
             n_initial_points=n_seeds,
             x0=x0,
             y0=-best_so_far_corr,
-            random_state=42
         )
         
         return best_so_far_config, history
