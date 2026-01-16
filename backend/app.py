@@ -3736,58 +3736,6 @@ def get_optimization_progress(job_id):
     
     return jsonify(clean_nan_values(optimization_jobs[job_id]))
 
-@app.route('/api/rescore/run', methods=['POST'])
-def start_rescoring():
-    """Start rescoring all stocks from latest session with current algorithm settings"""
-    try:
-        import uuid
-        job_id = str(uuid.uuid4())
-        
-        # Start rescoring in background thread
-        def run_rescoring_background():
-            try:
-                rescoring_jobs[job_id] = {
-                    'status': 'running',
-                    'progress': 0,
-                    'total': 0
-                }
-                
-                # Progress callback
-                def on_progress(current, total):
-                    rescoring_jobs[job_id].update({
-                        'progress': current,
-                        'total': total
-                    })
-                
-                # Run rescoring
-                rescorer = StockRescorer(db, criteria)
-                summary = rescorer.rescore_saved_stocks(
-                    algorithm='weighted',
-                    progress_callback=on_progress
-                )
-                
-                rescoring_jobs[job_id] = {
-                    'status': 'complete',
-                    'summary': summary
-                }
-            except Exception as e:
-                logger.error(f"Rescoring failed: {e}", exc_info=True)
-                rescoring_jobs[job_id] = {
-                    'status': 'error',
-                    'error': str(e)
-                }
-        
-        thread = threading.Thread(target=run_rescoring_background, daemon=True)
-        thread.start()
-        
-        return jsonify({
-            'job_id': job_id,
-            'status': 'started'
-        })
-        
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
-
 @app.route('/api/rescore/progress/<job_id>', methods=['GET'])
 def get_rescoring_progress(job_id):
     """Get progress of a rescoring job"""
@@ -3901,41 +3849,17 @@ def algorithm_config(user_id=None):
         
         db.save_algorithm_config(config, character=character_id, user_id=user_id)
         
-        # Start background rescoring job
+        # DEPRECATED: Rescoring is no longer needed - scoring is done on-demand
+        # Return immediately without rescoring
         import uuid
         job_id = str(uuid.uuid4())
         
-        def run_rescoring_background_job():
-            try:
-                # Update status
-                rescoring_jobs[job_id] = {'status': 'running', 'progress': 0, 'total': 0}
-                
-                def on_progress(current, total):
-                    rescoring_jobs[job_id].update({
-                        'progress': current, 
-                        'total': total
-                    })
-                
-                # Rescore
-                rescorer = StockRescorer(db, criteria)
-                summary = rescorer.rescore_saved_stocks(
-                    algorithm='weighted',
-                    progress_callback=on_progress
-                )
-                
-                rescoring_jobs[job_id].update({
-                    'status': 'complete',
-                    'summary': summary
-                })
-            except Exception as e:
-                logger.error(f"Rescoring failed: {e}")
-                rescoring_jobs[job_id].update({
-                    'status': 'error', 
-                    'error': str(e)
-                })
-
-        thread = threading.Thread(target=run_rescoring_background_job, daemon=True)
-        thread.start()
+        rescoring_jobs[job_id] = {
+            'status': 'complete',
+            'message': 'Rescoring skipped - scoring is done on-demand',
+            'total': 0,
+            'success': 0
+        }
         
         return jsonify({
             'success': True,

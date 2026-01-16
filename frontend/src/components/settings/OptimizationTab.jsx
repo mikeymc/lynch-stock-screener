@@ -405,54 +405,28 @@ export default function OptimizationTab() {
             const response = await fetch('/api/algorithm/config', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
+                credentials: 'include',
                 body: JSON.stringify({
                     config: configToSave,
                     character_id: activeCharacter
                 })
             })
 
-            const data = await response.json()
-
-            if (data.rescore_job_id) {
-                pollRescoringProgress(data.rescore_job_id)
-            } else {
-                alert('Configuration saved!')
-                setRescoringRunning(false)
+            if (!response.ok) {
+                const errorData = await response.json()
+                throw new Error(errorData.error || 'Failed to save configuration')
             }
 
-            // Reload to ensure sync
-            loadConfigForCharacter(activeCharacter)
+            // Configuration saved successfully
+            alert('Configuration saved successfully!')
+
         } catch (error) {
             console.error('Error saving configuration:', error)
+            alert(`Failed to save configuration: ${error.message}`)
+        } finally {
             setRescoringRunning(false)
         }
     }
-
-    const pollRescoringProgress = async (jobId) => {
-        const interval = setInterval(async () => {
-            try {
-                const response = await fetch(`/api/rescore/progress/${jobId}`)
-                const data = await response.json()
-
-                setRescoringProgress(data)
-
-                if (data.status === 'complete') {
-                    clearInterval(interval)
-                    setRescoringRunning(false)
-                    setRescoringProgress(null)
-                    alert(`Configuration saved and re-scored ${data.summary?.success || 0} stocks!`)
-                } else if (data.status === 'error') {
-                    clearInterval(interval)
-                    setRescoringRunning(false)
-                    setRescoringProgress(null)
-                    alert('Rescoring error: ' + data.error)
-                }
-            } catch (error) {
-                console.error('Error polling rescoring:', error)
-            }
-        }, 1000)
-    }
-
 
 
     const renderSlider = (key, label, min, max, step, isPercentage = false) => (

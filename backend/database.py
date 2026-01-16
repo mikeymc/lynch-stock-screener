@@ -3001,71 +3001,30 @@ class Database:
 
     def get_stocks_ordered_by_score(self, limit: Optional[int] = None, country: Optional[str] = None) -> List[str]:
         """
-        Get stock symbols from latest completed screening session, ordered by overall_status.
+        Get stock symbols ordered alphabetically.
         
-        Priority order: STRONG_BUY -> BUY -> HOLD -> CAUTION -> AVOID
-        This ensures cache jobs prioritize the best-rated stocks first.
+        Note: Scoring is now done on-demand via /api/sessions/latest, 
+        so we no longer have pre-computed scores in the database.
         
         Args:
             limit: Optional max number of symbols to return
             country: Optional country filter (e.g., 'United States')
             
         Returns:
-            List of stock symbols ordered by priority
+            List of stock symbols ordered alphabetically
         """
         conn = self.get_connection()
         try:
             cursor = conn.cursor()
             
-            # Get latest completed session
-            cursor.execute("""
-                SELECT id FROM screening_sessions 
-                WHERE status = 'complete' 
-                ORDER BY created_at DESC 
-                LIMIT 1
-            """)
-            session_row = cursor.fetchone()
-            
-            if not session_row:
-                # No completed session - fall back to all stocks
-                if country:
-                    cursor.execute("SELECT symbol FROM stocks WHERE country = %s ORDER BY symbol", (country,))
-                else:
-                    cursor.execute("SELECT symbol FROM stocks ORDER BY symbol")
-                symbols = [row[0] for row in cursor.fetchall()]
-                return symbols[:limit] if limit else symbols
-            
-            session_id = session_row[0]
-            
-            # Get symbols ordered by score priority
-            query = """
-                SELECT sr.symbol FROM screening_results sr
-                JOIN stocks s ON sr.symbol = s.symbol
-                WHERE sr.session_id = %s
-            """
-            params = [session_id]
-            
+            # Get all stocks, optionally filtered by country
             if country:
-                query += " AND s.country = %s"
-                params.append(country)
+                cursor.execute("SELECT symbol FROM stocks WHERE country = %s ORDER BY symbol", (country,))
+            else:
+                cursor.execute("SELECT symbol FROM stocks ORDER BY symbol")
             
-            query += """
-                ORDER BY 
-                    CASE sr.overall_status 
-                        WHEN 'STRONG_BUY' THEN 1 
-                        WHEN 'BUY' THEN 2 
-                        WHEN 'HOLD' THEN 3 
-                        WHEN 'CAUTION' THEN 4 
-                        WHEN 'AVOID' THEN 5 
-                        ELSE 6 
-                    END ASC
-            """
-            
-            if limit:
-                query += f" LIMIT {limit}"
-            
-            cursor.execute(query, params)
-            return [row[0] for row in cursor.fetchall()]
+            symbols = [row[0] for row in cursor.fetchall()]
+            return symbols[:limit] if limit else symbols
         finally:
             self.return_connection(conn)
 
