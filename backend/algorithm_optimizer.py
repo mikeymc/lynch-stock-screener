@@ -300,6 +300,64 @@ class AlgorithmOptimizer:
         
         return new_config
 
+    def _enforce_threshold_constraints(self, config: Dict[str, float], character_id: str) -> Dict[str, float]:
+        """
+        Enforce ordering constraints on thresholds to ensure they make real-world sense.
+
+        Constraints:
+        - Revenue/Income growth (both): Excellent > Good > Fair (higher is better)
+        - Institutional ownership (Lynch): min < max
+        - PEG, Debt/Equity (Lynch): Excellent < Good < Fair (lower is better)
+        - Debt/Earnings (Buffett): Excellent < Good < Fair (lower is better)
+        - ROE, Gross Margin (Buffett): Excellent > Good > Fair (higher is better)
+        """
+        new_config = config.copy()
+
+        # Helper to sort three values and assign to keys
+        def sort_ascending(key_excellent: str, key_good: str, key_fair: str):
+            """For 'lower is better' metrics: excellent < good < fair"""
+            vals = [new_config.get(key_excellent), new_config.get(key_good), new_config.get(key_fair)]
+            if all(v is not None for v in vals):
+                sorted_vals = sorted(vals)
+                new_config[key_excellent] = sorted_vals[0]
+                new_config[key_good] = sorted_vals[1]
+                new_config[key_fair] = sorted_vals[2]
+
+        def sort_descending(key_excellent: str, key_good: str, key_fair: str):
+            """For 'higher is better' metrics: excellent > good > fair"""
+            vals = [new_config.get(key_excellent), new_config.get(key_good), new_config.get(key_fair)]
+            if all(v is not None for v in vals):
+                sorted_vals = sorted(vals, reverse=True)
+                new_config[key_excellent] = sorted_vals[0]
+                new_config[key_good] = sorted_vals[1]
+                new_config[key_fair] = sorted_vals[2]
+
+        # Revenue and Income growth: Excellent > Good > Fair (both characters)
+        sort_descending('revenue_growth_excellent', 'revenue_growth_good', 'revenue_growth_fair')
+        sort_descending('income_growth_excellent', 'income_growth_good', 'income_growth_fair')
+
+        if character_id == 'lynch':
+            # PEG: Excellent < Good < Fair (lower is better)
+            sort_ascending('peg_excellent', 'peg_good', 'peg_fair')
+            # Debt/Equity: Excellent < Good < Fair (lower is better)
+            sort_ascending('debt_excellent', 'debt_good', 'debt_moderate')
+            # Institutional ownership: min < max
+            inst_min = new_config.get('inst_own_min')
+            inst_max = new_config.get('inst_own_max')
+            if inst_min is not None and inst_max is not None and inst_min > inst_max:
+                new_config['inst_own_min'] = inst_max
+                new_config['inst_own_max'] = inst_min
+
+        elif character_id == 'buffett':
+            # Debt/Earnings: Excellent < Good < Fair (lower is better)
+            sort_ascending('debt_to_earnings_excellent', 'debt_to_earnings_good', 'debt_to_earnings_fair')
+            # ROE: Excellent > Good > Fair (higher is better)
+            sort_descending('roe_excellent', 'roe_good', 'roe_fair')
+            # Gross Margin: Excellent > Good > Fair (higher is better)
+            sort_descending('gross_margin_excellent', 'gross_margin_good', 'gross_margin_fair')
+
+        return new_config
+
     def _gradient_descent_optimize(self, results: List[Dict[str, Any]], 
                                    initial_config: Dict[str, float], character_id: str,
                                    weight_keys: List[str], max_iterations: int, learning_rate: float,
@@ -417,7 +475,8 @@ class AlgorithmOptimizer:
             config = initial_config.copy()
             config.update(params)
             config = self._normalize_weights(config, weight_keys)
-            
+            config = self._enforce_threshold_constraints(config, character_id)
+
             correlation = self._calculate_correlation_with_config(results, config, character_id)
             
             if correlation > best_so_far_corr:
