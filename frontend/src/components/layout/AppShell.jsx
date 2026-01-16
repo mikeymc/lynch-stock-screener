@@ -193,7 +193,7 @@ function AppShellContent({
     const chatSymbol = isStockDetail ? symbol : null
     const chatContext = isStockDetail ? 'general' : 'market' // 'market' context for main page
     const formattedCharacter = activeCharacter ? activeCharacter.charAt(0).toUpperCase() + activeCharacter.slice(1) : 'Lynch'
-    const chatTitle = chatSymbol ? `${formattedCharacter} - ${chatSymbol}` : formattedCharacter
+    const chatTitle = formattedCharacter
 
     return (
         <div className="flex h-screen w-full overflow-hidden">
