@@ -10,7 +10,7 @@ import ChatChart from './ChatChart'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { Switch } from '@/components/ui/switch'
-import { Card } from '@/components/ui/card'
+import { Card, CardHeader, CardContent } from '@/components/ui/card'
 import { useChatContext } from '@/context/ChatContext'
 import { useAuth } from '@/context/AuthContext'
 
@@ -929,59 +929,65 @@ const AnalysisChat = forwardRef(function AnalysisChat({ symbol, stockName, chatO
   // Analysis content (for left column in two-column mode)
   const analysisContent = (
     <div className="w-full h-full overflow-y-auto pr-2">
-      <Card className="h-full border-0 shadow-none bg-transparent">
-        <div className="h-full">
-          {(analysisLoading || isGenerating) && !analysis ? (
-            <div className="flex flex-col items-center justify-center h-[50vh] space-y-6 text-center text-muted-foreground">
-              <div className="relative">
-                <div className="h-12 w-12 rounded-full border-4 border-primary/20"></div>
-                <div className="absolute top-0 left-0 h-12 w-12 rounded-full border-4 border-primary border-t-transparent animate-spin"></div>
-              </div>
-              <div className="space-y-2">
-                <span className="block text-lg font-medium text-foreground">Generating brief...</span>
-                <span className="block text-sm animate-pulse" key={loadingMessageIndex}>
-                  {LOADING_MESSAGES[loadingMessageIndex]}
-                </span>
-              </div>
+      {(analysisLoading || isGenerating) && !analysis ? (
+        <Card className="h-full">
+          <div className="flex flex-col items-center justify-center h-[50vh] space-y-6 text-center text-muted-foreground">
+            <div className="relative">
+              <div className="h-12 w-12 rounded-full border-4 border-primary/20"></div>
+              <div className="absolute top-0 left-0 h-12 w-12 rounded-full border-4 border-primary border-t-transparent animate-spin"></div>
             </div>
-          ) : analysisError ? (
-            <div className="flex flex-col items-center justify-center h-[50vh] space-y-4 text-destructive">
-              <p>Failed to load analysis: {analysisError}</p>
-              <Button onClick={() => fetchAnalysis(false, null, true)} variant="outline">
-                Retry
+            <div className="space-y-2">
+              <span className="block text-lg font-medium text-foreground">Generating brief...</span>
+              <span className="block text-sm animate-pulse" key={loadingMessageIndex}>
+                {LOADING_MESSAGES[loadingMessageIndex]}
+              </span>
+            </div>
+          </div>
+        </Card>
+      ) : analysisError ? (
+        <Card className="h-full">
+          <div className="flex flex-col items-center justify-center h-[50vh] space-y-4 text-destructive">
+            <p>Failed to load analysis: {analysisError}</p>
+            <Button onClick={() => fetchAnalysis(false, null, true)} variant="outline">
+              Retry
+            </Button>
+          </div>
+        </Card>
+      ) : !analysis ? (
+        <Card className="h-full">
+          <div className="flex flex-col items-center justify-center h-[50vh] space-y-4 text-muted-foreground">
+            <p>No brief generated yet for {stockName}.</p>
+            <Button onClick={handleGenerate} className="mt-4">
+              <Sparkles className="mr-2 h-4 w-4" /> Generate Brief
+            </Button>
+          </div>
+        </Card>
+      ) : (
+        <Card>
+          <CardHeader className="pb-4">
+            <div className="flex items-center justify-between">
+              <span className="text-sm text-muted-foreground font-medium">
+                {cached ? 'Cached' : 'Fresh'} · {formatDate(generatedAt)}
+              </span>
+              <Button
+                onClick={handleRefresh}
+                disabled={refreshing}
+                variant="default"
+                size="sm"
+                className="gap-2 bg-slate-700 hover:bg-slate-600 text-white"
+              >
+                <RefreshCw className={`h-4 w-4 ${refreshing ? 'animate-spin' : ''}`} />
+                Re-Analyze
               </Button>
             </div>
-          ) : !analysis ? (
-            <div className="flex flex-col items-center justify-center h-[50vh] space-y-4 text-muted-foreground">
-              <p>No brief generated yet for {stockName}.</p>
-              <Button onClick={handleGenerate} className="mt-4">
-                <Sparkles className="mr-2 h-4 w-4" /> Generate Brief
-              </Button>
+          </CardHeader>
+          <CardContent>
+            <div className="prose prose-sm dark:prose-invert max-w-none">
+              <ReactMarkdown remarkPlugins={[remarkGfm]} components={components}>{analysis}</ReactMarkdown>
             </div>
-          ) : (
-            <>
-              <div className="flex items-center justify-between mb-6 pb-4 border-b">
-                <span className="text-sm text-muted-foreground font-medium">
-                  {cached ? 'Cached' : 'Fresh'} · {formatDate(generatedAt)}
-                </span>
-                <Button
-                  onClick={handleRefresh}
-                  disabled={refreshing}
-                  variant="default"
-                  size="sm"
-                  className="gap-2 bg-slate-700 hover:bg-slate-600 text-white"
-                >
-                  <RefreshCw className={`h-4 w-4 ${refreshing ? 'animate-spin' : ''}`} />
-                  Re-Analyze
-                </Button>
-              </div>
-              <div className="prose prose-sm dark:prose-invert max-w-none pb-8">
-                <ReactMarkdown remarkPlugins={[remarkGfm]} components={components}>{analysis}</ReactMarkdown>
-              </div>
-            </>
-          )}
-        </div>
-      </Card>
+          </CardContent>
+        </Card>
+      )}
     </div>
   )
 
