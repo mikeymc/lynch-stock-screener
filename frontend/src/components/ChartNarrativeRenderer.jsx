@@ -135,47 +135,58 @@ export default function ChartNarrativeRenderer({ narrative, historyData }) {
 
     const hasEstimates = historyData?.analyst_estimates?.next_year
 
+    // Get current year quarterly data for showing recent progress
+    const currentYear = historyData?.current_year_quarterly?.year
+
+    // Build labels with future estimate year appended if exists
     const getExtendedLabels = () => {
-        if (!hasEstimates) return labels
-        return [...labels, String(lastHistoricalYear + 1)]
+        const baseLabels = [...labels]
+
+        // Append estimate year if estimates exist
+        if (hasEstimates) {
+            baseLabels.push(`${lastHistoricalYear + 1}E`)
+        }
+
+        return baseLabels
     }
 
-    // Build estimate data for projection charts
+    // Build estimate data for projection charts - positioned after annual data
     const buildEstimateData = (historicalData, metricKey, scaleFactor = 1) => {
-        if (!hasEstimates) return null
+        const extLabels = getExtendedLabels()
+        const estimateData = new Array(extLabels.length).fill(null)
+
+        if (!hasEstimates) return estimateData
 
         const nextYearEstimate = historyData.analyst_estimates.next_year
-        if (!nextYearEstimate || Object.keys(nextYearEstimate).length === 0) return null
+        if (!nextYearEstimate || Object.keys(nextYearEstimate).length === 0) return estimateData
 
-        const estimateData = new Array(labels.length + 1).fill(null)
-        const estimateYearIdx = labels.length
+        // Find the estimate year position (should be last)
+        const estimateYearIdx = extLabels.length - 1
+        const connectionIdx = estimateYearIdx - 1
 
-        if (metricKey === 'revenue' && nextYearEstimate.revenue) {
-            const estValue = nextYearEstimate.revenue.mean
-            if (estValue != null) {
-                estimateData[estimateYearIdx] = estValue / scaleFactor
-                if (historicalData.length > 0 && estimateYearIdx > 0) {
-                    const lastHistorical = historicalData[historicalData.length - 1]
-                    if (lastHistorical != null) {
-                        estimateData[estimateYearIdx - 1] = lastHistorical / scaleFactor
-                    }
-                }
-            }
-        } else if (metricKey === 'eps' && nextYearEstimate.eps) {
-            const estValue = nextYearEstimate.eps.mean
-            if (estValue != null) {
-                estimateData[estimateYearIdx] = estValue / scaleFactor
-                if (historicalData.length > 0 && estimateYearIdx > 0) {
-                    const lastHistorical = historicalData[historicalData.length - 1]
-                    if (lastHistorical != null) {
-                        estimateData[estimateYearIdx - 1] = lastHistorical / scaleFactor
-                    }
+        // Get estimate value using _avg suffix pattern
+        const estValue = nextYearEstimate[`${metricKey}_avg`]
+        if (estValue != null && estimateYearIdx >= 0) {
+            estimateData[estimateYearIdx] = estValue / scaleFactor
+
+            // Connect from the last annual point
+            if (historicalData.length > 0 && connectionIdx >= 0) {
+                const lastHistorical = historicalData[historicalData.length - 1]
+                if (lastHistorical != null) {
+                    estimateData[connectionIdx] = lastHistorical / scaleFactor
                 }
             }
         }
 
         return estimateData
     }
+
+    // Helper to scale data values (e.g. to Billions)
+    const scaleHistoryData = (data, scaleFactor = 1) => {
+        return (data || []).map(v => v != null ? v / scaleFactor : null)
+    }
+
+
 
     // Base chart options factory
     const createChartOptions = useCallback((title, yAxisLabel) => ({
@@ -244,7 +255,7 @@ export default function ChartNarrativeRenderer({ narrative, historyData }) {
                             datasets: [
                                 {
                                     label: 'Revenue (Billions)',
-                                    data: historyData.revenue.map(r => r / 1e9),
+                                    data: scaleHistoryData(historyData.revenue, 1e9),
                                     borderColor: 'rgb(75, 192, 192)',
                                     backgroundColor: 'rgba(75, 192, 192, 0.2)',
                                     pointRadius: activeIndex !== null ? 3 : 0,
@@ -283,11 +294,11 @@ export default function ChartNarrativeRenderer({ narrative, historyData }) {
             <div className="h-64">
                 <Line plugins={[zeroLinePlugin, crosshairPlugin]}
                     data={{
-                        labels: labels,
+                        labels: getExtendedLabels(),
                         datasets: [
                             {
                                 label: 'Net Income (Billions)',
-                                data: historyData.net_income?.map(ni => ni ? ni / 1e9 : null) || [],
+                                data: scaleHistoryData(historyData.net_income || [], 1e9),
                                 borderColor: 'rgb(153, 102, 255)',
                                 backgroundColor: 'rgba(153, 102, 255, 0.2)',
                                 pointRadius: activeIndex !== null ? 3 : 0,
@@ -309,7 +320,7 @@ export default function ChartNarrativeRenderer({ narrative, historyData }) {
                             datasets: [
                                 {
                                     label: 'EPS ($)',
-                                    data: historyData.eps || [],
+                                    data: scaleHistoryData(historyData.eps || [], 1),
                                     borderColor: 'rgb(6, 182, 212)',
                                     backgroundColor: 'rgba(6, 182, 212, 0.2)',
                                     pointRadius: activeIndex !== null ? 3 : 0,
@@ -385,11 +396,11 @@ export default function ChartNarrativeRenderer({ narrative, historyData }) {
             <div className="h-64">
                 <Line plugins={[zeroLinePlugin, crosshairPlugin]}
                     data={{
-                        labels: labels,
+                        labels: getExtendedLabels(),
                         datasets: [
                             {
                                 label: 'Operating Cash Flow (Billions)',
-                                data: historyData.operating_cash_flow?.map(ocf => ocf ? ocf / 1e9 : null) || [],
+                                data: scaleHistoryData(historyData.operating_cash_flow || [], 1e9),
                                 borderColor: 'rgb(54, 162, 235)',
                                 backgroundColor: 'rgba(54, 162, 235, 0.2)',
                                 pointRadius: activeIndex !== null ? 3 : 0,
@@ -406,11 +417,11 @@ export default function ChartNarrativeRenderer({ narrative, historyData }) {
             <div className="h-64">
                 <Line plugins={[zeroLinePlugin, crosshairPlugin]}
                     data={{
-                        labels: labels,
+                        labels: getExtendedLabels(),
                         datasets: [
                             {
                                 label: 'Free Cash Flow (Billions)',
-                                data: historyData.free_cash_flow?.map(fcf => fcf ? fcf / 1e9 : null) || [],
+                                data: scaleHistoryData(historyData.free_cash_flow || [], 1e9),
                                 borderColor: 'rgb(34, 197, 94)',
                                 backgroundColor: 'rgba(34, 197, 94, 0.2)',
                                 pointRadius: activeIndex !== null ? 3 : 0,
@@ -427,11 +438,14 @@ export default function ChartNarrativeRenderer({ narrative, historyData }) {
             <div className="h-64">
                 <Line plugins={[zeroLinePlugin, crosshairPlugin]}
                     data={{
-                        labels: labels,
+                        labels: getExtendedLabels(),
                         datasets: [
                             {
                                 label: 'Capital Expenditures (Billions)',
-                                data: historyData.capital_expenditures?.map(capex => capex ? Math.abs(capex) / 1e9 : null) || [],
+                                data: scaleHistoryData(
+                                    (historyData.capital_expenditures || []).map(v => v != null ? Math.abs(v) : null),
+                                    1e9
+                                ),
                                 borderColor: 'rgb(239, 68, 68)',
                                 backgroundColor: 'rgba(239, 68, 68, 0.2)',
                                 pointRadius: activeIndex !== null ? 3 : 0,
@@ -448,11 +462,11 @@ export default function ChartNarrativeRenderer({ narrative, historyData }) {
             <div className="h-64">
                 <Line plugins={[zeroLinePlugin, crosshairPlugin]}
                     data={{
-                        labels: labels,
+                        labels: getExtendedLabels(),
                         datasets: [
                             {
                                 label: 'Debt-to-Equity Ratio',
-                                data: historyData.debt_to_equity,
+                                data: scaleHistoryData(historyData.debt_to_equity || [], 1),
                                 borderColor: 'rgb(255, 99, 132)',
                                 backgroundColor: 'rgba(255, 99, 132, 0.2)',
                                 pointRadius: activeIndex !== null ? 3 : 0,

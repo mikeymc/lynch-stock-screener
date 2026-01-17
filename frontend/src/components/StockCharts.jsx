@@ -144,46 +144,52 @@ export default function StockCharts({ historyData, loading, symbol }) {
 
   const hasEstimates = historyData?.analyst_estimates?.next_year  // Only show next year estimate
 
-  // Build labels with ONE future estimate year appended (year after last historical)
+  // Get current year quarterly data for showing recent progress
+  const currentYear = historyData?.current_year_quarterly?.year
+
+  // Build labels with future estimate year appended if exists
   const getExtendedLabels = () => {
-    if (!hasEstimates) return labels
-
     const baseLabels = [...labels]
-    const estimateYear = lastHistoricalYear + 1
 
-    // Only add if this year isn't already in the data
-    const yearExists = labels.some(l => getYearFromLabel(l) === estimateYear)
-    if (!yearExists) {
-      baseLabels.push(`${estimateYear}E`)
+    // Append estimate year if estimates exist
+    if (hasEstimates) {
+      const estimateYear = lastHistoricalYear + 1
+      const yearExists = labels.some(l => getYearFromLabel(l) === estimateYear)
+      if (!yearExists) {
+        baseLabels.push(`${estimateYear}E`)
+      }
     }
 
     return baseLabels
   }
 
-  // Build estimate data array - only for the year AFTER historical data
-  const buildEstimateData = (historicalData, estimateType, scaleFactor = 1) => {
-    if (!hasEstimates) return historicalData.map(() => null)
 
-    const estimates = historyData?.analyst_estimates
+  // Build estimate data array - positioned after annual data
+  const buildEstimateData = (historicalData, estimateType, scaleFactor = 1) => {
     const extLabels = getExtendedLabels()
 
     // Start with nulls for all positions
     const estimateData = new Array(extLabels.length).fill(null)
 
+    if (!hasEstimates) return estimateData
+
+    const estimates = historyData?.analyst_estimates
+
     // Find the estimate year position
     const estimateYear = lastHistoricalYear + 1
-    const estimateYearIdx = extLabels.findIndex(l => l === `${estimateYear}E`)
+    const estimateYearIdx = extLabels.findIndex(l => String(l) === `${estimateYear}E`)
+    const connectionIdx = estimateYearIdx - 1
 
     if (estimateYearIdx >= 0 && estimates?.next_year) {
       const estValue = estimates.next_year[`${estimateType}_avg`]
       if (estValue != null) {
         estimateData[estimateYearIdx] = estValue / scaleFactor
 
-        // Connect from the last historical point for line continuity
-        if (historicalData.length > 0 && estimateYearIdx > 0) {
+        // Connect from the last annual point
+        if (historicalData.length > 0 && connectionIdx >= 0) {
           const lastHistorical = historicalData[historicalData.length - 1]
           if (lastHistorical != null) {
-            estimateData[estimateYearIdx - 1] = lastHistorical / scaleFactor
+            estimateData[connectionIdx] = lastHistorical / scaleFactor
           }
         }
       }
@@ -191,6 +197,14 @@ export default function StockCharts({ historyData, loading, symbol }) {
 
     return estimateData
   }
+
+
+  // Helper to scale data values (e.g. to Billions)
+  const scaleHistoryData = (data, scaleFactor = 1) => {
+    return (data || []).map(v => v != null ? v / scaleFactor : null)
+  }
+
+
 
   // Helper function to create chart options
   const createChartOptions = (title, yAxisLabel) => ({
@@ -343,7 +357,7 @@ export default function StockCharts({ historyData, loading, symbol }) {
                               datasets: [
                                 {
                                   label: 'Revenue (Billions)',
-                                  data: historyData.revenue.map(r => r / 1e9),
+                                  data: scaleHistoryData(historyData.revenue, 1e9),
                                   borderColor: 'rgb(75, 192, 192)',
                                   backgroundColor: 'rgba(75, 192, 192, 0.2)',
                                   pointRadius: activeIndex !== null ? 3 : 0,
@@ -384,11 +398,11 @@ export default function StockCharts({ historyData, loading, symbol }) {
                       <div className="h-64 chart-container">
                         <Line plugins={[zeroLinePlugin, crosshairPlugin]}
                           data={{
-                            labels: labels,
+                            labels: getExtendedLabels(),
                             datasets: [
                               {
                                 label: 'Net Income (Billions)',
-                                data: historyData.net_income?.map(ni => ni ? ni / 1e9 : null) || [],
+                                data: scaleHistoryData(historyData.net_income || [], 1e9),
                                 borderColor: 'rgb(153, 102, 255)',
                                 backgroundColor: 'rgba(153, 102, 255, 0.2)',
                                 pointRadius: activeIndex !== null ? 3 : 0,
@@ -413,7 +427,7 @@ export default function StockCharts({ historyData, loading, symbol }) {
                               datasets: [
                                 {
                                   label: 'EPS ($)',
-                                  data: historyData.eps || [],
+                                  data: scaleHistoryData(historyData.eps || [], 1),
                                   borderColor: 'rgb(6, 182, 212)',
                                   backgroundColor: 'rgba(6, 182, 212, 0.2)',
                                   pointRadius: activeIndex !== null ? 3 : 0,
@@ -504,11 +518,11 @@ export default function StockCharts({ historyData, loading, symbol }) {
                       <div className="h-64 chart-container">
                         <Line plugins={[zeroLinePlugin, crosshairPlugin]}
                           data={{
-                            labels: labels,
+                            labels: getExtendedLabels(),
                             datasets: [
                               {
                                 label: 'Operating Cash Flow (Billions)',
-                                data: historyData.operating_cash_flow?.map(ocf => ocf ? ocf / 1e9 : null) || [],
+                                data: scaleHistoryData(historyData.operating_cash_flow || [], 1e9),
                                 borderColor: 'rgb(54, 162, 235)',
                                 backgroundColor: 'rgba(54, 162, 235, 0.2)',
                                 pointRadius: activeIndex !== null ? 3 : 0,
@@ -524,11 +538,11 @@ export default function StockCharts({ historyData, loading, symbol }) {
                       <div className="h-64 chart-container">
                         <Line plugins={[zeroLinePlugin, crosshairPlugin]}
                           data={{
-                            labels: labels,
+                            labels: getExtendedLabels(),
                             datasets: [
                               {
                                 label: 'Free Cash Flow (Billions)',
-                                data: historyData.free_cash_flow?.map(fcf => fcf ? fcf / 1e9 : null) || [],
+                                data: scaleHistoryData(historyData.free_cash_flow || [], 1e9),
                                 borderColor: 'rgb(34, 197, 94)',
                                 backgroundColor: 'rgba(34, 197, 94, 0.2)',
                                 pointRadius: activeIndex !== null ? 3 : 0,
@@ -547,11 +561,14 @@ export default function StockCharts({ historyData, loading, symbol }) {
                       <div className="h-64 chart-container">
                         <Line plugins={[zeroLinePlugin, crosshairPlugin]}
                           data={{
-                            labels: labels,
+                            labels: getExtendedLabels(),
                             datasets: [
                               {
                                 label: 'Capital Expenditures (Billions)',
-                                data: historyData.capital_expenditures?.map(capex => capex ? Math.abs(capex) / 1e9 : null) || [],
+                                data: scaleHistoryData(
+                                  (historyData.capital_expenditures || []).map(v => v != null ? Math.abs(v) : null),
+                                  1e9
+                                ),
                                 borderColor: 'rgb(239, 68, 68)',
                                 backgroundColor: 'rgba(239, 68, 68, 0.2)',
                                 pointRadius: activeIndex !== null ? 3 : 0,
@@ -567,11 +584,11 @@ export default function StockCharts({ historyData, loading, symbol }) {
                       <div className="h-64 chart-container">
                         <Line plugins={[zeroLinePlugin, crosshairPlugin]}
                           data={{
-                            labels: labels,
+                            labels: getExtendedLabels(),
                             datasets: [
                               {
                                 label: 'Debt-to-Equity Ratio',
-                                data: historyData.debt_to_equity,
+                                data: scaleHistoryData(historyData.debt_to_equity || [], 1),
                                 borderColor: 'rgb(255, 99, 132)',
                                 backgroundColor: 'rgba(255, 99, 132, 0.2)',
                                 pointRadius: activeIndex !== null ? 3 : 0,
