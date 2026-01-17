@@ -23,6 +23,7 @@ const DEV_MOCK_USER = {
   email: 'dev@localhost',
   name: 'Dev User',
   is_admin: true,
+  has_completed_onboarding: true,
 };
 
 export function AuthProvider({ children }) {
