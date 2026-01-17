@@ -46,8 +46,8 @@ class EarningsAnalyzer:
         years = len(recent_history) - 1
 
         # Calculate CAGRs - these will return None if start values are <= 0
-        earnings_cagr = self.calculate_cagr(start_net_income, end_net_income, years)
-        revenue_cagr = self.calculate_cagr(start_revenue, end_revenue, years)
+        earnings_cagr = self.calculate_linear_growth_rate(start_net_income, end_net_income, years)
+        revenue_cagr = self.calculate_linear_growth_rate(start_revenue, end_revenue, years)
         
         # Calculate consistency scores for both income and revenue
         income_consistency_score = self.calculate_growth_consistency(net_income_values)
@@ -61,18 +61,14 @@ class EarningsAnalyzer:
             'revenue_consistency_score': revenue_consistency_score
         }
 
-    def calculate_cagr(self, start_value: float, end_value: float, years: int) -> Optional[float]:
+    def calculate_linear_growth_rate(self, start_value: float, end_value: float, years: int) -> Optional[float]:
         """
-        Calculate average annual growth rate.
+        Calculate average annual growth rate using a linear formula.
         
         Formula: ((end - start) / |start|) / years × 100
         
-        This handles all cases:
-        - Positive to positive growth
-        - Negative to positive (turnaround)
-        - Positive to negative (decline)
-        - Returns positive growth when earnings increase
-        - Returns negative growth when earnings decrease
+        This handles all cases including negative starting values, where a standard
+        geometric CAGR would fail or provide misleading results.
         """
         if start_value is None or end_value is None or years is None:
             return None

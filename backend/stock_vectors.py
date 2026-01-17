@@ -190,8 +190,8 @@ class StockVectors:
             years = len(group) - 1
             
             # CAGR
-            e_cagr = self._calculate_cagr(net_income_values[0], net_income_values[-1], years)
-            r_cagr = self._calculate_cagr(revenue_values[0], revenue_values[-1], years)
+            e_cagr = self._calculate_linear_growth_rate(net_income_values[0], net_income_values[-1], years)
+            r_cagr = self._calculate_linear_growth_rate(revenue_values[0], revenue_values[-1], years)
             
             # Consistency
             inc_const = self._calculate_consistency(net_income_values)
@@ -213,10 +213,10 @@ class StockVectors:
         
         return df
 
-    def _calculate_cagr(self, start_value: float, end_value: float, years: int) -> Optional[float]:
+    def _calculate_linear_growth_rate(self, start_value: float, end_value: float, years: int) -> Optional[float]:
         """
         Calculate average annual growth rate.
-        Matches EarningsAnalyzer.calculate_cagr() exactly.
+        Matches EarningsAnalyzer.calculate_linear_growth_rate() exactly.
         """
         if start_value is None or end_value is None or years is None:
             return None
