@@ -204,6 +204,8 @@ class TradingViewFetcher:
                              'country',                       # Country
                              'currency',                      # Currency
                              'typespecs',                     # Security type (common, preferred, etf, etc.)
+                             'total_revenue',                 # Total Revenue
+                             'total_debt',                    # Total Debt
                          )
                          .where(
                              # Filter to stocks with market cap > $1M
@@ -284,4 +286,6 @@ class TradingViewFetcher:
             'exchange': row.get('exchange'),
             'country': row.get('country'),  # May be None, will be filled by yfinance
             'currency': row.get('currency'),
+            'total_revenue': row.get('total_revenue'),
+            'total_debt': row.get('total_debt'),
         }

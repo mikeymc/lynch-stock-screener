@@ -131,8 +131,8 @@ class DataFetcher:
                     'longName': cached_data.get('company_name') or symbol,
                     'exchange': cached_data.get('exchange', 'UNKNOWN'),
                     'country': cached_data.get('country'),  # May be None, will fetch from yfinance if needed
-                    'totalRevenue': None,
-                    'totalDebt': None,
+                    'totalRevenue': cached_data.get('total_revenue'),
+                    'totalDebt': cached_data.get('total_debt'),
                     'heldPercentInstitutions': None,
                 }
                 using_tradingview_cache = True
@@ -205,12 +205,20 @@ class DataFetcher:
             if finviz_cache and symbol in finviz_cache:
                 institutional_ownership = finviz_cache[symbol]
                 logger.info(f"[{symbol}] Using Finviz cached institutional ownership: {institutional_ownership:.1%}")
-            elif not using_tradingview_cache and info:
-                # Only fallback to yfinance if NOT using TradingView cache
-                # (TradingView cache explicitly sets heldPercentInstitutions to None)
-                institutional_ownership = info.get('heldPercentInstitutions')
-                if institutional_ownership is not None:
-                    logger.warning(f"⚠️  [{symbol}] NOT IN FINVIZ CACHE - Using yfinance institutional ownership")
+            
+            # Fallback: If not in Finviz cache, try yfinance
+            # Even if using_tradingview_cache is True, we might need to fetch this if it's important
+            if institutional_ownership is None:
+                if info.get('heldPercentInstitutions') is not None:
+                     institutional_ownership = info.get('heldPercentInstitutions')
+                elif using_tradingview_cache:
+                     # If we really need it and don't have it, we might consider a quick fetch
+                     # But yfinance info is slow. Let's try to get it from yf_info only if we fetch it for other reasons
+                     # OR just accept None for speed.
+                     pass 
+                     
+            if institutional_ownership is None and not using_tradingview_cache:
+                 logger.debug(f"[{symbol}] Institutional ownership missing from both Finviz and yfinance")
 
             # Fetch WACC-related data
             beta = info.get('beta')
@@ -246,9 +254,26 @@ class DataFetcher:
                 except Exception as e:
                     logger.warning(f"[{symbol}] Failed to calculate D/E from balance sheet: {e}")
             
-            # Get interest expense and tax rate from financials (SKIP if using TradingView cache for speed)
+            # Get interest expense - prefer EDGAR data, then yfinance
             interest_expense = None
+            if edgar_data and edgar_data.get('interest_expense'):
+                interest_expense = edgar_data['interest_expense']
+                logger.info(f"[{symbol}] Using EDGAR Interest Expense: ${interest_expense:,.0f}")
+
+            # Get effective tax rate - prefer EDGAR data
             effective_tax_rate = None
+            if edgar_data and edgar_data.get('effective_tax_rate'):
+                 effective_tax_rate = edgar_data['effective_tax_rate']
+                 logger.info(f"[{symbol}] Using EDGAR Effective Tax Rate: {effective_tax_rate:.2%}")
+                 
+            # Extract Revenue from EDGAR if missing from info (TradingView cache sets it to None)
+            revenue = info.get('totalRevenue')
+            if not revenue and edgar_data and edgar_data.get('revenue_history'):
+                 # Get most recent annual revenue
+                 latest_rev = edgar_data['revenue_history'][0] # sorted descending
+                 revenue = latest_rev['revenue']
+                 logger.info(f"[{symbol}] Using EDGAR Revenue: ${revenue:,.0f}")
+
             
             if not using_tradingview_cache:
                 # Only fetch these slow yfinance calls if NOT using TradingView cache
@@ -256,21 +281,23 @@ class DataFetcher:
                     ticker = yf.Ticker(symbol)
                     financials = ticker.financials
                     if financials is not None and not financials.empty:
-                        if 'Interest Expense' in financials.index:
+                        # Only fetch if not already found from EDGAR
+                        if interest_expense is None and 'Interest Expense' in financials.index:
                             interest_expense = abs(financials.loc['Interest Expense'].iloc[0])
                 except Exception as e:
                     logger.debug(f"Could not fetch interest expense for {symbol}: {e}")
                 
                 # Calculate effective tax rate from income statement
-                try:
-                    if financials is not None and not financials.empty:
-                        if 'Tax Provision' in financials.index and 'Pretax Income' in financials.index:
-                            tax = financials.loc['Tax Provision'].iloc[0]
-                            pretax = financials.loc['Pretax Income'].iloc[0]
-                            if pretax and pretax > 0:
-                                effective_tax_rate = tax / pretax
-                except Exception as e:
-                    logger.debug(f"Could not calculate tax rate for {symbol}: {e}")
+                if effective_tax_rate is None:
+                    try:
+                        if financials is not None and not financials.empty:
+                            if 'Tax Provision' in financials.index and 'Pretax Income' in financials.index:
+                                tax = financials.loc['Tax Provision'].iloc[0]
+                                pretax = financials.loc['Pretax Income'].iloc[0]
+                                if pretax and pretax > 0:
+                                    effective_tax_rate = tax / pretax
+                    except Exception as e:
+                        logger.debug(f"Could not calculate tax rate for {symbol}: {e}")
 
             # Calculate Gross Margin (for Buffett scoring)
             # Always calculate this regardless of cache since it's critical for Buffett scoring
@@ -306,7 +333,7 @@ class DataFetcher:
                 'market_cap': info.get('marketCap'),
                 'debt_to_equity': debt_to_equity,
                 'institutional_ownership': institutional_ownership,
-                'revenue': info.get('totalRevenue'),
+                'revenue': revenue,
                 'dividend_yield': dividend_yield,
                 'beta': beta,
                 'total_debt': total_debt,
@@ -553,9 +580,12 @@ class DataFetcher:
 
     # todo: can this be collapsed with _store_edgar_earnings?
     def _store_edgar_quarterly_earnings(self, symbol: str, edgar_data: Dict[str, Any], price_history: Optional[pd.DataFrame] = None, force_refresh: bool = False):
-        """Store quarterly earnings history from EDGAR data using Net Income"""
-        # Use net_income_quarterly (raw quarterly Net Income from EDGAR)
+        """Store quarterly earnings history from EDGAR data (Net Income, Revenue, EPS, Cash Flow)"""
+        # Get all quarterly data sources from EDGAR
         net_income_quarterly = edgar_data.get('net_income_quarterly', [])
+        revenue_quarterly = edgar_data.get('revenue_quarterly', [])
+        eps_quarterly = edgar_data.get('eps_quarterly', [])
+        cash_flow_quarterly = edgar_data.get('cash_flow_quarterly', [])
         
         # Parse dividend history
         dividend_history = edgar_data.get('dividend_history', [])
@@ -567,41 +597,65 @@ class DataFetcher:
                 key = (div['year'], div['quarter'])
                 dividends_by_quarter[key] = div['amount']
 
-        if not net_income_quarterly:
-            logger.warning(f"[{symbol}] No quarterly Net Income data available from EDGAR")
+        if not net_income_quarterly and not revenue_quarterly and not cash_flow_quarterly and not eps_quarterly:
+            logger.warning(f"[{symbol}] No quarterly data available from EDGAR")
             return
 
         # Only clear existing quarterly data on force refresh
-        # This allows the upsert to handle normal updates while ensuring
-        # force refresh completely replaces potentially-bad historical data
         if force_refresh:
             self.db.clear_quarterly_earnings(symbol)
 
-        quarters_stored = 0
-        for entry in net_income_quarterly:
-            year = entry['year']
-            quarter = entry['quarter']
-            net_income = entry.get('net_income')
-            fiscal_end = entry.get('fiscal_end')
-            
-            dividend = dividends_by_quarter.get((year, quarter))
+        # Create lookup dictionaries keyed by (year, quarter)
+        ni_by_key = {(e['year'], e['quarter']): e for e in net_income_quarterly}
+        rev_by_key = {(e['year'], e['quarter']): e for e in revenue_quarterly}
+        eps_by_key = {(e['year'], e['quarter']): e for e in eps_quarterly}
+        cf_by_key = {(e['year'], e['quarter']): e for e in cash_flow_quarterly}
 
-            if year and quarter and net_income:
-                # Store with period like 'Q1', 'Q2', 'Q3', 'Q4'
+        # Merge all quarter keys
+        all_keys = set(ni_by_key.keys()) | set(rev_by_key.keys()) | set(eps_by_key.keys()) | set(cf_by_key.keys())
+        
+        quarters_stored = 0
+        for key in all_keys:
+            year, quarter = key
+            
+            # Get data from each source
+            ni_entry = ni_by_key.get(key, {})
+            rev_entry = rev_by_key.get(key, {})
+            eps_entry = eps_by_key.get(key, {})
+            cf_entry = cf_by_key.get(key, {})
+            
+            net_income = ni_entry.get('net_income')
+            revenue = rev_entry.get('revenue')
+            eps = eps_entry.get('eps')
+            operating_cash_flow = cf_entry.get('operating_cash_flow')
+            capital_expenditures = cf_entry.get('capital_expenditures')
+            free_cash_flow = cf_entry.get('free_cash_flow')
+            
+            # Use fiscal_end from whichever source has it
+            fiscal_end = ni_entry.get('fiscal_end') or rev_entry.get('fiscal_end') or eps_entry.get('fiscal_end') or cf_entry.get('fiscal_end')
+            dividend = dividends_by_quarter.get(key)
+
+            # Only store if we have at least some data
+            if net_income or revenue or eps or operating_cash_flow or free_cash_flow:
                 self.db.save_earnings_history(
                     symbol,
                     year,
-                    None,  # No EPS for quarterly data
-                    None,  # No revenue for quarterly data
+                    float(eps) if eps else None,
+                    float(revenue) if revenue else None,
                     fiscal_end=fiscal_end,
-                    debt_to_equity=None,  # No D/E for quarterly data
+                    debt_to_equity=None,
                     period=quarter,
-                    net_income=float(net_income),
-                    dividend_amount=float(dividend) if dividend is not None else None
+                    net_income=float(net_income) if net_income else None,
+                    dividend_amount=float(dividend) if dividend is not None else None,
+                    operating_cash_flow=float(operating_cash_flow) if operating_cash_flow else None,
+                    capital_expenditures=float(capital_expenditures) if capital_expenditures else None,
+                    free_cash_flow=float(free_cash_flow) if free_cash_flow else None,
                 )
                 quarters_stored += 1
 
-        logger.info(f"[{symbol}] Stored {quarters_stored} quarters of EDGAR Net Income data")
+        logger.info(f"[{symbol}] Stored {quarters_stored} quarters of EDGAR data (NI: {len(net_income_quarterly)}, Rev: {len(revenue_quarterly)}, EPS: {len(eps_quarterly)}, CF: {len(cash_flow_quarterly)})")
+
+
 
     def _backfill_debt_to_equity(self, symbol: str, years: List[int]):
         """

@@ -2268,38 +2268,55 @@ def get_stock_history(symbol):
     except Exception as e:
         logger.debug(f"Error fetching analyst estimates for {symbol}: {e}")
 
-    # Build current year quarterly breakdown from quarterly earnings history
+    # Build recent quarterly breakdown from quarterly earnings history
+    # Show quarters that are MORE RECENT than the last annual data point (by fiscal_end date)
     current_year_quarterly = None
     try:
         quarterly_history = db.get_earnings_history(symbol.upper(), period_type='quarterly')
-        if quarterly_history:
-            from datetime import datetime
-            current_year = datetime.now().year
-            
-            # Get all quarters for the current year
-            current_year_quarters = [
-                q for q in quarterly_history 
-                if q['year'] == current_year
-            ]
-            
-            if current_year_quarters:
-                # Sort by quarter (Q1, Q2, Q3, Q4)
-                current_year_quarters.sort(key=lambda x: x.get('period', 'Q0'))
+        if quarterly_history and earnings_history:
+            # Find the most recent annual fiscal_end date
+            annual_entries = [e for e in earnings_history if e.get('period') == 'annual' or e.get('period') is None]
+            if annual_entries:
+                last_annual_fiscal_end = max(
+                    (e.get('fiscal_end') or f"{e['year']}-12-31") 
+                    for e in annual_entries
+                )
                 
-                current_year_quarterly = {
-                    'year': current_year,
-                    'quarters': [
-                        {
-                            'q': int(q['period'][1]) if q.get('period') and q['period'].startswith('Q') else 0,
-                            'period': q.get('period'),
-                            'eps': q.get('eps'),
-                            'revenue': q.get('revenue'),
-                            'net_income': q.get('net_income'),
-                            'fiscal_end': q.get('fiscal_end'),
-                        }
-                        for q in current_year_quarters
-                    ]
-                }
+                # Get all quarters whose fiscal_end is AFTER the last annual fiscal_end
+                recent_quarters = [
+                    q for q in quarterly_history 
+                    if q.get('fiscal_end') and q['fiscal_end'] > last_annual_fiscal_end
+                ]
+                
+                if recent_quarters:
+                    # Sort by fiscal_end date
+                    recent_quarters.sort(key=lambda x: x.get('fiscal_end', ''))
+                    
+                    # Get the year of the most recent quarter for display
+                    most_recent_year = recent_quarters[-1]['year'] if recent_quarters else None
+                    
+                    current_year_quarterly = {
+                        'year': most_recent_year,
+                        'quarters': [
+                            {
+                                'q': int(q['period'][1]) if q.get('period') and q['period'].startswith('Q') else 0,
+                                'period': q.get('period'),
+                                'year': q['year'],
+                                'eps': q.get('eps'),
+                                'revenue': q.get('revenue'),
+                                'net_income': q.get('net_income'),
+                                'fiscal_end': q.get('fiscal_end'),
+                                'operating_cash_flow': q.get('operating_cash_flow'),
+                                'capital_expenditures': q.get('capital_expenditures'),
+                                'free_cash_flow': q.get('free_cash_flow'),
+                                'debt_to_equity': q.get('debt_to_equity'),
+                            }
+                            for q in recent_quarters
+                        ]
+                    }
+
+
+
     except Exception as e:
         logger.debug(f"Error building current year quarterly for {symbol}: {e}")
 

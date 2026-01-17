@@ -373,28 +373,115 @@ class EdgarFetcher:
             logger.debug("Could not parse quarterly EPS history from EDGAR: No us-gaap or ifrs-full data found")
             return []
 
-        # Filter for quarterly reports (10-Q for US, 6-K for foreign)
+        # Filter for quarterly reports (10-Q for US, 6-K for foreign) AND Annual (10-K) to derive Q4
         quarterly_eps = []
+        annual_eps_map = {} # Year -> {val, end}
         seen_quarters = set()
+        
+        from datetime import datetime
 
         for entry in eps_data_list:
-            if entry.get('form') in ['10-Q', '6-K']:
+            form = entry.get('form')
+            if form in ['10-Q', '6-K', '10-K', '20-F', '40-F']:
                 fiscal_end = entry.get('end')
-                # Extract year from fiscal_end date (more reliable than fy field)
+                start_date = entry.get('start')
+                
+                # Extract year from fiscal_end date
                 year = int(fiscal_end[:4]) if fiscal_end else entry.get('fy')
-                quarter = entry.get('fp')  # Fiscal period: Q1, Q2, Q3
-                eps = entry.get('val')
+                if not year:
+                    continue
 
-                # Only include entries with fiscal period (Q1, Q2, Q3)
-                # Avoid duplicates using (year, quarter) tuple
-                if year and quarter and eps and (year, quarter) not in seen_quarters:
+                fp = entry.get('fp')  # Fiscal period: Q1, Q2, Q3, FY, Q4
+                val = entry.get('val')
+                
+                if val is None:
+                    continue
+
+                # Determine period type (Annual vs Quarterly)
+                is_annual = False
+                is_quarterly = False
+                
+                # Check by FP
+                if fp in ['Q1', 'Q2', 'Q3', 'Q4']:
+                    is_quarterly = True
+                    quarter = fp
+                elif fp == 'FY':
+                    is_annual = True
+                
+                # Check by duration if ambiguous (often 10-K has missing FP for Q4/FY)
+                if not is_annual and not is_quarterly and start_date and fiscal_end:
+                    try:
+                        d1 = datetime.strptime(start_date, '%Y-%m-%d')
+                        d2 = datetime.strptime(fiscal_end, '%Y-%m-%d')
+                        duration = (d2 - d1).days
+                        
+                        if 350 <= duration <= 375:
+                            is_annual = True
+                        elif 80 <= duration <= 100:
+                            is_quarterly = True
+                            # Infer quarter? 
+                            # If end date is ~Dec 31 (for cal year), might be Q4?
+                            # Without explicit FP, assigning Q1-Q3 is risky, but Q4 is last.
+                            # We'll rely on Subtraction fallback for Q4 mostly, 
+                            # but if we find explicit Q4 via date matching (aligned with FY end), likely Q4.
+                            # Let's verify fiscal year end alignment.
+                            # For now, rely on logic: if it's 10-K and ~90 days, it's Q4.
+                            if form in ['10-K', '20-F', '40-F']:
+                                quarter = 'Q4'
+                            else:
+                                continue # ambiguous 10-Q date range without fp? skip
+                    except:
+                        pass
+
+                # Store Data
+                if is_annual:
+                    # Keep latest (restatements)
+                    if year not in annual_eps_map:
+                         annual_eps_map[year] = {'val': val, 'end': fiscal_end}
+                    else:
+                         # Overwrite if fiscal_end is later (correction)
+                         if fiscal_end > annual_eps_map[year]['end']:
+                             annual_eps_map[year] = {'val': val, 'end': fiscal_end}
+
+                elif is_quarterly and quarter:
+                    if (year, quarter) not in seen_quarters:
+                        quarterly_eps.append({
+                            'year': year,
+                            'quarter': quarter,
+                            'eps': val,
+                            'fiscal_end': fiscal_end
+                        })
+                        seen_quarters.add((year, quarter))
+
+        # GAP FILLING: Calculate Q4 if missing using Annual - (Q1+Q2+Q3)
+        # Group found quarters by year
+        quarters_by_year = {}
+        for q in quarterly_eps:
+            y = q['year']
+            if y not in quarters_by_year: quarters_by_year[y] = {}
+            quarters_by_year[y][q['quarter']] = q['eps']
+
+        for year, annual_data in annual_eps_map.items():
+            if year in quarters_by_year:
+                qs = quarters_by_year[year]
+                # If Q4 is missing but we have Q1, Q2, Q3
+                if 'Q4' not in qs and 'Q1' in qs and 'Q2' in qs and 'Q3' in qs:
+                    annual_val = annual_data['val']
+                    q1 = qs['Q1']; q2 = qs['Q2']; q3 = qs['Q3']
+                    
+                    # Calculate Q4
+                    # Note: EPS is not strictly additive due to share count changes, but it's the standard approximation.
+                    q4_val = annual_val - (q1 + q2 + q3)
+                    
+                    # Add Q4
                     quarterly_eps.append({
                         'year': year,
-                        'quarter': quarter,
-                        'eps': eps,
-                        'fiscal_end': fiscal_end
+                        'quarter': 'Q4',
+                        'eps': q4_val,
+                        'fiscal_end': annual_data['end'],
+                        'is_calculated': True 
                     })
-                    seen_quarters.add((year, quarter))
+                    logger.debug(f"Calculated Q4 EPS for {year}: {q4_val} (Annual {annual_val} - SumQ1-3)")
 
         # Sort by year descending, then by quarter
         def quarter_sort_key(entry):
@@ -860,6 +947,332 @@ class EdgarFetcher:
         logger.info(f"Successfully parsed {len(quarterly_net_income)} quarters of Net Income data from EDGAR ({q4_count} Q4s calculated)")
         return quarterly_net_income
 
+    def parse_quarterly_revenue_history(self, company_facts: Dict[str, Any]) -> List[Dict[str, Any]]:
+        """
+        Extract quarterly Revenue history with Q4 calculated from annual data.
+
+        EDGAR provides quarterly data in 10-Q filings (Q1, Q2, Q3) but Q4 is
+        typically only reported in the annual 10-K. We calculate Q4 as:
+        Q4 = Annual Revenue - (Q1 + Q2 + Q3)
+
+        Revenue is reported cumulatively (YTD) in quarterly filings, so we
+        convert to individual quarters: Q2_actual = Q2_cumulative - Q1, etc.
+
+        Args:
+            company_facts: Company facts data from EDGAR API
+
+        Returns:
+            List of dictionaries with year, quarter, revenue, and fiscal_end values
+        """
+        revenue_data_list = None
+
+        # Try US-GAAP first (domestic companies) - multiple possible tags
+        try:
+            if 'us-gaap' in company_facts['facts']:
+                # Try primary revenue tags in order of preference
+                revenue_tags = [
+                    'RevenueFromContractWithCustomerExcludingAssessedTax',  # ASC 606
+                    'Revenues',  # General revenue tag
+                    'SalesRevenueNet',  # Manufacturing/retail
+                    'RevenueFromContractWithCustomerIncludingAssessedTax',
+                ]
+                
+                revenue_data_list = []
+                valid_tag_found = False
+                
+                for tag in revenue_tags:
+                    if tag in company_facts['facts']['us-gaap']:
+                        units = company_facts['facts']['us-gaap'][tag]['units']
+                        if 'USD' in units:
+                            revenue_data_list.extend(units['USD'])
+                            valid_tag_found = True
+                
+                if not valid_tag_found:
+                    revenue_data_list = None
+        except (KeyError, TypeError):
+            pass
+
+        # Fall back to IFRS (foreign companies)
+        if revenue_data_list is None:
+            try:
+                if 'ifrs-full' in company_facts['facts'] and 'Revenue' in company_facts['facts']['ifrs-full']:
+                    units = company_facts['facts']['ifrs-full']['Revenue']['units']
+                    if 'USD' in units:
+                        revenue_data_list = units['USD']
+                    else:
+                        currency_units = [u for u in units.keys() if len(u) == 3 and u.isupper()]
+                        if currency_units:
+                            revenue_data_list = units[currency_units[0]]
+            except (KeyError, TypeError):
+                pass
+
+        if revenue_data_list is None:
+            logger.debug("Could not parse quarterly Revenue history from EDGAR")
+            return []
+
+        # Extract Q1, Q2, Q3 from quarterly reports (10-Q)
+        quarterly_revenue = []
+        seen_quarters = set()
+
+        for entry in revenue_data_list:
+            if entry.get('form') in ['10-Q', '6-K']:
+                fiscal_end = entry.get('end')
+                year = int(fiscal_end[:4]) if fiscal_end else entry.get('fy')
+                quarter = entry.get('fp')  # Fiscal period: Q1, Q2, Q3
+                revenue = entry.get('val')
+
+                if year and quarter and revenue is not None and (year, quarter) not in seen_quarters:
+                    quarterly_revenue.append({
+                        'year': year,
+                        'quarter': quarter,
+                        'revenue': revenue,
+                        'fiscal_end': fiscal_end
+                    })
+                    seen_quarters.add((year, quarter))
+
+        # Get annual data to calculate Q4
+        annual_revenue_by_year = {}
+        for entry in revenue_data_list:
+            if entry.get('form') in ['10-K', '20-F']:
+                fy = entry.get('fy')
+                revenue = entry.get('val')
+                fiscal_end = entry.get('end')
+                start = entry.get('start')
+
+                if fy and revenue is not None and fiscal_end and start:
+                    try:
+                        from datetime import datetime
+                        d1 = datetime.strptime(start, '%Y-%m-%d')
+                        d2 = datetime.strptime(fiscal_end, '%Y-%m-%d')
+                        duration = (d2 - d1).days
+                        if duration < 360:
+                            continue  # Skip quarterly values
+                    except (ValueError, TypeError):
+                        continue
+
+                    if fy not in annual_revenue_by_year:
+                        annual_revenue_by_year[fy] = {
+                            'year': fy,
+                            'revenue': revenue,
+                            'fiscal_end': fiscal_end
+                        }
+
+        # Convert cumulative quarters to individual quarters and calculate Q4
+        annual_by_year = annual_revenue_by_year
+        quarterly_by_year = {}
+        for entry in quarterly_revenue:
+            year = entry['year']
+            if year not in quarterly_by_year:
+                quarterly_by_year[year] = []
+            quarterly_by_year[year].append(entry)
+
+        converted_quarterly = []
+        for year, annual_entry in annual_by_year.items():
+            if year in quarterly_by_year:
+                quarters = quarterly_by_year[year]
+                quarters_dict = {q['quarter']: q for q in quarters}
+
+                if all(f'Q{i}' in quarters_dict for i in [1, 2, 3]):
+                    q1_cumulative = quarters_dict['Q1']['revenue']
+                    q2_cumulative = quarters_dict['Q2']['revenue']
+                    q3_cumulative = quarters_dict['Q3']['revenue']
+                    annual_rev = annual_entry['revenue']
+
+                    q1_individual = q1_cumulative
+                    q2_individual = q2_cumulative - q1_cumulative
+                    q3_individual = q3_cumulative - q2_cumulative
+                    q4_individual = annual_rev - q3_cumulative
+
+                    calculated_annual = q1_individual + q2_individual + q3_individual + q4_individual
+                    if abs(calculated_annual - annual_rev) < 1000000:  # $1M tolerance
+                        converted_quarterly.extend([
+                            {'year': year, 'quarter': 'Q1', 'revenue': q1_individual, 'fiscal_end': quarters_dict['Q1']['fiscal_end']},
+                            {'year': year, 'quarter': 'Q2', 'revenue': q2_individual, 'fiscal_end': quarters_dict['Q2']['fiscal_end']},
+                            {'year': year, 'quarter': 'Q3', 'revenue': q3_individual, 'fiscal_end': quarters_dict['Q3']['fiscal_end']},
+                            {'year': year, 'quarter': 'Q4', 'revenue': q4_individual, 'fiscal_end': annual_entry['fiscal_end']},
+                        ])
+
+        quarterly_revenue = converted_quarterly
+
+        def quarter_sort_key(entry):
+            quarter_order = {'Q1': 1, 'Q2': 2, 'Q3': 3, 'Q4': 4}
+            return (-entry['year'], quarter_order.get(entry['quarter'], 0))
+
+        quarterly_revenue.sort(key=quarter_sort_key)
+        q4_count = sum(1 for entry in quarterly_revenue if entry['quarter'] == 'Q4')
+        logger.info(f"Successfully parsed {len(quarterly_revenue)} quarters of Revenue data from EDGAR ({q4_count} Q4s calculated)")
+        return quarterly_revenue
+
+    def parse_quarterly_cash_flow_history(self, company_facts: Dict[str, Any]) -> List[Dict[str, Any]]:
+        """
+        Extract quarterly Cash Flow history (OCF, CapEx, FCF) with Q4 calculated from annual.
+
+        EDGAR provides quarterly cash flow data in 10-Q filings.
+        Q4 = Annual value - (Q1 + Q2 + Q3)
+
+        Args:
+            company_facts: Company facts data from EDGAR API
+
+        Returns:
+            List of dictionaries with year, quarter, ocf, capex, fcf, and fiscal_end
+        """
+        # 1. Extract Operating Cash Flow
+        ocf_data = []
+        try:
+            if 'us-gaap' in company_facts['facts']:
+                ocf_tags = [
+                    'NetCashProvidedByUsedInOperatingActivities',
+                    'NetCashProvidedByUsedInOperatingActivitiesContinuingOperations',
+                ]
+                for tag in ocf_tags:
+                    if tag in company_facts['facts']['us-gaap']:
+                        units = company_facts['facts']['us-gaap'][tag]['units']
+                        if 'USD' in units:
+                            ocf_data.extend(units['USD'])
+        except (KeyError, TypeError):
+            pass
+
+        # 2. Extract Capital Expenditures
+        capex_data = []
+        try:
+            if 'us-gaap' in company_facts['facts']:
+                capex_tags = [
+                    'PaymentsToAcquirePropertyPlantAndEquipment',
+                    'PaymentsToAcquireProductiveAssets',
+                ]
+                for tag in capex_tags:
+                    if tag in company_facts['facts']['us-gaap']:
+                        units = company_facts['facts']['us-gaap'][tag]['units']
+                        if 'USD' in units:
+                            capex_data.extend(units['USD'])
+        except (KeyError, TypeError):
+            pass
+
+        def extract_quarterly_and_annual(data_list):
+            """Extract quarterly cumulative values and annual totals"""
+            quarterly = []
+            annual_by_year = {}
+            seen_quarters = set()
+
+            for entry in data_list:
+                form = entry.get('form')
+                fiscal_end = entry.get('end')
+                start = entry.get('start')
+                val = entry.get('val')
+                fy = entry.get('fy')
+                fp = entry.get('fp')
+
+                if val is None or not fiscal_end:
+                    continue
+
+                # Annual data (10-K)
+                if form in ['10-K', '20-F'] and start:
+                    try:
+                        from datetime import datetime
+                        d1 = datetime.strptime(start, '%Y-%m-%d')
+                        d2 = datetime.strptime(fiscal_end, '%Y-%m-%d')
+                        duration = (d2 - d1).days
+                        if duration >= 360:
+                            year = int(fiscal_end[:4])
+                            if fy not in annual_by_year:
+                                annual_by_year[fy] = {'val': val, 'fiscal_end': fiscal_end}
+                    except (ValueError, TypeError):
+                        pass
+
+                # Quarterly data (10-Q)
+                elif form in ['10-Q', '6-K'] and fp:
+                    year = int(fiscal_end[:4]) if fiscal_end else fy
+                    quarter = fp
+                    if year and quarter and (year, quarter) not in seen_quarters:
+                        quarterly.append({
+                            'year': year,
+                            'quarter': quarter,
+                            'val': val,
+                            'fiscal_end': fiscal_end
+                        })
+                        seen_quarters.add((year, quarter))
+
+            return quarterly, annual_by_year
+
+        def convert_cumulative_to_individual(quarterly, annual_by_year):
+            """Convert cumulative YTD values to individual quarter values"""
+            quarterly_by_year = {}
+            for entry in quarterly:
+                year = entry['year']
+                if year not in quarterly_by_year:
+                    quarterly_by_year[year] = []
+                quarterly_by_year[year].append(entry)
+
+            converted = []
+            for year, annual_entry in annual_by_year.items():
+                if year in quarterly_by_year:
+                    quarters = quarterly_by_year[year]
+                    quarters_dict = {q['quarter']: q for q in quarters}
+
+                    if all(f'Q{i}' in quarters_dict for i in [1, 2, 3]):
+                        q1_cumulative = quarters_dict['Q1']['val']
+                        q2_cumulative = quarters_dict['Q2']['val']
+                        q3_cumulative = quarters_dict['Q3']['val']
+                        annual_val = annual_entry['val']
+
+                        q1_individual = q1_cumulative
+                        q2_individual = q2_cumulative - q1_cumulative
+                        q3_individual = q3_cumulative - q2_cumulative
+                        q4_individual = annual_val - q3_cumulative
+
+                        converted.extend([
+                            {'year': year, 'quarter': 'Q1', 'val': q1_individual, 'fiscal_end': quarters_dict['Q1']['fiscal_end']},
+                            {'year': year, 'quarter': 'Q2', 'val': q2_individual, 'fiscal_end': quarters_dict['Q2']['fiscal_end']},
+                            {'year': year, 'quarter': 'Q3', 'val': q3_individual, 'fiscal_end': quarters_dict['Q3']['fiscal_end']},
+                            {'year': year, 'quarter': 'Q4', 'val': q4_individual, 'fiscal_end': annual_entry['fiscal_end']},
+                        ])
+
+            return converted
+
+        # Process OCF and CapEx
+        ocf_quarterly, ocf_annual = extract_quarterly_and_annual(ocf_data)
+        capex_quarterly, capex_annual = extract_quarterly_and_annual(capex_data)
+
+        ocf_converted = convert_cumulative_to_individual(ocf_quarterly, ocf_annual)
+        capex_converted = convert_cumulative_to_individual(capex_quarterly, capex_annual)
+
+        # Merge OCF and CapEx, calculate FCF
+        ocf_by_key = {(e['year'], e['quarter']): e for e in ocf_converted}
+        capex_by_key = {(e['year'], e['quarter']): e for e in capex_converted}
+
+        all_keys = set(ocf_by_key.keys()) | set(capex_by_key.keys())
+        result = []
+
+        for key in all_keys:
+            year, quarter = key
+            ocf_entry = ocf_by_key.get(key)
+            capex_entry = capex_by_key.get(key)
+
+            ocf = ocf_entry['val'] if ocf_entry else None
+            capex = capex_entry['val'] if capex_entry else None
+            fiscal_end = (ocf_entry or capex_entry or {}).get('fiscal_end')
+
+            fcf = None
+            if ocf is not None and capex is not None:
+                fcf = ocf - capex
+
+            result.append({
+                'year': year,
+                'quarter': quarter,
+                'operating_cash_flow': ocf,
+                'capital_expenditures': capex,
+                'free_cash_flow': fcf,
+                'fiscal_end': fiscal_end
+            })
+
+        def quarter_sort_key(entry):
+            quarter_order = {'Q1': 1, 'Q2': 2, 'Q3': 3, 'Q4': 4}
+            return (-entry['year'], quarter_order.get(entry['quarter'], 0))
+
+        result.sort(key=quarter_sort_key)
+        logger.info(f"Successfully parsed {len(result)} quarters of Cash Flow data from EDGAR")
+        return result
+
     def parse_shares_outstanding_history(self, company_facts: Dict[str, Any]) -> List[Dict[str, Any]]:
         """
         Extract weighted average shares outstanding history (split-adjusted)
@@ -1148,7 +1561,133 @@ class EdgarFetcher:
         net_income_annual = self.parse_net_income_history(company_facts)
 
         # Get shares outstanding (split-adjusted)
+        shares_annual = self.parse_shares_outstanding_history(company_facts)
+
+        # Create lookup dict for shares by year
+        # Note: Now that we extract year from fiscal_end consistently, years should match
+        shares_by_year = {entry['year']: entry for entry in shares_annual}
+
+        # Calculate EPS for each year
+        eps_history = []
+        for ni_entry in net_income_annual:
+            year = ni_entry['year']
+            fiscal_end = ni_entry['fiscal_end']
+
+            if year in shares_by_year:
+                net_income = ni_entry['net_income']
+                shares = shares_by_year[year]['shares']
+
+                if shares > 0:
+                    eps = net_income / shares
+                    eps_history.append({
+                        'year': year,
+                        'eps': eps,
+                        'net_income': net_income,
+                        'shares': shares,
+                        'fiscal_end': fiscal_end
+                    })
+
+        # Sort by year descending
+        eps_history.sort(key=lambda x: x['year'], reverse=True)
+        logger.info(f"Successfully calculated {len(eps_history)} years of split-adjusted EPS")
+        return eps_history
+
+    def parse_interest_expense(self, company_facts: Dict[str, Any]) -> Optional[float]:
+        """
+        Extract the most recent annual Interest Expense from company facts.
         
+        Args:
+            company_facts: Company facts data from EDGAR API
+            
+        Returns:
+            Most recent annual interest expense (absolute value) or None
+        """
+        interest_data_list = []
+        
+        # Try US-GAAP first
+        try:
+            if 'us-gaap' in company_facts['facts']:
+                # Tags for Interest Expense
+                tags = [
+                    'InterestExpense',
+                    'InterestAndDebtExpense', 
+                    'InterestExpenseDebt'
+                ]
+                
+                for tag in tags:
+                    if tag in company_facts['facts']['us-gaap']:
+                        units = company_facts['facts']['us-gaap'][tag]['units']
+                        if 'USD' in units:
+                            interest_data_list.extend(units['USD'])
+                            logger.debug(f"Found interest expense using US-GAAP tag: {tag}")
+                            
+        except (KeyError, TypeError):
+            pass
+            
+        # Try IFRS
+        if not interest_data_list:
+            try:
+                if 'ifrs-full' in company_facts['facts']:
+                    tags = [
+                        'FinanceCosts',
+                        'InterestExpense'
+                    ]
+                    
+                    for tag in tags:
+                        if tag in company_facts['facts']['ifrs-full']:
+                            units = company_facts['facts']['ifrs-full'][tag]['units']
+                            # Find USD or first currency
+                            if 'USD' in units:
+                                interest_data_list = units['USD']
+                            else:
+                                 currency_units = [u for u in units.keys() if len(u) == 3 and u.isupper()]
+                                 if currency_units:
+                                     interest_data_list = units[currency_units[0]]
+            except (KeyError, TypeError):
+                pass
+                
+        if not interest_data_list:
+            logger.debug("Could not parse Interest Expense from EDGAR")
+            return None
+            
+        # Find the latest annual entry
+        latest_year = 0
+        latest_val = None
+        
+        for entry in interest_data_list:
+            if entry.get('form') in ['10-K', '20-F']:
+                try:
+                    fiscal_end = entry.get('end')
+                    # Calculate duration to ensure it's annual
+                    start = entry.get('start')
+                    if start and fiscal_end:
+                         from datetime import datetime
+                         d1 = datetime.strptime(start, '%Y-%m-%d')
+                         d2 = datetime.strptime(fiscal_end, '%Y-%m-%d')
+                         duration = (d2 - d1).days
+                         if duration < 360:
+                             continue
+                             
+                    year = int(fiscal_end[:4]) if fiscal_end else entry.get('fy')
+                    val = entry.get('val')
+                    
+                    if year and val is not None:
+                        if year > latest_year:
+                             latest_year = year
+                             latest_val = val
+                        elif year == latest_year:
+                             # Prefer latest fiscal end date (restatement)
+                             if fiscal_end and (not latest_val or fiscal_end > str(latest_val)):
+                                  latest_val = val
+                except (ValueError, TypeError):
+                    continue
+                    
+        if latest_val is not None:
+             logger.info(f"Found EDGAR Interest Expense for {latest_year}: ${latest_val:,.0f}")
+             return abs(float(latest_val))
+             
+        return None
+
     def parse_shareholder_equity_history(self, company_facts: Dict[str, Any]) -> List[Dict[str, Any]]:
         """
         Extract Shareholder Equity history from company facts.
@@ -1678,9 +2217,106 @@ class EdgarFetcher:
             logger.info(f"Successfully parsed {len(debt_to_equity_history)} years of D/E ratio data from EDGAR")
             return debt_to_equity_history
 
-        except (KeyError, TypeError) as e:
+        except Exception as e:
             logger.warning(f"Error parsing D/E history: {e}")
             return []
+
+    def parse_effective_tax_rate(self, company_facts: Dict[str, Any]) -> Optional[float]:
+        """
+        Extract the most recent annual Effective Tax Rate from company facts.
+        Formula: Income Tax Expense / Pretax Income
+        
+        Args:
+            company_facts: Company facts data from EDGAR API
+            
+        Returns:
+            Most recent annual effective tax rate (as decimal, e.g. 0.21) or None
+        """
+        # Fetch Income Tax Provision
+        tax_tags = ['IncomeTaxExpenseBenefit', 'IncomeTaxExpenseBenefitContinuingOperations']
+        tax_data = []
+        
+        try:
+            if 'us-gaap' in company_facts['facts']:
+                for tag in tax_tags:
+                    if tag in company_facts['facts']['us-gaap']:
+                        units = company_facts['facts']['us-gaap'][tag]['units']
+                        if 'USD' in units:
+                            tax_data.extend(units['USD'])
+        except (KeyError, TypeError):
+            pass
+            
+        # Fetch Pretax Income
+        pretax_tags = [
+            'IncomeLossFromContinuingOperationsBeforeIncomeTaxesExtraordinaryItemsNoncontrollingInterest',
+            'IncomeLossFromContinuingOperationsBeforeIncomeTaxesMinorityInterestAndIncomeLossFromEquityMethodInvestments',
+            'IncomeLossFromContinuingOperationsBeforeIncomeTaxes'
+        ]
+        pretax_data = []
+        
+        try:
+             if 'us-gaap' in company_facts['facts']:
+                for tag in pretax_tags:
+                    if tag in company_facts['facts']['us-gaap']:
+                        units = company_facts['facts']['us-gaap'][tag]['units']
+                        if 'USD' in units:
+                            pretax_data.extend(units['USD'])
+        except (KeyError, TypeError):
+             pass
+             
+        if not tax_data or not pretax_data:
+            return None
+            
+        # Create lookups by year
+        def get_annual_map(data_list):
+            annual_map = {}
+            for entry in data_list:
+                if entry.get('form') in ['10-K', '20-F']:
+                     fiscal_end = entry.get('end')
+                     start = entry.get('start')
+                     val = entry.get('val')
+                     
+                     if not fiscal_end or not start or val is None:
+                         continue
+                         
+                     # Check duration (~360 days)
+                     try:
+                         from datetime import datetime
+                         d1 = datetime.strptime(start, '%Y-%m-%d')
+                         d2 = datetime.strptime(fiscal_end, '%Y-%m-%d')
+                         duration = (d2 - d1).days
+                         if duration < 300:
+                             continue
+                             
+                         year = int(fiscal_end[:4])
+                         # Keep latest
+                         if year not in annual_map or fiscal_end > annual_map[year]['end']:
+                             annual_map[year] = {'val': val, 'end': fiscal_end}
+                     except:
+                         continue
+            return annual_map
+            
+        tax_map = get_annual_map(tax_data)
+        pretax_map = get_annual_map(pretax_data)
+        
+        # Find latest common year
+        years = sorted(list(set(tax_map.keys()) & set(pretax_map.keys())), reverse=True)
+        
+        if years:
+            latest_year = years[0]
+            tax = tax_map[latest_year]['val']
+            pretax = pretax_map[latest_year]['val']
+            
+            if pretax and pretax != 0:
+                rate = tax / pretax
+                # Cap at reasonable bounds (e.g. 0 to 100%, sometimes negative if tax benefit)
+                # But keep it raw for now, maybe just log it
+                logger.info(f"Calculated EDGAR effective tax rate for {latest_year}: {rate:.2%}")
+                return rate
+                
+        return None
+
+
 
     def fetch_stock_fundamentals(self, ticker: str) -> Optional[Dict[str, Any]]:
         """
@@ -1708,7 +2344,16 @@ class EdgarFetcher:
         debt_to_equity = self.parse_debt_to_equity(company_facts)
         debt_to_equity_history = self.parse_debt_to_equity_history(company_facts)
         shareholder_equity_history = self.parse_shareholder_equity_history(company_facts)
+        debt_to_equity_history = self.parse_debt_to_equity_history(company_facts)
+        shareholder_equity_history = self.parse_shareholder_equity_history(company_facts)
         cash_flow_history = self.parse_cash_flow_history(company_facts)
+        
+        # Extract Interest Expense and Tax Rate
+        interest_expense = self.parse_interest_expense(company_facts)
+        effective_tax_rate = self.parse_effective_tax_rate(company_facts)
+        
+        # Calculate split-adjusted EPS from Net Income / Shares Outstanding
+
 
         # Calculate split-adjusted EPS from Net Income / Shares Outstanding
         calculated_eps_history = self.calculate_split_adjusted_annual_eps_history(company_facts)
@@ -1717,10 +2362,15 @@ class EdgarFetcher:
         net_income_annual = self.parse_net_income_history(company_facts)
         net_income_quarterly = self.parse_quarterly_net_income_history(company_facts)
         
+        # Extract quarterly revenue, EPS, and cash flow from EDGAR
+        revenue_quarterly = self.parse_quarterly_revenue_history(company_facts)
+        eps_quarterly = self.parse_quarterly_eps_history(company_facts)
+        cash_flow_quarterly = self.parse_quarterly_cash_flow_history(company_facts)
+        
         # Parse dividend history
         dividend_history = self.parse_dividend_history(company_facts)
 
-        logger.info(f"[{ticker}] EDGAR fetch complete: {len(eps_history or [])} EPS years, {len(calculated_eps_history or [])} calculated EPS years, {len(net_income_annual or [])} annual NI, {len(net_income_quarterly or [])} quarterly NI, {len(revenue_history or [])} revenue years, {len(debt_to_equity_history or [])} D/E years, {len(shareholder_equity_history or [])} Equity years, {len(cash_flow_history or [])} cash flow years, {len(dividend_history or [])} dividend entries, current D/E: {debt_to_equity}")
+        logger.info(f"[{ticker}] EDGAR fetch complete: {len(eps_history or [])} EPS years, {len(calculated_eps_history or [])} calculated EPS years, {len(net_income_annual or [])} annual NI, {len(net_income_quarterly or [])} quarterly NI, {len(revenue_quarterly or [])} quarterly Rev, {len(eps_quarterly or [])} quarterly EPS, {len(cash_flow_quarterly or [])} quarterly CF, {len(revenue_history or [])} revenue years, {len(debt_to_equity_history or [])} D/E years, {len(shareholder_equity_history or [])} Equity years, {len(cash_flow_history or [])} cash flow years, {len(dividend_history or [])} dividend entries, current D/E: {debt_to_equity}")
 
         fundamentals = {
             'ticker': ticker,
@@ -1731,15 +2381,21 @@ class EdgarFetcher:
             'net_income_annual': net_income_annual,
             'shareholder_equity_history': shareholder_equity_history,
             'net_income_quarterly': net_income_quarterly,
+            'revenue_quarterly': revenue_quarterly,
+            'eps_quarterly': eps_quarterly,
+            'cash_flow_quarterly': cash_flow_quarterly,
             'revenue_history': revenue_history,
             'debt_to_equity': debt_to_equity,
             'debt_to_equity_history': debt_to_equity_history,
             'cash_flow_history': cash_flow_history,
             'dividend_history': dividend_history,
+            'interest_expense': interest_expense,
+            'effective_tax_rate': effective_tax_rate,
             'company_facts': company_facts
         }
 
         return fundamentals
+
 
     def fetch_recent_filings(self, ticker: str, since_date: str = None) -> List[Dict[str, Any]]:
         """
