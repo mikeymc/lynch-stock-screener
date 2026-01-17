@@ -35,8 +35,8 @@ def test_app_initialization_and_ui_elements(page: Page, servers):
         print(f"[E2E] API Error: {api_response.text[:500]}")
     
     # Navigate to the app
-    print("[E2E] Navigating to http://localhost:5174?user=admin")
-    page.goto("http://localhost:5174?user=admin")
+    print("[E2E] Navigating to http://localhost:5200?dev_auth_bypass=true")
+    page.goto("http://localhost:5200?dev_auth_bypass=true")
     page.wait_for_load_state("networkidle")
     
     # Verify page loaded
@@ -212,7 +212,7 @@ def test_search_functionality(page: Page, servers):
     """
     print("\n[E2E] Starting test: search_functionality")
     
-    page.goto("http://localhost:5174")
+    page.goto("http://localhost:5200?dev_auth_bypass=true")
     page.wait_for_load_state("networkidle")
     page.wait_for_timeout(2000)
     
@@ -256,7 +256,7 @@ def test_stock_detail_header_and_tabs(page: Page, servers):
     
     # Navigate directly to AAPL detail page
     print("[E2E] Navigating to AAPL detail page...")
-    page.goto("http://localhost:5174/stock/AAPL")
+    page.goto("http://localhost:5200/stock/AAPL?dev_auth_bypass=true")
     page.wait_for_load_state("networkidle")
     page.wait_for_timeout(3000)  # Wait for data to load
     
@@ -307,7 +307,7 @@ def test_stock_detail_charts_tab(page: Page, servers):
     """
     print("\n[E2E] Starting test: stock_detail_charts_tab")
     
-    page.goto("http://localhost:5174/stock/AAPL")
+    page.goto("http://localhost:5200/stock/AAPL?dev_auth_bypass=true")
     page.wait_for_load_state("networkidle")
     page.wait_for_timeout(3000)
     
@@ -341,7 +341,7 @@ def test_stock_detail_dcf_tab(page: Page, servers):
     """
     print("\n[E2E] Starting test: stock_detail_dcf_tab")
     
-    page.goto("http://localhost:5174/stock/AAPL")
+    page.goto("http://localhost:5200/stock/AAPL?dev_auth_bypass=true")
     page.wait_for_load_state("networkidle")
     page.wait_for_timeout(3000)
     
@@ -372,7 +372,7 @@ def test_stock_detail_reports_tab(page: Page, servers):
     """
     print("\n[E2E] Starting test: stock_detail_reports_tab")
     
-    page.goto("http://localhost:5174/stock/AAPL")
+    page.goto("http://localhost:5200/stock/AAPL?dev_auth_bypass=true")
     page.wait_for_load_state("networkidle")
     page.wait_for_timeout(3000)
     
@@ -402,7 +402,7 @@ def test_stock_detail_brief_tab(page: Page, servers):
     """
     print("\n[E2E] Starting test: stock_detail_brief_tab")
     
-    page.goto("http://localhost:5174/stock/AAPL")
+    page.goto("http://localhost:5200/stock/AAPL?dev_auth_bypass=true")
     page.wait_for_load_state("networkidle")
     page.wait_for_timeout(3000)
     
@@ -433,7 +433,7 @@ def test_stock_detail_news_tab(page: Page, servers):
     """
     print("\n[E2E] Starting test: stock_detail_news_tab")
     
-    page.goto("http://localhost:5174/stock/AAPL")
+    page.goto("http://localhost:5200/stock/AAPL?dev_auth_bypass=true")
     page.wait_for_load_state("networkidle")
     page.wait_for_timeout(3000)
     
@@ -464,7 +464,7 @@ def test_stock_detail_material_events_tab(page: Page, servers):
     """
     print("\n[E2E] Starting test: stock_detail_material_events_tab")
     
-    page.goto("http://localhost:5174/stock/AAPL")
+    page.goto("http://localhost:5200/stock/AAPL?dev_auth_bypass=true")
     page.wait_for_load_state("networkidle")
     page.wait_for_timeout(3000)
     
@@ -517,7 +517,7 @@ def test_algorithm_tuning_page_navigation(page: Page, servers):
     print("\n[E2E] Starting test: algorithm_tuning_page_navigation")
     
     # Navigate to Settings page
-    page.goto("http://localhost:5174/settings")
+    page.goto("http://localhost:5200/settings?dev_auth_bypass=true")
     page.wait_for_load_state("networkidle")
     page.wait_for_timeout(2000)
     
@@ -552,7 +552,7 @@ def test_algorithm_tuning_ui_elements(page: Page, servers):
     print("\n[E2E] Starting test: algorithm_tuning_ui_elements")
     
     # Navigate to Settings and click Algorithm Tuning tab
-    page.goto("http://localhost:5174/settings")
+    page.goto("http://localhost:5200/settings?dev_auth_bypass=true")
     page.wait_for_load_state("networkidle")
     page.wait_for_timeout(2000)
     page.get_by_role('button', name='Algorithm Tuning').click()
@@ -616,7 +616,7 @@ def test_algorithm_tuning_collapsible_sections(page: Page, servers):
     print("\n[E2E] Starting test: algorithm_tuning_collapsible_sections")
     
     # Navigate to Settings and click Algorithm Tuning tab
-    page.goto("http://localhost:5174/settings")
+    page.goto("http://localhost:5200/settings?dev_auth_bypass=true")
     page.wait_for_load_state("networkidle")
     page.wait_for_timeout(2000)
     page.get_by_role('button', name='Algorithm Tuning').click()
@@ -672,7 +672,7 @@ def test_algorithm_tuning_sliders(page: Page, servers):
     print("\n[E2E] Starting test: algorithm_tuning_sliders")
     
     # Navigate to Settings and click Algorithm Tuning tab
-    page.goto("http://localhost:5174/settings")
+    page.goto("http://localhost:5200/settings?dev_auth_bypass=true")
     page.wait_for_load_state("networkidle")
     page.wait_for_timeout(2000)
     page.get_by_role('button', name='Algorithm Tuning').click()
@@ -707,7 +707,7 @@ def test_algorithm_tuning_timeframe_selector(page: Page, servers):
     print("\n[E2E] Starting test: algorithm_tuning_timeframe_selector")
     
     # Navigate to Settings and click Algorithm Tuning tab
-    page.goto("http://localhost:5174/settings")
+    page.goto("http://localhost:5200/settings?dev_auth_bypass=true")
     page.wait_for_load_state("networkidle")
     page.wait_for_timeout(2000)
     page.get_by_role('button', name='Algorithm Tuning').click()
@@ -747,7 +747,7 @@ def test_algorithm_tuning_correlation_guide(page: Page, servers):
     print("\n[E2E] Starting test: algorithm_tuning_correlation_guide")
     
     # Navigate to Settings and click Algorithm Tuning tab
-    page.goto("http://localhost:5174/settings")
+    page.goto("http://localhost:5200/settings?dev_auth_bypass=true")
     page.wait_for_load_state("networkidle")
     page.wait_for_timeout(2000)
     page.get_by_role('button', name='Algorithm Tuning').click()

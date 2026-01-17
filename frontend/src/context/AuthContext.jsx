@@ -7,9 +7,11 @@ const API_BASE = '/api';
 // =============================================================================
 // Dev Auth Bypass Configuration
 // =============================================================================
-// Only allow bypass if VITE_DEV_AUTH_BYPASS is explicitly "true"
-// In production builds, this env var should never be set
-const DEV_AUTH_BYPASS = import.meta.env.VITE_DEV_AUTH_BYPASS === 'true';
+// Only allow bypass if we are in DEV mode AND the URL has ?dev_auth_bypass=true
+// This supports "Dual-Mode":
+// 1. Manual User (no param) -> Strict Auth
+// 2. Automation/Robot (with param) -> Mock User
+const DEV_AUTH_BYPASS = import.meta.env.DEV && new URLSearchParams(window.location.search).get('dev_auth_bypass') === 'true';
 
 if (DEV_AUTH_BYPASS) {
   console.warn('⚠️ DEV AUTH BYPASS IS ENABLED - Using mock user for development');
