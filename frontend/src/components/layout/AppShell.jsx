@@ -106,7 +106,6 @@ function AppShellContent({
     const { symbol } = useParams()
     const [chatOpen, setChatOpen] = useState(false)
     const [screenerOpen, setScreenerOpen] = useState(true)
-    const [scoringOpen, setScoringOpen] = useState(false)
     const [filterOpen, setFilterOpen] = useState(true)
     const [analysisOpen, setAnalysisOpen] = useState(true)
     const [alertsCount, setAlertsCount] = useState(0)
@@ -292,166 +291,71 @@ function AppShellContent({
 
                                                 <div className="my-2 border-t mx-2 opacity-50" />
 
-                                                {algorithm === 'classic' ? (
-                                                    <>
-                                                        <SidebarMenuItem>
-                                                            <SidebarMenuButton
-                                                                onClick={() => {
-                                                                    setFilter('PASS')
-                                                                    onNavClick()
-                                                                }}
-                                                                isActive={filter === 'PASS'}
-                                                                className="pl-6 font-normal text-muted-foreground data-[active=true]:font-medium data-[active=true]:text-sidebar-primary"
-                                                            >
-                                                                <span className="flex-1">Pass</span>
-                                                                <span className="text-xs text-muted-foreground opacity-50">{getCount('PASS')}</span>
-                                                            </SidebarMenuButton>
-                                                        </SidebarMenuItem>
-                                                        <SidebarMenuItem>
-                                                            <SidebarMenuButton
-                                                                onClick={() => {
-                                                                    setFilter('CLOSE')
-                                                                    onNavClick()
-                                                                }}
-                                                                isActive={filter === 'CLOSE'}
-                                                                className="pl-6 font-normal text-muted-foreground data-[active=true]:font-medium data-[active=true]:text-sidebar-primary"
-                                                            >
-                                                                <span className="flex-1">Close</span>
-                                                                <span className="text-xs text-muted-foreground opacity-50">{getCount('CLOSE')}</span>
-                                                            </SidebarMenuButton>
-                                                        </SidebarMenuItem>
-                                                        <SidebarMenuItem>
-                                                            <SidebarMenuButton
-                                                                onClick={() => {
-                                                                    setFilter('FAIL')
-                                                                    onNavClick()
-                                                                }}
-                                                                isActive={filter === 'FAIL'}
-                                                                className="pl-6 font-normal text-muted-foreground data-[active=true]:font-medium data-[active=true]:text-sidebar-primary"
-                                                            >
-                                                                <span className="flex-1">Fail</span>
-                                                                <span className="text-xs text-muted-foreground opacity-50">{getCount('FAIL')}</span>
-                                                            </SidebarMenuButton>
-                                                        </SidebarMenuItem>
-                                                    </>
-                                                ) : (
-                                                    <>
-                                                        <SidebarMenuItem>
-                                                            <SidebarMenuButton
-                                                                onClick={() => {
-                                                                    setFilter('STRONG_BUY')
-                                                                    onNavClick()
-                                                                }}
-                                                                isActive={filter === 'STRONG_BUY'}
-                                                                className="pl-6 font-normal text-muted-foreground data-[active=true]:font-medium data-[active=true]:text-sidebar-primary"
-                                                            >
-                                                                <span className="flex-1">Excellent</span>
-                                                                <span className="text-xs text-muted-foreground opacity-50">{getCount('STRONG_BUY')}</span>
-                                                            </SidebarMenuButton>
-                                                        </SidebarMenuItem>
-                                                        <SidebarMenuItem>
-                                                            <SidebarMenuButton
-                                                                onClick={() => {
-                                                                    setFilter('BUY')
-                                                                    onNavClick()
-                                                                }}
-                                                                isActive={filter === 'BUY'}
-                                                                className="pl-6 font-normal text-muted-foreground data-[active=true]:font-medium data-[active=true]:text-sidebar-primary"
-                                                            >
-                                                                <span className="flex-1">Good</span>
-                                                                <span className="text-xs text-muted-foreground opacity-50">{getCount('BUY')}</span>
-                                                            </SidebarMenuButton>
-                                                        </SidebarMenuItem>
-                                                        <SidebarMenuItem>
-                                                            <SidebarMenuButton
-                                                                onClick={() => {
-                                                                    setFilter('HOLD')
-                                                                    onNavClick()
-                                                                }}
-                                                                isActive={filter === 'HOLD'}
-                                                                className="pl-6 font-normal text-muted-foreground data-[active=true]:font-medium data-[active=true]:text-sidebar-primary"
-                                                            >
-                                                                <span className="flex-1">Fair</span>
-                                                                <span className="text-xs text-muted-foreground opacity-50">{getCount('HOLD')}</span>
-                                                            </SidebarMenuButton>
-                                                        </SidebarMenuItem>
-                                                        <SidebarMenuItem>
-                                                            <SidebarMenuButton
-                                                                onClick={() => {
-                                                                    setFilter('CAUTION')
-                                                                    onNavClick()
-                                                                }}
-                                                                isActive={filter === 'CAUTION'}
-                                                                className="pl-6 font-normal text-muted-foreground data-[active=true]:font-medium data-[active=true]:text-sidebar-primary"
-                                                            >
-                                                                <span className="flex-1">Weak</span>
-                                                                <span className="text-xs text-muted-foreground opacity-50">{getCount('CAUTION')}</span>
-                                                            </SidebarMenuButton>
-                                                        </SidebarMenuItem>
-                                                        <SidebarMenuItem>
-                                                            <SidebarMenuButton
-                                                                onClick={() => {
-                                                                    setFilter('AVOID')
-                                                                    onNavClick()
-                                                                }}
-                                                                isActive={filter === 'AVOID'}
-                                                                className="pl-6 font-normal text-muted-foreground data-[active=true]:font-medium data-[active=true]:text-sidebar-primary"
-                                                            >
-                                                                <span className="flex-1">Poor</span>
-                                                                <span className="text-xs text-muted-foreground opacity-50">{getCount('AVOID')}</span>
-                                                            </SidebarMenuButton>
-                                                        </SidebarMenuItem>
-                                                    </>
-                                                )}
-                                            </SidebarMenu>
-                                        </SidebarGroupContent>
-                                    </CollapsibleContent>
-                                </SidebarGroup>
-                            </Collapsible>
-                        )}
-
-                        {/* Scoring Algorithm Section - Hidden on Detail/Economy Pages, Collapsed by Default */}
-                        {!isStockDetail && !isEconomyPage && (
-                            <Collapsible open={scoringOpen} onOpenChange={setScoringOpen}>
-                                <SidebarGroup>
-                                    <CollapsibleTrigger asChild>
-                                        <SidebarGroupLabel className="cursor-pointer hover:bg-accent flex items-center justify-between px-4 py-2">
-                                            <span>Scoring Algorithm</span>
-                                            {scoringOpen ? <ChevronDown /> : <ChevronRight />}
-                                        </SidebarGroupLabel>
-                                    </CollapsibleTrigger>
-                                    <CollapsibleContent>
-                                        <SidebarGroupContent>
-                                            <SidebarMenu>
-                                                {Object.entries(algorithms)
-                                                    .sort(([keyA], [keyB]) => {
-                                                        if (keyA === 'weighted') return -1;
-                                                        if (keyB === 'weighted') return 1;
-                                                        return keyA.localeCompare(keyB);
-                                                    })
-                                                    .map(([key, algo]) => (
-                                                        <SidebarMenuItem key={key}>
-                                                            <SidebarMenuButton
-                                                                onClick={() => {
-                                                                    setAlgorithm(key)
-                                                                    onNavClick()
-                                                                }}
-                                                                isActive={algorithm === key}
-                                                                title={algo.description}
-                                                                className="pl-6 font-normal text-muted-foreground data-[active=true]:font-medium data-[active=true]:text-sidebar-primary"
-                                                            >
-                                                                <span>{algo.name}</span>
-                                                            </SidebarMenuButton>
-                                                        </SidebarMenuItem>
-                                                    ))}
-                                                {/* Fallback if no algorithms loaded yet */}
-                                                {Object.keys(algorithms).length === 0 && (
-                                                    <SidebarMenuItem>
-                                                        <SidebarMenuButton disabled>
-                                                            <span className="text-muted-foreground">Loading...</span>
-                                                        </SidebarMenuButton>
-                                                    </SidebarMenuItem>
-                                                )}
+                                                <SidebarMenuItem>
+                                                    <SidebarMenuButton
+                                                        onClick={() => {
+                                                            setFilter('STRONG_BUY')
+                                                            onNavClick()
+                                                        }}
+                                                        isActive={filter === 'STRONG_BUY'}
+                                                        className="pl-6 font-normal text-muted-foreground data-[active=true]:font-medium data-[active=true]:text-sidebar-primary"
+                                                    >
+                                                        <span className="flex-1">Excellent</span>
+                                                        <span className="text-xs text-muted-foreground opacity-50">{getCount('STRONG_BUY')}</span>
+                                                    </SidebarMenuButton>
+                                                </SidebarMenuItem>
+                                                <SidebarMenuItem>
+                                                    <SidebarMenuButton
+                                                        onClick={() => {
+                                                            setFilter('BUY')
+                                                            onNavClick()
+                                                        }}
+                                                        isActive={filter === 'BUY'}
+                                                        className="pl-6 font-normal text-muted-foreground data-[active=true]:font-medium data-[active=true]:text-sidebar-primary"
+                                                    >
+                                                        <span className="flex-1">Good</span>
+                                                        <span className="text-xs text-muted-foreground opacity-50">{getCount('BUY')}</span>
+                                                    </SidebarMenuButton>
+                                                </SidebarMenuItem>
+                                                <SidebarMenuItem>
+                                                    <SidebarMenuButton
+                                                        onClick={() => {
+                                                            setFilter('HOLD')
+                                                            onNavClick()
+                                                        }}
+                                                        isActive={filter === 'HOLD'}
+                                                        className="pl-6 font-normal text-muted-foreground data-[active=true]:font-medium data-[active=true]:text-sidebar-primary"
+                                                    >
+                                                        <span className="flex-1">Fair</span>
+                                                        <span className="text-xs text-muted-foreground opacity-50">{getCount('HOLD')}</span>
+                                                    </SidebarMenuButton>
+                                                </SidebarMenuItem>
+                                                <SidebarMenuItem>
+                                                    <SidebarMenuButton
+                                                        onClick={() => {
+                                                            setFilter('CAUTION')
+                                                            onNavClick()
+                                                        }}
+                                                        isActive={filter === 'CAUTION'}
+                                                        className="pl-6 font-normal text-muted-foreground data-[active=true]:font-medium data-[active=true]:text-sidebar-primary"
+                                                    >
+                                                        <span className="flex-1">Weak</span>
+                                                        <span className="text-xs text-muted-foreground opacity-50">{getCount('CAUTION')}</span>
+                                                    </SidebarMenuButton>
+                                                </SidebarMenuItem>
+                                                <SidebarMenuItem>
+                                                    <SidebarMenuButton
+                                                        onClick={() => {
+                                                            setFilter('AVOID')
+                                                            onNavClick()
+                                                        }}
+                                                        isActive={filter === 'AVOID'}
+                                                        className="pl-6 font-normal text-muted-foreground data-[active=true]:font-medium data-[active=true]:text-sidebar-primary"
+                                                    >
+                                                        <span className="flex-1">Poor</span>
+                                                        <span className="text-xs text-muted-foreground opacity-50">{getCount('AVOID')}</span>
+                                                    </SidebarMenuButton>
+                                                </SidebarMenuItem>
                                             </SidebarMenu>
                                         </SidebarGroupContent>
                                     </CollapsibleContent>

@@ -1,7 +1,7 @@
 import pytest
 
 
-@pytest.mark.parametrize("algorithm", ["category_based", "classic", "weighted"])
+@pytest.mark.parametrize("algorithm", ["weighted"])
 def test_algorithm_api(test_client, mock_yfinance, algorithm):
     """Test algorithm API endpoint with different algorithms using Flask test client."""
     symbol = 'AAPL'

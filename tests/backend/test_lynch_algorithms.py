@@ -1,7 +1,7 @@
 """
 Unit tests for Lynch scoring algorithms.
-Tests all 5 algorithms (weighted, two_tier, category_based, critical_factors, classic)
-to ensure they produce correct scores and ratings based on different stock scenarios.
+Tests the weighted algorithm to ensure it produces correct scores and ratings based on
+different stock scenarios.
 """
 
 import pytest
@@ -12,18 +12,15 @@ from lynch_criteria import LynchCriteria, ALGORITHM_METADATA
 class TestAlgorithmMetadata:
     """Test algorithm metadata is properly defined."""
 
-    def test_all_algorithms_have_metadata(self):
-        """Ensure all algorithms have complete metadata."""
-        expected_algorithms = ['weighted', 'two_tier', 'category_based', 'critical_factors', 'classic']
+    def test_weighted_algorithm_has_metadata(self):
+        """Ensure weighted algorithm has complete metadata."""
+        assert 'weighted' in ALGORITHM_METADATA, "Missing metadata for weighted"
 
-        for algo in expected_algorithms:
-            assert algo in ALGORITHM_METADATA, f"Missing metadata for {algo}"
-
-            metadata = ALGORITHM_METADATA[algo]
-            assert 'name' in metadata, f"{algo} missing 'name'"
-            assert 'short_desc' in metadata, f"{algo} missing 'short_desc'"
-            assert 'description' in metadata, f"{algo} missing 'description'"
-            assert 'recommended' in metadata, f"{algo} missing 'recommended'"
+        metadata = ALGORITHM_METADATA['weighted']
+        assert 'name' in metadata, "weighted missing 'name'"
+        assert 'short_desc' in metadata, "weighted missing 'short_desc'"
+        assert 'description' in metadata, "weighted missing 'description'"
+        assert 'recommended' in metadata, "weighted missing 'recommended'"
 
     def test_only_one_recommended_algorithm(self):
         """Ensure only one algorithm is marked as recommended."""
@@ -44,27 +41,29 @@ class TestLynchCriteriaAlgorithms:
         mock_db = Mock()
         mock_analyzer = Mock()
 
-        # Mock get_all_settings to return proper settings structure
-        mock_db.get_all_settings.return_value = {
-            'peg_excellent': {'value': 1.0},
-            'peg_good': {'value': 1.5},
-            'peg_fair': {'value': 2.0},
-            'debt_excellent': {'value': 0.5},
-            'debt_good': {'value': 1.0},
-            'debt_moderate': {'value': 2.0},
-            'inst_own_min': {'value': 0.4},
-            'inst_own_max': {'value': 0.8},
-            'revenue_growth_excellent': {'value': 15.0},
-            'revenue_growth_good': {'value': 10.0},
-            'revenue_growth_fair': {'value': 5.0},
-            'income_growth_excellent': {'value': 15.0},
-            'income_growth_good': {'value': 10.0},
-            'income_growth_fair': {'value': 5.0},
-            'weight_peg': {'value': 0.35},
-            'weight_consistency': {'value': 0.25},
-            'weight_debt': {'value': 0.20},
-            'weight_ownership': {'value': 0.20}
-        }
+        # Mock get_algorithm_configs to return a list with config dict
+        mock_db.get_algorithm_configs.return_value = [{
+            'id': 1,
+            'name': 'test_config',
+            'peg_excellent': 1.0,
+            'peg_good': 1.5,
+            'peg_fair': 2.0,
+            'debt_excellent': 0.5,
+            'debt_good': 1.0,
+            'debt_moderate': 2.0,
+            'inst_own_min': 0.4,
+            'inst_own_max': 0.8,
+            'revenue_growth_excellent': 15.0,
+            'revenue_growth_good': 10.0,
+            'revenue_growth_fair': 5.0,
+            'income_growth_excellent': 15.0,
+            'income_growth_good': 10.0,
+            'income_growth_fair': 5.0,
+            'weight_peg': 0.35,
+            'weight_consistency': 0.25,
+            'weight_debt': 0.20,
+            'weight_ownership': 0.20
+        }]
 
         return LynchCriteria(mock_db, mock_analyzer)
 
@@ -179,178 +178,6 @@ class TestLynchCriteriaAlgorithms:
         assert 40 <= result['overall_score'] < 80, "Mixed stock should score 40-80"
         assert result['overall_status'] in ['HOLD', 'BUY']
 
-    # Test Two-Tier Algorithm
-    def test_two_tier_excellent_stock(self, mock_criteria, excellent_stock_data):
-        """Two-tier should pass must-haves and score well on nice-to-haves."""
-        result = mock_criteria._evaluate_two_tier('EXCELLENT', excellent_stock_data)
-
-        assert result['algorithm'] == 'two_tier'
-        assert result['breakdown']['passed_must_haves'] is True
-        assert result['overall_status'] != 'AVOID'
-        assert result['overall_score'] > 0
-
-    def test_two_tier_poor_stock_fails_must_haves(self, mock_criteria, poor_stock_data):
-        """Two-tier should auto-AVOID if stock fails must-have criteria."""
-        result = mock_criteria._evaluate_two_tier('POOR', poor_stock_data)
-
-        assert result['algorithm'] == 'two_tier'
-        assert result['breakdown']['passed_must_haves'] is False
-        assert result['overall_status'] == 'AVOID'
-        assert result['overall_score'] == 0
-        assert 'deal_breakers' in result['breakdown']
-
-    def test_two_tier_borderline_passes_must_haves(self, mock_criteria):
-        """Two-tier should pass stock with PEG=1.9 and Debt=0.9 (just under limits)."""
-        borderline_data = {
-            'symbol': 'BORDER',
-            'peg_ratio': 1.9,
-            'debt_to_equity': 0.9,
-            'consistency_score': 70,
-            'peg_score': 50,
-            'institutional_ownership_score': 80
-        }
-        result = mock_criteria._evaluate_two_tier('BORDER', borderline_data)
-
-        assert result['breakdown']['passed_must_haves'] is True
-        assert result['overall_status'] != 'AVOID'
-
-    # Test Category-Based Algorithm
-    def test_category_based_fast_grower(self, mock_criteria, excellent_stock_data):
-        """Category-based should classify high-growth stock as fast_grower."""
-        result = mock_criteria._evaluate_category_based('EXCELLENT', excellent_stock_data)
-
-        assert result['algorithm'] == 'category_based'
-        assert result['stock_category'] == 'fast_grower', f"Expected fast_grower, got {result['stock_category']}"
-        assert 'breakdown' in result
-        assert result['breakdown']['category'] == 'fast_grower'
-
-    def test_category_based_stalwart(self, mock_criteria):
-        """Category-based should classify moderate-growth stock as stalwart."""
-        stalwart_data = {
-            'symbol': 'STALWART',
-            'earnings_cagr': 12.0,  # 10-20% = stalwart
-            'revenue_cagr': 11.0,
-            'peg_ratio': 1.2,
-            'debt_to_equity': 0.5,
-            'dividend_yield': 0.03,
-            'market_cap': 50000000000,
-            'consistency_score': 75,
-            'peg_score': 85,
-            'debt_score': 90,
-            'institutional_ownership_score': 80
-        }
-        result = mock_criteria._evaluate_category_based('STALWART', stalwart_data)
-
-        assert result['stock_category'] == 'stalwart'
-
-    def test_category_based_slow_grower(self, mock_criteria):
-        """Category-based should classify low-growth stock as slow_grower."""
-        slow_data = {
-            'symbol': 'SLOW',
-            'earnings_cagr': 5.0,  # < 10% = slow grower
-            'revenue_cagr': 4.0,
-            'peg_ratio': 0.9,
-            'debt_to_equity': 0.4,
-            'dividend_yield': 0.05,
-            'market_cap': 100000000000,
-            'consistency_score': 80,
-            'peg_score': 95,
-            'debt_score': 95,
-            'institutional_ownership_score': 85
-        }
-        result = mock_criteria._evaluate_category_based('SLOW', slow_data)
-
-        assert result['stock_category'] == 'slow_grower'
-
-    def test_category_based_turnaround(self, mock_criteria):
-        """Category-based should classify negative-growth stock as turnaround."""
-        turnaround_data = {
-            'symbol': 'TURN',
-            'earnings_cagr': -5.0,  # Negative = turnaround
-            'revenue_cagr': -3.0,
-            'peg_ratio': 0.5,
-            'debt_to_equity': 0.8,
-            'dividend_yield': 0.0,
-            'market_cap': 500000000,
-            'consistency_score': 40,
-            'peg_score': 100,
-            'debt_score': 60,
-            'institutional_ownership_score': 70
-        }
-        result = mock_criteria._evaluate_category_based('TURN', turnaround_data)
-
-        assert result['stock_category'] == 'turnaround'
-
-    # Test Critical Factors Algorithm
-    def test_critical_factors_excellent_stock(self, mock_criteria, excellent_stock_data):
-        """Critical factors should rate excellent stock as BUY."""
-        result = mock_criteria._evaluate_critical_factors('EXCELLENT', excellent_stock_data)
-
-        assert result['algorithm'] == 'critical_factors'
-        assert result['overall_status'] == 'BUY'
-        assert result['overall_score'] >= 75
-        assert 'reasons' in result['breakdown']
-
-    def test_critical_factors_poor_stock(self, mock_criteria, poor_stock_data):
-        """Critical factors should rate poor stock as AVOID."""
-        result = mock_criteria._evaluate_critical_factors('POOR', poor_stock_data)
-
-        assert result['algorithm'] == 'critical_factors'
-        assert result['overall_status'] == 'AVOID'
-        assert result['overall_score'] < 50
-
-    def test_critical_factors_no_peg(self, mock_criteria):
-        """Critical factors should handle missing PEG gracefully."""
-        no_peg_data = {
-            'symbol': 'NOPEG',
-            'peg_ratio': None,
-            'earnings_cagr': 15.0,
-            'debt_to_equity': 0.4,
-        }
-        result = mock_criteria._evaluate_critical_factors('NOPEG', no_peg_data)
-
-        assert result['algorithm'] == 'critical_factors'
-        assert 'No PEG ratio available' in result['breakdown']['reasons']
-
-    # Test Classic Algorithm
-    def test_classic_all_pass(self, mock_criteria, excellent_stock_data):
-        """Classic algorithm: all PASS statuses = PASS overall."""
-        result = mock_criteria._evaluate_classic('EXCELLENT', excellent_stock_data)
-
-        assert result['algorithm'] == 'classic'
-        assert result['overall_status'] == 'PASS'
-        assert result['rating_label'] == 'PASS'
-
-    def test_classic_any_fail(self, mock_criteria):
-        """Classic algorithm: any FAIL status = FAIL overall."""
-        one_fail_data = {
-            'symbol': 'ONEFAIL',
-            'peg_status': 'PASS',
-            'debt_status': 'PASS',
-            'institutional_ownership_status': 'FAIL',  # One FAIL
-            'peg_score': 100,
-            'debt_score': 100,
-            'institutional_ownership_score': 20
-        }
-        result = mock_criteria._evaluate_classic('ONEFAIL', one_fail_data)
-
-        assert result['overall_status'] == 'FAIL'
-
-    def test_classic_close_status(self, mock_criteria):
-        """Classic algorithm: some PASS, some CLOSE (no FAIL) = CLOSE overall."""
-        close_data = {
-            'symbol': 'CLOSE',
-            'peg_status': 'PASS',
-            'debt_status': 'CLOSE',  # CLOSE
-            'institutional_ownership_status': 'PASS',
-            'peg_score': 100,
-            'debt_score': 77,
-            'institutional_ownership_score': 95
-        }
-        result = mock_criteria._evaluate_classic('CLOSE', close_data)
-
-        assert result['overall_status'] == 'CLOSE'
-
     # Test evaluate_stock routing
     def test_evaluate_stock_routes_to_weighted(self, mock_criteria):
         """evaluate_stock should route to weighted algorithm by default."""
@@ -365,21 +192,6 @@ class TestLynchCriteriaAlgorithms:
 
         result = mock_criteria.evaluate_stock('TEST')  # No algorithm specified
         assert result['algorithm'] == 'weighted'
-
-    def test_evaluate_stock_routes_to_specific_algorithm(self, mock_criteria):
-        """evaluate_stock should route to specified algorithm."""
-        mock_criteria._get_base_metrics = Mock(return_value={
-            'symbol': 'TEST',
-            'peg_status': 'PASS',
-            'debt_status': 'PASS',
-            'institutional_ownership_status': 'PASS',
-            'peg_score': 100,
-            'debt_score': 100,
-            'institutional_ownership_score': 100
-        })
-
-        result = mock_criteria.evaluate_stock('TEST', algorithm='classic')
-        assert result['algorithm'] == 'classic'
 
     def test_evaluate_stock_handles_unknown_algorithm(self, mock_criteria):
         """evaluate_stock should default to weighted for unknown algorithm."""
@@ -404,27 +216,29 @@ class TestAlgorithmConsistency:
         mock_db = Mock()
         mock_analyzer = Mock()
 
-        # Mock get_all_settings to return proper settings structure
-        mock_db.get_all_settings.return_value = {
-            'peg_excellent': {'value': 1.0},
-            'peg_good': {'value': 1.5},
-            'peg_fair': {'value': 2.0},
-            'debt_excellent': {'value': 0.5},
-            'debt_good': {'value': 1.0},
-            'debt_moderate': {'value': 2.0},
-            'inst_own_min': {'value': 0.4},
-            'inst_own_max': {'value': 0.8},
-            'revenue_growth_excellent': {'value': 15.0},
-            'revenue_growth_good': {'value': 10.0},
-            'revenue_growth_fair': {'value': 5.0},
-            'income_growth_excellent': {'value': 15.0},
-            'income_growth_good': {'value': 10.0},
-            'income_growth_fair': {'value': 5.0},
-            'weight_peg': {'value': 0.35},
-            'weight_consistency': {'value': 0.25},
-            'weight_debt': {'value': 0.20},
-            'weight_ownership': {'value': 0.20}
-        }
+        # Mock get_algorithm_configs to return a list with config dict
+        mock_db.get_algorithm_configs.return_value = [{
+            'id': 1,
+            'name': 'test_config',
+            'peg_excellent': 1.0,
+            'peg_good': 1.5,
+            'peg_fair': 2.0,
+            'debt_excellent': 0.5,
+            'debt_good': 1.0,
+            'debt_moderate': 2.0,
+            'inst_own_min': 0.4,
+            'inst_own_max': 0.8,
+            'revenue_growth_excellent': 15.0,
+            'revenue_growth_good': 10.0,
+            'revenue_growth_fair': 5.0,
+            'income_growth_excellent': 15.0,
+            'income_growth_good': 10.0,
+            'income_growth_fair': 5.0,
+            'weight_peg': 0.35,
+            'weight_consistency': 0.25,
+            'weight_debt': 0.20,
+            'weight_ownership': 0.20
+        }]
 
         return LynchCriteria(mock_db, mock_analyzer)
 
@@ -445,8 +259,8 @@ class TestAlgorithmConsistency:
         assert result1['overall_score'] == result2['overall_score']
         assert result1['overall_status'] == result2['overall_status']
 
-    def test_all_algorithms_return_required_fields(self, mock_criteria):
-        """All algorithms must return algorithm, overall_score, overall_status, rating_label."""
+    def test_weighted_algorithm_returns_required_fields(self, mock_criteria):
+        """Weighted algorithm must return algorithm, overall_score, overall_status, rating_label."""
         test_data = {
             'symbol': 'REQ',
             'peg_ratio': 1.0,
@@ -461,17 +275,13 @@ class TestAlgorithmConsistency:
             'debt_to_equity': 0.3
         }
 
-        algorithms = ['weighted', 'two_tier', 'category_based', 'critical_factors', 'classic']
+        result = mock_criteria._evaluate_weighted('REQ', test_data)
 
-        for algo in algorithms:
-            method = getattr(mock_criteria, f'_evaluate_{algo}')
-            result = method('REQ', test_data)
-
-            assert 'algorithm' in result, f"{algo} missing 'algorithm'"
-            assert 'overall_score' in result, f"{algo} missing 'overall_score'"
-            assert 'overall_status' in result, f"{algo} missing 'overall_status'"
-            assert 'rating_label' in result, f"{algo} missing 'rating_label'"
-            assert result['algorithm'] == algo, f"{algo} has wrong algorithm value"
+        assert 'algorithm' in result, "Missing 'algorithm'"
+        assert 'overall_score' in result, "Missing 'overall_score'"
+        assert 'overall_status' in result, "Missing 'overall_status'"
+        assert 'rating_label' in result, "Missing 'rating_label'"
+        assert result['algorithm'] == 'weighted', "Wrong algorithm value"
 
 
 if __name__ == '__main__':

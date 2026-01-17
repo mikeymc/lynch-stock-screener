@@ -77,8 +77,7 @@ LYNCH = CharacterConfig(
         'owner_earnings',  # Buffett metric
     ],
 
-    # Lynch supports multiple algorithm variants
-    supported_algorithms=['weighted', 'two_tier', 'category_based', 'critical_factors', 'classic'],
+    supported_algorithms=['weighted'],
     default_algorithm='weighted',
 )
 

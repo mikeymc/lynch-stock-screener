@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Quick test script to verify all algorithms work correctly."""
+"""Quick test script to verify weighted algorithm works correctly."""
 
 from lynch_criteria import LynchCriteria, ALGORITHM_METADATA
 
@@ -46,15 +46,14 @@ mock_base_data = {
 # Test instantiation (without database)
 print("\nTesting LynchCriteria class structure...")
 print(f"  - Class methods exist: {hasattr(LynchCriteria, '_evaluate_weighted')}")
-print(f"  - All algorithm methods exist:")
-for algo in ['weighted', 'two_tier', 'category_based', 'critical_factors', 'classic']:
-    method_name = f'_evaluate_{algo}'
-    exists = hasattr(LynchCriteria, method_name)
-    print(f"    - {method_name}: {exists}")
+print(f"  - Weighted algorithm method exists:")
+method_name = '_evaluate_weighted'
+exists = hasattr(LynchCriteria, method_name)
+print(f"    - {method_name}: {exists}")
 
 print("\n" + "=" * 80)
 print("TEST COMPLETE")
 print("=" * 80)
-print("\nAll algorithm metadata is properly defined.")
-print("All algorithm evaluation methods exist in the LynchCriteria class.")
+print("\nAlgorithm metadata is properly defined.")
+print("Weighted algorithm evaluation method exists in the LynchCriteria class.")
 print("\nThe implementation is ready for integration testing with live data.")

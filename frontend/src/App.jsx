@@ -196,19 +196,12 @@ function StockListView({
 
         const summaryData = {
           totalAnalyzed: reEvaluatedStocks.length,
-          algorithm: algorithm
-        }
-
-        if (algorithm === 'classic') {
-          summaryData.passCount = statusCounts['PASS'] || 0
-          summaryData.closeCount = statusCounts['CLOSE'] || 0
-          summaryData.failCount = statusCounts['FAIL'] || 0
-        } else {
-          summaryData.strong_buy_count = statusCounts['STRONG_BUY'] || 0
-          summaryData.buy_count = statusCounts['BUY'] || 0
-          summaryData.hold_count = statusCounts['HOLD'] || 0
-          summaryData.caution_count = statusCounts['CAUTION'] || 0
-          summaryData.avoid_count = statusCounts['AVOID'] || 0
+          algorithm: algorithm,
+          strong_buy_count: statusCounts['STRONG_BUY'] || 0,
+          buy_count: statusCounts['BUY'] || 0,
+          hold_count: statusCounts['HOLD'] || 0,
+          caution_count: statusCounts['CAUTION'] || 0,
+          avoid_count: statusCounts['AVOID'] || 0
         }
 
         setSummary(summaryData)
@@ -336,31 +329,15 @@ function StockListView({
       const results = data.results || []
       const counts = data.status_counts || {}
 
-      // Check if we have new algorithm statuses or old ones
-      const hasNewStatuses = counts['STRONG_BUY'] !== undefined || counts['BUY'] !== undefined ||
-        counts['HOLD'] !== undefined || counts['CAUTION'] !== undefined || counts['AVOID'] !== undefined
-
-      if (hasNewStatuses) {
-        // New algorithm statuses
-        setSummary({
-          totalAnalyzed: data.total_count || results.length,
-          strong_buy_count: counts['STRONG_BUY'] || 0,
-          buy_count: counts['BUY'] || 0,
-          hold_count: counts['HOLD'] || 0,
-          caution_count: counts['CAUTION'] || 0,
-          avoid_count: counts['AVOID'] || 0,
-          algorithm: 'weighted'
-        })
-      } else {
-        // Old algorithm statuses (classic)
-        setSummary({
-          totalAnalyzed: data.total_count || results.length,
-          passCount: counts['PASS'] || 0,
-          closeCount: counts['CLOSE'] || 0,
-          failCount: counts['FAIL'] || 0,
-          algorithm: 'classic'
-        })
-      }
+      setSummary({
+        totalAnalyzed: data.total_count || results.length,
+        strong_buy_count: counts['STRONG_BUY'] || 0,
+        buy_count: counts['BUY'] || 0,
+        hold_count: counts['HOLD'] || 0,
+        caution_count: counts['CAUTION'] || 0,
+        avoid_count: counts['AVOID'] || 0,
+        algorithm: 'weighted'
+      })
     }
 
     loadLatestSession()
@@ -709,19 +686,12 @@ function StockListView({
             // Set final summary
             const summaryData = {
               totalAnalyzed: progress.total_analyzed,
-              algorithm: progress.algorithm
-            }
-
-            if (progress.algorithm === 'classic') {
-              summaryData.passCount = progress.pass_count
-              summaryData.closeCount = progress.close_count
-              summaryData.failCount = progress.fail_count
-            } else {
-              summaryData.strong_buy_count = progress.pass_count  // Map to new format
-              summaryData.buy_count = progress.close_count
-              summaryData.hold_count = 0
-              summaryData.caution_count = 0
-              summaryData.avoid_count = progress.fail_count
+              algorithm: progress.algorithm,
+              strong_buy_count: progress.pass_count || 0,
+              buy_count: progress.close_count || 0,
+              hold_count: 0,
+              caution_count: 0,
+              avoid_count: progress.fail_count || 0
             }
 
             setSummary(summaryData)
@@ -747,11 +717,6 @@ function StockListView({
 
   const getStatusColor = (status) => {
     switch (status) {
-      // Classic algorithm statuses
-      case 'PASS': return '#4ade80'
-      case 'CLOSE': return '#fbbf24'
-      case 'FAIL': return '#f87171'
-      // New algorithm statuses
       case 'STRONG_BUY': return '#22c55e'
       case 'BUY': return '#4ade80'
       case 'HOLD': return '#fbbf24'
