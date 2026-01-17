@@ -80,7 +80,7 @@ class TestToolExecutor:
     def tool_executor(self, mock_db):
         """Create a ToolExecutor with mocked dependencies."""
         from agent_tools import ToolExecutor
-        return ToolExecutor(mock_db, rag_context=None)
+        return ToolExecutor(mock_db, stock_context=None)
     
     def test_get_stock_metrics(self, tool_executor, mock_db):
         """Test get_stock_metrics tool returns expected data."""

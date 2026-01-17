@@ -1,5 +1,5 @@
-# ABOUTME: Assembles stock context for RAG chat from database
-# ABOUTME: Provides smart section selection based on user queries and formats context for Gemini
+# ABOUTME: Assembles stock context from database for analysis tools
+# ABOUTME: Provides smart section selection and data retrieval for filing sections, news, etc.
 
 from typing import Dict, Any, List, Optional, Tuple
 from database import Database
@@ -7,8 +7,8 @@ import re
 import json
 
 
-class RAGContext:
-    """Assembles and formats stock context for conversational RAG"""
+class StockContext:
+    """Assembles and formats stock context for analysis"""
 
     # Context types corresponding to frontend pages
     CONTEXT_TYPES = {
@@ -33,7 +33,7 @@ class RAGContext:
 
     def __init__(self, db: Database):
         """
-        Initialize RAG context assembler
+        Initialize stock context provider
 
         Args:
             db: Database instance

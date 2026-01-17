@@ -1,4 +1,4 @@
-// ABOUTME: Context for sharing agent chat state between components
+// ABOUTME: Context for sharing chat state between components
 // ABOUTME: Enables chat history display in sidebar while state lives in AnalysisChat
 
 import { createContext, useContext, useState, useCallback } from 'react'
@@ -6,21 +6,9 @@ import { createContext, useContext, useState, useCallback } from 'react'
 const ChatContext = createContext(null)
 
 export function ChatProvider({ children }) {
-  // Agent mode toggle
-  const [agentMode, setAgentMode] = useState(() => {
-    const saved = localStorage.getItem('agentModeEnabled')
-    return saved === 'true'
-  })
-
   // Conversation state
   const [conversations, setConversations] = useState([])
   const [activeConversationId, setActiveConversationId] = useState(null)
-
-  // Update agent mode and persist to localStorage
-  const updateAgentMode = useCallback((enabled) => {
-    setAgentMode(enabled)
-    localStorage.setItem('agentModeEnabled', enabled.toString())
-  }, [])
 
   // Update conversations list
   const updateConversations = useCallback((convs) => {
@@ -45,8 +33,6 @@ export function ChatProvider({ children }) {
   }, [])
 
   const value = {
-    agentMode,
-    setAgentMode: updateAgentMode,
     conversations,
     setConversations: updateConversations,
     addConversation,

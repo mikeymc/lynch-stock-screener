@@ -9,7 +9,6 @@ import { RefreshCw, Sparkles, Bot } from 'lucide-react'
 import ChatChart from './ChatChart'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
-import { Switch } from '@/components/ui/switch'
 import { Card, CardHeader, CardContent } from '@/components/ui/card'
 import { useChatContext } from '@/context/ChatContext'
 import { useAuth } from '@/context/AuthContext'
@@ -231,8 +230,6 @@ const AnalysisChat = forwardRef(function AnalysisChat({ symbol, stockName, chatO
 
   // Shared chat context for sidebar integration
   const {
-    agentMode,
-    setAgentMode,
     conversations,
     setConversations,
     addConversation,
@@ -263,7 +260,6 @@ const AnalysisChat = forwardRef(function AnalysisChat({ symbol, stockName, chatO
   const [showScrollIndicator, setShowScrollIndicator] = useState(false)
   const [loadingMessageIndex, setLoadingMessageIndex] = useState(0)
   const [agentThinking, setAgentThinking] = useState('')
-  const [agentModeEnabled, setAgentModeEnabled] = useState(false)
   const [showScrollDown, setShowScrollDown] = useState(false)
   const [isNearBottom, setIsNearBottom] = useState(true)
 
@@ -353,8 +349,6 @@ const AnalysisChat = forwardRef(function AnalysisChat({ symbol, stockName, chatO
 
   // Respond to conversation selection from sidebar (or deletion)
   useEffect(() => {
-    if (!agentMode) return
-
     if (activeConversationId === null && conversationId !== null) {
       // Active conversation was deleted - start a new chat
       startNewChat()
@@ -440,31 +434,9 @@ const AnalysisChat = forwardRef(function AnalysisChat({ symbol, stockName, chatO
     }
   }, [chatLoading])
 
-  // Fetch Agent Mode feature flag
+  // Load conversations on mount
   useEffect(() => {
-    const fetchAgentModeFlag = async () => {
-      try {
-        const response = await fetch(`${API_BASE}/settings`)
-        if (response.ok) {
-          const settings = await response.json()
-          setAgentModeEnabled(
-            settings.feature_agent_mode_enabled?.value === true ||
-            settings.feature_agent_mode_enabled?.value === 'true'
-          )
-        }
-      } catch (err) {
-        console.error('Error fetching agent mode flag:', err)
-      }
-    }
-
-    fetchAgentModeFlag()
-  }, [])
-
-  // Load agent conversations when agent mode is active
-  useEffect(() => {
-    if (!agentMode) return
-
-    const loadAgentConversations = async () => {
+    const loadConversations = async () => {
       try {
         // Fetch all recent agent conversations
         const response = await fetch(`${API_BASE}/agent/conversations`, { credentials: 'include' })
@@ -521,12 +493,14 @@ const AnalysisChat = forwardRef(function AnalysisChat({ symbol, stockName, chatO
           }
         }
       } catch (error) {
-        console.error('Error loading agent conversations:', error)
+        console.error('Error loading conversations:', error)
+      } finally {
+        setLoadingHistory(false)
       }
     }
 
-    loadAgentConversations()
-  }, [agentMode])  // Only re-run when agentMode changes
+    loadConversations()
+  }, [])  // Only run on mount
 
   // Cycle loading messages during brief generation with random timing
   useEffect(() => {
@@ -655,45 +629,6 @@ const AnalysisChat = forwardRef(function AnalysisChat({ symbol, stockName, chatO
     }
   }
 
-  // Load conversation history (skip if agent mode is active - agent has its own context)
-  useEffect(() => {
-    // Don't load regular chat history if starting in agent mode
-    if (agentMode) {
-      setLoadingHistory(false)
-      return
-    }
-
-    const loadConversationHistory = async () => {
-      try {
-        setLoadingHistory(true)
-        const response = await fetch(`${API_BASE}/chat/${symbol}/conversations`, { credentials: 'include' })
-
-        if (response.ok) {
-          const data = await response.json()
-          const conversations = data.conversations || []
-
-          if (conversations.length > 0) {
-            const recentConversation = conversations[0]
-            setConversationId(recentConversation.id)
-
-            const messagesResponse = await fetch(`${API_BASE}/chat/conversation/${recentConversation.id}/messages`, { credentials: 'include' })
-            if (messagesResponse.ok) {
-              const messagesData = await messagesResponse.json()
-              setMessages(messagesData.messages || [])
-            }
-          }
-        }
-      } catch (error) {
-        console.error('Error loading conversation history:', error)
-      } finally {
-        setLoadingHistory(false)
-      }
-    }
-
-    loadConversationHistory()
-  }, [symbol]) // Note: intentionally not including agentMode as dep to prevent refetch on toggle
-
-
   // Auto-fetch analysis on mount (cache only) - skip in chatOnly mode
   useEffect(() => {
     if (chatOnly) {
@@ -725,9 +660,9 @@ const AnalysisChat = forwardRef(function AnalysisChat({ symbol, stockName, chatO
     fetchAnalysis(false)
   }
 
-  // Helper to save agent messages to database
-  const saveAgentMessage = async (role, content, toolCalls = null) => {
-    if (!agentMode || !conversationId) {
+  // Helper to save messages to database
+  const saveMessage = async (role, content, toolCalls = null) => {
+    if (!conversationId) {
       return
     }
 
@@ -740,10 +675,9 @@ const AnalysisChat = forwardRef(function AnalysisChat({ symbol, stockName, chatO
       })
 
       if (!response.ok) {
-        console.error('[Agent] Failed to save message:', await response.text())
+        console.error('Failed to save message:', await response.text())
       } else {
         const data = await response.json()
-        console.log('[Agent] Message saved successfully:', role)
 
         // If backend generated a title, update the conversation in context
         if (data.title) {
@@ -751,7 +685,7 @@ const AnalysisChat = forwardRef(function AnalysisChat({ symbol, stockName, chatO
         }
       }
     } catch (error) {
-      console.error('Error saving agent message:', error)
+      console.error('Error saving message:', error)
     }
   }
 
@@ -764,8 +698,7 @@ const AnalysisChat = forwardRef(function AnalysisChat({ symbol, stockName, chatO
     // Only show user message bubble if not hidden (for comment reviews)
     if (!options.hideUserMessage) {
       setMessages(prev => [...prev, { role: 'user', content: userMessage }])
-      // Save user message to database (agent mode only)
-      saveAgentMessage('user', userMessage)
+      saveMessage('user', userMessage)
     }
     setChatLoading(true)
     setStreamingMessage('')
@@ -773,14 +706,8 @@ const AnalysisChat = forwardRef(function AnalysisChat({ symbol, stockName, chatO
     setAgentThinking('')
 
     try {
-      // Choose endpoint based on agent mode
-      const endpoint = agentMode
-        ? `${API_BASE}/chat/${symbol}/agent`
-        : `${API_BASE}/chat/${symbol}/message/stream`
-
-      const body = agentMode
-        ? { message: userMessage, history: messages.map(m => ({ role: m.role, content: m.content })) }
-        : { message: userMessage, conversation_id: conversationId, lynch_analysis: analysis || null, context_type: contextType }
+      const endpoint = `${API_BASE}/chat/${symbol}/agent`
+      const body = { message: userMessage, history: messages.map(m => ({ role: m.role, content: m.content })) }
 
       const response = await fetch(endpoint, {
         method: 'POST',
@@ -819,7 +746,7 @@ const AnalysisChat = forwardRef(function AnalysisChat({ symbol, stockName, chatO
                       message_id: data.data?.message_id
                     }])
                     // Save assistant message to database (agent mode only)
-                    saveAgentMessage('assistant', fullMessage, toolCalls.length > 0 ? toolCalls : null)
+                    saveMessage('assistant', fullMessage, toolCalls.length > 0 ? toolCalls : null)
                     setStreamingMessage('')
                     setStreamingSources([])
                     setAgentThinking('')
@@ -840,7 +767,7 @@ const AnalysisChat = forwardRef(function AnalysisChat({ symbol, stockName, chatO
               toolCalls: toolCalls.length > 0 ? toolCalls : undefined
             }])
             // Save assistant message to database (agent mode only)
-            saveAgentMessage('assistant', fullMessage, toolCalls.length > 0 ? toolCalls : null)
+            saveMessage('assistant', fullMessage, toolCalls.length > 0 ? toolCalls : null)
             setStreamingMessage('')
             setStreamingSources([])
             setAgentThinking('')
@@ -886,7 +813,7 @@ const AnalysisChat = forwardRef(function AnalysisChat({ symbol, stockName, chatO
                 message_id: data.data?.message_id
               }])
               // Save assistant message to database (agent mode only)
-              saveAgentMessage('assistant', fullMessage, toolCalls.length > 0 ? toolCalls : null)
+              saveMessage('assistant', fullMessage, toolCalls.length > 0 ? toolCalls : null)
               setStreamingMessage('')
               setStreamingSources([])
               setAgentThinking('')
@@ -1066,42 +993,26 @@ const AnalysisChat = forwardRef(function AnalysisChat({ symbol, stockName, chatO
 
       {/* Chat input - always visible at bottom */}
       <div className="p-4 border-t bg-background">
-        {/* Agent Mode Toggle and New Chat - only show if feature flag is enabled */}
-        {agentModeEnabled && (
-          <div className="flex items-center justify-between mb-3">
-            {agentMode && (
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={startNewChat}
-                disabled={chatLoading || messages.length === 0}
-                className="text-muted-foreground"
-              >
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="mr-1">
-                  <path d="M12 5v14M5 12h14" />
-                </svg>
-                New Chat
-              </Button>
-            )}
-            <div className="flex items-center gap-2 ml-auto mr-8">
-              <Switch
-                id="agent-mode"
-                checked={agentMode}
-                onCheckedChange={setAgentMode}
-                disabled={chatLoading}
-              />
-              <label htmlFor="agent-mode" className="text-sm text-muted-foreground cursor-pointer">
-                Agent Mode (Beta)
-              </label>
-            </div>
-          </div>
-        )}
+        <div className="flex items-center mb-3">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={startNewChat}
+            disabled={chatLoading || messages.length === 0}
+            className="text-muted-foreground"
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="mr-1">
+              <path d="M12 5v14M5 12h14" />
+            </svg>
+            New Chat
+          </Button>
+        </div>
         <div className="flex gap-2">
           <Textarea
             ref={inputRef}
             defaultValue=""
             onKeyDown={handleKeyPress}
-            placeholder={agentMode ? "Ask complex questions (e.g., 'Compare to peers')" : "Ask anything"}
+            placeholder="Ask complex questions (e.g., 'Compare to peers')"
             rows={2}
             disabled={chatLoading}
             className="flex-1 resize-none"

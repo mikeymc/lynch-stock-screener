@@ -1,12 +1,12 @@
 from dotenv import load_dotenv
 load_dotenv()
 from database import Database
-from rag_context import RAGContext
+from stock_context import StockContext
 from agent_tools import ToolExecutor
 
 db = Database()
-rag = RAGContext(db)
-executor = ToolExecutor(db, rag_context=rag)
+stock_ctx = StockContext(db)
+executor = ToolExecutor(db, stock_context=stock_ctx)
 
 # Test get_growth_rates
 print("=== Testing get_growth_rates (NVDA) ===")

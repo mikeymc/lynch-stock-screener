@@ -1340,61 +1340,15 @@ class Database:
             END $$;
         """)
 
+        # Migration: Drop deprecated RAG chat tables (conversations, messages, message_sources)
+        # These were replaced by agent chat tables (agent_conversations, agent_messages)
         cursor.execute("""
-            CREATE TABLE IF NOT EXISTS conversations (
-                id SERIAL PRIMARY KEY,
-                symbol TEXT NOT NULL,
-                title TEXT,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                FOREIGN KEY (symbol) REFERENCES stocks(symbol)
-            )
+            DROP TABLE IF EXISTS message_sources CASCADE;
+            DROP TABLE IF EXISTS messages CASCADE;
+            DROP TABLE IF EXISTS conversations CASCADE;
         """)
 
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS messages (
-                id SERIAL PRIMARY KEY,
-                conversation_id INTEGER NOT NULL,
-                role TEXT NOT NULL,
-                content TEXT NOT NULL,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                FOREIGN KEY (conversation_id) REFERENCES conversations(id) ON DELETE CASCADE
-            )
-        """)
-
-        # Migration: Add user_id to conversations table
-        cursor.execute("""
-            DO $$
-            BEGIN
-                IF NOT EXISTS (
-                    SELECT 1 FROM information_schema.columns
-                    WHERE table_name = 'conversations' AND column_name = 'user_id'
-                ) THEN
-                    -- Add user_id column
-                    ALTER TABLE conversations ADD COLUMN user_id INTEGER REFERENCES users(id) ON DELETE CASCADE;
-
-                    -- Clear existing conversations since we can't assign user_id retroactively
-                    DELETE FROM messages;
-                    DELETE FROM conversations;
-
-                    -- Make user_id required
-                    ALTER TABLE conversations ALTER COLUMN user_id SET NOT NULL;
-                END IF;
-            END $$;
-        """)
-
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS message_sources (
-                id SERIAL PRIMARY KEY,
-                message_id INTEGER NOT NULL,
-                section_name TEXT NOT NULL,
-                filing_type TEXT,
-                filing_date TEXT,
-                FOREIGN KEY (message_id) REFERENCES messages(id) ON DELETE CASCADE
-            )
-        """)
-
-        # Agent chat tables (separate from regular chat - cross-stock conversations)
+        # Agent chat tables
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS agent_conversations (
                 id SERIAL PRIMARY KEY,
@@ -3946,7 +3900,6 @@ class Database:
         defaults = {
             # Feature flags only - weights/thresholds are in algorithm_configurations
             'feature_reddit_enabled': {'value': False, 'desc': 'Enable Reddit social sentiment tab (experimental)'},
-            'feature_agent_mode_enabled': {'value': False, 'desc': 'Enable Agent Mode toggle in chat (experimental)'},
             'feature_fred_enabled': {'value': False, 'desc': 'Enable FRED macroeconomic data features'},
             'feature_economy_link_enabled': {'value': False, 'desc': 'Show Economy link in navigation sidebar'},
         }

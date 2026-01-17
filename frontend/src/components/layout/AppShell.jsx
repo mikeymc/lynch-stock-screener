@@ -51,7 +51,7 @@ function AppShellContent({
     activeCharacter = 'lynch'
 }) {
     const { isMobile, setOpenMobile } = useSidebar()
-    const { agentMode, conversations, removeConversation, activeConversationId, setActiveConversationId } = useChatContext()
+    const { conversations, removeConversation, activeConversationId, setActiveConversationId } = useChatContext()
     const { theme } = useTheme()
     const [feedbackOpen, setFeedbackOpen] = useState(false)
 
@@ -493,25 +493,23 @@ function AppShellContent({
                             </Collapsible>
                         )}
 
-                        {/* Chat History Section - Only show when agent mode is enabled */}
-                        {agentMode && (
-                            <Collapsible open={chatsOpen} onOpenChange={setChatsOpen} style={{ maxWidth: '100%', overflow: 'hidden' }}>
-                                <SidebarGroup className="overflow-x-hidden">
-                                    <CollapsibleTrigger asChild>
-                                        <SidebarGroupLabel className="cursor-pointer hover:bg-accent flex items-center justify-between px-4 py-2">
-                                            <span>Chats</span>
-                                            {chatsOpen ? <ChevronDown /> : <ChevronRight />}
-                                        </SidebarGroupLabel>
-                                    </CollapsibleTrigger>
-                                    <CollapsibleContent>
-                                        <ChatHistory
-                                            onSelectConversation={onNavClick}
-                                            onDeleteConversation={handleDeleteConversation}
-                                        />
-                                    </CollapsibleContent>
-                                </SidebarGroup>
-                            </Collapsible>
-                        )}
+                        {/* Chat History Section */}
+                        <Collapsible open={chatsOpen} onOpenChange={setChatsOpen} style={{ maxWidth: '100%', overflow: 'hidden' }}>
+                            <SidebarGroup className="overflow-x-hidden">
+                                <CollapsibleTrigger asChild>
+                                    <SidebarGroupLabel className="cursor-pointer hover:bg-accent flex items-center justify-between px-4 py-2">
+                                        <span>Chats</span>
+                                        {chatsOpen ? <ChevronDown /> : <ChevronRight />}
+                                    </SidebarGroupLabel>
+                                </CollapsibleTrigger>
+                                <CollapsibleContent>
+                                    <ChatHistory
+                                        onSelectConversation={onNavClick}
+                                        onDeleteConversation={handleDeleteConversation}
+                                    />
+                                </CollapsibleContent>
+                            </SidebarGroup>
+                        </Collapsible>
                     </ScrollArea>
                 </SidebarContent>
 

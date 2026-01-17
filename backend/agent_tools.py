@@ -46,11 +46,12 @@ get_financials_decl = FunctionDeclaration(
 
 get_peers_decl = FunctionDeclaration(
     name="get_peers",
-    description="Get information about competitors and the competitive landscape. This retrieves the 'Business' section from the company's 10-K filing which typically discusses competitors, market position, and industry dynamics. The LLM should extract and identify specific competitor names from this context.",
+    description="Get peer companies in the same sector with their financial metrics. Returns other stocks in the same sector/industry with key metrics (P/E, PEG, growth rates, debt) for direct comparison.",
     parameters=Schema(
         type=Type.OBJECT,
         properties={
-            "ticker": Schema(type=Type.STRING, description="Stock ticker symbol to find competitor information for"),
+            "ticker": Schema(type=Type.STRING, description="Stock ticker symbol to find peers for"),
+            "limit": Schema(type=Type.INTEGER, description="Maximum number of peers to return (default: 10)"),
         },
         required=["ticker"],
     ),
@@ -253,8 +254,8 @@ screen_stocks_decl = FunctionDeclaration(
             "dividend_yield_min": Schema(type=Type.NUMBER, description="Minimum dividend yield percentage (e.g., 3.0 for income stocks)"),
             "market_cap_min": Schema(type=Type.NUMBER, description="Minimum market cap in billions (e.g., 10 for large caps)"),
             "market_cap_max": Schema(type=Type.NUMBER, description="Maximum market cap in billions (e.g., 2 for small caps)"),
-            "revenue_growth_min": Schema(type=Type.NUMBER, description="Minimum revenue growth percentage YoY"),
-            "eps_growth_min": Schema(type=Type.NUMBER, description="Minimum EPS growth percentage YoY"),
+            "revenue_growth_min": Schema(type=Type.NUMBER, description="Minimum annual revenue growth percentage (e.g., 10 for 10% YoY growth)"),
+            "eps_growth_min": Schema(type=Type.NUMBER, description="Minimum annual EPS/earnings growth percentage (e.g., 15 for 15% YoY growth)"),
             "sector": Schema(type=Type.STRING, description="Filter by sector. Valid values: 'Technology', 'Healthcare', 'Finance' (banks like JPM/BAC/GS), 'Financial Services' (fintech), 'Consumer Cyclical', 'Consumer Defensive', 'Energy', 'Industrials', 'Basic Materials', 'Real Estate', 'Utilities', 'Communication Services'"),
             "peg_max": Schema(type=Type.NUMBER, description="Maximum PEG ratio (P/E divided by growth rate)"),
             "peg_min": Schema(type=Type.NUMBER, description="Minimum PEG ratio (e.g., 2.0 to find potentially overvalued stocks)"),
@@ -263,13 +264,13 @@ screen_stocks_decl = FunctionDeclaration(
             "has_transcript": Schema(type=Type.BOOLEAN, description="If true, only return stocks that have an earnings call transcript available"),
             "has_fcf": Schema(type=Type.BOOLEAN, description="If true, only return stocks that have Free Cash Flow data available (useful for dividend coverage analysis)"),
             "has_recent_insider_activity": Schema(type=Type.BOOLEAN, description="If true, only return stocks with insider BUY transactions in the last 90 days"),
-            "sort_by": Schema(type=Type.STRING, description="Sort results by: 'pe', 'dividend_yield', 'market_cap', 'revenue_growth', 'eps_growth', 'debt_to_equity' (default: 'market_cap')"),
+            "sort_by": Schema(type=Type.STRING, description="Sort results by: 'pe', 'dividend_yield', 'market_cap', 'revenue_growth', 'eps_growth', 'peg', 'debt_to_equity' (default: 'market_cap')"),
             "sort_order": Schema(type=Type.STRING, description="Sort order: 'asc' or 'desc' (default: 'desc')"),
             "top_n_by_market_cap": Schema(type=Type.INTEGER, description="UNIVERSE FILTER: Only consider the top N companies by market cap (within sector if specified). Use this when asked for 'top 50 by market cap' or similar. Apply this BEFORE other sorts like 'lowest P/E'."),
             "limit": Schema(type=Type.INTEGER, description="Maximum number of results to return (default: 20, max: 50)"),
             "exclude_tickers": Schema(
-                type=Type.ARRAY, 
-                items=Schema(type=Type.STRING), 
+                type=Type.ARRAY,
+                items=Schema(type=Type.STRING),
                 description="List of tickers to exclude from results (e.g., ['NVDA'] to find *other* stocks)"
             ),
         },
@@ -409,17 +410,17 @@ AGENT_TOOLS = Tool(function_declarations=TOOL_DECLARATIONS)
 
 class ToolExecutor:
     """Executes tool calls against the database and other data sources."""
-    
-    def __init__(self, db, rag_context=None):
+
+    def __init__(self, db, stock_context=None):
         """
         Initialize the tool executor.
-        
+
         Args:
             db: Database instance
-            rag_context: Optional RAGContext instance for filing sections and news
+            stock_context: Optional StockContext instance for filing sections and news
         """
         self.db = db
-        self.rag_context = rag_context
+        self.stock_context = stock_context
     
     def execute(self, tool_name: str, args: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -470,12 +471,52 @@ class ToolExecutor:
             return {"error": str(e)}
     
     def _get_stock_metrics(self, ticker: str) -> Dict[str, Any]:
-        """Get all available stock metrics."""
+        """Get all available stock metrics including calculated growth rates."""
         ticker = ticker.upper()
         result = self.db.get_stock_metrics(ticker)
         if not result:
             return {"error": f"No data found for {ticker}"}
-        
+
+        # Calculate 5-year growth rates from earnings_history (matches screener behavior)
+        earnings_growth = None
+        revenue_growth = None
+        conn = None
+        try:
+            conn = self.db.get_connection()
+            cursor = conn.cursor()
+            # Get last 5 years of annual data, ordered by year
+            cursor.execute("""
+                SELECT year, net_income, revenue
+                FROM earnings_history
+                WHERE symbol = %s AND period = 'annual'
+                  AND net_income IS NOT NULL AND revenue IS NOT NULL
+                ORDER BY year DESC
+                LIMIT 5
+            """, (ticker,))
+            rows = cursor.fetchall()
+            if len(rows) >= 3:  # Need at least 3 years for meaningful growth
+                # Rows are in DESC order, reverse to get oldest first
+                rows = list(reversed(rows))
+                start_income, end_income = rows[0][1], rows[-1][1]
+                start_revenue, end_revenue = rows[0][2], rows[-1][2]
+                years = len(rows) - 1
+                # Linear growth: ((end - start) / |start|) / years * 100
+                if start_income and start_income != 0 and end_income:
+                    earnings_growth = round(((end_income - start_income) / abs(start_income)) / years * 100, 1)
+                if start_revenue and start_revenue != 0 and end_revenue:
+                    revenue_growth = round(((end_revenue - start_revenue) / abs(start_revenue)) / years * 100, 1)
+        except Exception:
+            pass  # Growth rates will remain None
+        finally:
+            if conn:
+                self.db.return_connection(conn)
+
+        # Calculate PEG ratio the same way the screener does: P/E / earnings_growth
+        pe_ratio = result.get("pe_ratio")
+        peg_ratio = None
+        if pe_ratio and earnings_growth and earnings_growth > 0:
+            peg_ratio = round(pe_ratio / earnings_growth, 2)
+
         # Return all available metrics organized by category
         return {
             "ticker": ticker,
@@ -489,10 +530,14 @@ class ToolExecutor:
             "market_cap": result.get("market_cap"),
             "beta": result.get("beta"),
             # Valuation ratios
-            "pe_ratio": result.get("pe_ratio"),
+            "pe_ratio": pe_ratio,
             "forward_pe": result.get("forward_pe"),
-            "forward_peg_ratio": result.get("forward_peg_ratio"),
+            "peg_ratio": peg_ratio,  # Calculated: P/E / earnings_growth
+            "forward_peg_ratio": result.get("forward_peg_ratio"),  # From data provider
             "forward_eps": result.get("forward_eps"),
+            # Growth rates (calculated from earnings_history)
+            "earnings_growth": earnings_growth,
+            "revenue_growth": revenue_growth,
             # Financial ratios
             "debt_to_equity": result.get("debt_to_equity"),
             "total_debt": result.get("total_debt"),
@@ -552,37 +597,117 @@ class ToolExecutor:
         
         return result
     
-    def _get_peers(self, ticker: str) -> Dict[str, Any]:
-        """Get competitor information from 10-K business section."""
+    def _get_peers(self, ticker: str, limit: int = 10) -> Dict[str, Any]:
+        """Get peer companies in the same sector with their financial metrics."""
         ticker = ticker.upper()
-        
-        if not self.rag_context:
-            return {"error": "Competitor info not available: RAGContext not configured"}
-        
-        # Get the business section which typically discusses competitors
-        sections, _ = self.rag_context._get_filing_sections(ticker, user_query=None, max_sections=4)
-        
-        if 'business' not in sections:
-            return {
-                "error": f"No business section found for {ticker}",
-                "suggestion": "Try searching news or checking the company's sector for general context."
+        limit = min(limit or 10, 25)
+
+        def safe_round(val, digits=2):
+            if val is None:
+                return None
+            try:
+                float_val = float(val)
+                if float_val != float_val:  # NaN check
+                    return None
+                return round(float_val, digits)
+            except (TypeError, ValueError):
+                return None
+
+        conn = None
+        try:
+            # Get target stock info from stocks + stock_metrics tables
+            target_query = """
+                SELECT s.symbol, s.company_name, s.sector,
+                       m.price, m.pe_ratio, m.market_cap, m.debt_to_equity,
+                       m.dividend_yield, m.forward_pe, m.forward_peg_ratio
+                FROM stocks s
+                LEFT JOIN stock_metrics m ON s.symbol = m.symbol
+                WHERE s.symbol = %s
+            """
+            conn = self.db.get_connection()
+            cursor = conn.cursor()
+            cursor.execute(target_query, (ticker,))
+            target_row = cursor.fetchone()
+
+            if not target_row:
+                return {"error": f"Stock {ticker} not found in database"}
+
+            sector = target_row[2]
+
+            if not sector:
+                return {"error": f"Sector information not available for {ticker}"}
+
+            target_market_cap = target_row[5]
+            target_metrics = {
+                "symbol": target_row[0],
+                "company_name": target_row[1],
+                "sector": sector,
+                "price": safe_round(target_row[3]),
+                "pe_ratio": safe_round(target_row[4]),
+                "market_cap_b": safe_round(target_row[5] / 1e9, 1) if target_row[5] else None,
+                "debt_to_equity": safe_round(target_row[6]),
+                "dividend_yield": safe_round(target_row[7]),
+                "forward_pe": safe_round(target_row[8]),
+                "forward_peg": safe_round(target_row[9])
             }
-        
-        business_data = sections['business']
-        content = business_data.get('content', '')
-        
-        # Truncate if very long
-        if len(content) > 8000:
-            content = content[:8000] + "\n... [TRUNCATED - see full 10-K for complete details]"
-        
-        return {
-            "ticker": ticker,
-            "section": "business",
-            "filing_type": business_data.get("filing_type"),
-            "filing_date": business_data.get("filing_date"),
-            "content": content,
-            "instruction": "Extract competitor names and market position information from this business description."
-        }
+
+            # Find peers in the same sector with valid metrics
+            # Order by market cap proximity to target
+            peers_query = """
+                SELECT s.symbol, s.company_name,
+                       m.price, m.pe_ratio, m.market_cap, m.debt_to_equity,
+                       m.dividend_yield, m.forward_pe, m.forward_peg_ratio
+                FROM stocks s
+                JOIN stock_metrics m ON s.symbol = m.symbol
+                WHERE s.sector = %s
+                  AND s.symbol != %s
+                  AND m.market_cap IS NOT NULL
+                  AND m.pe_ratio IS NOT NULL
+                ORDER BY ABS(m.market_cap - COALESCE(%s, 0)) ASC
+                LIMIT %s
+            """
+            cursor.execute(peers_query, (sector, ticker, target_market_cap, limit))
+            peer_rows = cursor.fetchall()
+
+            if not peer_rows:
+                return {
+                    "ticker": ticker,
+                    "target": target_metrics,
+                    "peers": [],
+                    "message": f"No peers found in {sector} sector"
+                }
+
+            peers = []
+            for row in peer_rows:
+                peers.append({
+                    "symbol": row[0],
+                    "company_name": row[1],
+                    "price": safe_round(row[2]),
+                    "pe_ratio": safe_round(row[3]),
+                    "market_cap_b": safe_round(row[4] / 1e9, 1) if row[4] else None,
+                    "debt_to_equity": safe_round(row[5]),
+                    "dividend_yield": safe_round(row[6]),
+                    "forward_pe": safe_round(row[7]),
+                    "forward_peg": safe_round(row[8])
+                })
+
+            return {
+                "ticker": ticker,
+                "sector": sector,
+                "target": target_metrics,
+                "peers": peers,
+                "peer_count": len(peers)
+            }
+
+        except Exception as e:
+            import traceback
+            return {
+                "error": f"Failed to get peers for {ticker}: {str(e)}",
+                "details": traceback.format_exc()
+            }
+        finally:
+            if conn:
+                self.db.return_connection(conn)
     
     def _get_insider_activity(self, ticker: str, limit: int = 20) -> Dict[str, Any]:
         """Get insider trading activity."""
@@ -623,10 +748,10 @@ class ToolExecutor:
         """Search for news articles."""
         ticker = ticker.upper()
         
-        if not self.rag_context:
-            return {"error": "News search not available: RAGContext not configured"}
+        if not self.stock_context:
+            return {"error": "News search not available: StockContext not configured"}
         
-        articles = self.rag_context._get_news_articles(ticker, limit=limit)
+        articles = self.stock_context._get_news_articles(ticker, limit=limit)
         
         if not articles:
             return {"ticker": ticker, "articles": [], "message": "No news articles found"}
@@ -640,11 +765,11 @@ class ToolExecutor:
         """Read a section from SEC filings."""
         ticker = ticker.upper()
         
-        if not self.rag_context:
-            return {"error": "Filing sections not available: RAGContext not configured"}
+        if not self.stock_context:
+            return {"error": "Filing sections not available: StockContext not configured"}
         
         # Get filing sections (returns dict keyed by section name)
-        sections, selected = self.rag_context._get_filing_sections(ticker, user_query=None, max_sections=4)
+        sections, selected = self.stock_context._get_filing_sections(ticker, user_query=None, max_sections=4)
         
         if section not in sections:
             return {
@@ -1145,61 +1270,89 @@ class ToolExecutor:
         return comparison
     
     def _find_similar_stocks(self, ticker: str, limit: int = 5) -> Dict[str, Any]:
-        """Find stocks similar to the given ticker."""
+        """Find stocks similar to the given ticker based on sector and market cap."""
         ticker = ticker.upper()
-        
-        # Get reference stock metrics
-        ref_metrics = self.db.get_stock_metrics(ticker)
-        if not ref_metrics:
-            return {"error": f"Stock {ticker} not found"}
-        
-        ref_sector = ref_metrics.get('sector')
-        ref_market_cap = ref_metrics.get('market_cap')
-        
-        if not ref_sector or not ref_market_cap:
-            return {"error": f"Insufficient data for {ticker} to find similar stocks"}
-        
+
+        def safe_round(val, digits=2):
+            if val is None:
+                return None
+            try:
+                float_val = float(val)
+                if float_val != float_val:
+                    return None
+                return round(float_val, digits)
+            except (TypeError, ValueError):
+                return None
+
         conn = self.db.get_connection()
         cursor = conn.cursor()
-        
+
         try:
-            # Find stocks in same sector with similar market cap
+            # Get reference stock info
             cursor.execute("""
-                SELECT DISTINCT symbol, sector, market_cap, peg_ratio, 
-                       earnings_cagr, revenue_cagr, overall_score
-                FROM screening_results
-                WHERE sector = %s
-                  AND symbol != %s
-                  AND market_cap BETWEEN %s AND %s
-                  AND overall_score IS NOT NULL
-                ORDER BY overall_score DESC
+                SELECT s.symbol, s.company_name, s.sector, m.market_cap, m.pe_ratio
+                FROM stocks s
+                LEFT JOIN stock_metrics m ON s.symbol = m.symbol
+                WHERE s.symbol = %s
+            """, (ticker,))
+            ref_row = cursor.fetchone()
+
+            if not ref_row:
+                return {"error": f"Stock {ticker} not found"}
+
+            ref_sector = ref_row[2]
+            ref_market_cap = ref_row[3]
+
+            if not ref_sector:
+                return {"error": f"Sector information not available for {ticker}"}
+            if not ref_market_cap:
+                return {"error": f"Market cap not available for {ticker}"}
+
+            # Find stocks in same sector with similar market cap (0.3x - 3x range)
+            cursor.execute("""
+                SELECT s.symbol, s.company_name, m.market_cap, m.pe_ratio,
+                       m.forward_peg_ratio, m.debt_to_equity, m.dividend_yield
+                FROM stocks s
+                JOIN stock_metrics m ON s.symbol = m.symbol
+                WHERE s.sector = %s
+                  AND s.symbol != %s
+                  AND m.market_cap BETWEEN %s AND %s
+                  AND m.pe_ratio IS NOT NULL
+                ORDER BY ABS(m.market_cap - %s) ASC
                 LIMIT %s
             """, (
                 ref_sector,
                 ticker,
-                ref_market_cap * 0.3,  # 30% to 300% of reference market cap
+                ref_market_cap * 0.3,
                 ref_market_cap * 3.0,
+                ref_market_cap,
                 limit
             ))
-            
+
             similar_stocks = []
             for row in cursor.fetchall():
                 similar_stocks.append({
                     "symbol": row[0],
-                    "sector": row[1],
-                    "market_cap_b": round(row[2] / 1e9, 2) if row[2] else None,
-                    "peg_ratio": round(row[3], 2) if row[3] else None,
-                    "earnings_cagr_pct": round(row[4], 1) if row[4] else None,
-                    "revenue_cagr_pct": round(row[5], 1) if row[5] else None,
-                    "lynch_score": round(row[6], 1) if row[6] else None,
+                    "company_name": row[1],
+                    "market_cap_b": safe_round(row[2] / 1e9, 1) if row[2] else None,
+                    "pe_ratio": safe_round(row[3]),
+                    "peg_ratio": safe_round(row[4]),
+                    "debt_to_equity": safe_round(row[5]),
+                    "dividend_yield": safe_round(row[6]),
                 })
-            
+
             return {
                 "reference_ticker": ticker,
                 "reference_sector": ref_sector,
-                "reference_market_cap_b": round(ref_market_cap / 1e9, 2),
+                "reference_market_cap_b": safe_round(ref_market_cap / 1e9, 1),
                 "similar_stocks": similar_stocks,
                 "count": len(similar_stocks)
+            }
+        except Exception as e:
+            import traceback
+            return {
+                "error": f"Failed to find similar stocks for {ticker}: {str(e)}",
+                "details": traceback.format_exc()
             }
         finally:
             self.db.return_connection(conn)
@@ -1256,121 +1409,133 @@ class ToolExecutor:
     def _get_sector_comparison(self, ticker: str) -> Dict[str, Any]:
         """Compare a stock's metrics to its sector averages."""
         ticker = ticker.upper()
-        
-        # 1. Get the stock's details and sector
-        stock_query = """
-            SELECT 
-                s.symbol, sr.company_name, sr.sector,
-                sr.pe_ratio, sr.peg_ratio, sr.dividend_yield, 
-                sr.revenue_cagr, sr.earnings_cagr, sr.debt_to_equity
-            FROM stocks s
-            LEFT JOIN screening_results sr ON s.symbol = sr.symbol
-            WHERE s.symbol = %s
-            ORDER BY sr.scored_at DESC
-            LIMIT 1
-        """
-        conn = self.db.get_connection()
+
+        def safe_round(val, digits=2):
+            """Safely round a value, handling None, NaN, and Decimal types."""
+            if val is None:
+                return None
+            try:
+                float_val = float(val)
+                if float_val != float_val:  # NaN check
+                    return None
+                return round(float_val, digits)
+            except (TypeError, ValueError):
+                return None
+
+        conn = None
         try:
+            # Get stock details from stocks + stock_metrics tables
+            stock_query = """
+                SELECT s.symbol, s.company_name, s.sector,
+                       m.pe_ratio, m.forward_peg_ratio, m.dividend_yield,
+                       m.debt_to_equity, m.forward_pe, m.market_cap
+                FROM stocks s
+                LEFT JOIN stock_metrics m ON s.symbol = m.symbol
+                WHERE s.symbol = %s
+            """
+            conn = self.db.get_connection()
             cursor = conn.cursor()
             cursor.execute(stock_query, (ticker,))
             stock_row = cursor.fetchone()
-            
+
             if not stock_row:
-                return {"error": f"Stock {ticker} not found"}
-            
+                return {"error": f"Stock {ticker} not found in database"}
+
+            company_name = stock_row[1]
             sector = stock_row[2]
+
             if not sector:
                 return {"error": f"Sector information not available for {ticker}"}
-            
+
             stock_metrics = {
-                "pe_ratio": stock_row[3],
-                "peg_ratio": stock_row[4],
-                "dividend_yield": stock_row[5],
-                "revenue_growth": stock_row[6],
-                "eps_growth": stock_row[7],
-                "debt_to_equity": stock_row[8]
+                "pe_ratio": safe_round(stock_row[3]),
+                "peg_ratio": safe_round(stock_row[4]),
+                "dividend_yield": safe_round(stock_row[5]),
+                "debt_to_equity": safe_round(stock_row[6]),
+                "forward_pe": safe_round(stock_row[7]),
+                "market_cap_b": safe_round(stock_row[8] / 1e9, 1) if stock_row[8] else None
             }
-            
-            # 2. Calculate sector statistics
-            # We filter for outliers to get a more representative average (e.g., exclude P/E > 200)
+
+            # Calculate sector statistics from stock_metrics
             sector_stats_query = """
-                WITH sector_stocks AS (
-                    SELECT DISTINCT ON (s.symbol) 
-                        sr.pe_ratio, sr.peg_ratio, sr.dividend_yield, 
-                        sr.revenue_cagr, sr.earnings_cagr, sr.debt_to_equity
-                    FROM stocks s
-                    JOIN screening_results sr ON s.symbol = sr.symbol
-                    WHERE sr.sector = %s AND s.symbol != %s
-                    ORDER BY s.symbol, sr.scored_at DESC
-                )
                 SELECT
                     COUNT(*) as stock_count,
-                    AVG(pe_ratio) FILTER (WHERE pe_ratio > 0 AND pe_ratio < 200) as avg_pe,
-                    PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY pe_ratio) FILTER (WHERE pe_ratio > 0 AND pe_ratio < 200) as median_pe,
-                    
-                    AVG(peg_ratio) FILTER (WHERE peg_ratio > 0 AND peg_ratio < 10) as avg_peg,
-                    
-                    AVG(dividend_yield) FILTER (WHERE dividend_yield != 'NaN') as avg_yield,
-                    PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY dividend_yield) FILTER (WHERE dividend_yield != 'NaN') as median_yield,
-                    
-                    AVG(revenue_cagr) FILTER (WHERE revenue_cagr BETWEEN -50 AND 200 AND revenue_cagr != 'NaN') as avg_rev_growth,
-                    
-                    AVG(earnings_cagr) FILTER (WHERE earnings_cagr BETWEEN -50 AND 200 AND earnings_cagr != 'NaN') as avg_eps_growth,
-                    
-                    AVG(debt_to_equity) FILTER (WHERE debt_to_equity < 50 AND debt_to_equity != 'NaN') as avg_debt_equity
-                FROM sector_stocks
+                    AVG(m.pe_ratio) FILTER (WHERE m.pe_ratio > 0 AND m.pe_ratio < 200) as avg_pe,
+                    PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY m.pe_ratio)
+                        FILTER (WHERE m.pe_ratio > 0 AND m.pe_ratio < 200) as median_pe,
+                    AVG(m.forward_peg_ratio) FILTER (WHERE m.forward_peg_ratio > 0 AND m.forward_peg_ratio < 10) as avg_peg,
+                    AVG(m.dividend_yield) FILTER (WHERE m.dividend_yield IS NOT NULL) as avg_yield,
+                    PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY m.dividend_yield)
+                        FILTER (WHERE m.dividend_yield IS NOT NULL) as median_yield,
+                    AVG(m.debt_to_equity) FILTER (WHERE m.debt_to_equity >= 0 AND m.debt_to_equity < 50) as avg_debt_equity,
+                    AVG(m.forward_pe) FILTER (WHERE m.forward_pe > 0 AND m.forward_pe < 200) as avg_forward_pe
+                FROM stocks s
+                JOIN stock_metrics m ON s.symbol = m.symbol
+                WHERE s.sector = %s AND s.symbol != %s
             """
-            
+
             cursor.execute(sector_stats_query, (sector, ticker))
             stats = cursor.fetchone()
-            
-            if not stats or stats[0] < 3: # Need at least a few peers for valid comparison
+
+            if not stats or stats[0] < 3:
                 return {
                     "ticker": ticker,
-                    "company_name": stock_row[1],
+                    "company_name": company_name,
                     "sector": sector,
-                    "message": "Not enough data in this sector for a meaningful comparison.",
+                    "peer_count": stats[0] if stats else 0,
+                    "message": f"Only {stats[0] if stats else 0} peers found in {sector} sector. Need at least 3 for meaningful comparison.",
                     "stock_metrics": stock_metrics
                 }
 
+            # Calculate percentage differences safely
+            pe_diff = None
+            if stock_metrics["pe_ratio"] and stats[1]:
+                try:
+                    pe_diff = round((float(stock_metrics["pe_ratio"]) - float(stats[1])) / float(stats[1]) * 100, 1)
+                except (TypeError, ValueError, ZeroDivisionError):
+                    pe_diff = None
+
             return {
                 "ticker": ticker,
-                "company_name": stock_row[1],
+                "company_name": company_name,
                 "sector": sector,
                 "peer_count": stats[0],
                 "comparison": {
                     "pe_ratio": {
-                        "stock": round(stock_metrics["pe_ratio"], 2) if stock_metrics["pe_ratio"] else None,
-                        "sector_avg": round(stats[1], 2) if stats[1] else None,
-                        "sector_median": round(stats[2], 2) if stats[2] else None,
-                        "diff_percent": round((stock_metrics["pe_ratio"] - stats[1]) / stats[1] * 100, 1) if stock_metrics["pe_ratio"] and stats[1] else None
+                        "stock": stock_metrics["pe_ratio"],
+                        "sector_avg": safe_round(stats[1]),
+                        "sector_median": safe_round(stats[2]),
+                        "diff_percent": pe_diff
                     },
                     "peg_ratio": {
-                        "stock": round(stock_metrics["peg_ratio"], 2) if stock_metrics["peg_ratio"] else None,
-                        "sector_avg": round(stats[3], 2) if stats[3] else None
+                        "stock": stock_metrics["peg_ratio"],
+                        "sector_avg": safe_round(stats[3])
                     },
                     "dividend_yield": {
-                        "stock": round(stock_metrics["dividend_yield"], 2) if stock_metrics["dividend_yield"] else None,
-                        "sector_avg": round(stats[4], 2) if stats[4] else None,
-                        "sector_median": round(stats[5], 2) if stats[5] else None
-                    },
-                    "revenue_growth": {
-                        "stock": round(stock_metrics["revenue_growth"], 2) if stock_metrics["revenue_growth"] else None,
-                        "sector_avg": round(stats[6], 2) if stats[6] else None
-                    },
-                    "eps_growth": {
-                        "stock": round(stock_metrics["eps_growth"], 2) if stock_metrics["eps_growth"] else None,
-                        "sector_avg": round(stats[7], 2) if stats[7] else None
+                        "stock": stock_metrics["dividend_yield"],
+                        "sector_avg": safe_round(stats[4]),
+                        "sector_median": safe_round(stats[5])
                     },
                     "debt_to_equity": {
-                        "stock": round(stock_metrics["debt_to_equity"], 2) if stock_metrics["debt_to_equity"] else None,
-                        "sector_avg": round(stats[8], 2) if stats[8] else None
+                        "stock": stock_metrics["debt_to_equity"],
+                        "sector_avg": safe_round(stats[6])
+                    },
+                    "forward_pe": {
+                        "stock": stock_metrics["forward_pe"],
+                        "sector_avg": safe_round(stats[7])
                     }
                 }
             }
-            
+
+        except Exception as e:
+            import traceback
+            return {
+                "error": f"Failed to get sector comparison for {ticker}: {str(e)}",
+                "details": traceback.format_exc()
+            }
         finally:
-            self.db.return_connection(conn)
+            if conn:
+                self.db.return_connection(conn)
 
     def _get_earnings_history(self, ticker: str, period_type: str = "quarterly", limit: int = 12) -> Dict[str, Any]:
         """Get historical earnings and revenue data."""
@@ -1502,95 +1667,107 @@ class ToolExecutor:
         exclude_tickers: list = None
     ) -> Dict[str, Any]:
         """Screen stocks based on various criteria."""
-        
+
+        def safe_round(val, digits=2):
+            if val is None:
+                return None
+            try:
+                float_val = float(val)
+                if float_val != float_val:
+                    return None
+                return round(float_val, digits)
+            except (TypeError, ValueError):
+                return None
+
         # Cap limit at 50
         limit = min(limit or 20, 50)
-        
+
         # Build dynamic WHERE clause
         conditions = []
         params = []
-        
+
+        # Track if we need growth CTE
+        needs_growth_cte = (revenue_growth_min is not None or eps_growth_min is not None or
+                           sort_by in ('revenue_growth', 'eps_growth'))
+
         # Exclude tickers
         if exclude_tickers:
-            # Format inputs to uppercase
             excluded = [t.upper() for t in exclude_tickers if isinstance(t, str)]
             if excluded:
                 placeholders = ', '.join(['%s'] * len(excluded))
                 conditions.append(f"s.symbol NOT IN ({placeholders})")
                 params.extend(excluded)
-        
+
         # P/E filters
         if pe_max is not None:
-            conditions.append("sr.pe_ratio <= %s AND sr.pe_ratio != 'NaN'")
+            conditions.append("m.pe_ratio <= %s")
             params.append(pe_max)
         if pe_min is not None:
-            conditions.append("sr.pe_ratio >= %s AND sr.pe_ratio != 'NaN'")
+            conditions.append("m.pe_ratio >= %s")
             params.append(pe_min)
-        
+
         # Dividend yield filter
         if dividend_yield_min is not None:
-            conditions.append("sr.dividend_yield >= %s AND sr.dividend_yield != 'NaN'")
+            conditions.append("m.dividend_yield >= %s")
             params.append(dividend_yield_min)
-        
+
         # Market cap filters (convert billions to actual value)
         if market_cap_min is not None:
-            conditions.append("sr.market_cap >= %s AND sr.market_cap != 'NaN'")
+            conditions.append("m.market_cap >= %s")
             params.append(market_cap_min * 1_000_000_000)
         if market_cap_max is not None:
-            conditions.append("sr.market_cap <= %s AND sr.market_cap != 'NaN'")
+            conditions.append("m.market_cap <= %s")
             params.append(market_cap_max * 1_000_000_000)
-        
-        # Growth filters (table uses _cagr suffix)
+
+        # Growth filters (calculated from earnings_history)
         if revenue_growth_min is not None:
-            conditions.append("sr.revenue_cagr >= %s AND sr.revenue_cagr != 'NaN'")
+            conditions.append("g.revenue_growth >= %s")
             params.append(revenue_growth_min)
         if eps_growth_min is not None:
-            conditions.append("sr.earnings_cagr >= %s AND sr.earnings_cagr != 'NaN'")
+            conditions.append("g.eps_growth >= %s")
             params.append(eps_growth_min)
-        
+
         # Sector filter with aliasing for common synonyms
         if sector:
             sector_lower = sector.lower().strip()
-            # Handle finance-related sector aliases
-            # "Financials", "Financial Services", "Finance" should all include both sectors
             if 'financ' in sector_lower:
                 conditions.append("(LOWER(s.sector) = 'finance' OR LOWER(s.sector) = 'financial services')")
             else:
                 conditions.append("LOWER(s.sector) LIKE LOWER(%s)")
                 params.append(f"%{sector}%")
-        
-        # PEG filter
+
+        # PEG filter (using forward_peg_ratio from stock_metrics)
         if peg_max is not None:
-            conditions.append("sr.peg_ratio <= %s AND sr.peg_ratio != 'NaN'")
+            conditions.append("m.forward_peg_ratio <= %s")
             params.append(peg_max)
         if peg_min is not None:
-            conditions.append("sr.peg_ratio >= %s AND sr.peg_ratio != 'NaN'")
+            conditions.append("m.forward_peg_ratio >= %s")
             params.append(peg_min)
-        
+
         # Debt to equity filter
         if debt_to_equity_max is not None:
-            conditions.append("sr.debt_to_equity <= %s AND sr.debt_to_equity != 'NaN'")
+            conditions.append("m.debt_to_equity <= %s")
             params.append(debt_to_equity_max)
-        
-        # Transcript filter - only show stocks with earnings call transcripts
+
+        # Transcript filter
         if has_transcript:
             conditions.append("""EXISTS (
-                SELECT 1 FROM earnings_transcripts et 
-                WHERE et.symbol = s.symbol 
-                AND et.transcript_text IS NOT NULL 
+                SELECT 1 FROM earnings_transcripts et
+                WHERE et.symbol = s.symbol
+                AND et.transcript_text IS NOT NULL
                 AND LENGTH(et.transcript_text) > 100
             )""")
 
-        # FCF filter - check for valid free cash flow data
+        # FCF filter
         if has_fcf:
             conditions.append("""EXISTS (
-                SELECT 1 FROM earnings_history eh 
-                WHERE eh.symbol = s.symbol 
-                AND eh.free_cash_flow IS NOT NULL 
+                SELECT 1 FROM earnings_history eh
+                WHERE eh.symbol = s.symbol
+                AND eh.free_cash_flow IS NOT NULL
                 AND eh.free_cash_flow > 0
             )""")
 
-        # Insider Activity Filter (Buys in last 90 days)
+        # Insider Activity Filter
         if has_recent_insider_activity:
             conditions.append("""EXISTS (
                 SELECT 1 FROM insider_trades it
@@ -1602,101 +1779,139 @@ class ToolExecutor:
         # Profit Margin Filter
         join_clause = ""
         if profit_margin_min is not None:
-            # Join with latest annual earnings to get net income and revenue
             join_clause = """
                 JOIN (
-                    SELECT DISTINCT ON (symbol) symbol, net_income, revenue 
-                    FROM earnings_history 
+                    SELECT DISTINCT ON (symbol) symbol, net_income, revenue
+                    FROM earnings_history
                     WHERE period='annual' AND revenue > 0
                     ORDER BY symbol, year DESC
                 ) eh ON s.symbol = eh.symbol
             """
-            # Calculate margin: (Net Income / Revenue) * 100
             conditions.append("(eh.net_income::float / eh.revenue::float * 100) >= %s")
             params.append(profit_margin_min)
 
-        
-        # Always exclude null P/E and require positive metrics
-        conditions.append("sr.pe_ratio IS NOT NULL")
-        conditions.append("sr.pe_ratio > 0")
-        conditions.append("sr.market_cap > 0")
-        
-        # Ensure company has quarterly earnings history (so it can be analyzed further)
+        # Always require valid P/E and market cap
+        conditions.append("m.pe_ratio IS NOT NULL")
+        conditions.append("m.pe_ratio > 0")
+        conditions.append("m.market_cap > 0")
+
+        # Ensure company has quarterly earnings history
         conditions.append("""EXISTS (
-            SELECT 1 FROM earnings_history eh 
-            WHERE eh.symbol = s.symbol 
-            AND eh.period != 'annual' 
+            SELECT 1 FROM earnings_history eh
+            WHERE eh.symbol = s.symbol
+            AND eh.period != 'annual'
             AND eh.net_income IS NOT NULL
         )""")
-        
+
         where_clause = " AND ".join(conditions) if conditions else "1=1"
-        
+
         # Build ORDER BY clause
         sort_columns = {
-            "pe": "sr.pe_ratio",
-            "dividend_yield": "sr.dividend_yield",
-            "market_cap": "sr.market_cap",
-            "revenue_growth": "sr.revenue_cagr",
-            "eps_growth": "sr.earnings_cagr",
-            "debt_to_equity": "sr.debt_to_equity",
+            "pe": "m.pe_ratio",
+            "dividend_yield": "m.dividend_yield",
+            "market_cap": "m.market_cap",
+            "debt_to_equity": "m.debt_to_equity",
+            "peg": "m.forward_peg_ratio",
+            "revenue_growth": "g.revenue_growth",
+            "eps_growth": "g.eps_growth",
         }
-        order_column = sort_columns.get(sort_by, "sr.market_cap")
+        order_column = sort_columns.get(sort_by, "m.market_cap")
         order_dir = "DESC" if sort_order.lower() == "desc" else "ASC"
-        
-        # Handle nulls in sorting
         null_handling = "NULLS LAST" if order_dir == "DESC" else "NULLS FIRST"
-        
-        query = f"""
-            WITH latest_screening AS (
-                SELECT DISTINCT ON (symbol) *
-                FROM screening_results
-                ORDER BY symbol, scored_at DESC
+
+        # Growth CTE calculates 5-year linear growth rates from earnings_history
+        # Formula: ((end - start) / |start|) / years * 100
+        # Uses last 5 years of data to match screener behavior
+        growth_cte = """
+            ranked_earnings AS (
+                SELECT symbol, year, net_income, revenue,
+                       ROW_NUMBER() OVER (PARTITION BY symbol ORDER BY year DESC) as rn,
+                       COUNT(*) OVER (PARTITION BY symbol) as total_years
+                FROM earnings_history
+                WHERE period = 'annual'
+                  AND net_income IS NOT NULL AND revenue IS NOT NULL
             ),
-            universe AS (
-                -- If top_n_by_market_cap is specified, this creates the universe
-                -- Otherwise, it includes all stocks
-                SELECT 
-                    s.symbol,
-                    s.company_name,
-                    s.sector,
-                    sr.market_cap,
-                    sr.pe_ratio,
-                    sr.peg_ratio,
-                    sr.dividend_yield,
-                    sr.revenue_cagr,
-                    sr.earnings_cagr,
-                    sr.debt_to_equity
-                FROM stocks s
-                JOIN latest_screening sr ON s.symbol = sr.symbol
-                {join_clause}
-                WHERE {where_clause}
-                {'ORDER BY sr.market_cap DESC NULLS LAST LIMIT ' + str(top_n_by_market_cap) if top_n_by_market_cap else ''}
+            growth_rates AS (
+                SELECT
+                    r1.symbol,
+                    CASE
+                        WHEN r5.revenue IS NOT NULL AND r5.revenue != 0 AND r1.revenue IS NOT NULL
+                        THEN ((r1.revenue - r5.revenue) / ABS(r5.revenue)) / LEAST(4, r5.rn - 1) * 100
+                        ELSE NULL
+                    END as revenue_growth,
+                    CASE
+                        WHEN r5.net_income IS NOT NULL AND r5.net_income != 0 AND r1.net_income IS NOT NULL
+                        THEN ((r1.net_income - r5.net_income) / ABS(r5.net_income)) / LEAST(4, r5.rn - 1) * 100
+                        ELSE NULL
+                    END as eps_growth
+                FROM ranked_earnings r1
+                JOIN ranked_earnings r5 ON r1.symbol = r5.symbol AND r5.rn = LEAST(5, r5.total_years)
+                WHERE r1.rn = 1 AND r5.rn >= 3
             )
-            SELECT 
-                symbol,
-                company_name,
-                sector,
-                market_cap,
-                pe_ratio,
-                peg_ratio,
-                dividend_yield,
-                revenue_cagr,
-                earnings_cagr,
-                debt_to_equity
-            FROM universe
-            ORDER BY {order_column.replace('sr.', '')} {order_dir} {null_handling}
-            LIMIT %s
         """
+
+        # Build join clause for growth if needed
+        growth_join = "LEFT JOIN growth_rates g ON s.symbol = g.symbol" if needs_growth_cte else ""
+
+        # Build query using stocks + stock_metrics + optional growth
+        if top_n_by_market_cap:
+            query = f"""
+                WITH {growth_cte if needs_growth_cte else ''}
+                {',' if needs_growth_cte else 'WITH'} universe AS (
+                    SELECT s.symbol, s.company_name, s.sector,
+                           m.market_cap, m.pe_ratio, m.forward_peg_ratio,
+                           m.dividend_yield, m.debt_to_equity,
+                           {'g.revenue_growth, g.eps_growth' if needs_growth_cte else 'NULL as revenue_growth, NULL as eps_growth'}
+                    FROM stocks s
+                    JOIN stock_metrics m ON s.symbol = m.symbol
+                    {growth_join}
+                    {join_clause}
+                    WHERE {where_clause}
+                    ORDER BY m.market_cap DESC NULLS LAST
+                    LIMIT {top_n_by_market_cap}
+                )
+                SELECT * FROM universe
+                ORDER BY {order_column.replace('m.', '').replace('g.', '')} {order_dir} {null_handling}
+                LIMIT %s
+            """
+        else:
+            if needs_growth_cte:
+                query = f"""
+                    WITH {growth_cte}
+                    SELECT s.symbol, s.company_name, s.sector,
+                           m.market_cap, m.pe_ratio, m.forward_peg_ratio,
+                           m.dividend_yield, m.debt_to_equity,
+                           g.revenue_growth, g.eps_growth
+                    FROM stocks s
+                    JOIN stock_metrics m ON s.symbol = m.symbol
+                    {growth_join}
+                    {join_clause}
+                    WHERE {where_clause}
+                    ORDER BY {order_column} {order_dir} {null_handling}
+                    LIMIT %s
+                """
+            else:
+                query = f"""
+                    SELECT s.symbol, s.company_name, s.sector,
+                           m.market_cap, m.pe_ratio, m.forward_peg_ratio,
+                           m.dividend_yield, m.debt_to_equity,
+                           NULL as revenue_growth, NULL as eps_growth
+                    FROM stocks s
+                    JOIN stock_metrics m ON s.symbol = m.symbol
+                    {join_clause}
+                    WHERE {where_clause}
+                    ORDER BY {order_column} {order_dir} {null_handling}
+                    LIMIT %s
+                """
         params.append(limit)
-        
+
         conn = self.db.get_connection()
         try:
             cursor = conn.cursor()
             cursor.execute(query, tuple(params))
-            
+
             results = []
             for row in cursor.fetchall():
-                # Format market cap for readability
                 market_cap = row[3]
                 if market_cap:
                     if market_cap >= 1_000_000_000_000:
@@ -1707,20 +1922,20 @@ class ToolExecutor:
                         market_cap_str = f"${market_cap / 1_000_000:.0f}M"
                 else:
                     market_cap_str = "N/A"
-                
+
                 results.append({
                     "ticker": row[0],
                     "company_name": row[1],
                     "sector": row[2],
                     "market_cap": market_cap_str,
-                    "pe_ratio": round(row[4], 1) if row[4] else None,
-                    "peg_ratio": round(row[5], 2) if row[5] else None,
-                    "dividend_yield": round(row[6], 2) if row[6] else None,
-                    "revenue_growth": round(row[7], 1) if row[7] else None,
-                    "eps_growth": round(row[8], 1) if row[8] else None,
-                    "debt_to_equity": round(row[9], 2) if row[9] else None,
+                    "pe_ratio": safe_round(row[4], 1),
+                    "peg_ratio": safe_round(row[5], 2),
+                    "dividend_yield": safe_round(row[6], 2),
+                    "debt_to_equity": safe_round(row[7], 2),
+                    "revenue_growth": safe_round(row[8], 1),
+                    "eps_growth": safe_round(row[9], 1),
                 })
-            
+
             # Build filter summary
             filters_applied = []
             if pe_max is not None:
@@ -1733,16 +1948,26 @@ class ToolExecutor:
                 filters_applied.append(f"Market Cap >= ${market_cap_min}B")
             if market_cap_max is not None:
                 filters_applied.append(f"Market Cap <= ${market_cap_max}B")
+            if revenue_growth_min is not None:
+                filters_applied.append(f"Revenue Growth >= {revenue_growth_min}%")
+            if eps_growth_min is not None:
+                filters_applied.append(f"EPS Growth >= {eps_growth_min}%")
             if sector:
                 filters_applied.append(f"Sector: {sector}")
             if peg_max is not None:
                 filters_applied.append(f"PEG <= {peg_max}")
-            
+
             return {
                 "filters_applied": filters_applied if filters_applied else ["None (showing all stocks)"],
                 "sort": f"{sort_by} {sort_order}",
                 "count": len(results),
                 "stocks": results
+            }
+        except Exception as e:
+            import traceback
+            return {
+                "error": f"Failed to screen stocks: {str(e)}",
+                "details": traceback.format_exc()
             }
         finally:
             self.db.return_connection(conn)

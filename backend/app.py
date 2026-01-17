@@ -30,7 +30,6 @@ from earnings_analyzer import EarningsAnalyzer
 from lynch_criteria import LynchCriteria, ALGORITHM_METADATA
 from yfinance_price_client import YFinancePriceClient
 from stock_analyst import StockAnalyst
-from conversation_manager import ConversationManager
 from wacc_calculator import calculate_wacc
 from backtester import Backtester
 from algorithm_validator import AlgorithmValidator
@@ -171,7 +170,6 @@ criteria = LynchCriteria(db, analyzer)
 # Historical price provider - using TradingView (replaces Schwab)
 price_client = YFinancePriceClient()
 stock_analyst = StockAnalyst(db)
-conversation_manager = ConversationManager(db)
 backtester = Backtester(db)
 validator = AlgorithmValidator(db)
 analyzer_corr = CorrelationAnalyzer(db)
@@ -3215,140 +3213,6 @@ def remove_from_watchlist(symbol, user_id):
         return jsonify({'success': True})
     except Exception as e:
         print(f"Error removing {symbol} from watchlist: {e}")
-        return jsonify({'error': str(e)}), 500
-
-
-# Chat / RAG Endpoints
-
-@app.route('/api/chat/<symbol>/conversations', methods=['GET'])
-@require_user_auth
-def list_conversations(symbol, user_id):
-    """List all conversations for a stock"""
-    try:
-        conversations = conversation_manager.list_conversations(user_id, symbol.upper())
-        return jsonify({'conversations': conversations})
-    except Exception as e:
-        print(f"Error listing conversations for {symbol}: {e}")
-        return jsonify({'error': str(e)}), 500
-
-
-@app.route('/api/chat/<symbol>/new', methods=['POST'])
-@require_user_auth
-def create_conversation(symbol, user_id):
-    """Create a new conversation for a stock"""
-    try:
-        data = request.get_json() or {}
-        title = data.get('title')
-
-        conversation_id = conversation_manager.create_conversation(user_id, symbol.upper(), title)
-
-        return jsonify({
-            'conversation_id': conversation_id,
-            'symbol': symbol.upper(),
-            'title': title
-        })
-    except Exception as e:
-        print(f"Error creating conversation for {symbol}: {e}")
-        return jsonify({'error': str(e)}), 500
-
-
-@app.route('/api/chat/conversation/<int:conversation_id>/messages', methods=['GET'])
-@require_user_auth
-def get_messages(conversation_id, user_id):
-    """Get all messages in a conversation"""
-    try:
-        messages = conversation_manager.get_messages(conversation_id)
-        conversation = conversation_manager.get_conversation(conversation_id)
-
-        return jsonify({
-            'conversation': conversation,
-            'messages': messages
-        })
-    except Exception as e:
-        print(f"Error getting messages for conversation {conversation_id}: {e}")
-        return jsonify({'error': str(e)}), 500
-
-
-@app.route('/api/chat/<symbol>/message', methods=['POST'])
-@require_user_auth
-def send_message(symbol, user_id):
-    """
-    Send a message and get AI response.
-    Creates a new conversation if none exists, or uses the most recent one.
-    """
-    try:
-        data = request.get_json()
-        if not data or 'message' not in data:
-            return jsonify({'error': 'Message required'}), 400
-
-        user_message = data['message']
-        conversation_id = data.get('conversation_id')
-
-        # Get or create conversation
-        if not conversation_id or conversation_id == 0 or conversation_id == '0':
-            conversation_id = conversation_manager.get_or_create_conversation(user_id, symbol.upper())
-
-        # Send message and get response
-        result = conversation_manager.send_message(conversation_id, user_message)
-
-        return jsonify({
-            'conversation_id': conversation_id,
-            'user_message': user_message,
-            'assistant_message': result['message'],
-            'sources': result['sources'],
-            'message_id': result['message_id']
-        })
-
-    except Exception as e:
-        print(f"Error sending message: {e}")
-        import traceback
-        traceback.print_exc()
-        return jsonify({'error': str(e)}), 500
-
-
-@app.route('/api/chat/<symbol>/message/stream', methods=['POST'])
-@require_user_auth
-def send_message_stream(symbol, user_id):
-    """
-    Send a message and stream AI response using Server-Sent Events.
-    Creates a new conversation if none exists, or uses the most recent one.
-    """
-    try:
-        data = request.get_json()
-        if not data or 'message' not in data:
-            return jsonify({'error': 'Message required'}), 400
-
-        user_message = data['message']
-        conversation_id = data.get('conversation_id')
-        lynch_analysis = data.get('lynch_analysis')
-        context_type = data.get('context_type', 'brief')
-
-        # Get or create conversation
-        if not conversation_id or conversation_id == 0 or conversation_id == '0':
-            conversation_id = conversation_manager.get_or_create_conversation(user_id, symbol.upper())
-
-        def generate():
-            """Generate Server-Sent Events"""
-            # Send conversation ID first
-            yield f"data: {json.dumps({'type': 'conversation_id', 'data': conversation_id})}\n\n"
-
-            # Stream response from conversation manager
-            for event in conversation_manager.send_message_stream(conversation_id, user_message, lynch_analysis, context_type):
-                yield f"data: {json.dumps(event)}\n\n"
-
-        return Response(
-            stream_with_context(generate()),
-            mimetype='text/event-stream',
-            headers={
-                'Cache-Control': 'no-cache',
-                'X-Accel-Buffering': 'no'
-            }
-        )
-
-    except Exception as e:
-        print(f"Error streaming message: {e}")
-        import traceback
-        traceback.print_exc()
         return jsonify({'error': str(e)}), 500
 
 

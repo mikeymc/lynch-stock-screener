@@ -9,7 +9,7 @@ from google import genai
 from google.genai.types import GenerateContentConfig, Content, Part, Tool
 
 from agent_tools import AGENT_TOOLS, TOOL_DECLARATIONS, ToolExecutor
-from rag_context import RAGContext
+from stock_context import StockContext
 
 logger = logging.getLogger(__name__)
 
@@ -37,8 +37,8 @@ class SmartChatAgent:
             gemini_api_key: Optional API key (defaults to GEMINI_API_KEY env var)
         """
         self.db = db
-        self.rag_context = RAGContext(db)
-        self.tool_executor = ToolExecutor(db, rag_context=self.rag_context)
+        self.stock_context = StockContext(db)
+        self.tool_executor = ToolExecutor(db, stock_context=self.stock_context)
         
         # Lazy client initialization
         import os
