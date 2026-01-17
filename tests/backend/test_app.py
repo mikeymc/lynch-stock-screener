@@ -315,3 +315,83 @@ def test_get_latest_session_returns_404_when_no_sessions(client, test_db, monkey
     assert response.status_code == 404
     data = json.loads(response.data)
     assert 'error' in data
+
+
+# Economy Link Feature Flag Tests
+
+def test_economy_link_feature_flag_exists_in_settings(client, test_db):
+    """Test that feature_economy_link_enabled exists in settings"""
+    response = client.get('/api/settings')
+
+    assert response.status_code == 200
+    data = json.loads(response.data)
+    assert 'feature_economy_link_enabled' in data
+    assert 'value' in data['feature_economy_link_enabled']
+    assert 'description' in data['feature_economy_link_enabled']
+
+
+def test_economy_link_feature_flag_can_be_toggled(client, test_db):
+    """Test that feature_economy_link_enabled can be toggled on and off"""
+    # Set to True
+    response = client.post(
+        '/api/settings',
+        data=json.dumps({
+            'feature_economy_link_enabled': {
+                'value': True,
+                'description': 'Toggle Economy link visibility in navigation'
+            }
+        }),
+        content_type='application/json'
+    )
+    assert response.status_code == 200
+
+    # Verify it's True
+    response = client.get('/api/settings')
+    data = json.loads(response.data)
+    assert data['feature_economy_link_enabled']['value'] is True
+
+    # Set to False
+    response = client.post(
+        '/api/settings',
+        data=json.dumps({
+            'feature_economy_link_enabled': {
+                'value': False,
+                'description': 'Toggle Economy link visibility in navigation'
+            }
+        }),
+        content_type='application/json'
+    )
+    assert response.status_code == 200
+
+    # Verify it's False
+    response = client.get('/api/settings')
+    data = json.loads(response.data)
+    assert data['feature_economy_link_enabled']['value'] is False
+
+
+def test_fred_api_accessible_regardless_of_ui_flag(client, test_db, monkeypatch):
+    """Test that FRED API endpoints remain accessible even when UI link is hidden"""
+    import app as app_module
+
+    # Disable the UI link
+    test_db.set_setting('feature_economy_link_enabled', False)
+
+    # Enable FRED feature (so API works)
+    test_db.set_setting('feature_fred_enabled', True)
+
+    # Mock FRED service
+    mock_fred_service = MagicMock()
+    mock_fred_service.is_available.return_value = True
+    mock_fred_service.get_economic_summary.return_value = {
+        'gdp': {'value': 25000, 'date': '2024-01-01'},
+        'unemployment': {'value': 3.7, 'date': '2024-01-01'}
+    }
+
+    with patch('app.get_fred_service', return_value=mock_fred_service):
+        # FRED API endpoint should still work
+        response = client.get('/api/fred/summary')
+
+        assert response.status_code == 200
+        data = json.loads(response.data)
+        assert 'gdp' in data
+        assert 'unemployment' in data

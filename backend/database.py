@@ -698,21 +698,6 @@ class Database:
         """)
 
         cursor.execute("""
-            CREATE TABLE IF NOT EXISTS app_feedback (
-                id SERIAL PRIMARY KEY,
-                user_id INTEGER,
-                email TEXT,
-                feedback_text TEXT,
-                screenshot_data TEXT,
-                page_url TEXT,
-                metadata JSONB,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                status TEXT DEFAULT 'new',
-                FOREIGN KEY (user_id) REFERENCES users(id)
-            )
-        """)
-
-        cursor.execute("""
             CREATE TABLE IF NOT EXISTS users (
                 id SERIAL PRIMARY KEY,
                 google_id TEXT UNIQUE NOT NULL,
@@ -802,15 +787,19 @@ class Database:
             END $$;
         """)
 
-        # Migration: Add character column to algorithm_configurations for per-character tuning
         cursor.execute("""
-            DO $$
-            BEGIN
-                IF NOT EXISTS (SELECT 1 FROM information_schema.columns
-                               WHERE table_name = 'algorithm_configurations' AND column_name = 'character') THEN
-                    ALTER TABLE algorithm_configurations ADD COLUMN character TEXT DEFAULT 'lynch';
-                END IF;
-            END $$;
+            CREATE TABLE IF NOT EXISTS app_feedback (
+                id SERIAL PRIMARY KEY,
+                user_id INTEGER,
+                email TEXT,
+                feedback_text TEXT,
+                screenshot_data TEXT,
+                page_url TEXT,
+                metadata JSONB,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                status TEXT DEFAULT 'new',
+                FOREIGN KEY (user_id) REFERENCES users(id)
+            )
         """)
 
         cursor.execute("""
@@ -1477,6 +1466,15 @@ class Database:
             cursor.execute("""
                 INSERT INTO app_settings (key, value, description)
                 VALUES ('us_stocks_only', 'true', 'Filter to show only US stocks (hides country filters in UI)')
+            """)
+            conn.commit()
+
+        # Initialize feature_economy_link_enabled setting (default: false)
+        cursor.execute("SELECT 1 FROM app_settings WHERE key = 'feature_economy_link_enabled'")
+        if not cursor.fetchone():
+            cursor.execute("""
+                INSERT INTO app_settings (key, value, description)
+                VALUES ('feature_economy_link_enabled', 'false', 'Show Economy link in navigation sidebar')
             """)
             conn.commit()
 
@@ -3950,6 +3948,7 @@ class Database:
             'feature_reddit_enabled': {'value': False, 'desc': 'Enable Reddit social sentiment tab (experimental)'},
             'feature_agent_mode_enabled': {'value': False, 'desc': 'Enable Agent Mode toggle in chat (experimental)'},
             'feature_fred_enabled': {'value': False, 'desc': 'Enable FRED macroeconomic data features'},
+            'feature_economy_link_enabled': {'value': False, 'desc': 'Show Economy link in navigation sidebar'},
         }
 
         current_settings = self.get_all_settings()

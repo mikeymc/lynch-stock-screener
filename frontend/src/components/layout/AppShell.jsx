@@ -111,7 +111,8 @@ function AppShellContent({
     const [analysisOpen, setAnalysisOpen] = useState(true)
     const [alertsCount, setAlertsCount] = useState(0)
     const [alertsEnabled, setAlertsEnabled] = useState(false)
-    const [fredEnabled, setFredEnabled] = useState(false)
+    const [economyLinkEnabled, setEconomyLinkEnabled] = useState(false)
+    const [redditEnabled, setRedditEnabled] = useState(false)
     const [chatsOpen, setChatsOpen] = useState(true) // State for chat history collapsible
 
     useEffect(() => {
@@ -122,9 +123,11 @@ function AppShellContent({
                     const settings = await response.json()
                     // Default to false if not present, check value string
                     const alertsOn = settings.feature_alerts_enabled?.value === true
-                    const fredOn = settings.feature_fred_enabled?.value === true
+                    const economyLinkOn = settings.feature_economy_link_enabled?.value === true
+                    const redditOn = settings.feature_reddit_enabled?.value === true
                     setAlertsEnabled(alertsOn)
-                    setFredEnabled(fredOn)
+                    setEconomyLinkEnabled(economyLinkOn)
+                    setRedditEnabled(redditOn)
                 }
             } catch (error) {
                 console.error('Failed to fetch settings:', error)
@@ -237,7 +240,7 @@ function AppShellContent({
                                             <span>All Stocks</span>
                                         </SidebarMenuButton>
                                     </SidebarMenuItem>
-                                    {fredEnabled && (
+                                    {economyLinkEnabled && (
                                         <SidebarMenuItem>
                                             <SidebarMenuButton
                                                 onClick={() => {
@@ -565,18 +568,20 @@ function AppShellContent({
                                                         <span>Earnings Transcript</span>
                                                     </SidebarMenuButton>
                                                 </SidebarMenuItem>
-                                                <SidebarMenuItem>
-                                                    <SidebarMenuButton
-                                                        onClick={() => {
-                                                            navigate(`/stock/${symbol}?tab=reddit`)
-                                                            onNavClick()
-                                                        }}
-                                                        isActive={location.search.includes('tab=reddit')}
-                                                        className="pl-6 font-normal text-muted-foreground data-[active=true]:font-medium data-[active=true]:text-sidebar-primary"
-                                                    >
-                                                        <span>Reddit</span>
-                                                    </SidebarMenuButton>
-                                                </SidebarMenuItem>
+                                                {redditEnabled && (
+                                                    <SidebarMenuItem>
+                                                        <SidebarMenuButton
+                                                            onClick={() => {
+                                                                navigate(`/stock/${symbol}?tab=reddit`)
+                                                                onNavClick()
+                                                            }}
+                                                            isActive={location.search.includes('tab=reddit')}
+                                                            className="pl-6 font-normal text-muted-foreground data-[active=true]:font-medium data-[active=true]:text-sidebar-primary"
+                                                        >
+                                                            <span>Reddit</span>
+                                                        </SidebarMenuButton>
+                                                    </SidebarMenuItem>
+                                                )}
                                             </SidebarMenu>
                                         </SidebarGroupContent>
                                     </CollapsibleContent>
