@@ -49,76 +49,53 @@ def start(
         symbol_list = [s.strip().upper() for s in symbols.split(',')]
         console.print(f"[dim]Screening specific symbols: {symbol_list}[/dim]")
     
+    # Get API token (required for both local and prod now)
+    token = get_api_token()
+    headers = {
+        "Content-Type": "application/json",
+        "Authorization": f"Bearer {token}"
+    }
+
     if prod:
         # Production: Call /api/jobs
-        token = get_api_token()
         console.print(f"[bold blue]🚀 Triggering production screening ({region})...[/bold blue]")
-        
-        payload = {
-            "type": "full_screening",
-            "params": {"algorithm": algorithm, "region": region, "force_refresh": force}
-        }
-        if limit:
-            payload["params"]["limit"] = limit
-        if symbol_list:
-            payload["params"]["symbols"] = symbol_list
-        
-        try:
-            response = httpx.post(
-                f"{API_URL}/api/jobs",
-                json=payload,
-                headers={
-                    "Content-Type": "application/json",
-                    "Authorization": f"Bearer {token}"
-                },
-                timeout=30.0
-            )
-            response.raise_for_status()
-            
-            data = response.json()
-            job_id = data.get("job_id")
-            
-            console.print(f"[bold green]✓ Screening job triggered![/bold green]")
-            console.print(f"[dim]Job ID: {job_id}[/dim]")
-            console.print(f"[dim]Monitor at: {API_URL}/api/jobs/{job_id}[/dim]")
-            
-        except httpx.HTTPError as e:
-            console.print(f"[bold red]✗ Failed to trigger screening:[/bold red] {e}")
-            raise typer.Exit(1)
+        api_url = API_URL
     else:
-        # Local: Call /api/jobs (same as production, just different URL)
+        # Local: Call /api/jobs
         console.print(f"[bold blue]🚀 Starting local screening ({region})...[/bold blue]")
+        api_url = LOCAL_URL
         
-        payload = {
-            "type": "full_screening",
-            "params": {"algorithm": algorithm, "region": region, "force_refresh": force}
-        }
-        if limit:
-            payload["params"]["limit"] = limit
-        if symbol_list:
-            payload["params"]["symbols"] = symbol_list
+    payload = {
+        "type": "full_screening",
+        "params": {"algorithm": algorithm, "region": region, "force_refresh": force}
+    }
+    if limit:
+        payload["params"]["limit"] = limit
+    if symbol_list:
+        payload["params"]["symbols"] = symbol_list
+    
+    try:
+        response = httpx.post(
+            f"{api_url}/api/jobs",
+            json=payload,
+            headers=headers,
+            timeout=30.0
+        )
+        response.raise_for_status()
         
-        try:
-            response = httpx.post(
-                f"{LOCAL_URL}/api/jobs",
-                json=payload,
-                timeout=30.0
-            )
-            response.raise_for_status()
-            
-            data = response.json()
-            job_id = data.get("job_id")
-            session_id = data.get("session_id")
-            
-            console.print(f"[bold green]✓ Screening started![/bold green]")
-            console.print(f"[dim]Job ID: {job_id}[/dim]")
-            console.print(f"[dim]Session ID: {session_id}[/dim]")
-            console.print(f"[dim]Monitor at: {LOCAL_URL}/api/screen/progress/{session_id}[/dim]")
-            
-        except httpx.HTTPError as e:
-            console.print(f"[bold red]✗ Failed to start screening:[/bold red] {e}")
-            console.print("[yellow]Make sure local server is running (npm run dev)[/yellow]")
-            raise typer.Exit(1)
+        data = response.json()
+        job_id = data.get("job_id")
+        # Local might verify session_id if it returns one, but jobs API returns job_id
+        
+        console.print(f"[bold green]✓ Screening job triggered![/bold green]")
+        console.print(f"[dim]Job ID: {job_id}[/dim]")
+        console.print(f"[dim]Monitor at: {api_url}/api/jobs/{job_id}[/dim]")
+        
+    except httpx.HTTPError as e:
+        console.print(f"[bold red]✗ Failed to trigger screening:[/bold red] {e}")
+        if not prod:
+            console.print("[yellow]Make sure local server is running (npm run dev) and API_AUTH_TOKEN is correct[/yellow]")
+        raise typer.Exit(1)
 
 
 @app.command()
@@ -128,15 +105,19 @@ def stop(
 ):
     """Stop screening session"""
     
+    # Get API token (required for both local and prod now)
+    token = get_api_token()
+    headers = {"Authorization": f"Bearer {token}"}
+
     if prod:
         # Production: Cancel job via /api/jobs/<id>/cancel
-        token = get_api_token()
         console.print(f"[bold blue]🛑 Cancelling production job {session_id}...[/bold blue]")
+        url = f"{API_URL}/api/jobs/{session_id}/cancel"
         
         try:
             response = httpx.post(
-                f"{API_URL}/api/jobs/{session_id}/cancel",
-                headers={"Authorization": f"Bearer {token}"},
+                url,
+                headers=headers,
                 timeout=30.0
             )
             response.raise_for_status()
@@ -147,12 +128,14 @@ def stop(
             console.print(f"[bold red]✗ Failed to cancel job:[/bold red] {e}")
             raise typer.Exit(1)
     else:
-        # Local: Stop session via /api/screen/stop/<id>
+        # Local: Stop session via /api/screen/stop/<id> (auth header added for consistency)
         console.print(f"[bold blue]🛑 Stopping local session {session_id}...[/bold blue]")
+        url = f"{LOCAL_URL}/api/screen/stop/{session_id}"
         
         try:
             response = httpx.post(
-                f"{LOCAL_URL}/api/screen/stop/{session_id}",
+                url,
+                headers=headers,  # Include token even if currently optional
                 timeout=30.0
             )
             response.raise_for_status()

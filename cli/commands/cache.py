@@ -123,14 +123,12 @@ def prices(
         api_url = API_URL if prod else "http://localhost:5001"
         
         # Get token if prod
-        if prod:
-            token = get_api_token()
-            headers = {
-                "Content-Type": "application/json",
-                "Authorization": f"Bearer {token}"
-            }
-        else:
-            headers = {"Content-Type": "application/json"}
+        # Get token (always required)
+        token = get_api_token()
+        headers = {
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {token}"
+        }
         
         console.print(f"[bold blue]🚀 Starting price cache ({region})...[/bold blue]")
         
@@ -171,11 +169,9 @@ def prices(
         api_url = API_URL if prod else "http://localhost:5001"
         
         # Get token if prod
-        if prod:
-            token = get_api_token()
-            headers = {"Authorization": f"Bearer {token}"}
-        else:
-            headers = {}
+        # Get token (always required)
+        token = get_api_token()
+        headers = {"Authorization": f"Bearer {token}"}
         
         console.print(f"[bold blue]🛑 Cancelling cache job {job_id}...[/bold blue]")
         
@@ -217,14 +213,12 @@ def news(
         api_url = API_URL if prod else "http://localhost:5001"
         
         # Get token if prod
-        if prod:
-            token = get_api_token()
-            headers = {
-                "Content-Type": "application/json",
-                "Authorization": f"Bearer {token}"
-            }
-        else:
-            headers = {"Content-Type": "application/json"}
+        # Get token (always required)
+        token = get_api_token()
+        headers = {
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {token}"
+        }
         
         console.print(f"[bold blue]🚀 Starting news cache...[/bold blue]")
         
@@ -265,11 +259,9 @@ def news(
         api_url = API_URL if prod else "http://localhost:5001"
         
         # Get token if prod
-        if prod:
-            token = get_api_token()
-            headers = {"Authorization": f"Bearer {token}"}
-        else:
-            headers = {}
+        # Get token (always required)
+        token = get_api_token()
+        headers = {"Authorization": f"Bearer {token}"}
         
         console.print(f"[bold blue]🛑 Cancelling news cache job {job_id}...[/bold blue]")
         
@@ -328,14 +320,12 @@ def ten_k(
         api_url = API_URL if prod else "http://localhost:5001"
         
         # Get token if prod
-        if prod:
-            token = get_api_token()
-            headers = {
-                "Content-Type": "application/json",
-                "Authorization": f"Bearer {token}"
-            }
-        else:
-            headers = {"Content-Type": "application/json"}
+        # Get token (always required)
+        token = get_api_token()
+        headers = {
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {token}"
+        }
         
         console.print(f"[bold blue]🚀 Starting 10-K/10-Q cache ({region})...[/bold blue]")
         
@@ -376,11 +366,9 @@ def ten_k(
         api_url = API_URL if prod else "http://localhost:5001"
         
         # Get token if prod
-        if prod:
-            token = get_api_token()
-            headers = {"Authorization": f"Bearer {token}"}
-        else:
-            headers = {}
+        # Get token (always required)
+        token = get_api_token()
+        headers = {"Authorization": f"Bearer {token}"}
         
         console.print(f"[bold blue]🛑 Cancelling 10-K/10-Q cache job {job_id}...[/bold blue]")
         
@@ -434,14 +422,12 @@ def eight_k(
         api_url = API_URL if prod else "http://localhost:5001"
         
         # Get token if prod
-        if prod:
-            token = get_api_token()
-            headers = {
-                "Content-Type": "application/json",
-                "Authorization": f"Bearer {token}"
-            }
-        else:
-            headers = {"Content-Type": "application/json"}
+        # Get token (always required)
+        token = get_api_token()
+        headers = {
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {token}"
+        }
         
         console.print(f"[bold blue]🚀 Starting 8-K cache ({region})...[/bold blue]")
         
@@ -482,11 +468,9 @@ def eight_k(
         api_url = API_URL if prod else "http://localhost:5001"
         
         # Get token if prod
-        if prod:
-            token = get_api_token()
-            headers = {"Authorization": f"Bearer {token}"}
-        else:
-            headers = {}
+        # Get token (always required)
+        token = get_api_token()
+        headers = {"Authorization": f"Bearer {token}"}
         
         console.print(f"[bold blue]🛑 Cancelling 8-K cache job {job_id}...[/bold blue]")
         
@@ -542,14 +526,12 @@ def outlook(
         api_url = API_URL if prod else "http://localhost:5001"
         
         # Get token if prod
-        if prod:
-            token = get_api_token()
-            headers = {
-                "Content-Type": "application/json",
-                "Authorization": f"Bearer {token}"
-            }
-        else:
-            headers = {"Content-Type": "application/json"}
+        # Get token (always required)
+        token = get_api_token()
+        headers = {
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {token}"
+        }
         
         console.print(f"[bold blue]🚀 Starting outlook cache ({region})...[/bold blue]")
         console.print("[dim]Caching: forward P/E, forward PEG, forward EPS, insider trades[/dim]")
@@ -591,11 +573,9 @@ def outlook(
         api_url = API_URL if prod else "http://localhost:5001"
         
         # Get token if prod
-        if prod:
-            token = get_api_token()
-            headers = {"Authorization": f"Bearer {token}"}
-        else:
-            headers = {}
+        # Get token (always required)
+        token = get_api_token()
+        headers = {"Authorization": f"Bearer {token}"}
         
         console.print(f"[bold blue]🛑 Cancelling outlook cache job {job_id}...[/bold blue]")
         
@@ -646,14 +626,12 @@ def form4(
         api_url = API_URL if prod else "http://localhost:5001"
         
         # Get token if prod
-        if prod:
-            token = get_api_token()
-            headers = {
-                "Content-Type": "application/json",
-                "Authorization": f"Bearer {token}"
-            }
-        else:
-            headers = {"Content-Type": "application/json"}
+        # Get token (always required)
+        token = get_api_token()
+        headers = {
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {token}"
+        }
         
         console.print(f"[bold blue]🚀 Starting Form 4 cache ({region})...[/bold blue]")
         
@@ -694,11 +672,9 @@ def form4(
         api_url = API_URL if prod else "http://localhost:5001"
         
         # Get token if prod
-        if prod:
-            token = get_api_token()
-            headers = {"Authorization": f"Bearer {token}"}
-        else:
-            headers = {}
+        # Get token (always required)
+        token = get_api_token()
+        headers = {"Authorization": f"Bearer {token}"}
         
         console.print(f"[bold blue]🛑 Cancelling Form 4 cache job {job_id}...[/bold blue]")
         
@@ -757,14 +733,12 @@ def transcripts(
         api_url = API_URL if prod else "http://localhost:5001"
         
         # Get token if prod
-        if prod:
-            token = get_api_token()
-            headers = {
-                "Content-Type": "application/json",
-                "Authorization": f"Bearer {token}"
-            }
-        else:
-            headers = {"Content-Type": "application/json"}
+        # Get token (always required)
+        token = get_api_token()
+        headers = {
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {token}"
+        }
         
         console.print(f"[bold blue]🚀 Starting transcript cache ({region})...[/bold blue]")
         
@@ -805,11 +779,9 @@ def transcripts(
         api_url = API_URL if prod else "http://localhost:5001"
         
         # Get token if prod
-        if prod:
-            token = get_api_token()
-            headers = {"Authorization": f"Bearer {token}"}
-        else:
-            headers = {}
+        # Get token (always required)
+        token = get_api_token()
+        headers = {"Authorization": f"Bearer {token}"}
         
         console.print(f"[bold blue]🛑 Cancelling transcript cache job {job_id}...[/bold blue]")
         

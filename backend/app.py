@@ -554,15 +554,14 @@ def test_login():
 API_AUTH_TOKEN = os.environ.get('API_AUTH_TOKEN')
 
 
-def check_flexible_auth():
+def check_for_api_token():
     """
     Check authentication - accepts EITHER OAuth session OR API token.
     Returns error response or None if authorized.
     
     This allows:
     - Frontend users to use OAuth (session-based)
-    - GitHub Actions to use API token (Bearer header)
-    - Local dev without auth (if API_AUTH_TOKEN not configured)
+    - GitHub Actions/CLI to use API token (Bearer header)
     """
     # Check if user is authenticated via OAuth session
     if 'user_id' in session:
@@ -576,18 +575,15 @@ def check_flexible_auth():
             if token == API_AUTH_TOKEN:
                 return None  # Authorized via API token
         
-        # Neither OAuth nor valid API token provided
-        return jsonify({'error': 'Unauthorized', 'message': 'Please log in or provide API token'}), 401
-    
-    # No API_AUTH_TOKEN configured (local dev) - allow all requests
-    return None
+    # Neither OAuth nor valid API token provided
+    return jsonify({'error': 'Unauthorized', 'message': 'Please log in or provide API token'}), 401
 
 
 @app.route('/api/jobs', methods=['POST'])
 def create_job():
     """Create a new background job (accepts OAuth session OR API token)"""
     # Check authentication (OAuth OR API token)
-    auth_error = check_flexible_auth()
+    auth_error = check_for_api_token()
     if auth_error:
         return auth_error
 
@@ -650,7 +646,7 @@ def get_job(job_id):
 def cancel_job(job_id):
     """Cancel a background job (accepts OAuth session OR API token)"""
     # Check authentication (OAuth OR API token)
-    auth_error = check_flexible_auth()
+    auth_error = check_for_api_token()
     if auth_error:
         return auth_error
     
