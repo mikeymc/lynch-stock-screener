@@ -73,6 +73,8 @@ jobs:
           # Set params based on job type (all default to US region)
           if [ "$JOB_TYPE" = "outlook_cache" ] || [ "$JOB_TYPE" = "form4_cache" ]; then
             PARAMS='{"region": "us"}'
+          elif [ "$JOB_TYPE" = "full_screening" ]; then
+            PARAMS='{"force_refresh": true}'
           else
             PARAMS='{}'
           fi
