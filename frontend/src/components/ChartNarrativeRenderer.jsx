@@ -106,7 +106,7 @@ const CustomLegend = ({ items }) => {
     )
 }
 
-export default function ChartNarrativeRenderer({ narrative, historyData }) {
+export default function ChartNarrativeRenderer({ narrative, historyData, isQuarterly = false }) {
     const [activeIndex, setActiveIndex] = useState(null)
 
     const handleHover = useCallback((event, elements) => {
@@ -217,7 +217,26 @@ export default function ChartNarrativeRenderer({ narrative, historyData }) {
                     autoSkip: false,
                     maxRotation: 45,
                     minRotation: 45,
-                    color: '#64748b'
+                    color: '#64748b',
+                    callback: function (value, index, ticks) {
+                        const label = this.getLabelForValue(value)
+                        if (!label) return label
+
+                        if (isQuarterly) {
+                            // For quarterly data: only show year on Q4 labels
+                            if (String(label).endsWith(' Q4')) {
+                                return label.replace(' Q4', '') // "2024 Q4" -> "2024"
+                            }
+                            // Also show estimate labels (e.g., "2025E")
+                            if (String(label).endsWith('E')) {
+                                return label
+                            }
+                            return '' // Hide Q1, Q2, Q3 labels
+                        }
+
+                        // For annual data: show all labels (years)
+                        return label
+                    }
                 },
                 grid: {
                     color: 'rgba(100, 116, 139, 0.1)'
@@ -242,7 +261,7 @@ export default function ChartNarrativeRenderer({ narrative, historyData }) {
                 }
             }
         }
-    }), [activeIndex, handleHover])
+    }), [activeIndex, handleHover, isQuarterly])
 
     // Chart registry - maps placeholder names to chart configurations
     const chartRegistry = useMemo(() => ({

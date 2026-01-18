@@ -30,11 +30,13 @@ export default function StockDetail({ watchlist, toggleWatchlist, algorithm, act
   const [searchParams] = useSearchParams()
   const [stock, setStock] = useState(null)
   const [loading, setLoading] = useState(true)
+  const [refreshing, setRefreshing] = useState(false)
   // Read active tab from URL, default to 'overview'
   const activeTab = searchParams.get('tab') || 'overview'
   const [periodType, setPeriodType] = useState('annual')
   // Data state
   const [historyData, setHistoryData] = useState(null)
+  const [quarterlyHistoryData, setQuarterlyHistoryData] = useState(null)
   const [loadingHistory, setLoadingHistory] = useState(false)
   const [filingsData, setFilingsData] = useState(null)
   const [loadingFilings, setLoadingFilings] = useState(false)
@@ -70,6 +72,23 @@ export default function StockDetail({ watchlist, toggleWatchlist, algorithm, act
       setComments([])
       setIsReviewingComments(false)
     }, 1000)
+  }
+
+  const handleRefresh = async () => {
+    setRefreshing(true)
+    try {
+      const response = await fetch(`${API_BASE}/stock/${symbol.toUpperCase()}?algorithm=${algorithm}&force_refresh=true`)
+      if (response.ok) {
+        const data = await response.json()
+        if (data.evaluation) {
+          setStock(data.evaluation)
+        }
+      }
+    } catch (err) {
+      console.error('Error refreshing stock:', err)
+    } finally {
+      setRefreshing(false)
+    }
   }
 
 
@@ -131,15 +150,26 @@ export default function StockDetail({ watchlist, toggleWatchlist, algorithm, act
     const fetchHistoryData = async () => {
       setLoadingHistory(true)
       try {
-        const response = await fetch(`${API_BASE}/stock/${symbol}/history?period_type=${periodType}`, { signal })
-        if (response.ok) {
-          const data = await response.json()
-          setHistoryData(data)
+        // Fetch annual and quarterly data in parallel
+        const [annualRes, quarterlyRes] = await Promise.all([
+          fetch(`${API_BASE}/stock/${symbol}/history?period_type=annual`, { signal }),
+          fetch(`${API_BASE}/stock/${symbol}/history?period_type=quarterly`, { signal })
+        ])
+
+        if (annualRes.ok) {
+          const annualData = await annualRes.json()
+          setHistoryData(annualData)
+        }
+
+        if (quarterlyRes.ok) {
+          const quarterlyData = await quarterlyRes.json()
+          setQuarterlyHistoryData(quarterlyData)
         }
       } catch (err) {
         if (err.name !== 'AbortError') {
           console.error('Error fetching history:', err)
-          setHistoryData(null)
+          // Keep existing data if one fails? Or clear?
+          // We'll just log e error for now
         }
       } finally {
         if (!signal.aborted) {
@@ -328,7 +358,12 @@ export default function StockDetail({ watchlist, toggleWatchlist, algorithm, act
           )}
 
           {activeTab === 'charts' && (
-            <StockCharts historyData={historyData} loading={loadingHistory} symbol={symbol} />
+            <StockCharts
+              historyData={historyData}
+              quarterlyHistoryData={quarterlyHistoryData}
+              loading={loadingHistory}
+              symbol={symbol}
+            />
           )}
 
           {activeTab === 'dcf' && (
