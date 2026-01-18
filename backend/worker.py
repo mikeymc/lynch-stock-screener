@@ -27,6 +27,11 @@ _yf_cache.get_cookie_cache = lambda: _yf_cache._cookie_cache
 print("[Worker] yfinance SQLite cache disabled (using dummy caches)")
 # End yfinance cache patch
 
+# Load environment variables from .env files
+from dotenv import load_dotenv
+load_dotenv()  # Load from .env in current directory
+load_dotenv('../.env')  # Also try parent directory
+
 import os
 import sys
 import time
