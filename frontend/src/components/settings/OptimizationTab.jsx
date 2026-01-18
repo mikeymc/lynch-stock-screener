@@ -5,10 +5,11 @@ import { useState, useEffect } from 'react'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
 import { Label } from "@/components/ui/label"
-import { Sparkles, Play, Save, Loader2, TrendingUp, CheckCircle2, XCircle, Target, BarChart3, Info, AlertCircle } from 'lucide-react'
+import { Sparkles, Play, Save, Loader2, TrendingUp, CheckCircle2, XCircle, Target, BarChart3, Info, AlertCircle, RotateCcw } from 'lucide-react'
 import { cn } from "@/lib/utils"
 
 // Character-specific slider configurations
@@ -161,6 +162,7 @@ export default function OptimizationTab() {
     const [yearsBack, setYearsBack] = useState("5")
     const [optimizationMethod, setOptimizationMethod] = useState("bayesian")
     const [maxIterations, setMaxIterations] = useState("100")
+    const [showResetDialog, setShowResetDialog] = useState(false)
 
 
 
@@ -429,6 +431,14 @@ export default function OptimizationTab() {
         }
     }
 
+    const handleResetDefaults = async () => {
+        const defaults = buildDefaultConfig(activeCharacter)
+        setConfig(defaults)
+        // Save the defaults immediately
+        await saveConfiguration(defaults)
+        setShowResetDialog(false)
+    }
+
 
     const renderSlider = (key, label, min, max, step, isPercentage = false) => (
         <div key={key} className="space-y-2">
@@ -597,6 +607,9 @@ export default function OptimizationTab() {
                                     ) : (
                                         <><Save className="mr-2 h-4 w-4" /> Save Configuration</>
                                     )}
+                                </Button>
+                                <Button onClick={() => setShowResetDialog(true)} size="lg" variant="outline" disabled={rescoringRunning} className="flex-1">
+                                    <RotateCcw className="mr-2 h-4 w-4" /> Reset Defaults
                                 </Button>
                             </div>
                         </CardContent>
@@ -892,6 +905,30 @@ export default function OptimizationTab() {
                     </Card>
                 </TabsContent>
             </Tabs>
+
+            {/* Reset Defaults Confirmation Dialog */}
+            <Dialog open={showResetDialog} onOpenChange={setShowResetDialog}>
+                <DialogContent>
+                    <DialogHeader>
+                        <DialogTitle>Reset to Default Values?</DialogTitle>
+                        <DialogDescription>
+                            This will reset all weights and thresholds to their default values for the {CHARACTER_SLIDER_CONFIGS[activeCharacter]?.displayName || 'current'} style and save the configuration immediately.
+                        </DialogDescription>
+                    </DialogHeader>
+                    <DialogFooter>
+                        <Button variant="outline" onClick={() => setShowResetDialog(false)}>
+                            Cancel
+                        </Button>
+                        <Button onClick={handleResetDefaults} disabled={rescoringRunning}>
+                            {rescoringRunning ? (
+                                <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Resetting...</>
+                            ) : (
+                                <>Reset Defaults</>
+                            )}
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
         </div >
     )
 }
