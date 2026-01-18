@@ -819,6 +819,7 @@ def all_caches(
         _start_cache_job("8k_cache", "8-K Events", limit=limit)
         _start_cache_job("form4_cache", "Form 4 (Insiders)", limit=limit)
         _start_cache_job("outlook_cache", "Outlook (Forward Metrics + Insiders)", limit=limit)
+        _start_cache_job("forward_metrics_cache", "Forward Metrics (Estimates)", limit=limit)
         console.print("[bold green]✓ All cache jobs started![/bold green]")
     else:
         console.print("[yellow]Use individual commands to stop specific jobs[/yellow]")

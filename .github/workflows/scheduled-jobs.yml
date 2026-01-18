@@ -21,6 +21,8 @@ on:
     - cron: '0 5 * * *'
     # Transcript cache at 12:30 AM ET (5:30 AM UTC) daily - runs last
     - cron: '30 5 * * *'
+    # Forward metrics cache at 1:00 AM ET (6:00 AM UTC) daily
+    - cron: '0 6 * * *'
   workflow_dispatch:
     inputs:
       job_type:
@@ -37,6 +39,7 @@ on:
           - form4_cache
           - outlook_cache
           - transcript_cache
+          - forward_metrics_cache
 
 jobs:
   trigger-job:
@@ -61,6 +64,7 @@ jobs:
               "0 4 * * *")   echo "type=price_history_cache" >> $GITHUB_OUTPUT ;;
               "0 5 * * *")   echo "type=outlook_cache" >> $GITHUB_OUTPUT ;;
               "30 5 * * *")  echo "type=transcript_cache" >> $GITHUB_OUTPUT ;;
+              "0 6 * * *")   echo "type=forward_metrics_cache" >> $GITHUB_OUTPUT ;;
               *)             echo "Unknown schedule: $SCHEDULE" && exit 1 ;;
             esac
           fi

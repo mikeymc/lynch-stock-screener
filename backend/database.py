@@ -1537,6 +1537,106 @@ class Database:
             )
         """)
 
+        # EPS Trends - how estimates have changed over time
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS eps_trends (
+                id SERIAL PRIMARY KEY,
+                symbol TEXT NOT NULL,
+                period TEXT NOT NULL,
+                current_est REAL,
+                days_7_ago REAL,
+                days_30_ago REAL,
+                days_60_ago REAL,
+                days_90_ago REAL,
+                last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (symbol) REFERENCES stocks(symbol),
+                UNIQUE(symbol, period)
+            )
+        """)
+
+        # EPS Revisions - analyst revision counts
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS eps_revisions (
+                id SERIAL PRIMARY KEY,
+                symbol TEXT NOT NULL,
+                period TEXT NOT NULL,
+                up_7d INTEGER,
+                up_30d INTEGER,
+                down_7d INTEGER,
+                down_30d INTEGER,
+                last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (symbol) REFERENCES stocks(symbol),
+                UNIQUE(symbol, period)
+            )
+        """)
+
+        # Growth Estimates - stock vs index comparison
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS growth_estimates (
+                id SERIAL PRIMARY KEY,
+                symbol TEXT NOT NULL,
+                period TEXT NOT NULL,
+                stock_trend REAL,
+                index_trend REAL,
+                last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (symbol) REFERENCES stocks(symbol),
+                UNIQUE(symbol, period)
+            )
+        """)
+
+        # Analyst Recommendations - monthly buy/hold/sell distribution
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS analyst_recommendations (
+                id SERIAL PRIMARY KEY,
+                symbol TEXT NOT NULL,
+                period_month TEXT NOT NULL,
+                strong_buy INTEGER,
+                buy INTEGER,
+                hold INTEGER,
+                sell INTEGER,
+                strong_sell INTEGER,
+                last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (symbol) REFERENCES stocks(symbol),
+                UNIQUE(symbol, period_month)
+            )
+        """)
+
+        # Migration: Add earnings/revenue growth columns to stock_metrics
+        cursor.execute("""
+            DO $$
+            BEGIN
+                -- price_target_median
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns 
+                               WHERE table_name = 'stock_metrics' AND column_name = 'price_target_median') THEN
+                    ALTER TABLE stock_metrics ADD COLUMN price_target_median REAL;
+                END IF;
+                
+                -- earnings_growth (YoY)
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns 
+                               WHERE table_name = 'stock_metrics' AND column_name = 'earnings_growth') THEN
+                    ALTER TABLE stock_metrics ADD COLUMN earnings_growth REAL;
+                END IF;
+                
+                -- earnings_quarterly_growth
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns 
+                               WHERE table_name = 'stock_metrics' AND column_name = 'earnings_quarterly_growth') THEN
+                    ALTER TABLE stock_metrics ADD COLUMN earnings_quarterly_growth REAL;
+                END IF;
+                
+                -- revenue_growth
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns 
+                               WHERE table_name = 'stock_metrics' AND column_name = 'revenue_growth') THEN
+                    ALTER TABLE stock_metrics ADD COLUMN revenue_growth REAL;
+                END IF;
+                
+                -- recommendation_key (buy, hold, sell, etc.)
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns 
+                               WHERE table_name = 'stock_metrics' AND column_name = 'recommendation_key') THEN
+                    ALTER TABLE stock_metrics ADD COLUMN recommendation_key TEXT;
+                END IF;
+            END $$;
+        """)
+
         # Social sentiment from Reddit and other sources
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS social_sentiment (
@@ -3777,6 +3877,206 @@ class Database:
             return result
         finally:
             self.return_connection(conn)
+
+    def save_eps_trends(self, symbol: str, trends_data: Dict[str, Any]):
+        """
+        Save EPS trend data showing how estimates changed over 7/30/60/90 days.
+        
+        Args:
+            symbol: Stock symbol
+            trends_data: Dict with period keys ('0q', '+1q', '0y', '+1y') containing:
+                - current, 7daysAgo, 30daysAgo, 60daysAgo, 90daysAgo
+        """
+        for period, data in trends_data.items():
+            if not data:
+                continue
+                
+            sql = """
+                INSERT INTO eps_trends 
+                (symbol, period, current_est, days_7_ago, days_30_ago, days_60_ago, days_90_ago, last_updated)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, NOW())
+                ON CONFLICT (symbol, period) DO UPDATE SET
+                    current_est = EXCLUDED.current_est,
+                    days_7_ago = EXCLUDED.days_7_ago,
+                    days_30_ago = EXCLUDED.days_30_ago,
+                    days_60_ago = EXCLUDED.days_60_ago,
+                    days_90_ago = EXCLUDED.days_90_ago,
+                    last_updated = NOW()
+            """
+            
+            params = (
+                symbol.upper(),
+                period,
+                data.get('current'),
+                data.get('7daysAgo'),
+                data.get('30daysAgo'),
+                data.get('60daysAgo'),
+                data.get('90daysAgo'),
+            )
+            
+            self.write_queue.put((sql, params))
+
+    def save_eps_revisions(self, symbol: str, revisions_data: Dict[str, Any]):
+        """
+        Save EPS revision counts (upward/downward revisions).
+        
+        Args:
+            symbol: Stock symbol
+            revisions_data: Dict with period keys ('0q', '+1q', '0y', '+1y') containing:
+                - upLast7days, upLast30days, downLast7Days, downLast30days
+        """
+        for period, data in revisions_data.items():
+            if not data:
+                continue
+                
+            sql = """
+                INSERT INTO eps_revisions 
+                (symbol, period, up_7d, up_30d, down_7d, down_30d, last_updated)
+                VALUES (%s, %s, %s, %s, %s, %s, NOW())
+                ON CONFLICT (symbol, period) DO UPDATE SET
+                    up_7d = EXCLUDED.up_7d,
+                    up_30d = EXCLUDED.up_30d,
+                    down_7d = EXCLUDED.down_7d,
+                    down_30d = EXCLUDED.down_30d,
+                    last_updated = NOW()
+            """
+            
+            params = (
+                symbol.upper(),
+                period,
+                data.get('upLast7days'),
+                data.get('upLast30days'),
+                data.get('downLast7Days'),
+                data.get('downLast30days'),
+            )
+            
+            self.write_queue.put((sql, params))
+
+    def save_growth_estimates(self, symbol: str, growth_data: Dict[str, Any]):
+        """
+        Save growth estimates (stock vs index comparison).
+        
+        Args:
+            symbol: Stock symbol
+            growth_data: Dict with period keys ('0q', '+1q', '0y', '+1y', 'LTG') containing:
+                - stockTrend, indexTrend
+        """
+        for period, data in growth_data.items():
+            if not data:
+                continue
+                
+            sql = """
+                INSERT INTO growth_estimates 
+                (symbol, period, stock_trend, index_trend, last_updated)
+                VALUES (%s, %s, %s, %s, NOW())
+                ON CONFLICT (symbol, period) DO UPDATE SET
+                    stock_trend = EXCLUDED.stock_trend,
+                    index_trend = EXCLUDED.index_trend,
+                    last_updated = NOW()
+            """
+            
+            params = (
+                symbol.upper(),
+                period,
+                data.get('stockTrend'),
+                data.get('indexTrend'),
+            )
+            
+            self.write_queue.put((sql, params))
+
+    def save_analyst_recommendations(self, symbol: str, recommendations_data: List[Dict[str, Any]]):
+        """
+        Save monthly analyst buy/hold/sell distribution.
+        
+        Args:
+            symbol: Stock symbol
+            recommendations_data: List of dicts with:
+                - period (0m, -1m, -2m, -3m), strongBuy, buy, hold, sell, strongSell
+        """
+        for data in recommendations_data:
+            if not data:
+                continue
+                
+            period = data.get('period')
+            if period is None:
+                continue
+                
+            sql = """
+                INSERT INTO analyst_recommendations 
+                (symbol, period_month, strong_buy, buy, hold, sell, strong_sell, last_updated)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, NOW())
+                ON CONFLICT (symbol, period_month) DO UPDATE SET
+                    strong_buy = EXCLUDED.strong_buy,
+                    buy = EXCLUDED.buy,
+                    hold = EXCLUDED.hold,
+                    sell = EXCLUDED.sell,
+                    strong_sell = EXCLUDED.strong_sell,
+                    last_updated = NOW()
+            """
+            
+            params = (
+                symbol.upper(),
+                period,
+                data.get('strongBuy'),
+                data.get('buy'),
+                data.get('hold'),
+                data.get('sell'),
+                data.get('strongSell'),
+            )
+            
+            self.write_queue.put((sql, params))
+
+    def update_forward_metrics(self, symbol: str, forward_data: Dict[str, Any]):
+        """
+        Update forward metrics columns in stock_metrics table.
+        
+        Args:
+            symbol: Stock symbol
+            forward_data: Dict containing forward metrics from yfinance info:
+                - forward_pe, forward_eps, forward_peg_ratio
+                - price_target_high, price_target_low, price_target_mean, price_target_median
+                - analyst_rating, analyst_rating_score, analyst_count, recommendation_key
+                - earnings_growth, earnings_quarterly_growth, revenue_growth
+        """
+        sql = """
+            UPDATE stock_metrics SET
+                forward_pe = COALESCE(%s, forward_pe),
+                forward_eps = COALESCE(%s, forward_eps),
+                forward_peg_ratio = COALESCE(%s, forward_peg_ratio),
+                price_target_high = COALESCE(%s, price_target_high),
+                price_target_low = COALESCE(%s, price_target_low),
+                price_target_mean = COALESCE(%s, price_target_mean),
+                price_target_median = COALESCE(%s, price_target_median),
+                analyst_rating = COALESCE(%s, analyst_rating),
+                analyst_rating_score = COALESCE(%s, analyst_rating_score),
+                analyst_count = COALESCE(%s, analyst_count),
+                recommendation_key = COALESCE(%s, recommendation_key),
+                earnings_growth = COALESCE(%s, earnings_growth),
+                earnings_quarterly_growth = COALESCE(%s, earnings_quarterly_growth),
+                revenue_growth = COALESCE(%s, revenue_growth),
+                last_updated = NOW()
+            WHERE symbol = %s
+        """
+        
+        params = (
+            forward_data.get('forward_pe'),
+            forward_data.get('forward_eps'),
+            forward_data.get('forward_peg_ratio'),
+            forward_data.get('price_target_high'),
+            forward_data.get('price_target_low'),
+            forward_data.get('price_target_mean'),
+            forward_data.get('price_target_median'),
+            forward_data.get('analyst_rating'),
+            forward_data.get('analyst_rating_score'),
+            forward_data.get('analyst_count'),
+            forward_data.get('recommendation_key'),
+            forward_data.get('earnings_growth'),
+            forward_data.get('earnings_quarterly_growth'),
+            forward_data.get('revenue_growth'),
+            symbol.upper(),
+        )
+        
+        self.write_queue.put((sql, params))
 
     def save_transcript_summary(self, symbol: str, quarter: str, fiscal_year: int, summary: str):
         """

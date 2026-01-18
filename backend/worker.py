@@ -209,6 +209,8 @@ class BackgroundWorker:
             self._run_transcript_cache(job_id, params)
         elif job_type == 'check_alerts':
             self._run_check_alerts(job_id, params)
+        elif job_type == 'forward_metrics_cache':
+            self._run_forward_metrics_cache(job_id, params)
         else:
             raise ValueError(f"Unknown job type: {job_type}")
 
@@ -1899,6 +1901,246 @@ class BackgroundWorker:
         self.db.flush()
         self.db.complete_job(job_id, result)
         logger.info(f"Transcript cache complete: {result}")
+
+    def _run_forward_metrics_cache(self, job_id: int, params: Dict[str, Any]):
+        """
+        Cache forward metrics (forward PE, estimates, trends, recommendations) for all stocks.
+        
+        Fetches from yfinance:
+        - ticker.info: forward_pe, forward_eps, forward_peg, price targets, recommendations
+        - ticker.earnings_estimate / revenue_estimate: quarterly and annual estimates
+        - ticker.eps_trend: how estimates changed over 7/30/60/90 days
+        - ticker.eps_revisions: upward/downward revision counts
+        - ticker.growth_estimates: stock vs index growth comparison
+        - ticker.recommendations: monthly analyst buy/hold/sell distribution
+        
+        Params:
+            limit: Optional max number of stocks to process
+            region: Region filter (us, north-america, europe, asia, all)
+            symbols: Optional list of specific symbols to process (for testing)
+        """
+        limit = params.get('limit')
+        region = params.get('region', 'us')
+        specific_symbols = params.get('symbols')
+        
+        logger.info(f"Starting forward metrics cache job {job_id} (region={region})")
+        
+        from tradingview_fetcher import TradingViewFetcher
+        import yfinance as yf
+        import pandas as pd
+        
+        # If specific symbols provided, use those directly (for testing)
+        if specific_symbols:
+            all_symbols = specific_symbols
+            logger.info(f"Using specific symbols: {all_symbols}")
+            self.db.update_job_progress(job_id, progress_pct=5, progress_message=f'Processing {len(all_symbols)} specific symbols...')
+        else:
+            # Map CLI region to TradingView regions
+            region_mapping = {
+                'us': ['us'],
+                'north-america': ['north_america'],
+                'south-america': ['south_america'],
+                'europe': ['europe'],
+                'asia': ['asia'],
+                'all': None
+            }
+            tv_regions = region_mapping.get(region, ['us'])
+            
+            # Get stock list from TradingView
+            self.db.update_job_progress(job_id, progress_pct=5, progress_message=f'Fetching stock list from TradingView ({region})...')
+            tv_fetcher = TradingViewFetcher()
+            market_data_cache = tv_fetcher.fetch_all_stocks(limit=20000, regions=tv_regions)
+            
+            # Ensure all stocks exist in DB before caching
+            self.db.update_job_progress(job_id, progress_pct=8, progress_message='Ensuring stocks exist in database...')
+            self.db.ensure_stocks_exist_batch(market_data_cache)
+            
+            all_symbols = list(market_data_cache.keys())
+            
+            # Sort by screening score if available (prioritize STRONG_BUY stocks)
+            scored_symbols = self.db.get_stocks_ordered_by_score(limit=None)
+            scored_set = set(scored_symbols)
+            
+            sorted_symbols = [s for s in scored_symbols if s in set(all_symbols)]
+            remaining = [s for s in all_symbols if s not in scored_set]
+            all_symbols = sorted_symbols + remaining
+        
+        # Apply limit if specified
+        if limit and limit < len(all_symbols):
+            all_symbols = all_symbols[:limit]
+        
+        total = len(all_symbols)
+        self.db.update_job_progress(job_id, progress_pct=10, progress_message=f'Fetching forward metrics for {total} stocks...',
+                                    total_count=total)
+        
+        logger.info(f"Ready to fetch forward metrics for {total} stocks")
+        
+        processed = 0
+        cached = 0
+        errors = 0
+        
+        for symbol in all_symbols:
+            try:
+                ticker = yf.Ticker(symbol)
+                
+                # Fetch info (forward PE, price targets, recommendations)
+                try:
+                    info = ticker.info
+                    if info:
+                        forward_data = {
+                            'forward_pe': info.get('forwardPE'),
+                            'forward_eps': info.get('forwardEps'),
+                            'forward_peg_ratio': info.get('pegRatio') or info.get('trailingPegRatio'),
+                            'price_target_high': info.get('targetHighPrice'),
+                            'price_target_low': info.get('targetLowPrice'),
+                            'price_target_mean': info.get('targetMeanPrice'),
+                            'price_target_median': info.get('targetMedianPrice'),
+                            'analyst_rating': info.get('averageAnalystRating'),
+                            'analyst_rating_score': info.get('recommendationMean'),
+                            'analyst_count': info.get('numberOfAnalystOpinions'),
+                            'recommendation_key': info.get('recommendationKey'),
+                            'earnings_growth': info.get('earningsGrowth'),
+                            'earnings_quarterly_growth': info.get('earningsQuarterlyGrowth'),
+                            'revenue_growth': info.get('revenueGrowth'),
+                        }
+                        self.db.update_forward_metrics(symbol, forward_data)
+                except Exception as e:
+                    logger.debug(f"[{symbol}] Could not fetch info: {e}")
+                
+                # Fetch earnings/revenue estimates
+                try:
+                    earnings_est = ticker.earnings_estimate
+                    revenue_est = ticker.revenue_estimate
+                    
+                    if earnings_est is not None and not earnings_est.empty:
+                        estimates_data = {}
+                        for period in earnings_est.index:
+                            row = earnings_est.loc[period]
+                            estimates_data[period] = {
+                                'eps_avg': row.get('avg') if pd.notna(row.get('avg')) else None,
+                                'eps_low': row.get('low') if pd.notna(row.get('low')) else None,
+                                'eps_high': row.get('high') if pd.notna(row.get('high')) else None,
+                                'eps_growth': row.get('growth') if pd.notna(row.get('growth')) else None,
+                                'eps_year_ago': row.get('yearAgoEps') if pd.notna(row.get('yearAgoEps')) else None,
+                                'eps_num_analysts': int(row.get('numberOfAnalysts')) if pd.notna(row.get('numberOfAnalysts')) else None,
+                            }
+                            # Add revenue estimates for same period if available
+                            if revenue_est is not None and not revenue_est.empty and period in revenue_est.index:
+                                rev_row = revenue_est.loc[period]
+                                estimates_data[period]['revenue_avg'] = rev_row.get('avg') if pd.notna(rev_row.get('avg')) else None
+                                estimates_data[period]['revenue_low'] = rev_row.get('low') if pd.notna(rev_row.get('low')) else None
+                                estimates_data[period]['revenue_high'] = rev_row.get('high') if pd.notna(rev_row.get('high')) else None
+                                estimates_data[period]['revenue_growth'] = rev_row.get('growth') if pd.notna(rev_row.get('growth')) else None
+                                estimates_data[period]['revenue_year_ago'] = rev_row.get('yearAgoRevenue') if pd.notna(rev_row.get('yearAgoRevenue')) else None
+                                estimates_data[period]['revenue_num_analysts'] = int(rev_row.get('numberOfAnalysts')) if pd.notna(rev_row.get('numberOfAnalysts')) else None
+                        
+                        self.db.save_analyst_estimates(symbol, estimates_data)
+                except Exception as e:
+                    logger.debug(f"[{symbol}] Could not fetch estimates: {e}")
+                
+                # Fetch EPS trends
+                try:
+                    eps_trend = ticker.eps_trend
+                    if eps_trend is not None and not eps_trend.empty:
+                        trends_data = {}
+                        for period in eps_trend.index:
+                            row = eps_trend.loc[period]
+                            trends_data[period] = {
+                                'current': row.get('current') if pd.notna(row.get('current')) else None,
+                                '7daysAgo': row.get('7daysAgo') if pd.notna(row.get('7daysAgo')) else None,
+                                '30daysAgo': row.get('30daysAgo') if pd.notna(row.get('30daysAgo')) else None,
+                                '60daysAgo': row.get('60daysAgo') if pd.notna(row.get('60daysAgo')) else None,
+                                '90daysAgo': row.get('90daysAgo') if pd.notna(row.get('90daysAgo')) else None,
+                            }
+                        self.db.save_eps_trends(symbol, trends_data)
+                except Exception as e:
+                    logger.debug(f"[{symbol}] Could not fetch eps_trend: {e}")
+                
+                # Fetch EPS revisions
+                try:
+                    eps_revisions = ticker.eps_revisions
+                    if eps_revisions is not None and not eps_revisions.empty:
+                        revisions_data = {}
+                        for period in eps_revisions.index:
+                            row = eps_revisions.loc[period]
+                            revisions_data[period] = {
+                                'upLast7days': int(row.get('upLast7days')) if pd.notna(row.get('upLast7days')) else None,
+                                'upLast30days': int(row.get('upLast30days')) if pd.notna(row.get('upLast30days')) else None,
+                                'downLast7Days': int(row.get('downLast7Days')) if pd.notna(row.get('downLast7Days')) else None,
+                                'downLast30days': int(row.get('downLast30days')) if pd.notna(row.get('downLast30days')) else None,
+                            }
+                        self.db.save_eps_revisions(symbol, revisions_data)
+                except Exception as e:
+                    logger.debug(f"[{symbol}] Could not fetch eps_revisions: {e}")
+                
+                # Fetch growth estimates
+                try:
+                    growth_est = ticker.growth_estimates
+                    if growth_est is not None and not growth_est.empty:
+                        growth_data = {}
+                        for period in growth_est.index:
+                            row = growth_est.loc[period]
+                            growth_data[period] = {
+                                'stockTrend': row.get('stockTrend') if pd.notna(row.get('stockTrend')) else None,
+                                'indexTrend': row.get('indexTrend') if pd.notna(row.get('indexTrend')) else None,
+                            }
+                        self.db.save_growth_estimates(symbol, growth_data)
+                except Exception as e:
+                    logger.debug(f"[{symbol}] Could not fetch growth_estimates: {e}")
+                
+                # Fetch recommendations
+                try:
+                    recommendations = ticker.recommendations
+                    if recommendations is not None and not recommendations.empty:
+                        recs_data = []
+                        for _, row in recommendations.iterrows():
+                            recs_data.append({
+                                'period': row.get('period'),
+                                'strongBuy': int(row.get('strongBuy')) if pd.notna(row.get('strongBuy')) else None,
+                                'buy': int(row.get('buy')) if pd.notna(row.get('buy')) else None,
+                                'hold': int(row.get('hold')) if pd.notna(row.get('hold')) else None,
+                                'sell': int(row.get('sell')) if pd.notna(row.get('sell')) else None,
+                                'strongSell': int(row.get('strongSell')) if pd.notna(row.get('strongSell')) else None,
+                            })
+                        self.db.save_analyst_recommendations(symbol, recs_data)
+                except Exception as e:
+                    logger.debug(f"[{symbol}] Could not fetch recommendations: {e}")
+                
+                cached += 1
+                
+            except Exception as e:
+                logger.warning(f"[{symbol}] Forward metrics cache error: {e}")
+                errors += 1
+            
+            processed += 1
+            
+            # Update progress every 50 stocks
+            if processed % 50 == 0 or processed == total:
+                pct = 10 + int((processed / total) * 85)
+                self.db.update_job_progress(
+                    job_id,
+                    progress_pct=pct,
+                    progress_message=f'Fetched {processed}/{total} stocks ({cached} cached, {errors} errors)',
+                    processed_count=processed,
+                    total_count=total
+                )
+                self._send_heartbeat(job_id)
+            
+            if processed % 100 == 0:
+                logger.info(f"Forward metrics cache progress: {processed}/{total} (cached: {cached}, errors: {errors}) | MEMORY: {get_memory_mb():.0f}MB")
+                check_memory_warning(f"[forward_metrics {processed}/{total}]")
+        
+        # Complete job
+        result = {
+            'total_stocks': total,
+            'processed': processed,
+            'cached': cached,
+            'errors': errors
+        }
+        # Flush write queue before completing job
+        self.db.flush()
+        self.db.complete_job(job_id, result)
+        logger.info(f"Forward metrics cache complete: {result}")
 
 
 def main():
