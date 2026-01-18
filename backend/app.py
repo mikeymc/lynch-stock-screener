@@ -1082,6 +1082,39 @@ def get_stock_outlook(symbol):
     margin_data_clean = [m for m in margin_data if m.get('value') is not None and not (isinstance(m.get('value'), float) and math.isnan(m.get('value')))]
     inventory_chart_clean = [i for i in inventory_chart if i.get('revenue') is not None and i.get('inventory') is not None]
 
+    # 4. Get new forward metrics tables
+    analyst_estimates = db.get_analyst_estimates(symbol)
+    eps_trends = db.get_eps_trends(symbol)
+    eps_revisions = db.get_eps_revisions(symbol)
+    growth_estimates = db.get_growth_estimates(symbol)
+    recommendation_history = db.get_analyst_recommendations(symbol)
+
+    # Calculate current fiscal quarter info
+    fiscal_calendar = None
+    if analyst_estimates:
+        reporting_q = analyst_estimates.get('0q', {})
+        next_q = analyst_estimates.get('+1q', {})
+
+        # Determine which quarter we're actually IN right now
+        # If 0q has already ended, we're in +1q. Otherwise we're in 0q.
+        current_q = reporting_q
+        if reporting_q.get('period_end_date'):
+            period_end = datetime.strptime(reporting_q['period_end_date'], '%Y-%m-%d')
+            today = datetime.now()
+
+            # If the reporting quarter has already ended, we're in the next quarter
+            if period_end < today:
+                current_q = next_q
+
+        if current_q.get('fiscal_quarter') and current_q.get('fiscal_year'):
+            fiscal_calendar = {
+                'current_quarter': current_q.get('fiscal_quarter'),
+                'current_fiscal_year': current_q.get('fiscal_year'),
+                'reporting_quarter': reporting_q.get('fiscal_quarter'),
+                'reporting_fiscal_year': reporting_q.get('fiscal_year'),
+                'next_earnings_date': metrics.get('next_earnings_date')
+            }
+
     return jsonify({
         'symbol': symbol,
         'metrics': {
@@ -1089,7 +1122,12 @@ def get_stock_outlook(symbol):
             'forward_peg_ratio': metrics.get('forward_peg_ratio'),
             'forward_eps': metrics.get('forward_eps'),
             'insider_net_buying_6m': metrics.get('insider_net_buying_6m'),
-            'next_earnings_date': metrics.get('next_earnings_date')
+            'next_earnings_date': metrics.get('next_earnings_date'),
+            # New fields
+            'earnings_growth': metrics.get('earnings_growth'),
+            'earnings_quarterly_growth': metrics.get('earnings_quarterly_growth'),
+            'revenue_growth': metrics.get('revenue_growth'),
+            'recommendation_key': metrics.get('recommendation_key'),
         },
         'analyst_consensus': {
             'rating': metrics.get('analyst_rating'),  # e.g., "buy", "hold", "sell"
@@ -1097,7 +1135,8 @@ def get_stock_outlook(symbol):
             'analyst_count': metrics.get('analyst_count'),
             'price_target_high': metrics.get('price_target_high'),
             'price_target_low': metrics.get('price_target_low'),
-            'price_target_mean': metrics.get('price_target_mean')
+            'price_target_mean': metrics.get('price_target_mean'),
+            'price_target_median': metrics.get('price_target_median'),
         },
         'short_interest': {
             'short_ratio': metrics.get('short_ratio'),  # Days to cover
@@ -1106,7 +1145,14 @@ def get_stock_outlook(symbol):
         'current_price': metrics.get('price'),
         'insider_trades': trades,
         'inventory_vs_revenue': clean_nan_values(inventory_chart_clean),
-        'gross_margin_history': clean_nan_values(margin_data_clean)
+        'gross_margin_history': clean_nan_values(margin_data_clean),
+        # New forward metrics sections
+        'analyst_estimates': analyst_estimates,  # EPS/Revenue by period
+        'eps_trends': eps_trends,  # How estimates changed over time
+        'eps_revisions': eps_revisions,  # Up/down revision counts
+        'growth_estimates': growth_estimates,  # Stock vs index trend
+        'recommendation_history': recommendation_history,  # Monthly buy/hold/sell
+        'fiscal_calendar': fiscal_calendar,  # Current quarter and earnings date info
     })
 
 

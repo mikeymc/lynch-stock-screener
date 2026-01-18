@@ -1,6 +1,29 @@
 // ABOUTME: Wall Street Sentiment page with analyst consensus and forward indicators
 import React, { useState, useEffect } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Bar, Line } from 'react-chartjs-2'
+import {
+    Chart as ChartJS,
+    CategoryScale,
+    LinearScale,
+    PointElement,
+    LineElement,
+    BarElement,
+    Title,
+    Tooltip,
+    Legend
+} from 'chart.js'
+
+ChartJS.register(
+    CategoryScale,
+    LinearScale,
+    PointElement,
+    LineElement,
+    BarElement,
+    Title,
+    Tooltip,
+    Legend
+)
 
 const API_BASE = '/api'
 
@@ -8,6 +31,19 @@ export default function WallStreetSentiment({ symbol }) {
     const [data, setData] = useState(null)
     const [loading, setLoading] = useState(true)
     const [error, setError] = useState(null)
+
+    // Get computed CSS color values for charts
+    const getChartColors = () => {
+        if (typeof window === 'undefined') return { text: '#888', border: '#333' }
+        const styles = getComputedStyle(document.documentElement)
+        const mutedFg = styles.getPropertyValue('--muted-foreground').trim()
+        const borderColor = styles.getPropertyValue('--border').trim()
+        return {
+            text: mutedFg ? `hsl(${mutedFg})` : '#888',
+            border: borderColor ? `hsl(${borderColor})` : '#333'
+        }
+    }
+    const chartColors = getChartColors()
 
     useEffect(() => {
         let active = true
@@ -94,163 +130,408 @@ export default function WallStreetSentiment({ symbol }) {
         else { shortColorClass = 'text-green-500'; shortStatus = 'Low' }
     }
 
+    // --- Chart Data: Recommendation History (Stacked Bar) ---
+    const recHistory = data.recommendation_history || []
+    const sortedRecHistory = recHistory
+        .slice(0, 4)
+        .sort((a, b) => {
+            const aVal = parseInt(a.period) || 0
+            const bVal = parseInt(b.period) || 0
+            return aVal - bVal
+        })
+    const recChartData = {
+        labels: sortedRecHistory.map(r => r.period),
+        datasets: [
+            {
+                label: 'Strong Sell',
+                data: sortedRecHistory.map(r => r.strong_sell || 0),
+                backgroundColor: 'rgb(239, 68, 68)',
+                borderRadius: 2,
+            },
+            {
+                label: 'Sell',
+                data: sortedRecHistory.map(r => r.sell || 0),
+                backgroundColor: 'rgb(249, 115, 22)',
+                borderRadius: 2,
+            },
+            {
+                label: 'Hold',
+                data: sortedRecHistory.map(r => r.hold || 0),
+                backgroundColor: 'rgb(234, 179, 8)',
+                borderRadius: 2,
+            },
+            {
+                label: 'Buy',
+                data: sortedRecHistory.map(r => r.buy || 0),
+                backgroundColor: 'rgb(34, 197, 94)',
+                borderRadius: 2,
+            },
+            {
+                label: 'Strong Buy',
+                data: sortedRecHistory.map(r => r.strong_buy || 0),
+                backgroundColor: 'rgb(22, 163, 74)',
+                borderRadius: 2,
+            },
+        ]
+    }
+
+    const recChartOptions = {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+            legend: { position: 'top', labels: { color: chartColors.text, boxWidth: 12, padding: 10 } },
+            title: { display: false }
+        },
+        scales: {
+            x: { stacked: true, grid: { display: false }, ticks: { color: chartColors.text } },
+            y: { stacked: true, grid: { color: chartColors.border }, ticks: { color: chartColors.text } }
+        }
+    }
+
+    // --- Chart Data: Revenue & EPS Trends (Line Charts showing current vs 30d ago) ---
+    const epsTrends = data.eps_trends || {}
+    const analystEstimates = data.analyst_estimates || {}
+
+    // Helper to format period labels
+    const formatPeriodLabel = (period, estimate) => {
+        // For quarterly periods, use format like "Q2-25" if we have fiscal data
+        if (period === '0q' || period === '+1q') {
+            if (estimate?.fiscal_quarter && estimate?.fiscal_year) {
+                return `Q${estimate.fiscal_quarter}-${estimate.fiscal_year}`
+            }
+        }
+
+        // For annual periods, use format like "FY-26" if we have fiscal data
+        if (period === '0y' || period === '+1y') {
+            if (estimate?.period_end_date) {
+                const date = new Date(estimate.period_end_date)
+                const fy = date.getFullYear() % 100 // Last 2 digits
+                return `FY-${fy}`
+            }
+        }
+
+        // Fallback to old format
+        const baseLabelMap = { '0q': 'Current Q', '+1q': 'Next Q', '0y': 'Current Y', '+1y': 'Next Y' }
+        return baseLabelMap[period] || period
+    }
+
+    // Quarterly EPS periods
+    const quarterlyPeriods = ['0q', '+1q'].filter(p => epsTrends[p]?.current)
+    const quarterlyEpsChartData = {
+        labels: quarterlyPeriods.map(p => formatPeriodLabel(p, analystEstimates[p])),
+        datasets: [
+            {
+                label: 'Current Estimate',
+                data: quarterlyPeriods.map(p => epsTrends[p]?.current || 0),
+                borderColor: 'rgb(59, 130, 246)',
+                backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                fill: true,
+                tension: 0.3,
+                pointRadius: 6,
+                pointBackgroundColor: 'rgb(59, 130, 246)',
+            },
+            {
+                label: '30 Days Ago',
+                data: quarterlyPeriods.map(p => epsTrends[p]?.['30_days_ago'] || 0),
+                borderColor: 'rgb(148, 163, 184)',
+                backgroundColor: 'rgba(148, 163, 184, 0.05)',
+                fill: true,
+                tension: 0.3,
+                pointRadius: 4,
+                pointBackgroundColor: 'rgb(148, 163, 184)',
+                borderDash: [5, 5],
+            },
+        ]
+    }
+
+    // Annual EPS periods
+    const annualPeriods = ['0y', '+1y'].filter(p => epsTrends[p]?.current)
+    const annualEpsChartData = {
+        labels: annualPeriods.map(p => formatPeriodLabel(p, analystEstimates[p])),
+        datasets: [
+            {
+                label: 'Current Estimate',
+                data: annualPeriods.map(p => epsTrends[p]?.current || 0),
+                borderColor: 'rgb(59, 130, 246)',
+                backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                fill: true,
+                tension: 0.3,
+                pointRadius: 6,
+                pointBackgroundColor: 'rgb(59, 130, 246)',
+            },
+            {
+                label: '30 Days Ago',
+                data: annualPeriods.map(p => epsTrends[p]?.['30_days_ago'] || 0),
+                borderColor: 'rgb(148, 163, 184)',
+                backgroundColor: 'rgba(148, 163, 184, 0.05)',
+                fill: true,
+                tension: 0.3,
+                pointRadius: 4,
+                pointBackgroundColor: 'rgb(148, 163, 184)',
+                borderDash: [5, 5],
+            },
+        ]
+    }
+
+    // Quarterly Revenue periods
+    const quarterlyRevenuePeriods = ['0q', '+1q'].filter(p => analystEstimates[p]?.revenue_avg)
+    const quarterlyRevenueChartData = {
+        labels: quarterlyRevenuePeriods.map(p => formatPeriodLabel(p, analystEstimates[p])),
+        datasets: [
+            {
+                label: 'Revenue Estimate',
+                data: quarterlyRevenuePeriods.map(p => (analystEstimates[p]?.revenue_avg || 0) / 1e9),
+                borderColor: 'rgb(34, 197, 94)',
+                backgroundColor: 'rgba(34, 197, 94, 0.1)',
+                fill: true,
+                tension: 0.3,
+                pointRadius: 6,
+                pointBackgroundColor: 'rgb(34, 197, 94)',
+            },
+        ]
+    }
+
+    // Annual Revenue periods
+    const annualRevenuePeriods = ['0y', '+1y'].filter(p => analystEstimates[p]?.revenue_avg)
+    const annualRevenueChartData = {
+        labels: annualRevenuePeriods.map(p => formatPeriodLabel(p, analystEstimates[p])),
+        datasets: [
+            {
+                label: 'Revenue Estimate',
+                data: annualRevenuePeriods.map(p => (analystEstimates[p]?.revenue_avg || 0) / 1e9),
+                borderColor: 'rgb(34, 197, 94)',
+                backgroundColor: 'rgba(34, 197, 94, 0.1)',
+                fill: true,
+                tension: 0.3,
+                pointRadius: 6,
+                pointBackgroundColor: 'rgb(34, 197, 94)',
+            },
+        ]
+    }
+
+    const epsChartOptions = {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+            legend: { position: 'top', labels: { color: chartColors.text } },
+            title: { display: false }
+        },
+        scales: {
+            y: {
+                grid: { color: chartColors.border },
+                ticks: { color: chartColors.text, callback: (val) => `$${val.toFixed(2)}` }
+            },
+            x: { grid: { display: false }, ticks: { color: chartColors.text } }
+        }
+    }
+
+    const revenueChartOptions = {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+            legend: { position: 'top', labels: { color: chartColors.text } },
+            title: { display: false }
+        },
+        scales: {
+            y: {
+                grid: { color: chartColors.border },
+                ticks: { color: chartColors.text, callback: (val) => `$${val.toFixed(1)}B` }
+            },
+            x: { grid: { display: false }, ticks: { color: chartColors.text } }
+        }
+    }
+
+    // --- Calculate Revision Momentum Summary ---
+    const epsRevisions = data.eps_revisions || {}
+    let totalUp = 0, totalDown = 0
+    Object.values(epsRevisions).forEach(rev => {
+        totalUp += rev.up_30d || 0
+        totalDown += rev.down_30d || 0
+    })
+    const netRevisions = totalUp - totalDown
+    const revisionSentiment = netRevisions > 0 ? 'Bullish' : netRevisions < 0 ? 'Bearish' : 'Neutral'
+
     return (
         <div className="w-full space-y-6">
-            {/* ROW 1: Wall Street Consensus + Next Earnings */}
-            {(analyst_consensus?.rating || short_interest?.short_percent_float || metrics?.next_earnings_date) && (
-                <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
-                    {/* Wall Street Consensus Card */}
-                    {(analyst_consensus?.rating || short_interest?.short_percent_float) && (
-                        <Card className="lg:col-span-3">
-                            <CardHeader>
-                                <CardTitle>Wall Street Consensus</CardTitle>
-                            </CardHeader>
-                            <CardContent>
-                                <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-                                    {/* Analyst Rating */}
-                                    {analyst_consensus?.rating && (
-                                        <div>
-                                            <div className="text-sm text-muted-foreground mb-3">
-                                                Analyst Rating ({analystCount} analysts)
-                                            </div>
-                                            <div className="flex items-center gap-4 mb-2">
-                                                <div className="flex-1 h-3 bg-muted rounded-full overflow-hidden">
-                                                    <div
-                                                        className={`h-full ${ratingBgClass} rounded-full transition-all`}
-                                                        style={{ width: `${ratingPercent}%` }}
-                                                    />
-                                                </div>
-                                                <div className={`font-bold min-w-[80px] ${ratingColorClass}`}>
-                                                    {ratingText}
-                                                </div>
-                                            </div>
-                                            {ratingScore && (
-                                                <div className="text-xs text-muted-foreground">
-                                                    Score: {formatNumber(ratingScore)} (1 = Strong Buy, 5 = Sell)
-                                                </div>
-                                            )}
-                                        </div>
-                                    )}
+            {/* ROW 1: Fiscal Calendar */}
+            {(data.fiscal_calendar || metrics?.next_earnings_date) && (() => {
+                const fc = data.fiscal_calendar
+                const currentQ = fc?.current_quarter
+                const currentFY = fc?.current_fiscal_year
+                const reportingQ = fc?.reporting_quarter
+                const reportingFY = fc?.reporting_fiscal_year
+                const earningsDate = (fc?.next_earnings_date || metrics?.next_earnings_date) ? new Date(fc?.next_earnings_date || metrics.next_earnings_date) : null
 
-                                    {/* Price Target */}
-                                    {targetLow && targetHigh && (
-                                        <div>
-                                            <div className="text-sm text-muted-foreground mb-3">
-                                                Price Target Range
-                                            </div>
-                                            <div className="relative mb-4">
-                                                <div className="flex justify-between text-xs text-muted-foreground mb-1">
-                                                    <span>{formatCurrencyDecimal(targetLow)}</span>
-                                                    <span>{formatCurrencyDecimal(targetHigh)}</span>
-                                                </div>
-                                                <div className="h-2 bg-muted rounded relative">
-                                                    {/* Mean target marker */}
-                                                    {targetMean && (
-                                                        <div
-                                                            className="absolute top-[-2px] w-1 h-[12px] bg-blue-500 rounded"
-                                                            style={{ left: `${((targetMean - targetLow) / (targetHigh - targetLow)) * 100}%`, transform: 'translateX(-50%)' }}
-                                                        />
-                                                    )}
-                                                    {/* Current price marker */}
-                                                    <div
-                                                        className="absolute top-[-4px] w-3 h-[16px] bg-green-500 rounded border-2 border-background"
-                                                        style={{ left: `${pricePosition}%`, transform: 'translateX(-50%)' }}
-                                                    />
-                                                </div>
-                                                <div className="flex justify-center gap-8 mt-3">
-                                                    <div className="text-center">
-                                                        <div className="text-xs text-muted-foreground">Current</div>
-                                                        <div className="font-bold text-green-600">{formatCurrencyDecimal(priceNow)}</div>
-                                                    </div>
-                                                    {targetMean && (
-                                                        <div className="text-center">
-                                                            <div className="text-xs text-muted-foreground">Mean Target</div>
-                                                            <div className="font-bold text-blue-600">
-                                                                {formatCurrencyDecimal(targetMean)}
-                                                                {upside !== null && (
-                                                                    <span className={`ml-2 text-sm ${upside >= 0 ? 'text-green-500' : 'text-red-500'}`}>
-                                                                        ({upside >= 0 ? '+' : ''}{formatPercent(upside)})
-                                                                    </span>
-                                                                )}
-                                                            </div>
-                                                        </div>
-                                                    )}
-                                                </div>
-                                            </div>
-                                        </div>
-                                    )}
+                // Get fiscal year dates from analyst estimates
+                const currentYearEstimate = analystEstimates['0y']
+                let fiscalYearEnd = null
+                let fiscalYearStart = null
+                if (currentYearEstimate?.period_end_date) {
+                    fiscalYearEnd = new Date(currentYearEstimate.period_end_date)
+                    fiscalYearStart = new Date(fiscalYearEnd)
+                    fiscalYearStart.setFullYear(fiscalYearStart.getFullYear() - 1)
+                    fiscalYearStart.setDate(fiscalYearStart.getDate() + 1) // Day after previous FY end
+                }
 
-                                    {/* Short Interest */}
-                                    {shortPercentFloat && (
-                                        <div>
-                                            <div className="text-sm text-muted-foreground mb-3">
-                                                Short Interest
-                                            </div>
-                                            <div className="flex items-baseline gap-2 mb-1">
-                                                <span className={`text-3xl font-bold ${shortColorClass}`}>
-                                                    {formatPercent(shortPercentFloat)}
-                                                </span>
-                                                <span className="text-muted-foreground">of float</span>
-                                            </div>
-                                            <div className={`text-sm ${shortColorClass} mb-2`}>
-                                                {shortStatus}
-                                            </div>
-                                            {shortRatio && (
-                                                <div className="text-xs text-muted-foreground">
-                                                    Days to cover: {formatNumber(shortRatio)}
-                                                </div>
-                                            )}
+                if (!earningsDate && !currentQ && !fiscalYearStart) return null
+
+                return (
+                    <Card>
+                        <CardHeader>
+                            <CardTitle>Fiscal Calendar</CardTitle>
+                        </CardHeader>
+                        <CardContent>
+                            <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+                                {/* Fiscal Year */}
+                                {fiscalYearStart && fiscalYearEnd && (
+                                    <div className="text-center">
+                                        <div className="text-sm text-muted-foreground mb-2">Fiscal Year</div>
+                                        <div className="text-3xl font-bold">
+                                            {fiscalYearStart.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                                            {' - '}
+                                            {fiscalYearEnd.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                                        </div>
+                                    </div>
+                                )}
+
+                                {/* Current Quarter */}
+                                {currentQ && currentFY && (
+                                    <div className="text-center">
+                                        <div className="text-sm text-muted-foreground mb-2">Current Quarter</div>
+                                        <div className="text-3xl font-bold">Q{currentQ} {2000 + currentFY}</div>
+                                    </div>
+                                )}
+
+                                {/* Next Earnings Date */}
+                                {earningsDate && (
+                                    <div className="text-center">
+                                        <div className="text-sm text-muted-foreground mb-2">
+                                            {reportingQ ? `Q${reportingQ} Earnings Date` : 'Next Earnings Date'}
+                                        </div>
+                                        <div className="text-3xl font-bold">
+                                            {earningsDate.toLocaleDateString('en-US', {
+                                                month: 'short',
+                                                day: 'numeric',
+                                                year: 'numeric'
+                                            })}
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+                        </CardContent>
+                    </Card>
+                )
+            })()}
+
+            {/* ROW 2: Wall Street Consensus */}
+            {(analyst_consensus?.rating || short_interest?.short_percent_float) && (
+                <Card>
+                    <CardHeader>
+                        <CardTitle>Wall Street Consensus</CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-12">
+                            {/* Analyst Rating */}
+                            {analyst_consensus?.rating && (
+                                <div className="text-center">
+                                    <div className="text-sm text-muted-foreground mb-3">
+                                        Analyst Rating ({analystCount} analysts)
+                                    </div>
+                                    <div className="h-3 bg-muted rounded-full overflow-hidden mb-3">
+                                        <div
+                                            className={`h-full ${ratingBgClass} rounded-full transition-all`}
+                                            style={{ width: `${ratingPercent}%` }}
+                                        />
+                                    </div>
+                                    <div className={`font-bold text-lg mb-1 ${ratingColorClass}`}>
+                                        {ratingText}
+                                    </div>
+                                    {ratingScore && (
+                                        <div className="text-xs text-muted-foreground">
+                                            Score: {formatNumber(ratingScore)} (1 = Strong Buy, 5 = Sell)
                                         </div>
                                     )}
                                 </div>
-                            </CardContent>
-                        </Card>
-                    )}
+                            )}
 
-                    {/* Next Earnings Date Card */}
-                    {metrics?.next_earnings_date && (() => {
-                        const earningsDate = new Date(metrics.next_earnings_date)
-                        const today = new Date()
-                        today.setHours(0, 0, 0, 0)
-                        earningsDate.setHours(0, 0, 0, 0)
-                        const diffDays = Math.ceil((earningsDate - today) / (1000 * 60 * 60 * 24))
-
-                        if (diffDays < 0) return null
-
-                        let relativeText
-                        if (diffDays === 0) relativeText = 'Today'
-                        else if (diffDays === 1) relativeText = 'Tomorrow'
-                        else if (diffDays <= 7) relativeText = `In ${diffDays} days`
-                        else if (diffDays <= 14) relativeText = 'In ~2 weeks'
-                        else if (diffDays <= 30) relativeText = `In ${Math.round(diffDays / 7)} weeks`
-                        else relativeText = `In ${Math.round(diffDays / 30)} months`
-
-                        return (
-                            <Card>
-                                <CardHeader>
-                                    <CardTitle>Next Earnings Date</CardTitle>
-                                </CardHeader>
-                                <CardContent>
-                                    <div className="text-3xl font-bold mb-2">
-                                        {earningsDate.toLocaleDateString('en-US', {
-                                            month: 'short',
-                                            day: 'numeric',
-                                            year: 'numeric'
-                                        })}
+                            {/* Price Target */}
+                            {targetLow && targetHigh && (
+                                <div className="text-center">
+                                    <div className="text-sm text-muted-foreground mb-3">
+                                        Price Target Range
                                     </div>
-                                    <div className="text-sm text-muted-foreground">
-                                        {relativeText}
+                                    <div className="relative mb-4">
+                                        <div className="flex justify-between text-xs text-muted-foreground mb-1">
+                                            <span>{formatCurrencyDecimal(targetLow)}</span>
+                                            <span>{formatCurrencyDecimal(targetHigh)}</span>
+                                        </div>
+                                        <div className="h-2 bg-muted rounded relative">
+                                            {/* Mean target marker */}
+                                            {targetMean && (
+                                                <div
+                                                    className="absolute top-[-2px] w-1 h-[12px] bg-blue-500 rounded"
+                                                    style={{ left: `${((targetMean - targetLow) / (targetHigh - targetLow)) * 100}%`, transform: 'translateX(-50%)' }}
+                                                />
+                                            )}
+                                            {/* Current price marker */}
+                                            <div
+                                                className="absolute top-[-4px] w-3 h-[16px] bg-green-500 rounded border-2 border-background"
+                                                style={{ left: `${pricePosition}%`, transform: 'translateX(-50%)' }}
+                                            />
+                                        </div>
+                                        <div className="flex justify-center gap-8 mt-3">
+                                            <div className="text-center">
+                                                <div className="text-xs text-muted-foreground">Current</div>
+                                                <div className="font-bold text-green-600">{formatCurrencyDecimal(priceNow)}</div>
+                                            </div>
+                                            {targetMean && (
+                                                <div className="text-center">
+                                                    <div className="text-xs text-muted-foreground">Mean Target</div>
+                                                    <div className="font-bold text-blue-600">
+                                                        {formatCurrencyDecimal(targetMean)}
+                                                        {upside !== null && (
+                                                            <span className={`ml-2 text-sm ${upside >= 0 ? 'text-green-500' : 'text-red-500'}`}>
+                                                                ({upside >= 0 ? '+' : ''}{formatPercent(upside)})
+                                                            </span>
+                                                        )}
+                                                    </div>
+                                                </div>
+                                            )}
+                                        </div>
                                     </div>
-                                </CardContent>
-                            </Card>
-                        )
-                    })()}
-                </div>
+                                </div>
+                            )}
+
+                            {/* Short Interest */}
+                            {shortPercentFloat && (
+                                <div className="text-center">
+                                    <div className="text-sm text-muted-foreground mb-3">
+                                        Short Interest
+                                    </div>
+                                    <div className="flex items-baseline justify-center gap-2 mb-1">
+                                        <span className={`text-3xl font-bold ${shortColorClass}`}>
+                                            {formatPercent(shortPercentFloat)}
+                                        </span>
+                                        <span className="text-muted-foreground">of float</span>
+                                    </div>
+                                    <div className={`text-sm ${shortColorClass} mb-2`}>
+                                        {shortStatus}
+                                    </div>
+                                    {shortRatio && (
+                                        <div className="text-xs text-muted-foreground">
+                                            Days to cover: {formatNumber(shortRatio)}
+                                        </div>
+                                    )}
+                                </div>
+                            )}
+                        </div>
+                    </CardContent>
+                </Card>
             )}
 
 
 
-            {/* ROW 2: Forward Indicators */}
+            {/* ROW 3: Forward Indicators */}
             <Card>
                 <CardHeader>
                     <CardTitle>Forward Indicators</CardTitle>
@@ -263,7 +544,6 @@ export default function WallStreetSentiment({ symbol }) {
                             <div className={`text-3xl font-bold ${pegColorClass}`}>
                                 {peg ? formatNumber(peg) : 'N/A'}
                             </div>
-                            <div className={`text-sm mt-1 ${pegColorClass}`}>{pegStatus}</div>
                         </div>
 
                         {/* Forward PE Box */}
@@ -284,6 +564,121 @@ export default function WallStreetSentiment({ symbol }) {
                     </div>
                 </CardContent>
             </Card>
+
+            {/* ROW 4: Revenue Estimate Charts */}
+            {(quarterlyRevenuePeriods.length > 0 || annualRevenuePeriods.length > 0) && (
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                    {/* Quarterly Revenue Trends */}
+                    {quarterlyRevenuePeriods.length > 0 && (
+                        <Card>
+                            <CardHeader>
+                                <CardTitle>Quarterly Revenue Estimates</CardTitle>
+                            </CardHeader>
+                            <CardContent>
+                                <div className="h-[250px]">
+                                    <Line data={quarterlyRevenueChartData} options={revenueChartOptions} />
+                                </div>
+                            </CardContent>
+                        </Card>
+                    )}
+
+                    {/* Annual Revenue Trends */}
+                    {annualRevenuePeriods.length > 0 && (
+                        <Card>
+                            <CardHeader>
+                                <CardTitle>Annual Revenue Estimates</CardTitle>
+                            </CardHeader>
+                            <CardContent>
+                                <div className="h-[250px]">
+                                    <Line data={annualRevenueChartData} options={revenueChartOptions} />
+                                </div>
+                            </CardContent>
+                        </Card>
+                    )}
+                </div>
+            )}
+
+            {/* ROW 5: EPS Estimate Charts */}
+            {(quarterlyPeriods.length > 0 || annualPeriods.length > 0) && (
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                    {/* Quarterly EPS Trends */}
+                    {quarterlyPeriods.length > 0 && (
+                        <Card>
+                            <CardHeader>
+                                <CardTitle>Quarterly EPS Estimate Trends</CardTitle>
+                            </CardHeader>
+                            <CardContent>
+                                <div className="h-[250px]">
+                                    <Line data={quarterlyEpsChartData} options={epsChartOptions} />
+                                </div>
+                            </CardContent>
+                        </Card>
+                    )}
+
+                    {/* Annual EPS Trends */}
+                    {annualPeriods.length > 0 && (
+                        <Card>
+                            <CardHeader>
+                                <CardTitle>Annual EPS Estimate Trends</CardTitle>
+                            </CardHeader>
+                            <CardContent>
+                                <div className="h-[250px]">
+                                    <Line data={annualEpsChartData} options={epsChartOptions} />
+                                </div>
+                            </CardContent>
+                        </Card>
+                    )}
+                </div>
+            )}
+
+            {/* ROW 6: Revision Momentum */}
+            {(totalUp > 0 || totalDown > 0) && (
+                <Card>
+                    <CardHeader>
+                        <CardTitle>Estimate Revision Momentum</CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                        <p className="text-sm text-muted-foreground mb-4">
+                            Net upward vs downward revisions in the last 30 days.
+                        </p>
+                        <div className="flex items-center justify-center gap-8 py-8">
+                            <div className="text-center">
+                                <div className="text-5xl font-bold text-green-500">↑{totalUp}</div>
+                                <div className="text-sm text-muted-foreground mt-2">Upward</div>
+                            </div>
+                            <div className="text-center">
+                                <div className="text-5xl font-bold text-red-500">↓{totalDown}</div>
+                                <div className="text-sm text-muted-foreground mt-2">Downward</div>
+                            </div>
+                            <div className="text-center border-l pl-8">
+                                <div className={`text-5xl font-bold ${netRevisions > 0 ? 'text-green-500' : netRevisions < 0 ? 'text-red-500' : 'text-muted-foreground'}`}>
+                                    {netRevisions > 0 ? '+' : ''}{netRevisions}
+                                </div>
+                                <div className={`text-sm font-medium mt-2 ${netRevisions > 0 ? 'text-green-500' : netRevisions < 0 ? 'text-red-500' : 'text-muted-foreground'}`}>
+                                    {revisionSentiment}
+                                </div>
+                            </div>
+                        </div>
+                    </CardContent>
+                </Card>
+            )}
+
+            {/* ROW 7: Recommendation History Chart */}
+            {recHistory.length > 0 && (
+                <Card>
+                    <CardHeader>
+                        <CardTitle>Analyst Recommendation Trend</CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                        <p className="text-sm text-muted-foreground mb-4">
+                            Distribution of analyst recommendations over the past months.
+                        </p>
+                        <div className="h-[280px]">
+                            <Bar data={recChartData} options={recChartOptions} />
+                        </div>
+                    </CardContent>
+                </Card>
+            )}
         </div>
     )
 }

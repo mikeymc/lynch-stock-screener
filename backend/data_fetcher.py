@@ -578,14 +578,14 @@ class DataFetcher:
             logger.info(f"[{symbol}] EDGAR missing Cash Flow for {len(years_needing_cf)} years. Fetching from yfinance cashflow")
             self._backfill_cash_flow(symbol, years_needing_cf)
 
-    # todo: can this be collapsed with _store_edgar_earnings?
     def _store_edgar_quarterly_earnings(self, symbol: str, edgar_data: Dict[str, Any], price_history: Optional[pd.DataFrame] = None, force_refresh: bool = False):
-        """Store quarterly earnings history from EDGAR data (Net Income, Revenue, EPS, Cash Flow)"""
+        """Store quarterly earnings history from EDGAR data (Net Income, Revenue, EPS, Cash Flow, D/E)"""
         # Get all quarterly data sources from EDGAR
         net_income_quarterly = edgar_data.get('net_income_quarterly', [])
         revenue_quarterly = edgar_data.get('revenue_quarterly', [])
         eps_quarterly = edgar_data.get('eps_quarterly', [])
         cash_flow_quarterly = edgar_data.get('cash_flow_quarterly', [])
+        debt_to_equity_quarterly = edgar_data.get('debt_to_equity_quarterly', [])
         
         # Parse dividend history
         dividend_history = edgar_data.get('dividend_history', [])
@@ -597,7 +597,7 @@ class DataFetcher:
                 key = (div['year'], div['quarter'])
                 dividends_by_quarter[key] = div['amount']
 
-        if not net_income_quarterly and not revenue_quarterly and not cash_flow_quarterly and not eps_quarterly:
+        if not any([net_income_quarterly, revenue_quarterly, cash_flow_quarterly, eps_quarterly, debt_to_equity_quarterly]):
             logger.warning(f"[{symbol}] No quarterly data available from EDGAR")
             return
 
@@ -610,9 +610,10 @@ class DataFetcher:
         rev_by_key = {(e['year'], e['quarter']): e for e in revenue_quarterly}
         eps_by_key = {(e['year'], e['quarter']): e for e in eps_quarterly}
         cf_by_key = {(e['year'], e['quarter']): e for e in cash_flow_quarterly}
+        de_by_key = {(e['year'], e['quarter']): e for e in debt_to_equity_quarterly}
 
         # Merge all quarter keys
-        all_keys = set(ni_by_key.keys()) | set(rev_by_key.keys()) | set(eps_by_key.keys()) | set(cf_by_key.keys())
+        all_keys = set(ni_by_key.keys()) | set(rev_by_key.keys()) | set(eps_by_key.keys()) | set(cf_by_key.keys()) | set(de_by_key.keys())
         
         quarters_stored = 0
         for key in all_keys:
@@ -623,6 +624,7 @@ class DataFetcher:
             rev_entry = rev_by_key.get(key, {})
             eps_entry = eps_by_key.get(key, {})
             cf_entry = cf_by_key.get(key, {})
+            de_entry = de_by_key.get(key, {})
             
             net_income = ni_entry.get('net_income')
             revenue = rev_entry.get('revenue')
@@ -630,20 +632,21 @@ class DataFetcher:
             operating_cash_flow = cf_entry.get('operating_cash_flow')
             capital_expenditures = cf_entry.get('capital_expenditures')
             free_cash_flow = cf_entry.get('free_cash_flow')
+            debt_to_equity = de_entry.get('debt_to_equity')
             
             # Use fiscal_end from whichever source has it
-            fiscal_end = ni_entry.get('fiscal_end') or rev_entry.get('fiscal_end') or eps_entry.get('fiscal_end') or cf_entry.get('fiscal_end')
+            fiscal_end = ni_entry.get('fiscal_end') or rev_entry.get('fiscal_end') or eps_entry.get('fiscal_end') or cf_entry.get('fiscal_end') or de_entry.get('fiscal_end')
             dividend = dividends_by_quarter.get(key)
 
-            # Only store if we have at least some data
-            if net_income or revenue or eps or operating_cash_flow or free_cash_flow:
+            # Only store if we have at least some data (check D/E too)
+            if net_income or revenue or eps or operating_cash_flow or free_cash_flow or debt_to_equity is not None:
                 self.db.save_earnings_history(
                     symbol,
                     year,
                     float(eps) if eps else None,
                     float(revenue) if revenue else None,
                     fiscal_end=fiscal_end,
-                    debt_to_equity=None,
+                    debt_to_equity=float(debt_to_equity) if debt_to_equity is not None else None,
                     period=quarter,
                     net_income=float(net_income) if net_income else None,
                     dividend_amount=float(dividend) if dividend is not None else None,

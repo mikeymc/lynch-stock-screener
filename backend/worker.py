@@ -1488,10 +1488,25 @@ class BackgroundWorker:
         
         def fetch_outlook_data(symbol: str) -> bool:
             """Fetch forward metrics and insider trades for a single symbol."""
+            from datetime import timedelta
+
             try:
                 ticker = yf.Ticker(symbol)
-                info = ticker.info
-                
+
+                # Try to fetch info, handle yfinance API failures gracefully
+                try:
+                    info = ticker.info
+                except (TypeError, AttributeError) as e:
+                    logger.debug(f"[{symbol}] Failed to fetch info from yfinance: {e}")
+                    return False
+                except Exception as e:
+                    # Handle rate limiting and other yfinance errors
+                    if "Rate limited" in str(e) or "Too Many Requests" in str(e):
+                        logger.warning(f"[{symbol}] Rate limited by Yahoo Finance, will retry later")
+                        return False
+                    logger.debug(f"[{symbol}] Error fetching info: {e}")
+                    return False
+
                 if not info:
                     return False
                 
@@ -1616,7 +1631,76 @@ class BackgroundWorker:
                             })
                 except Exception as e:
                     logger.debug(f"[{symbol}] Error extracting analyst estimates: {e}")
-                
+
+                # Calculate fiscal period end dates for each estimate period
+                try:
+                    # info is already fetched at the beginning of this function
+                    most_recent_quarter = info.get('mostRecentQuarter')
+                    last_fiscal_year_end = info.get('lastFiscalYearEnd')
+                    next_fiscal_year_end = info.get('nextFiscalYearEnd')
+
+                    if most_recent_quarter and last_fiscal_year_end and next_fiscal_year_end and estimates_data:
+                        # Convert timestamps to dates
+                        mrq_date = datetime.fromtimestamp(most_recent_quarter).date()
+                        last_fye = datetime.fromtimestamp(last_fiscal_year_end).date()
+                        next_fye = datetime.fromtimestamp(next_fiscal_year_end).date()
+
+                        # Calculate quarter end dates by adding approximately 91 days (~3 months)
+                        # '0q' = next quarter after most recent (current reporting quarter)
+                        # '+1q' = quarter after that
+                        # '0y' = current fiscal year end
+                        # '+1y' = next fiscal year end (current FY + 1 year)
+                        current_q_end = mrq_date + timedelta(days=91)
+                        next_q_end = current_q_end + timedelta(days=91)
+
+                        # Determine current fiscal year
+                        current_fye = next_fye if next_fye > mrq_date else last_fye
+
+                        period_dates = {
+                            '0q': current_q_end,
+                            '+1q': next_q_end,
+                            '0y': current_fye,
+                            '+1y': next_fye + timedelta(days=365) if next_fye == current_fye else next_fye
+                        }
+
+                        # Helper to calculate fiscal quarter number
+                        def get_fiscal_quarter(period_end, fiscal_year_end):
+                            """Calculate fiscal quarter (1-4) based on how many months before FY end."""
+                            # Calculate months difference
+                            months_diff = (fiscal_year_end.year - period_end.year) * 12 + (fiscal_year_end.month - period_end.month)
+
+                            if months_diff < 0:
+                                # Period is after fiscal year end, it's in the next fiscal year
+                                months_diff += 12
+
+                            # Q4 ends at fiscal year end (0-2 months before)
+                            # Q3 ends ~3 months before (3-5 months before)
+                            # Q2 ends ~6 months before (6-8 months before)
+                            # Q1 ends ~9 months before (9-11 months before)
+                            if 0 <= months_diff <= 2:
+                                return 4
+                            elif 3 <= months_diff <= 5:
+                                return 3
+                            elif 6 <= months_diff <= 8:
+                                return 2
+                            else:
+                                return 1
+
+                        # Add period_end_date and fiscal info to each estimate
+                        for period, end_date in period_dates.items():
+                            if period in estimates_data:
+                                estimates_data[period]['period_end_date'] = end_date
+
+                                # Add fiscal quarter/year info for quarterly periods
+                                if period in ['0q', '+1q']:
+                                    fye_for_period = current_fye if period == '0q' else (next_fye if next_q_end <= next_fye else next_fye + timedelta(days=365))
+                                    fiscal_quarter = get_fiscal_quarter(end_date, fye_for_period)
+                                    fiscal_year = fye_for_period.year % 100  # Last 2 digits
+                                    estimates_data[period]['fiscal_quarter'] = fiscal_quarter
+                                    estimates_data[period]['fiscal_year'] = fiscal_year
+                except Exception as e:
+                    logger.debug(f"[{symbol}] Error calculating period dates: {e}")
+
                 # Save to database
                 # Update metrics with forward indicators + analyst data
                 metrics = {
@@ -1652,7 +1736,9 @@ class BackgroundWorker:
                 return True
                 
             except Exception as e:
-                logger.debug(f"[{symbol}] Outlook fetch error: {e}")
+                import traceback
+                logger.error(f"[{symbol}] Outlook fetch error: {e}")
+                logger.error(f"[{symbol}] Traceback:\n{traceback.format_exc()}")
                 return False
         
         with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:

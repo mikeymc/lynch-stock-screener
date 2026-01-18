@@ -2221,6 +2221,153 @@ class EdgarFetcher:
             logger.warning(f"Error parsing D/E history: {e}")
             return []
 
+    def parse_quarterly_debt_to_equity_history(self, company_facts: Dict[str, Any]) -> List[Dict[str, Any]]:
+        """
+        Extract quarterly debt-to-equity ratios from company facts (10-Q/6-K)
+
+        Args:
+            company_facts: Company facts data from EDGAR API
+
+        Returns:
+            List of dictionaries with year, quarter, debt_to_equity, and fiscal_end values
+        """
+        try:
+            facts = company_facts['facts']['us-gaap']
+
+            # Get equity data
+            equity_tags = [
+                'StockholdersEquity',
+                'StockholdersEquityIncludingPortionAttributableToNoncontrollingInterest',
+                'CommonStockholdersEquity',
+                'LiabilitiesAndStockholdersEquity'
+            ]
+
+            equity_data = []
+            for tag in equity_tags:
+                equity_data = facts.get(tag, {}).get('units', {}).get('USD', [])
+                if equity_data:
+                    break
+
+            if not equity_data:
+                return []
+
+            # Get debt data (Long Term)
+            lt_debt_tags = [
+                'LongTermDebtNoncurrent', 
+                'LongTermDebt',
+                'SeniorLongTermNotes',
+                'ConvertibleDebt',
+                'ConvertibleLongTermNotesPayable',
+                'NotesPayable',
+                'LongTermNotesPayable',
+                'DebtInstrumentCarryingAmount',
+                'LongTermDebtAndCapitalLeaseObligations',
+                'CapitalLeaseObligationsNoncurrent',
+                'OtherLongTermDebtNoncurrent'
+            ]
+            
+            long_term_debt_data = []
+            for tag in lt_debt_tags:
+                data = facts.get(tag, {}).get('units', {}).get('USD', [])
+                if data:
+                    long_term_debt_data.extend(data)
+
+            # Get short-term debt data
+            st_debt_tags = [
+                'LongTermDebtCurrent',
+                'DebtCurrent',
+                'NotesPayableCurrent',
+                'ConvertibleNotesPayableCurrent',
+                'ShortTermBorrowings',
+                'CommercialPaper',
+                'LinesOfCreditCurrent',
+                'CapitalLeaseObligationsCurrent',
+                'OtherLongTermDebtCurrent'
+            ]
+            
+            short_term_debt_data = []
+            for tag in st_debt_tags:
+                data = facts.get(tag, {}).get('units', {}).get('USD', [])
+                if data:
+                    short_term_debt_data.extend(data)
+
+            # Helper to organize by (year, quarter)
+            def organize_by_quarter_first_wins(data_list):
+                organized = {}
+                for entry in data_list:
+                    form = entry.get('form')
+                    fiscal_end = entry.get('end')
+                    if not fiscal_end:
+                        continue
+                        
+                    fp = entry.get('fp')
+                    val = entry.get('val')
+                    
+                    is_quarterly_form = form in ['10-Q', '6-K']
+                    is_annual_form = form in ['10-K', '20-F', '40-F']
+                    
+                    quarter = None
+                    if is_quarterly_form:
+                        quarter = fp
+                    elif is_annual_form:
+                        quarter = 'Q4'
+                    
+                    if not quarter or not quarter.startswith('Q'):
+                        continue
+                        
+                    year = int(fiscal_end[:4])
+                    key = (year, quarter)
+                    
+                    if key not in organized and val is not None:
+                        organized[key] = {'val': val, 'fiscal_end': fiscal_end}
+                return organized
+
+            equity_org = organize_by_quarter_first_wins(equity_data)
+            lt_debt_org = organize_by_quarter_first_wins(long_term_debt_data)
+            st_debt_org = organize_by_quarter_first_wins(short_term_debt_data)
+
+            quarterly_de = []
+            
+            # Iterate through all quarters we found equity for
+            for key in equity_org:
+                year, quarter = key
+                equity = equity_org[key]['val']
+                fiscal_end = equity_org[key]['fiscal_end']
+                
+                total_debt = 0
+                has_debt_data = False
+                
+                if key in lt_debt_org:
+                    total_debt += lt_debt_org[key]['val']
+                    has_debt_data = True
+                    
+                if key in st_debt_org:
+                    total_debt += st_debt_org[key]['val']
+                    has_debt_data = True
+                
+                if equity != 0 and has_debt_data:
+                    de_ratio = total_debt / equity
+                    quarterly_de.append({
+                        'year': year,
+                        'quarter': quarter,
+                        'debt_to_equity': de_ratio,
+                        'fiscal_end': fiscal_end
+                    })
+            
+            # Sort
+            def q_sort_key(x):
+                q_map = {'Q1': 1, 'Q2': 2, 'Q3': 3, 'Q4': 4}
+                return (x['year'], q_map.get(x['quarter'], 0))
+            
+            quarterly_de.sort(key=q_sort_key, reverse=True)
+            
+            logger.info(f"Successfully parsed {len(quarterly_de)} quarters of D/E data")
+            return quarterly_de
+
+        except Exception as e:
+            logger.error(f"Error parsing quarterly D/E history: {e}")
+            return []
+
     def parse_effective_tax_rate(self, company_facts: Dict[str, Any]) -> Optional[float]:
         """
         Extract the most recent annual Effective Tax Rate from company facts.
@@ -2344,8 +2491,6 @@ class EdgarFetcher:
         debt_to_equity = self.parse_debt_to_equity(company_facts)
         debt_to_equity_history = self.parse_debt_to_equity_history(company_facts)
         shareholder_equity_history = self.parse_shareholder_equity_history(company_facts)
-        debt_to_equity_history = self.parse_debt_to_equity_history(company_facts)
-        shareholder_equity_history = self.parse_shareholder_equity_history(company_facts)
         cash_flow_history = self.parse_cash_flow_history(company_facts)
         
         # Extract Interest Expense and Tax Rate
@@ -2362,15 +2507,16 @@ class EdgarFetcher:
         net_income_annual = self.parse_net_income_history(company_facts)
         net_income_quarterly = self.parse_quarterly_net_income_history(company_facts)
         
-        # Extract quarterly revenue, EPS, and cash flow from EDGAR
+        # Extract quarterly revenue, EPS, cash flow, and D/E from EDGAR
         revenue_quarterly = self.parse_quarterly_revenue_history(company_facts)
         eps_quarterly = self.parse_quarterly_eps_history(company_facts)
         cash_flow_quarterly = self.parse_quarterly_cash_flow_history(company_facts)
+        debt_to_equity_quarterly = self.parse_quarterly_debt_to_equity_history(company_facts)
         
         # Parse dividend history
         dividend_history = self.parse_dividend_history(company_facts)
 
-        logger.info(f"[{ticker}] EDGAR fetch complete: {len(eps_history or [])} EPS years, {len(calculated_eps_history or [])} calculated EPS years, {len(net_income_annual or [])} annual NI, {len(net_income_quarterly or [])} quarterly NI, {len(revenue_quarterly or [])} quarterly Rev, {len(eps_quarterly or [])} quarterly EPS, {len(cash_flow_quarterly or [])} quarterly CF, {len(revenue_history or [])} revenue years, {len(debt_to_equity_history or [])} D/E years, {len(shareholder_equity_history or [])} Equity years, {len(cash_flow_history or [])} cash flow years, {len(dividend_history or [])} dividend entries, current D/E: {debt_to_equity}")
+        logger.info(f"[{ticker}] EDGAR fetch complete: {len(eps_history or [])} EPS years, {len(calculated_eps_history or [])} calculated EPS years, {len(net_income_annual or [])} annual NI, {len(net_income_quarterly or [])} quarterly NI, {len(revenue_quarterly or [])} quarterly Rev, {len(eps_quarterly or [])} quarterly EPS, {len(cash_flow_quarterly or [])} quarterly CF, {len(revenue_history or [])} revenue years, {len(debt_to_equity_history or [])} D/E years, {len(debt_to_equity_quarterly)} quarterly D/E, {len(shareholder_equity_history or [])} Equity years, {len(cash_flow_history or [])} cash flow years, {len(dividend_history or [])} dividend entries, current D/E: {debt_to_equity}")
 
         fundamentals = {
             'ticker': ticker,
@@ -2384,6 +2530,7 @@ class EdgarFetcher:
             'revenue_quarterly': revenue_quarterly,
             'eps_quarterly': eps_quarterly,
             'cash_flow_quarterly': cash_flow_quarterly,
+            'debt_to_equity_quarterly': debt_to_equity_quarterly,
             'revenue_history': revenue_history,
             'debt_to_equity': debt_to_equity,
             'debt_to_equity_history': debt_to_equity_history,
