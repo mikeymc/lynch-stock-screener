@@ -353,181 +353,161 @@ export default function WallStreetSentiment({ symbol }) {
 
     return (
         <div className="w-full space-y-6">
-            {/* ROW 1: Fiscal Calendar */}
-            {(data.fiscal_calendar || metrics?.next_earnings_date) && (() => {
-                const fc = data.fiscal_calendar
-                const currentQ = fc?.current_quarter
-                const currentFY = fc?.current_fiscal_year
-                const reportingQ = fc?.reporting_quarter
-                const reportingFY = fc?.reporting_fiscal_year
-                const earningsDate = (fc?.next_earnings_date || metrics?.next_earnings_date) ? new Date(fc?.next_earnings_date || metrics.next_earnings_date) : null
+            {/* ROW 1: Wall Street Consensus + Fiscal Calendar */}
+            <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
 
-                // Get fiscal year dates from analyst estimates
-                const currentYearEstimate = analystEstimates['0y']
-                let fiscalYearEnd = null
-                let fiscalYearStart = null
-                if (currentYearEstimate?.period_end_date) {
-                    fiscalYearEnd = new Date(currentYearEstimate.period_end_date)
-                    fiscalYearStart = new Date(fiscalYearEnd)
-                    fiscalYearStart.setFullYear(fiscalYearStart.getFullYear() - 1)
-                    fiscalYearStart.setDate(fiscalYearStart.getDate() + 1) // Day after previous FY end
-                }
-
-                if (!earningsDate && !currentQ && !fiscalYearStart) return null
-
-                return (
-                    <Card>
+                {/* Wall Street Consensus (Left, 3/4 width) */}
+                {(analyst_consensus?.rating || short_interest?.short_percent_float) && (
+                    <Card className="lg:col-span-3 h-full">
                         <CardHeader>
-                            <CardTitle>Fiscal Calendar</CardTitle>
+                            <CardTitle>Wall Street Consensus</CardTitle>
                         </CardHeader>
                         <CardContent>
-                            <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-                                {/* Fiscal Year */}
-                                {fiscalYearStart && fiscalYearEnd && (
+                            <div className="grid grid-cols-1 md:grid-cols-3 gap-12">
+                                {/* Analyst Rating */}
+                                {analyst_consensus?.rating && (
                                     <div className="text-center">
-                                        <div className="text-sm text-muted-foreground mb-2">Fiscal Year</div>
-                                        <div className="text-3xl font-bold">
-                                            {fiscalYearStart.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
-                                            {' - '}
-                                            {fiscalYearEnd.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                                        <div className="text-sm text-muted-foreground mb-3">
+                                            Analyst Rating ({analystCount} analysts)
+                                        </div>
+                                        <div className="h-3 bg-muted rounded-full overflow-hidden mb-3">
+                                            <div
+                                                className={`h-full ${ratingBgClass} rounded-full transition-all`}
+                                                style={{ width: `${ratingPercent}%` }}
+                                            />
+                                        </div>
+                                        <div className={`font-bold text-lg mb-1 ${ratingColorClass}`}>
+                                            {ratingText}
+                                        </div>
+                                        {ratingScore && (
+                                            <div className="text-xs text-muted-foreground">
+                                                Score: {formatNumber(ratingScore)} (1 = Strong Buy, 5 = Sell)
+                                            </div>
+                                        )}
+                                    </div>
+                                )}
+
+                                {/* Price Target */}
+                                {targetLow && targetHigh && (
+                                    <div className="text-center">
+                                        <div className="text-sm text-muted-foreground mb-3">
+                                            Price Target Range
+                                        </div>
+                                        <div className="relative mb-4">
+                                            <div className="flex justify-between text-xs text-muted-foreground mb-1">
+                                                <span>{formatCurrencyDecimal(targetLow)}</span>
+                                                <span>{formatCurrencyDecimal(targetHigh)}</span>
+                                            </div>
+                                            <div className="h-2 bg-muted rounded relative">
+                                                {/* Mean target marker */}
+                                                {targetMean && (
+                                                    <div
+                                                        className="absolute top-[-2px] w-1 h-[12px] bg-blue-500 rounded"
+                                                        style={{ left: `${((targetMean - targetLow) / (targetHigh - targetLow)) * 100}%`, transform: 'translateX(-50%)' }}
+                                                    />
+                                                )}
+                                                {/* Current price marker */}
+                                                <div
+                                                    className="absolute top-[-4px] w-3 h-[16px] bg-green-500 rounded border-2 border-background"
+                                                    style={{ left: `${pricePosition}%`, transform: 'translateX(-50%)' }}
+                                                />
+                                            </div>
+                                            <div className="flex justify-center gap-8 mt-3">
+                                                <div className="text-center">
+                                                    <div className="text-xs text-muted-foreground">Current</div>
+                                                    <div className="font-bold text-green-600">{formatCurrencyDecimal(priceNow)}</div>
+                                                </div>
+                                                {targetMean && (
+                                                    <div className="text-center">
+                                                        <div className="text-xs text-muted-foreground">Mean Target</div>
+                                                        <div className="font-bold text-blue-600">
+                                                            {formatCurrencyDecimal(targetMean)}
+                                                            {upside !== null && (
+                                                                <span className={`ml-2 text-sm ${upside >= 0 ? 'text-green-500' : 'text-red-500'}`}>
+                                                                    ({upside >= 0 ? '+' : ''}{formatPercent(upside)})
+                                                                </span>
+                                                            )}
+                                                        </div>
+                                                    </div>
+                                                )}
+                                            </div>
                                         </div>
                                     </div>
                                 )}
 
-                                {/* Current Quarter */}
-                                {currentQ && currentFY && (
+                                {/* Short Interest */}
+                                {shortPercentFloat && (
                                     <div className="text-center">
-                                        <div className="text-sm text-muted-foreground mb-2">Current Quarter</div>
-                                        <div className="text-3xl font-bold">Q{currentQ} {2000 + currentFY}</div>
-                                    </div>
-                                )}
-
-                                {/* Next Earnings Date */}
-                                {earningsDate && (
-                                    <div className="text-center">
-                                        <div className="text-sm text-muted-foreground mb-2">
-                                            {reportingQ ? `Q${reportingQ} Earnings Date` : 'Next Earnings Date'}
+                                        <div className="text-sm text-muted-foreground mb-3">
+                                            Short Interest
                                         </div>
-                                        <div className="text-3xl font-bold">
-                                            {earningsDate.toLocaleDateString('en-US', {
-                                                month: 'short',
-                                                day: 'numeric',
-                                                year: 'numeric'
-                                            })}
+                                        <div className="flex items-baseline justify-center gap-2 mb-1">
+                                            <span className={`text-3xl font-bold ${shortColorClass}`}>
+                                                {formatPercent(shortPercentFloat)}
+                                            </span>
+                                            <span className="text-muted-foreground">of float</span>
                                         </div>
+                                        <div className={`text-sm ${shortColorClass} mb-2`}>
+                                            {shortStatus}
+                                        </div>
+                                        {shortRatio && (
+                                            <div className="text-xs text-muted-foreground">
+                                                Days to cover: {formatNumber(shortRatio)}
+                                            </div>
+                                        )}
                                     </div>
                                 )}
                             </div>
                         </CardContent>
                     </Card>
-                )
-            })()}
+                )}
 
-            {/* ROW 2: Wall Street Consensus */}
-            {(analyst_consensus?.rating || short_interest?.short_percent_float) && (
-                <Card>
-                    <CardHeader>
-                        <CardTitle>Wall Street Consensus</CardTitle>
-                    </CardHeader>
-                    <CardContent>
-                        <div className="grid grid-cols-1 md:grid-cols-3 gap-12">
-                            {/* Analyst Rating */}
-                            {analyst_consensus?.rating && (
-                                <div className="text-center">
-                                    <div className="text-sm text-muted-foreground mb-3">
-                                        Analyst Rating ({analystCount} analysts)
-                                    </div>
-                                    <div className="h-3 bg-muted rounded-full overflow-hidden mb-3">
-                                        <div
-                                            className={`h-full ${ratingBgClass} rounded-full transition-all`}
-                                            style={{ width: `${ratingPercent}%` }}
-                                        />
-                                    </div>
-                                    <div className={`font-bold text-lg mb-1 ${ratingColorClass}`}>
-                                        {ratingText}
-                                    </div>
-                                    {ratingScore && (
-                                        <div className="text-xs text-muted-foreground">
-                                            Score: {formatNumber(ratingScore)} (1 = Strong Buy, 5 = Sell)
+                {/* Fiscal Calendar (Right, 1/4 width) */}
+                {(data.fiscal_calendar || metrics?.next_earnings_date) && (() => {
+                    const fc = data.fiscal_calendar
+                    const currentQ = fc?.current_quarter
+                    const currentFY = fc?.current_fiscal_year
+                    const reportingQ = fc?.reporting_quarter
+                    const reportingFY = fc?.reporting_fiscal_year
+                    const earningsDate = (fc?.next_earnings_date || metrics?.next_earnings_date) ? new Date(fc?.next_earnings_date || metrics.next_earnings_date) : null
+
+                    if (!earningsDate && !currentQ) return null
+
+                    return (
+                        <Card className="h-full">
+                            <CardHeader>
+                                <CardTitle>Fiscal Calendar</CardTitle>
+                            </CardHeader>
+                            <CardContent>
+                                <div className="space-y-6">
+                                    {/* Current Quarter */}
+                                    {currentQ && currentFY && (
+                                        <div className="text-center">
+                                            <div className="text-xs text-muted-foreground mb-1">Current Quarter</div>
+                                            <div className="text-2xl font-bold">Q{currentQ} {2000 + currentFY}</div>
                                         </div>
                                     )}
-                                </div>
-                            )}
 
-                            {/* Price Target */}
-                            {targetLow && targetHigh && (
-                                <div className="text-center">
-                                    <div className="text-sm text-muted-foreground mb-3">
-                                        Price Target Range
-                                    </div>
-                                    <div className="relative mb-4">
-                                        <div className="flex justify-between text-xs text-muted-foreground mb-1">
-                                            <span>{formatCurrencyDecimal(targetLow)}</span>
-                                            <span>{formatCurrencyDecimal(targetHigh)}</span>
-                                        </div>
-                                        <div className="h-2 bg-muted rounded relative">
-                                            {/* Mean target marker */}
-                                            {targetMean && (
-                                                <div
-                                                    className="absolute top-[-2px] w-1 h-[12px] bg-blue-500 rounded"
-                                                    style={{ left: `${((targetMean - targetLow) / (targetHigh - targetLow)) * 100}%`, transform: 'translateX(-50%)' }}
-                                                />
-                                            )}
-                                            {/* Current price marker */}
-                                            <div
-                                                className="absolute top-[-4px] w-3 h-[16px] bg-green-500 rounded border-2 border-background"
-                                                style={{ left: `${pricePosition}%`, transform: 'translateX(-50%)' }}
-                                            />
-                                        </div>
-                                        <div className="flex justify-center gap-8 mt-3">
-                                            <div className="text-center">
-                                                <div className="text-xs text-muted-foreground">Current</div>
-                                                <div className="font-bold text-green-600">{formatCurrencyDecimal(priceNow)}</div>
+                                    {/* Next Earnings Date */}
+                                    {earningsDate && (
+                                        <div className="text-center">
+                                            <div className="text-xs text-muted-foreground mb-1">
+                                                {reportingQ ? `Q${reportingQ} Earnings` : 'Next Earnings'}
                                             </div>
-                                            {targetMean && (
-                                                <div className="text-center">
-                                                    <div className="text-xs text-muted-foreground">Mean Target</div>
-                                                    <div className="font-bold text-blue-600">
-                                                        {formatCurrencyDecimal(targetMean)}
-                                                        {upside !== null && (
-                                                            <span className={`ml-2 text-sm ${upside >= 0 ? 'text-green-500' : 'text-red-500'}`}>
-                                                                ({upside >= 0 ? '+' : ''}{formatPercent(upside)})
-                                                            </span>
-                                                        )}
-                                                    </div>
-                                                </div>
-                                            )}
-                                        </div>
-                                    </div>
-                                </div>
-                            )}
-
-                            {/* Short Interest */}
-                            {shortPercentFloat && (
-                                <div className="text-center">
-                                    <div className="text-sm text-muted-foreground mb-3">
-                                        Short Interest
-                                    </div>
-                                    <div className="flex items-baseline justify-center gap-2 mb-1">
-                                        <span className={`text-3xl font-bold ${shortColorClass}`}>
-                                            {formatPercent(shortPercentFloat)}
-                                        </span>
-                                        <span className="text-muted-foreground">of float</span>
-                                    </div>
-                                    <div className={`text-sm ${shortColorClass} mb-2`}>
-                                        {shortStatus}
-                                    </div>
-                                    {shortRatio && (
-                                        <div className="text-xs text-muted-foreground">
-                                            Days to cover: {formatNumber(shortRatio)}
+                                            <div className="text-2xl font-bold">
+                                                {earningsDate.toLocaleDateString('en-US', {
+                                                    month: 'short',
+                                                    day: 'numeric'
+                                                })}
+                                            </div>
                                         </div>
                                     )}
                                 </div>
-                            )}
-                        </div>
-                    </CardContent>
-                </Card>
-            )}
+                            </CardContent>
+                        </Card>
+                    )
+                })()}
+            </div>
 
 
 
