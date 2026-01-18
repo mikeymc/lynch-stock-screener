@@ -161,20 +161,50 @@ export default function StockCharts({ historyData, quarterlyHistoryData, loading
     return getYearFromLabel(lastLabel)
   })()
 
-  // Estimates are usually attached to the Annual data response.
-  // We use them regardless of view mode, appending to the end.
-  const hasEstimates = historyData?.analyst_estimates?.next_year
+  // Estimates: use annual (next_year) or quarterly (next_quarter) based on view mode
+  // Annual estimates come from historyData (always annual endpoint)
+  // Quarterly estimates are returned alongside quarterly history data
+  const hasAnnualEstimates = historyData?.analyst_estimates?.next_year
+  const hasQuarterlyEstimates = activeData?.analyst_estimates?.next_quarter
+  const hasEstimates = showQuarterly ? hasQuarterlyEstimates : hasAnnualEstimates
 
-  // Build labels with future estimate year appended if exists
+  // Helper to get next quarter label from last label (e.g., "2024 Q4" -> "2025 Q1 E")
+  const getNextQuarterLabel = () => {
+    if (!labels.length) return null
+    const lastLabel = labels[labels.length - 1]
+    const match = String(lastLabel).match(/^(\d{4})\s+Q(\d)$/)
+    if (!match) return null
+
+    let year = parseInt(match[1])
+    let quarter = parseInt(match[2])
+
+    // Advance to next quarter
+    quarter += 1
+    if (quarter > 4) {
+      quarter = 1
+      year += 1
+    }
+    return `${year} Q${quarter} E`
+  }
+
+  // Build labels with future estimate period appended if exists
   const getExtendedLabels = () => {
     const baseLabels = [...labels]
 
-    // Append estimate year if estimates exist
     if (hasEstimates) {
-      const estimateYear = lastHistoricalYear + 1
-      const yearExists = labels.some(l => getYearFromLabel(l) === estimateYear)
-      if (!yearExists) {
-        baseLabels.push(`${estimateYear}E`)
+      if (showQuarterly) {
+        // Quarterly: append next quarter estimate label
+        const nextQLabel = getNextQuarterLabel()
+        if (nextQLabel) {
+          baseLabels.push(nextQLabel)
+        }
+      } else {
+        // Annual: append next year estimate label
+        const estimateYear = lastHistoricalYear + 1
+        const yearExists = labels.some(l => getYearFromLabel(l) === estimateYear)
+        if (!yearExists) {
+          baseLabels.push(`${estimateYear}E`)
+        }
       }
     }
 
@@ -182,7 +212,7 @@ export default function StockCharts({ historyData, quarterlyHistoryData, loading
   }
 
 
-  // Build estimate data array - positioned after annual data
+  // Build estimate data array - positioned after historical data
   const buildEstimateData = (historicalData, estimateType, scaleFactor = 1) => {
     const extLabels = getExtendedLabels()
 
@@ -191,19 +221,23 @@ export default function StockCharts({ historyData, quarterlyHistoryData, loading
 
     if (!hasEstimates) return estimateData
 
-    const estimates = historyData?.analyst_estimates
+    // Get appropriate estimates based on view mode
+    const estimates = showQuarterly
+      ? activeData?.analyst_estimates?.next_quarter
+      : historyData?.analyst_estimates?.next_year
 
-    // Find the estimate year position
-    const estimateYear = lastHistoricalYear + 1
-    const estimateYearIdx = extLabels.findIndex(l => String(l) === `${estimateYear}E`)
-    const connectionIdx = estimateYearIdx - 1
+    if (!estimates) return estimateData
 
-    if (estimateYearIdx >= 0 && estimates?.next_year) {
-      const estValue = estimates.next_year[`${estimateType}_avg`]
+    // Find the estimate position (last label which ends with " E")
+    const estimateIdx = extLabels.findIndex(l => String(l).endsWith(' E') || String(l).endsWith('E'))
+    const connectionIdx = estimateIdx - 1
+
+    if (estimateIdx >= 0) {
+      const estValue = estimates[`${estimateType}_avg`]
       if (estValue != null) {
-        estimateData[estimateYearIdx] = estValue / scaleFactor
+        estimateData[estimateIdx] = estValue / scaleFactor
 
-        // Connect from the last annual point
+        // Connect from the last historical point
         if (historicalData.length > 0 && connectionIdx >= 0) {
           const lastHistorical = historicalData[historicalData.length - 1]
           if (lastHistorical != null) {

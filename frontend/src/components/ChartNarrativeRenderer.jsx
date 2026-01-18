@@ -133,43 +133,76 @@ export default function ChartNarrativeRenderer({ narrative, historyData, isQuart
         ? Math.max(...labels.map(getYearFromLabel).filter(y => y !== null))
         : new Date().getFullYear() - 1
 
-    const hasEstimates = historyData?.analyst_estimates?.next_year
+    // Estimates: use annual (next_year) or quarterly (next_quarter) based on view mode
+    const hasAnnualEstimates = historyData?.analyst_estimates?.next_year
+    const hasQuarterlyEstimates = historyData?.analyst_estimates?.next_quarter
+    const hasEstimates = isQuarterly ? hasQuarterlyEstimates : hasAnnualEstimates
 
     // Get current year quarterly data for showing recent progress
     const currentYear = historyData?.current_year_quarterly?.year
 
-    // Build labels with future estimate year appended if exists
+    // Helper to get next quarter label from last label (e.g., "2024 Q4" -> "2025 Q1 E")
+    const getNextQuarterLabel = () => {
+        if (!labels.length) return null
+        const lastLabel = labels[labels.length - 1]
+        const match = String(lastLabel).match(/^(\d{4})\s+Q(\d)$/)
+        if (!match) return null
+
+        let year = parseInt(match[1])
+        let quarter = parseInt(match[2])
+
+        // Advance to next quarter
+        quarter += 1
+        if (quarter > 4) {
+            quarter = 1
+            year += 1
+        }
+        return `${year} Q${quarter} E`
+    }
+
+    // Build labels with future estimate period appended if exists
     const getExtendedLabels = () => {
         const baseLabels = [...labels]
 
-        // Append estimate year if estimates exist
         if (hasEstimates) {
-            baseLabels.push(`${lastHistoricalYear + 1}E`)
+            if (isQuarterly) {
+                // Quarterly: append next quarter estimate label
+                const nextQLabel = getNextQuarterLabel()
+                if (nextQLabel) {
+                    baseLabels.push(nextQLabel)
+                }
+            } else {
+                // Annual: append next year estimate label
+                baseLabels.push(`${lastHistoricalYear + 1}E`)
+            }
         }
 
         return baseLabels
     }
 
-    // Build estimate data for projection charts - positioned after annual data
+    // Build estimate data for projection charts - positioned after historical data
     const buildEstimateData = (historicalData, metricKey, scaleFactor = 1) => {
         const extLabels = getExtendedLabels()
         const estimateData = new Array(extLabels.length).fill(null)
 
         if (!hasEstimates) return estimateData
 
-        const nextYearEstimate = historyData.analyst_estimates.next_year
-        if (!nextYearEstimate || Object.keys(nextYearEstimate).length === 0) return estimateData
+        // Get appropriate estimates based on view mode
+        const nextEstimate = isQuarterly
+            ? historyData?.analyst_estimates?.next_quarter
+            : historyData?.analyst_estimates?.next_year
+        if (!nextEstimate || Object.keys(nextEstimate).length === 0) return estimateData
 
-        // Find the estimate year position (should be last)
-        const estimateYearIdx = extLabels.length - 1
-        const connectionIdx = estimateYearIdx - 1
+        // Find the estimate position (should be last)
+        const estimateIdx = extLabels.length - 1
+        const connectionIdx = estimateIdx - 1
 
         // Get estimate value using _avg suffix pattern
-        const estValue = nextYearEstimate[`${metricKey}_avg`]
-        if (estValue != null && estimateYearIdx >= 0) {
-            estimateData[estimateYearIdx] = estValue / scaleFactor
+        const estValue = nextEstimate[`${metricKey}_avg`]
+        if (estValue != null && estimateIdx >= 0) {
+            estimateData[estimateIdx] = estValue / scaleFactor
 
-            // Connect from the last annual point
+            // Connect from the last historical point
             if (historicalData.length > 0 && connectionIdx >= 0) {
                 const lastHistorical = historicalData[historicalData.length - 1]
                 if (lastHistorical != null) {
