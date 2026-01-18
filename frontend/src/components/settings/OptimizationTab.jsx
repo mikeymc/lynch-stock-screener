@@ -647,42 +647,13 @@ export default function OptimizationTab() {
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pb-6 border-b">
                                 <div className="space-y-3">
                                     <Label>Optimization Method</Label>
-                                    <RadioGroup
-                                        value={optimizationMethod}
-                                        onValueChange={setOptimizationMethod}
-                                        className="flex gap-2"
-                                    >
-                                        <div className="flex-1">
-                                            <RadioGroupItem value="bayesian" id="meth_bayes" className="peer sr-only" />
-                                            <Label
-                                                htmlFor="meth_bayes"
-                                                className="flex flex-col items-center justify-center rounded-md border-2 border-muted bg-popover p-2 hover:bg-accent hover:text-accent-foreground peer-data-[state=checked]:border-amber-500 [&:has([data-state=checked])]:border-amber-500 h-16 text-center cursor-pointer"
-                                            >
-                                                <span className="font-semibold text-sm">Bayesian</span>
-                                                <span className="text-[10px] text-muted-foreground">Smart Search</span>
-                                            </Label>
+                                    <div className="flex items-center gap-2 p-4 bg-muted/50 rounded-lg border">
+                                        <Sparkles className="h-5 w-5 text-amber-500" />
+                                        <div>
+                                            <div className="font-semibold">Bayesian Search</div>
+                                            <div className="text-xs text-muted-foreground">Smart search using Gaussian Processes</div>
                                         </div>
-                                        <div className="flex-1">
-                                            <RadioGroupItem value="gradient_descent" id="meth_grad" className="peer sr-only" />
-                                            <Label
-                                                htmlFor="meth_grad"
-                                                className="flex flex-col items-center justify-center rounded-md border-2 border-muted bg-popover p-2 hover:bg-accent hover:text-accent-foreground peer-data-[state=checked]:border-amber-500 [&:has([data-state=checked])]:border-amber-500 h-16 text-center cursor-pointer"
-                                            >
-                                                <span className="font-semibold text-sm">Gradient</span>
-                                                <span className="text-[10px] text-muted-foreground">Local Descent</span>
-                                            </Label>
-                                        </div>
-                                        <div className="flex-1">
-                                            <RadioGroupItem value="grid_search" id="meth_grid" className="peer sr-only" />
-                                            <Label
-                                                htmlFor="meth_grid"
-                                                className="flex flex-col items-center justify-center rounded-md border-2 border-muted bg-popover p-2 hover:bg-accent hover:text-accent-foreground peer-data-[state=checked]:border-amber-500 [&:has([data-state=checked])]:border-amber-500 h-16 text-center cursor-pointer"
-                                            >
-                                                <span className="font-semibold text-sm">Grid</span>
-                                                <span className="text-[10px] text-muted-foreground">Exhaustive</span>
-                                            </Label>
-                                        </div>
-                                    </RadioGroup>
+                                    </div>
                                 </div>
 
                                 <div className="space-y-3">
@@ -700,7 +671,7 @@ export default function OptimizationTab() {
                                                     className="flex flex-col items-center justify-center rounded-md border-2 border-muted bg-popover p-2 hover:bg-accent hover:text-accent-foreground peer-data-[state=checked]:border-amber-500 [&:has([data-state=checked])]:border-amber-500 h-16 text-center cursor-pointer"
                                                 >
                                                     <span className="font-semibold text-sm">{iter}</span>
-                                                    <span className="text-[10px] text-muted-foreground">Steps</span>
+                                                    <span className="text-[10px] text-muted-foreground">Trials</span>
                                                 </Label>
                                             </div>
                                         ))}

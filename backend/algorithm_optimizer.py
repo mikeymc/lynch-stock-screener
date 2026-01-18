@@ -46,16 +46,12 @@ class AlgorithmOptimizer:
         initial_correlation = self._calculate_correlation_with_config(results, current_config, character_id)
         logger.info(f"Initial correlation: {initial_correlation:.4f}")
         
-        if method == 'gradient_descent':
-            best_config, history = self._gradient_descent_optimize(
-                results, current_config, character_id, weight_keys, max_iterations, learning_rate, progress_callback
-            )
-        elif method == 'grid_search':
-            best_config, history = self._grid_search_optimize(results, character_id)
-        elif method == 'bayesian':
+        if method == 'bayesian':
             best_config, history = self._bayesian_optimize(results, character_id, current_config, weight_keys, threshold_keys, max_iterations, progress_callback)
         else:
-            return {'error': f'Unknown optimization method: {method}'}
+            # Legacy methods removed - default to bayesian
+            logger.warning(f"Unknown or deprecated optimization method '{method}', falling back to bayesian")
+            best_config, history = self._bayesian_optimize(results, character_id, current_config, weight_keys, threshold_keys, max_iterations, progress_callback)
         
         # Calculate final correlation
         final_correlation = self._calculate_correlation_with_config(results, best_config, character_id)
