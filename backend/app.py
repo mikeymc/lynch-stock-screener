@@ -3698,79 +3698,107 @@ def algorithm_config(user_id=None):
         if not character_id:
             character_id = db.get_user_character(user_id)
             
-        # Load config for user's character
+        # Get character object to determine defaults
+        character = get_character(character_id)
+        if not character:
+            # Fallback to Lynch if unknown
+            character = get_character('lynch')
+            
+        # Key translation map: backend metric name -> frontend key name
+        # The frontend uses shortened keys for historical reasons
+        METRIC_TO_FRONTEND_KEY = {
+            'peg': 'peg',
+            'debt_to_equity': 'debt',
+            'earnings_consistency': 'consistency', 
+            'institutional_ownership': 'ownership',
+            'roe': 'roe',
+            'debt_to_earnings': 'debt_to_earnings',
+            'gross_margin': 'gross_margin',
+        }
+        
+        # Build dynamic defaults from character config
+        default_values = {}
+        
+        # 1. Map scoring weights and their thresholds
+        for sw in character.scoring_weights:
+            # Translate metric name to frontend key
+            frontend_key = METRIC_TO_FRONTEND_KEY.get(sw.metric, sw.metric)
+            
+            # Weight key: weight_{frontend_key}
+            default_values[f"weight_{frontend_key}"] = sw.weight
+            
+            # Threshold keys: Use frontend key for consistency
+            if sw.metric == 'institutional_ownership':
+                # Special case: institutional ownership uses inst_own_min/max instead of excellent/good/fair
+                if sw.threshold:
+                    # Use the 'excellent' value as the ideal (min), 'good' as max
+                    # This is a simplification - ideally we'd have separate min/max in the config
+                    default_values['inst_own_min'] = 0.20  # Hardcoded for now
+                    default_values['inst_own_max'] = 0.60  # Hardcoded for now
+                continue
+            
+            # Standard threshold keys: {frontend_key}_{level}
+            if sw.threshold:
+                default_values[f"{frontend_key}_excellent"] = sw.threshold.excellent
+                default_values[f"{frontend_key}_good"] = sw.threshold.good
+                
+                # Special case: debt uses 'moderate' instead of 'fair'
+                if sw.metric == 'debt_to_equity':
+                    default_values[f"{frontend_key}_moderate"] = sw.threshold.fair
+                else:
+                    default_values[f"{frontend_key}_fair"] = sw.threshold.fair
+        
+        # 2. Add common defaults (Revenue/Income growth) if not present
+        # These are used by frontend for all characters but might not be in scoring weights
+        common_defaults = {
+            'revenue_growth_excellent': 15.0,
+            'revenue_growth_good': 10.0,
+            'revenue_growth_fair': 5.0,
+            'income_growth_excellent': 15.0,
+            'income_growth_good': 10.0,
+            'income_growth_fair': 5.0,
+            
+            # Also ensure weights that might exist in other characters but not this one
+            # are explicitly zeroed out to prevent carrying over values on frontend
+            'weight_peg': 0.0,
+            'weight_consistency': 0.0,
+            'weight_debt': 0.0,
+            'weight_ownership': 0.0,
+            'weight_roe': 0.0,
+            'weight_debt_to_earnings': 0.0,
+            'weight_gross_margin': 0.0,
+        }
+        
+        # Merge common defaults (only if not already set by character)
+        for k, v in common_defaults.items():
+            if k not in default_values:
+                default_values[k] = v
+
+        # Load config for user's character from DB
         latest_config = db.get_user_algorithm_config(user_id, character_id)
 
         if latest_config:
-            config = {
-                'weight_peg': latest_config.get('weight_peg', 0.50),
-                'weight_consistency': latest_config.get('weight_consistency', 0.25),
-                'weight_debt': latest_config.get('weight_debt', 0.15),
-                'weight_ownership': latest_config.get('weight_ownership', 0.10),
-                'weight_roe': latest_config.get('weight_roe', 0.0),
-                'weight_debt_to_earnings': latest_config.get('weight_debt_to_earnings', 0.0),
-                'weight_gross_margin': latest_config.get('weight_gross_margin', 0.0),
-                'peg_excellent': latest_config.get('peg_excellent', 1.0),
-                'peg_good': latest_config.get('peg_good', 1.5),
-                'peg_fair': latest_config.get('peg_fair', 2.0),
-                'debt_excellent': latest_config.get('debt_excellent', 0.5),
-                'debt_good': latest_config.get('debt_good', 1.0),
-                'debt_moderate': latest_config.get('debt_moderate', 2.0),
-                'inst_own_min': latest_config.get('inst_own_min', 0.20),
-                'inst_own_max': latest_config.get('inst_own_max', 0.60),
-                'revenue_growth_excellent': latest_config.get('revenue_growth_excellent', 15.0),
-                'revenue_growth_good': latest_config.get('revenue_growth_good', 10.0),
-                'revenue_growth_fair': latest_config.get('revenue_growth_fair', 5.0),
-                'income_growth_excellent': latest_config.get('income_growth_excellent', 15.0),
-                'income_growth_good': latest_config.get('income_growth_good', 10.0),
-                'income_growth_fair': latest_config.get('income_growth_fair', 5.0),
-                'roe_excellent': latest_config.get('roe_excellent', 20.0),
-                'roe_good': latest_config.get('roe_good', 15.0),
-                'roe_fair': latest_config.get('roe_fair', 10.0),
-                'debt_to_earnings_excellent': latest_config.get('debt_to_earnings_excellent', 3.0),
-                'debt_to_earnings_good': latest_config.get('debt_to_earnings_good', 5.0),
-                'debt_to_earnings_fair': latest_config.get('debt_to_earnings_fair', 8.0),
-                'gross_margin_excellent': latest_config.get('gross_margin_excellent', 50.0),
-                'gross_margin_good': latest_config.get('gross_margin_good', 40.0),
-                'gross_margin_fair': latest_config.get('gross_margin_fair', 30.0),
-                # Include metadata fields
-                'id': latest_config.get('id'),
-                'correlation_5yr': latest_config.get('correlation_5yr'),
-                'correlation_10yr': latest_config.get('correlation_10yr'),
-            }
+            # Merge DB config with defaults (DB takes precedence)
+            config = default_values.copy()
+            
+            # Update with values from DB
+            # We iterate over keys we know about + keys in DB
+            all_keys = set(config.keys()) | set(latest_config.keys())
+            
+            for key in all_keys:
+                if key in latest_config:
+                   config[key] = latest_config[key]
+                   
+            # Ensure metadata fields are preserved/added
+            config['id'] = latest_config.get('id')
+            config['correlation_5yr'] = latest_config.get('correlation_5yr')
+            config['correlation_10yr'] = latest_config.get('correlation_10yr')
+            
         else:
-            # No configs exist for this character - return hardcoded defaults
-            config = {
-                'weight_peg': 0.50,
-                'weight_consistency': 0.25,
-                'weight_debt': 0.15,
-                'weight_ownership': 0.10,
-                'weight_roe': 0.0,
-                'weight_debt_to_earnings': 0.0,
-                'weight_gross_margin': 0.0,
-                'peg_excellent': 1.0,
-                'peg_good': 1.5,
-                'peg_fair': 2.0,
-                'debt_excellent': 0.5,
-                'debt_good': 1.0,
-                'debt_moderate': 2.0,
-                'inst_own_min': 0.20,
-                'inst_own_max': 0.60,
-                'revenue_growth_excellent': 15.0,
-                'revenue_growth_good': 10.0,
-                'revenue_growth_fair': 5.0,
-                'income_growth_excellent': 15.0,
-                'income_growth_good': 10.0,
-                'income_growth_fair': 5.0,
-                'roe_excellent': 20.0,
-                'roe_good': 15.0,
-                'roe_fair': 10.0,
-                'debt_to_earnings_excellent': 3.0,
-                'debt_to_earnings_good': 5.0,
-                'debt_to_earnings_fair': 8.0,
-            }
-
-        return jsonify({'current': config, 'character': character_id})
+            # No configs exist for this character - return pure defaults
+            config = default_values
+            
+        return jsonify({'current': config})
 
     elif request.method == 'POST':
         data = request.get_json()
