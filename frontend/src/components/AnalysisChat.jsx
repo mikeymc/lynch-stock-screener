@@ -49,6 +49,7 @@ const TOOL_DESCRIPTIONS = {
   get_stock_metrics: "Analyzing key metrics",
   get_historical_pe: "Analyzing valuation history",
   get_insider_activity: "Analyzing insider trading patterns",
+  get_analyst_sentiment: "Checking Wall Street sentiment",
   manage_alerts: "Managing user alerts",
   // FRED macroeconomic tools
   get_fred_series: "Fetching economic data",

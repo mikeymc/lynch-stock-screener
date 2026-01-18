@@ -368,6 +368,18 @@ get_economic_indicators_decl = FunctionDeclaration(
     ),
 )
 
+get_analyst_sentiment_decl = FunctionDeclaration(
+    name="get_analyst_sentiment",
+    description="Get comprehensive Wall Street analyst sentiment for a stock. Includes EPS estimate trends (how estimates changed over 30/60/90 days), revision momentum (up vs down revisions), recommendation history (buy/hold/sell counts), and growth estimates vs index. Use this to understand analyst bullishness and growth expectations relative to the market.",
+    parameters=Schema(
+        type=Type.OBJECT,
+        properties={
+            "ticker": Schema(type=Type.STRING, description="Stock ticker symbol"),
+        },
+        required=["ticker"],
+    ),
+)
+
 
 # =============================================================================
 # Tool Registry: Maps tool names to their declarations
@@ -398,6 +410,7 @@ TOOL_DECLARATIONS = [
     # FRED macroeconomic tools
     get_fred_series_decl,
     get_economic_indicators_decl,
+    get_analyst_sentiment_decl,
 ]
 
 # Create the Tool object for Gemini API
@@ -459,6 +472,7 @@ class ToolExecutor:
             # FRED macroeconomic tools
             "get_fred_series": self._get_fred_series,
             "get_economic_indicators": self._get_economic_indicators,
+            "get_analyst_sentiment": self._get_analyst_sentiment,
         }
         
         executor = executor_map.get(tool_name)
@@ -2104,4 +2118,78 @@ class ToolExecutor:
             "indicators": formatted,
             "fetched_at": result.get('fetched_at'),
             "available_series": list(SUPPORTED_SERIES.keys())
+        }
+
+    def _get_analyst_sentiment(self, ticker: str) -> Dict[str, Any]:
+        """Get comprehensive analyst sentiment data including trends, revisions, and recommendation history."""
+        ticker = ticker.upper()
+        
+        # Get all sentiment data from database
+        eps_trends = self.db.get_eps_trends(ticker)
+        eps_revisions = self.db.get_eps_revisions(ticker)
+        recommendations = self.db.get_analyst_recommendations(ticker)
+        growth = self.db.get_growth_estimates(ticker)
+        metrics = self.db.get_stock_metrics(ticker)
+        
+        if not eps_trends and not eps_revisions and not recommendations and not growth:
+            return {"error": f"No analyst sentiment data found for {ticker}"}
+        
+        # Calculate trend direction for key periods
+        trend_summary = {}
+        for period in ['0q', '+1q', '0y', '+1y']:
+            if period in eps_trends:
+                trend = eps_trends[period]
+                current = trend.get('current')
+                ago_30 = trend.get('30_days_ago')
+                if current and ago_30:
+                    change_pct = round(((current - ago_30) / abs(ago_30)) * 100, 1)
+                    trend_summary[period] = {
+                        "current_estimate": round(current, 2),
+                        "30_days_ago": round(ago_30, 2),
+                        "change_pct": change_pct,
+                        "direction": "up" if change_pct > 0 else "down" if change_pct < 0 else "flat"
+                    }
+        
+        # Calculate revision momentum
+        revision_summary = {}
+        for period in ['0q', '+1q', '0y', '+1y']:
+            if period in eps_revisions:
+                rev = eps_revisions[period]
+                up = rev.get('up_30d') or 0
+                down = rev.get('down_30d') or 0
+                net = up - down
+                if up > 0 or down > 0:
+                    revision_summary[period] = {
+                        "up_revisions": up,
+                        "down_revisions": down,
+                        "net": net,
+                        "sentiment": "bullish" if net > 0 else "bearish" if net < 0 else "neutral"
+                    }
+        
+        # Format recommendation history (last 3 months)
+        rec_history = []
+        for rec in recommendations[:3]:
+            total = (rec.get('strong_buy') or 0) + (rec.get('buy') or 0) + (rec.get('hold') or 0) + (rec.get('sell') or 0) + (rec.get('strong_sell') or 0)
+            if total > 0:
+                bullish = (rec.get('strong_buy') or 0) + (rec.get('buy') or 0)
+                bearish = (rec.get('sell') or 0) + (rec.get('strong_sell') or 0)
+                rec_history.append({
+                    "period": rec.get('period'),
+                    "strong_buy": rec.get('strong_buy'),
+                    "buy": rec.get('buy'),
+                    "hold": rec.get('hold'),
+                    "sell": rec.get('sell'),
+                    "strong_sell": rec.get('strong_sell'),
+                    "bullish_pct": round((bullish / total) * 100, 1),
+                    "bearish_pct": round((bearish / total) * 100, 1)
+                })
+        
+        return {
+            "ticker": ticker,
+            "recommendation_key": metrics.get('recommendation_key') if metrics else None,
+            "analyst_count": metrics.get('analyst_count') if metrics else None,
+            "eps_trends": trend_summary,
+            "revision_momentum": revision_summary,
+            "recommendation_history": rec_history,
+            "growth_estimates": growth
         }
