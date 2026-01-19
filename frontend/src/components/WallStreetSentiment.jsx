@@ -204,20 +204,12 @@ export default function WallStreetSentiment({ symbol }) {
 
     // Helper to format period labels
     const formatPeriodLabel = (period, estimate) => {
-        // For quarterly periods, use format like "Q2-25" if we have fiscal data
-        if (period === '0q' || period === '+1q') {
-            if (estimate?.fiscal_quarter && estimate?.fiscal_year) {
-                return `Q${estimate.fiscal_quarter}-${estimate.fiscal_year}`
-            }
-        }
-
-        // For annual periods, use format like "FY-26" if we have fiscal data
-        if (period === '0y' || period === '+1y') {
-            if (estimate?.period_end_date) {
-                const date = new Date(estimate.period_end_date)
-                const fy = date.getFullYear() % 100 // Last 2 digits
-                return `FY-${fy}`
-            }
+        // Preference: Use exact period end date if available (e.g. "12/25")
+        if (estimate?.period_end_date) {
+            const date = new Date(estimate.period_end_date)
+            const month = date.getMonth() + 1
+            const year = date.getFullYear() % 100 // Last 2 digits
+            return `${month}/${year}`
         }
 
         // Fallback to old format
