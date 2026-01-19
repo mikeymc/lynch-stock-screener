@@ -3716,10 +3716,18 @@ def start_optimization(user_id=None):
 @app.route('/api/optimize/progress/<job_id>', methods=['GET'])
 def get_optimization_progress(job_id):
     """Get progress of an optimization job"""
-    if job_id not in optimization_jobs:
-        return jsonify({'error': 'Job not found'}), 404
-    
-    return jsonify(clean_nan_values(optimization_jobs[job_id]))
+    try:
+        if job_id not in optimization_jobs:
+            return jsonify({'error': 'Job not found'}), 404
+        
+        job_data = optimization_jobs[job_id]
+        if job_data is None:
+            return jsonify({'error': 'Job data is None', 'status': 'error'}), 500
+        
+        return jsonify(clean_nan_values(job_data))
+    except Exception as e:
+        logger.error(f"Error getting optimization progress for job {job_id}: {e}")
+        return jsonify({'error': str(e), 'status': 'error'}), 500
 
 @app.route('/api/rescore/progress/<job_id>', methods=['GET'])
 def get_rescoring_progress(job_id):

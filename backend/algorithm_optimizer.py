@@ -432,8 +432,56 @@ class AlgorithmOptimizer:
             enforce_ascending('debt_to_earnings_excellent', 'debt_to_earnings_good', 'debt_to_earnings_fair')
             enforce_descending('roe_excellent', 'roe_good', 'roe_fair')
             enforce_descending('gross_margin_excellent', 'gross_margin_good', 'gross_margin_fair')
-
+        
         return new_config
+
+    def _repair_weights(self, config: Dict[str, float], weight_keys: List[str]) -> Dict[str, float]:
+        """
+        Project weights onto the valid constraint surface:
+        1. Sum(weights) = 1.0
+        2. 0.10 <= weight <= 0.45
+        
+        Uses scipy.optimize to find the nearest valid configuration.
+        """
+        # Extract initial weights
+        w0 = np.array([config.get(k, 0.25) for k in weight_keys])
+        
+        # Constraints
+        # 1. Sum = 1
+        cons = ({'type': 'eq', 'fun': lambda w: np.sum(w) - 1.0})
+        
+        # 2. Bounds (0.10, 0.45)
+        bounds = [(0.10, 0.45) for _ in list(weight_keys)]
+        
+        # Result container
+        res = None
+        
+        try:
+            from scipy.optimize import minimize
+            # Objective: minimize distance from proposal (w0) to valid point (w)
+            # sum((w - w0)^2)
+            res = minimize(
+                lambda w: np.sum((w - w0)**2),
+                w0,
+                method='SLSQP',
+                bounds=bounds,
+                constraints=cons,
+                options={'disp': False}
+            )
+        except Exception as e:
+            logger.error(f"Error repairing weights: {e}")
+            # Fallback: simple normalization (might violate bounds, but better than crash)
+            return self._normalize_weights(config, weight_keys)
+
+        if res and res.success:
+            # Apply repaired weights
+            new_config = config.copy()
+            for i, key in enumerate(weight_keys):
+                new_config[key] = float(res.x[i])
+            return new_config
+        else:
+            # If solver failed (should be rare/impossible for this convex set), fallback
+            return self._normalize_weights(config, weight_keys)
 
     def _bayesian_optimize(self, results: List[Dict[str, Any]], character_id: str,
                           initial_config: Dict[str, float], weight_keys: List[str], threshold_keys: List[str],
@@ -447,15 +495,17 @@ class AlgorithmOptimizer:
         dimensions = []
         param_names = []
         
-        # Weights (0.05 to 0.95 to avoid zeroing out completely)
+        # Weights
+        # We use a broad input range (0.05-0.60).
+        # We will REPAIR these to strictly [0.10, 0.45] inside the objective.
         for key in weight_keys:
-            dimensions.append(Real(0.05, 0.95, name=key))
+            dimensions.append(Real(0.05, 0.60, name=key))
             param_names.append(key)
             
         # Thresholds (Specific Realistic Ranges)
         for key in threshold_keys:
             if 'peg' in key:
-                dimensions.append(Real(0.5, 3.0, name=key))
+                dimensions.append(Real(0.05, 3.0, name=key))
             elif 'debt' in key and 'earnings' not in key: # Debt/Equity
                 dimensions.append(Real(0.0, 2.5, name=key))
             elif 'debt_to_earnings' in key:
@@ -487,7 +537,12 @@ class AlgorithmOptimizer:
             
             config = initial_config.copy()
             config.update(params)
-            config = self._normalize_weights(config, weight_keys)
+            
+            # REPAIR AND ENFORCE
+            # 1. Weights: Project to valid surface (Sum=1, 0.1-0.45)
+            config = self._repair_weights(config, weight_keys)
+            
+            # 2. Thresholds: Enforce separation and ordering
             config = self._enforce_threshold_constraints(config, character_id)
 
             correlation = self._calculate_correlation_with_config(results, config, character_id)
@@ -503,7 +558,6 @@ class AlgorithmOptimizer:
             })
             
             # Only report progress after seed phase
-            # Iteration count: 0-based during seeds, then 1-max_iterations for guided
             current_iter = len(history)
             if current_iter > n_seeds and progress_callback:
                 progress_callback({
