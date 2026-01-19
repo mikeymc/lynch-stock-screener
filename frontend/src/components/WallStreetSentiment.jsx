@@ -11,7 +11,8 @@ import {
     BarElement,
     Title,
     Tooltip,
-    Legend
+    Legend,
+    Filler
 } from 'chart.js'
 
 ChartJS.register(
@@ -22,7 +23,8 @@ ChartJS.register(
     BarElement,
     Title,
     Tooltip,
-    Legend
+    Legend,
+    Filler
 )
 
 const API_BASE = '/api'
@@ -78,6 +80,15 @@ export default function WallStreetSentiment({ symbol }) {
     const formatCurrencyDecimal = (val) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 2 }).format(val)
     const formatNumber = (val) => new Intl.NumberFormat('en-US', { maximumFractionDigits: 2 }).format(val)
     const formatPercent = (val) => new Intl.NumberFormat('en-US', { style: 'percent', maximumFractionDigits: 2 }).format(val)
+
+    // --- Analyst count helpers ---
+    const analystEstimates = data.analyst_estimates || {}
+    const getAnalystCount = (periods, type) => {
+        const key = `${type}_num_analysts`
+        const counts = periods.map(p => analystEstimates[p]?.[key]).filter(c => c != null)
+        if (counts.length === 0) return null
+        return Math.max(...counts)
+    }
 
     // --- Helper for PEG ---
     const peg = metrics?.forward_peg_ratio
@@ -190,7 +201,6 @@ export default function WallStreetSentiment({ symbol }) {
 
     // --- Chart Data: Revenue & EPS Trends (Line Charts showing current vs 30d ago) ---
     const epsTrends = data.eps_trends || {}
-    const analystEstimates = data.analyst_estimates || {}
 
     // Helper to format period labels
     const formatPeriodLabel = (period, estimate) => {
@@ -220,22 +230,49 @@ export default function WallStreetSentiment({ symbol }) {
     const quarterlyEpsChartData = {
         labels: quarterlyPeriods.map(p => formatPeriodLabel(p, analystEstimates[p])),
         datasets: [
+            // High estimate (upper bound of range band)
+            {
+                label: 'Estimate Range',
+                data: quarterlyPeriods.map(p => analystEstimates[p]?.eps_high || 0),
+                borderColor: 'rgba(59, 130, 246, 0.3)',
+                backgroundColor: 'rgba(59, 130, 246, 0.15)',
+                borderWidth: 1,
+                pointRadius: 0,
+                fill: {
+                    target: '+1',
+                    above: 'rgba(59, 130, 246, 0.15)',
+                },
+                tension: 0.3,
+            },
+            // Low estimate (lower bound of range band)
+            {
+                label: 'Estimate Low',
+                data: quarterlyPeriods.map(p => analystEstimates[p]?.eps_low || 0),
+                borderColor: 'rgba(59, 130, 246, 0.3)',
+                backgroundColor: 'transparent',
+                borderWidth: 1,
+                pointRadius: 0,
+                fill: false,
+                tension: 0.3,
+            },
+            // Current estimate (main line)
             {
                 label: 'Current Estimate',
                 data: quarterlyPeriods.map(p => epsTrends[p]?.current || 0),
                 borderColor: 'rgb(59, 130, 246)',
-                backgroundColor: 'rgba(59, 130, 246, 0.1)',
-                fill: true,
+                backgroundColor: 'transparent',
+                borderWidth: 2,
                 tension: 0.3,
                 pointRadius: 6,
                 pointBackgroundColor: 'rgb(59, 130, 246)',
             },
+            // 30 days ago comparison
             {
                 label: '30 Days Ago',
                 data: quarterlyPeriods.map(p => epsTrends[p]?.['30_days_ago'] || 0),
                 borderColor: 'rgb(148, 163, 184)',
-                backgroundColor: 'rgba(148, 163, 184, 0.05)',
-                fill: true,
+                backgroundColor: 'transparent',
+                borderWidth: 2,
                 tension: 0.3,
                 pointRadius: 4,
                 pointBackgroundColor: 'rgb(148, 163, 184)',
@@ -249,22 +286,49 @@ export default function WallStreetSentiment({ symbol }) {
     const annualEpsChartData = {
         labels: annualPeriods.map(p => formatPeriodLabel(p, analystEstimates[p])),
         datasets: [
+            // High estimate (upper bound of range band)
+            {
+                label: 'Estimate Range',
+                data: annualPeriods.map(p => analystEstimates[p]?.eps_high || 0),
+                borderColor: 'rgba(59, 130, 246, 0.3)',
+                backgroundColor: 'rgba(59, 130, 246, 0.15)',
+                borderWidth: 1,
+                pointRadius: 0,
+                fill: {
+                    target: '+1',
+                    above: 'rgba(59, 130, 246, 0.15)',
+                },
+                tension: 0.3,
+            },
+            // Low estimate (lower bound of range band)
+            {
+                label: 'Estimate Low',
+                data: annualPeriods.map(p => analystEstimates[p]?.eps_low || 0),
+                borderColor: 'rgba(59, 130, 246, 0.3)',
+                backgroundColor: 'transparent',
+                borderWidth: 1,
+                pointRadius: 0,
+                fill: false,
+                tension: 0.3,
+            },
+            // Current estimate (main line)
             {
                 label: 'Current Estimate',
                 data: annualPeriods.map(p => epsTrends[p]?.current || 0),
                 borderColor: 'rgb(59, 130, 246)',
-                backgroundColor: 'rgba(59, 130, 246, 0.1)',
-                fill: true,
+                backgroundColor: 'transparent',
+                borderWidth: 2,
                 tension: 0.3,
                 pointRadius: 6,
                 pointBackgroundColor: 'rgb(59, 130, 246)',
             },
+            // 30 days ago comparison
             {
                 label: '30 Days Ago',
                 data: annualPeriods.map(p => epsTrends[p]?.['30_days_ago'] || 0),
                 borderColor: 'rgb(148, 163, 184)',
-                backgroundColor: 'rgba(148, 163, 184, 0.05)',
-                fill: true,
+                backgroundColor: 'transparent',
+                borderWidth: 2,
                 tension: 0.3,
                 pointRadius: 4,
                 pointBackgroundColor: 'rgb(148, 163, 184)',
@@ -278,12 +342,38 @@ export default function WallStreetSentiment({ symbol }) {
     const quarterlyRevenueChartData = {
         labels: quarterlyRevenuePeriods.map(p => formatPeriodLabel(p, analystEstimates[p])),
         datasets: [
+            // High estimate (upper bound of range band)
             {
-                label: 'Revenue Estimate',
+                label: 'Estimate Range',
+                data: quarterlyRevenuePeriods.map(p => (analystEstimates[p]?.revenue_high || 0) / 1e9),
+                borderColor: 'rgba(34, 197, 94, 0.3)',
+                backgroundColor: 'rgba(34, 197, 94, 0.15)',
+                borderWidth: 1,
+                pointRadius: 0,
+                fill: {
+                    target: '+1',
+                    above: 'rgba(34, 197, 94, 0.15)',
+                },
+                tension: 0.3,
+            },
+            // Low estimate (lower bound of range band)
+            {
+                label: 'Estimate Low',
+                data: quarterlyRevenuePeriods.map(p => (analystEstimates[p]?.revenue_low || 0) / 1e9),
+                borderColor: 'rgba(34, 197, 94, 0.3)',
+                backgroundColor: 'transparent',
+                borderWidth: 1,
+                pointRadius: 0,
+                fill: false,
+                tension: 0.3,
+            },
+            // Average estimate (main line)
+            {
+                label: 'Avg Estimate',
                 data: quarterlyRevenuePeriods.map(p => (analystEstimates[p]?.revenue_avg || 0) / 1e9),
                 borderColor: 'rgb(34, 197, 94)',
-                backgroundColor: 'rgba(34, 197, 94, 0.1)',
-                fill: true,
+                backgroundColor: 'transparent',
+                borderWidth: 2,
                 tension: 0.3,
                 pointRadius: 6,
                 pointBackgroundColor: 'rgb(34, 197, 94)',
@@ -296,12 +386,38 @@ export default function WallStreetSentiment({ symbol }) {
     const annualRevenueChartData = {
         labels: annualRevenuePeriods.map(p => formatPeriodLabel(p, analystEstimates[p])),
         datasets: [
+            // High estimate (upper bound of range band)
             {
-                label: 'Revenue Estimate',
+                label: 'Estimate Range',
+                data: annualRevenuePeriods.map(p => (analystEstimates[p]?.revenue_high || 0) / 1e9),
+                borderColor: 'rgba(34, 197, 94, 0.3)',
+                backgroundColor: 'rgba(34, 197, 94, 0.15)',
+                borderWidth: 1,
+                pointRadius: 0,
+                fill: {
+                    target: '+1',
+                    above: 'rgba(34, 197, 94, 0.15)',
+                },
+                tension: 0.3,
+            },
+            // Low estimate (lower bound of range band)
+            {
+                label: 'Estimate Low',
+                data: annualRevenuePeriods.map(p => (analystEstimates[p]?.revenue_low || 0) / 1e9),
+                borderColor: 'rgba(34, 197, 94, 0.3)',
+                backgroundColor: 'transparent',
+                borderWidth: 1,
+                pointRadius: 0,
+                fill: false,
+                tension: 0.3,
+            },
+            // Average estimate (main line)
+            {
+                label: 'Avg Estimate',
                 data: annualRevenuePeriods.map(p => (analystEstimates[p]?.revenue_avg || 0) / 1e9),
                 borderColor: 'rgb(34, 197, 94)',
-                backgroundColor: 'rgba(34, 197, 94, 0.1)',
-                fill: true,
+                backgroundColor: 'transparent',
+                borderWidth: 2,
                 tension: 0.3,
                 pointRadius: 6,
                 pointBackgroundColor: 'rgb(34, 197, 94)',
@@ -313,7 +429,13 @@ export default function WallStreetSentiment({ symbol }) {
         responsive: true,
         maintainAspectRatio: false,
         plugins: {
-            legend: { position: 'top', labels: { color: chartColors.text } },
+            legend: {
+                position: 'top',
+                labels: {
+                    color: chartColors.text,
+                    filter: (item) => !item.text.includes('Range') && !item.text.includes('Low')
+                }
+            },
             title: { display: false }
         },
         scales: {
@@ -329,7 +451,13 @@ export default function WallStreetSentiment({ symbol }) {
         responsive: true,
         maintainAspectRatio: false,
         plugins: {
-            legend: { position: 'top', labels: { color: chartColors.text } },
+            legend: {
+                position: 'top',
+                labels: {
+                    color: chartColors.text,
+                    filter: (item) => !item.text.includes('Range') && !item.text.includes('Low')
+                }
+            },
             title: { display: false }
         },
         scales: {
@@ -549,32 +677,44 @@ export default function WallStreetSentiment({ symbol }) {
             {(quarterlyRevenuePeriods.length > 0 || annualRevenuePeriods.length > 0) && (
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                     {/* Quarterly Revenue Trends */}
-                    {quarterlyRevenuePeriods.length > 0 && (
-                        <Card>
-                            <CardHeader>
-                                <CardTitle>Quarterly Revenue Estimates</CardTitle>
-                            </CardHeader>
-                            <CardContent>
-                                <div className="h-[250px]">
-                                    <Line data={quarterlyRevenueChartData} options={revenueChartOptions} />
-                                </div>
-                            </CardContent>
-                        </Card>
-                    )}
+                    {quarterlyRevenuePeriods.length > 0 && (() => {
+                        const count = getAnalystCount(quarterlyRevenuePeriods, 'revenue')
+                        return (
+                            <Card>
+                                <CardHeader>
+                                    <CardTitle className="flex items-baseline gap-2">
+                                        Quarterly Revenue Estimates
+                                        {count && <span className="text-sm font-normal text-muted-foreground">({count} analysts)</span>}
+                                    </CardTitle>
+                                </CardHeader>
+                                <CardContent>
+                                    <div className="h-[250px]">
+                                        <Line data={quarterlyRevenueChartData} options={revenueChartOptions} />
+                                    </div>
+                                </CardContent>
+                            </Card>
+                        )
+                    })()}
 
                     {/* Annual Revenue Trends */}
-                    {annualRevenuePeriods.length > 0 && (
-                        <Card>
-                            <CardHeader>
-                                <CardTitle>Annual Revenue Estimates</CardTitle>
-                            </CardHeader>
-                            <CardContent>
-                                <div className="h-[250px]">
-                                    <Line data={annualRevenueChartData} options={revenueChartOptions} />
-                                </div>
-                            </CardContent>
-                        </Card>
-                    )}
+                    {annualRevenuePeriods.length > 0 && (() => {
+                        const count = getAnalystCount(annualRevenuePeriods, 'revenue')
+                        return (
+                            <Card>
+                                <CardHeader>
+                                    <CardTitle className="flex items-baseline gap-2">
+                                        Annual Revenue Estimates
+                                        {count && <span className="text-sm font-normal text-muted-foreground">({count} analysts)</span>}
+                                    </CardTitle>
+                                </CardHeader>
+                                <CardContent>
+                                    <div className="h-[250px]">
+                                        <Line data={annualRevenueChartData} options={revenueChartOptions} />
+                                    </div>
+                                </CardContent>
+                            </Card>
+                        )
+                    })()}
                 </div>
             )}
 
@@ -582,32 +722,44 @@ export default function WallStreetSentiment({ symbol }) {
             {(quarterlyPeriods.length > 0 || annualPeriods.length > 0) && (
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                     {/* Quarterly EPS Trends */}
-                    {quarterlyPeriods.length > 0 && (
-                        <Card>
-                            <CardHeader>
-                                <CardTitle>Quarterly EPS Estimate Trends</CardTitle>
-                            </CardHeader>
-                            <CardContent>
-                                <div className="h-[250px]">
-                                    <Line data={quarterlyEpsChartData} options={epsChartOptions} />
-                                </div>
-                            </CardContent>
-                        </Card>
-                    )}
+                    {quarterlyPeriods.length > 0 && (() => {
+                        const count = getAnalystCount(quarterlyPeriods, 'eps')
+                        return (
+                            <Card>
+                                <CardHeader>
+                                    <CardTitle className="flex items-baseline gap-2">
+                                        Quarterly EPS Estimate Trends
+                                        {count && <span className="text-sm font-normal text-muted-foreground">({count} analysts)</span>}
+                                    </CardTitle>
+                                </CardHeader>
+                                <CardContent>
+                                    <div className="h-[250px]">
+                                        <Line data={quarterlyEpsChartData} options={epsChartOptions} />
+                                    </div>
+                                </CardContent>
+                            </Card>
+                        )
+                    })()}
 
                     {/* Annual EPS Trends */}
-                    {annualPeriods.length > 0 && (
-                        <Card>
-                            <CardHeader>
-                                <CardTitle>Annual EPS Estimate Trends</CardTitle>
-                            </CardHeader>
-                            <CardContent>
-                                <div className="h-[250px]">
-                                    <Line data={annualEpsChartData} options={epsChartOptions} />
-                                </div>
-                            </CardContent>
-                        </Card>
-                    )}
+                    {annualPeriods.length > 0 && (() => {
+                        const count = getAnalystCount(annualPeriods, 'eps')
+                        return (
+                            <Card>
+                                <CardHeader>
+                                    <CardTitle className="flex items-baseline gap-2">
+                                        Annual EPS Estimate Trends
+                                        {count && <span className="text-sm font-normal text-muted-foreground">({count} analysts)</span>}
+                                    </CardTitle>
+                                </CardHeader>
+                                <CardContent>
+                                    <div className="h-[250px]">
+                                        <Line data={annualEpsChartData} options={epsChartOptions} />
+                                    </div>
+                                </CardContent>
+                            </Card>
+                        )
+                    })()}
                 </div>
             )}
 
