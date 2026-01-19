@@ -3152,6 +3152,110 @@ def get_unified_chart_analysis(symbol, user_id):
         return jsonify({'error': f'Failed to generate analysis: {str(e)}'}), 500
 
 
+
+@app.route('/api/stock/<symbol>/investment-memo', methods=['POST'])
+@require_user_auth
+def get_investment_memo(symbol, user_id):
+    """
+    Generate or retrieve the Investment Memo (Unified Thesis + Financials).
+    Returns a stream of markdown content.
+    """
+    symbol = symbol.upper()
+
+    # Check feature flag
+    if db.get_setting('feature_investment_memo_enabled') != 'true':
+        return jsonify({'error': 'Feature not enabled'}), 404
+
+    data = request.get_json() or {}
+    
+    # Check if stock exists
+    stock_metrics = db.get_stock_metrics(symbol)
+    if not stock_metrics:
+        return jsonify({'error': f'Stock {symbol} not found'}), 404
+
+    # Get historical data
+    history = db.get_earnings_history(symbol)
+    if not history:
+        return jsonify({'error': f'No historical data for {symbol}'}), 404
+
+    # Prepare stock data for analysis
+    evaluation = criteria.evaluate_stock(symbol)
+    stock_data = {
+        **stock_metrics,
+        'peg_ratio': evaluation.get('peg_ratio') if evaluation else None,
+        'earnings_cagr': evaluation.get('earnings_cagr') if evaluation else None,
+        'revenue_cagr': evaluation.get('revenue_cagr') if evaluation else None
+    }
+
+    # Get model from request body and validate
+    model = data.get('model', DEFAULT_AI_MODEL)
+    if model not in AVAILABLE_AI_MODELS:
+        return jsonify({'error': f'Invalid model: {model}. Must be one of {AVAILABLE_AI_MODELS}'}), 400
+
+    # Check cache first
+    force_refresh = data.get('force_refresh', False)
+    only_cached = data.get('only_cached', False)
+
+    cached_memo = db.get_chart_analysis(user_id, symbol, 'investment_memo')
+    
+    if cached_memo and not force_refresh:
+        return jsonify({
+            'narrative': cached_memo['analysis_text'],
+            'cached': True,
+            'generated_at': cached_memo['generated_at']
+        })
+
+    # If only_cached is True and nothing is cached, return empty
+    if only_cached:
+        return jsonify({})
+
+    # Generate new memo (streamed)
+    def generate():
+        full_text = []
+        try:
+            # Send metadata header first
+            yield f"data: {json.dumps({'type': 'metadata', 'cached': False, 'generated_at': datetime.now().isoformat()})}\n\n"
+
+            # Fetch context data
+            sections_data = None
+            country = stock_metrics.get('country', '')
+            if not country or country.upper() in ['US', 'USA', 'UNITED STATES']:
+                sections_data = db.get_filing_sections(symbol)
+
+            material_events = db.get_material_events(symbol, limit=10)
+            news_articles = db.get_news_articles(symbol, limit=20)
+            transcripts = db.get_earnings_transcripts(symbol, limit=2)
+
+            # Generate stream
+            iterator = stock_analyst.generate_investment_memo(
+                stock_data,
+                history,
+                sections=sections_data,
+                news=news_articles,
+                material_events=material_events,
+                transcripts=transcripts,
+                model_version=model,
+                user_id=user_id
+            )
+            
+            for chunk in iterator:
+                full_text.append(chunk)
+                yield f"data: {json.dumps({'type': 'chunk', 'content': chunk})}\n\n"
+            
+            # Save to cache
+            final_text = "".join(full_text)
+            if final_text:
+                db.set_chart_analysis(user_id, symbol, 'investment_memo', final_text, model)
+            
+            yield f"data: {json.dumps({'type': 'done'})}\n\n"
+
+        except Exception as e:
+            logger.error(f"Streaming error for Investment Memo {symbol}: {e}")
+            yield f"data: {json.dumps({'type': 'error', 'message': str(e)})}\n\n"
+
+    return Response(stream_with_context(generate()), mimetype='text/event-stream')
+
+
 @app.route('/api/stock/<symbol>/dcf-recommendations', methods=['POST'])
 @require_user_auth
 def get_dcf_recommendations(symbol, user_id):

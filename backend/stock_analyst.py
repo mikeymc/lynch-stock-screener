@@ -462,6 +462,171 @@ class StockAnalyst:
 
         return {'narrative': analysis_text.strip()}
 
+    def generate_investment_memo(
+        self,
+        stock_data: Dict[str, Any],
+        history: List[Dict[str, Any]],
+        sections: Optional[Dict[str, Any]] = None,
+        news: Optional[List[Dict[str, Any]]] = None,
+        material_events: Optional[List[Dict[str, Any]]] = None,
+        transcripts: Optional[List[Dict[str, Any]]] = None,
+        model_version: str = "gemini-3-pro-preview",
+        user_id: Optional[int] = None
+    ):
+        """
+        Generate a comprehensive Investment Memo (streamed).
+        Yields chunks of generated markdown.
+        """
+        if model_version not in AVAILABLE_MODELS:
+            raise ValueError(f"Invalid model: {model_version}. Must be one of {AVAILABLE_MODELS}")
+
+        # 1. Get Active Character & Load Templates
+        character = self._get_active_character(user_id)
+        
+        # Load Thesis Template (e.g. lynch_full_analysis.md)
+        thesis_path = os.path.join(self.script_dir, "prompts", character.analysis_template)
+        with open(thesis_path, 'r') as f:
+            thesis_prompt = f.read()
+
+        # Load Checklist (e.g. lynch_checklist.md)
+        checklist_path = os.path.join(self.script_dir, "prompts", character.checklist_prompt)
+        with open(checklist_path, 'r') as f:
+            checklist_content = f.read()
+
+        # Load Chart Analysis Template (for the financials section structure)
+        chart_path = os.path.join(self.script_dir, "prompts", "analysis", "chart_analysis.md")
+        with open(chart_path, 'r') as f:
+            chart_prompt = f.read()
+
+        # 2. Construct Unified Prompt
+        # We want: 
+        # - Intro/Verdict instructions from Thesis
+        # - Checklist instructions
+        # - Narrative weaving instructions + Chart placeholders from Financials
+
+        # Extract "Verdict" instructions from Thesis prompt (roughly the second half)
+        # We look for where the specific instructions start
+        thesis_instructions = thesis_prompt.split("**Start with a")[1] if "**Start with a" in thesis_prompt else thesis_prompt
+        thesis_instructions = "**Start with a" + thesis_instructions
+
+        # Extract "Chart Placeholders" and "Output Format" from Chart prompt
+        chart_instructions = chart_prompt.split("## Chart Placeholders")[1] if "## Chart Placeholders" in chart_prompt else chart_prompt
+        chart_instructions = "## Chart Placeholders" + chart_instructions
+
+        # CRITICAL: Replace double-brace placeholders in chart instructions with quadruple braces
+        # so they survive the .format() call and appear as {{CHART:name}} in the final prompt.
+        # Python literal string '{{' becomes '{' when formatted. We need '{{' in output, so we need '{{{{' in source.
+        chart_instructions = chart_instructions.replace("{{CHART:", "{{{{CHART:")
+        chart_instructions = chart_instructions.replace("}}", "}}}}")
+
+        # Build the master prompt
+        final_prompt_structure = f"""
+You are a top-tier investment analyst applying {character.name}'s methodology. Write a comprehensive **Investment Memo** for {{company_name}} ({{symbol}}).
+
+**Today's Date:** {{current_date}}
+
+# Objective
+Write a single, cohesive investment memo that combines a high-level thesis with a deep-dive financial analysis. 
+The memo must use the following structure:
+
+## 1. Executive Summary & Verdict
+{thesis_instructions}
+
+## 2. Investment Checklist Review
+Verify the stock against {character.name}'s 12-point checklist.
+{checklist_content}
+
+## 3. Financial Analysis & Narrative
+{chart_instructions}
+
+## 4. Valuation
+Conclude with a specific valuation assessment based on {character.name}'s principles (PEG, earnings growth, debt).
+
+---
+**Core Data:**
+"""
+        # 3. Prepare Variables & Context
+        template_vars = self._prepare_template_vars(stock_data, history, character, user_id)
+        
+        # Add basic context to the prompt string before formatting
+        # We append the data context sections manually to avoid complex f-string nesting issues
+        context_section = """
+**Company:** {company_name} ({symbol})
+**Sector:** {sector}
+**Price:** ${price:.2f}
+**Market Cap:** ${market_cap_billions:.2f}B
+**P/E:** {pe_ratio} | **PEG:** {peg_ratio}
+
+**Key Metrics:**
+- **Earnings CAGR (5y):** {earnings_cagr}
+- **Revenue CAGR (5y):** {revenue_cagr}
+- **Debt-to-Equity:** {debt_to_equity}
+
+**Historical Data (5 Years):**
+{history_text}
+
+**Analyst Estimates:**
+{analyst_estimates_text}
+"""
+        final_prompt_template = final_prompt_structure + context_section
+        
+        # Format the main prompt
+        final_prompt = final_prompt_template.format(**template_vars)
+
+        # 4. Append External Context (News, Events, Transcripts)
+        # Append material events if available
+        if material_events and len(material_events) > 0:
+            events_text = "\n\n---\n\n## Material Corporate Events (SEC 8-K Filings)\n\n"
+            for i, event in enumerate(material_events[:8], 1): # Limit to 8
+                filing_date = event.get('filing_date', 'Unknown date')
+                headline = event.get('headline', 'No headline')
+                content_text = event.get('content_text', '')
+                if len(content_text) > 500: content_text = content_text[:500] + "..."
+                
+                events_text += f"**{i}. {headline}** ({filing_date})\n{content_text}\n\n"
+            final_prompt += events_text
+
+        # Append news context
+        if news and len(news) > 0:
+            news_text = "\n\n---\n\n## Recent News Articles\n\n"
+            for i, article in enumerate(news[:10], 1): # Limit to 10
+                headline = article.get('headline', 'No headline')
+                source = article.get('source', 'Unknown')
+                pub_date = article.get('published_date', 'Unknown')
+                news_text += f"- {headline} ({source}, {pub_date})\n"
+            final_prompt += news_text
+
+        # Append SEC sections
+        if sections:
+            sections_text = "\n\n---\n\n## SEC Filing Context (10-K/10-Q)\n\n"
+            for key in ['business', 'risk_factors', 'mda']:
+                if key in sections:
+                    content = sections[key].get('content', '')
+                    if len(content) > 3000: content = content[:3000] + "..." # Truncate for token limits
+                    sections_text += f"### {key.replace('_', ' ').title()}\n{content}\n\n"
+            final_prompt += sections_text
+
+        # Append Transcript Summary (if available)
+        if transcripts:
+             transcript_text = "\n\n---\n\n## Earnings Call Highlights\n\n"
+             for t in transcripts[:1]:
+                 summary = t.get('summary') or (t.get('transcript_text', '')[:2000] + "...")
+                 transcript_text += f"{summary}\n\n"
+             final_prompt += transcript_text
+
+        # 5. Stream Response
+        response = self.client.models.generate_content_stream(
+            model=model_version,
+            contents=final_prompt
+        )
+
+        for chunk in response:
+            try:
+                if chunk.text:
+                    yield chunk.text
+            except Exception:
+                pass
+
     def generate_filing_section_summary(
         self,
         section_name: str,

@@ -1432,6 +1432,15 @@ class Database:
             """)
             conn.commit()
 
+        # Initialize feature_investment_memo_enabled setting (default: false)
+        cursor.execute("SELECT 1 FROM app_settings WHERE key = 'feature_investment_memo_enabled'")
+        if not cursor.fetchone():
+            cursor.execute("""
+                INSERT INTO app_settings (key, value, description)
+                VALUES ('feature_investment_memo_enabled', 'false', 'Enable Investment Memo tab (Unified Thesis + Financials)')
+            """)
+            conn.commit()
+
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS news_articles (
                 id SERIAL PRIMARY KEY,

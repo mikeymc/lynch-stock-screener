@@ -112,6 +112,7 @@ function AppShellContent({
     const [alertsEnabled, setAlertsEnabled] = useState(false)
     const [economyLinkEnabled, setEconomyLinkEnabled] = useState(false)
     const [redditEnabled, setRedditEnabled] = useState(false)
+    const [investmentMemoEnabled, setInvestmentMemoEnabled] = useState(false)
     const [chatsOpen, setChatsOpen] = useState(true) // State for chat history collapsible
 
     useEffect(() => {
@@ -124,9 +125,11 @@ function AppShellContent({
                     const alertsOn = settings.feature_alerts_enabled?.value === true
                     const economyLinkOn = settings.feature_economy_link_enabled?.value === true
                     const redditOn = settings.feature_reddit_enabled?.value === true || settings.feature_reddit_enabled?.value === 'true'
+                    const investmentMemoOn = settings.feature_investment_memo_enabled?.value === true || settings.feature_investment_memo_enabled?.value === 'true'
                     setAlertsEnabled(alertsOn)
                     setEconomyLinkEnabled(economyLinkOn)
                     setRedditEnabled(redditOn)
+                    setInvestmentMemoEnabled(investmentMemoOn)
                 }
             } catch (error) {
                 console.error('Failed to fetch settings:', error)
@@ -194,6 +197,12 @@ function AppShellContent({
     // Determine chat context
     const chatSymbol = isStockDetail ? symbol : null
     const chatContext = isStockDetail ? 'general' : 'market' // 'market' context for main page
+
+    // Check if on Investment Memo tab
+    if (isStockDetail && location.search.includes('tab=investment-memo')) {
+        chatContext = 'investment_memo'
+    }
+
     const formattedCharacter = activeCharacter ? activeCharacter.charAt(0).toUpperCase() + activeCharacter.slice(1) : 'Lynch'
     const chatTitle = formattedCharacter
 
@@ -400,6 +409,20 @@ function AppShellContent({
                                                         <span>Thesis</span>
                                                     </SidebarMenuButton>
                                                 </SidebarMenuItem>
+                                                {investmentMemoEnabled && (
+                                                    <SidebarMenuItem>
+                                                        <SidebarMenuButton
+                                                            onClick={() => {
+                                                                navigate(`/stock/${symbol}?tab=investment-memo`)
+                                                                onNavClick()
+                                                            }}
+                                                            isActive={location.search.includes('tab=investment-memo')}
+                                                            className="pl-6 font-normal text-muted-foreground data-[active=true]:font-medium data-[active=true]:text-sidebar-primary"
+                                                        >
+                                                            <span>Investment Memo</span>
+                                                        </SidebarMenuButton>
+                                                    </SidebarMenuItem>
+                                                )}
                                                 <SidebarMenuItem>
                                                     <SidebarMenuButton
                                                         onClick={() => {

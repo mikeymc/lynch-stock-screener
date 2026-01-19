@@ -16,6 +16,7 @@ import WallStreetSentiment from '../components/WallStreetSentiment'
 import BusinessHealth from '../components/BusinessHealth'
 import TranscriptViewer from '../components/TranscriptViewer'
 import WordOnTheStreet from '../components/WordOnTheStreet'
+import InvestmentMemo from '../components/InvestmentMemo'
 import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Button } from '@/components/ui/button'
@@ -53,6 +54,7 @@ export default function StockDetail({ watchlist, toggleWatchlist, algorithm, act
 
   // Feature flags
   const [redditEnabled, setRedditEnabled] = useState(false)
+  const [investmentMemoEnabled, setInvestmentMemoEnabled] = useState(false)
 
   // Handler to add a new comment
   const handleAddComment = (comment) => {
@@ -132,6 +134,7 @@ export default function StockDetail({ watchlist, toggleWatchlist, algorithm, act
         if (response.ok) {
           const settings = await response.json()
           setRedditEnabled(settings.feature_reddit_enabled?.value === true || settings.feature_reddit_enabled?.value === 'true')
+          setInvestmentMemoEnabled(settings.feature_investment_memo_enabled?.value === true || settings.feature_investment_memo_enabled?.value === 'true')
         }
       } catch (err) {
         console.error('Error fetching settings:', err)
@@ -382,6 +385,14 @@ export default function StockDetail({ watchlist, toggleWatchlist, algorithm, act
               onClearComments={handleClearComments}
               onReviewComments={handleReviewComments}
               isReviewingComments={isReviewingComments}
+            />
+          )}
+
+          {activeTab === 'investment-memo' && investmentMemoEnabled && (
+            <InvestmentMemo
+              symbol={symbol}
+              historyData={historyData}
+              isQuarterly={periodType === 'quarterly'}
             />
           )}
 
