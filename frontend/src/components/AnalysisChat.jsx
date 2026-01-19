@@ -865,7 +865,7 @@ const AnalysisChat = forwardRef(function AnalysisChat({ symbol, stockName, chatO
               <div className="absolute top-0 left-0 h-12 w-12 rounded-full border-4 border-primary border-t-transparent animate-spin"></div>
             </div>
             <div className="space-y-2">
-              <span className="block text-lg font-medium text-foreground">Generating brief...</span>
+              <span className="block text-lg font-medium text-foreground">Generating thesis...</span>
               <span className="block text-sm animate-pulse" key={loadingMessageIndex}>
                 {LOADING_MESSAGES[loadingMessageIndex]}
               </span>
@@ -884,9 +884,9 @@ const AnalysisChat = forwardRef(function AnalysisChat({ symbol, stockName, chatO
       ) : !analysis ? (
         <Card className="h-full">
           <div className="flex flex-col items-center justify-center h-[50vh] space-y-4 text-muted-foreground">
-            <p>No brief generated yet for {stockName}.</p>
+            <p>No thesis generated yet for {stockName}.</p>
             <Button onClick={handleGenerate} className="mt-4">
-              <Sparkles className="mr-2 h-4 w-4" /> Generate Brief
+              <Sparkles className="mr-2 h-4 w-4" /> Generate Thesis
             </Button>
           </div>
         </Card>

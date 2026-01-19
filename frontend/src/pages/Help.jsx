@@ -63,7 +63,7 @@ export default function Help() {
         },
         {
             id: "analysis",
-            title: "Brief & Analysis",
+            title: "Thesis & Analysis",
             section: "Stock Analysis"
         },
         {
@@ -594,7 +594,7 @@ export default function Help() {
                     {activeTab === "analysis" && (
                         <div className="space-y-6">
                             <div>
-                                <h3 className="text-lg font-medium">Brief & Analysis</h3>
+                                <h3 className="text-lg font-medium">Thesis & Analysis</h3>
                                 <p className="text-sm text-muted-foreground">
                                     Character-specific investment narrative from your chosen investor's perspective.
                                 </p>
@@ -603,15 +603,15 @@ export default function Help() {
 
                             <Card>
                                 <CardHeader>
-                                    <CardTitle>Company Brief</CardTitle>
+                                    <CardTitle>Company Thesis</CardTitle>
                                 </CardHeader>
                                 <CardContent className="space-y-3">
                                     <p className="text-sm text-muted-foreground">
-                                        The Brief tab provides a character-specific narrative as if you're hearing directly from Lynch or Buffett about the company. It covers what the company does, its competitive position, key strengths and concerns, and investment considerations—all through the lens of your selected investment philosophy.
+                                        The Thesis tab provides a character-specific narrative as if you're hearing directly from Lynch or Buffett about the company. It covers what the company does, its competitive position, key strengths and concerns, and investment considerations—all through the lens of your selected investment philosophy.
                                     </p>
                                     <img
                                         src="/help/brief.png"
-                                        alt="Company Brief with Character Analysis"
+                                        alt="Company Thesis with Character Analysis"
                                         className="rounded-lg border-2 border-muted-foreground/30 w-full"
                                     />
                                 </CardContent>

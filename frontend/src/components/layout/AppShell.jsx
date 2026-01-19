@@ -397,7 +397,7 @@ function AppShellContent({
                                                         isActive={location.search.includes('tab=analysis')}
                                                         className="pl-6 font-normal text-muted-foreground data-[active=true]:font-medium data-[active=true]:text-sidebar-primary"
                                                     >
-                                                        <span>Brief</span>
+                                                        <span>Thesis</span>
                                                     </SidebarMenuButton>
                                                 </SidebarMenuItem>
                                                 <SidebarMenuItem>
