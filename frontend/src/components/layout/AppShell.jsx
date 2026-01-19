@@ -526,18 +526,18 @@ function AppShellContent({
                         </SidebarMenuItem>
                         <SidebarMenuItem>
                             <SidebarMenuButton onClick={() => {
-                                setFeedbackOpen(true)
-                                onNavClick()
-                            }}>
-                                <span>Send Feedback</span>
-                            </SidebarMenuButton>
-                        </SidebarMenuItem>
-                        <SidebarMenuItem>
-                            <SidebarMenuButton onClick={() => {
                                 navigate('/settings')
                                 onNavClick()
                             }}>
                                 <span>Settings</span>
+                            </SidebarMenuButton>
+                        </SidebarMenuItem>
+                        <SidebarMenuItem>
+                            <SidebarMenuButton onClick={() => {
+                                setFeedbackOpen(true)
+                                onNavClick()
+                            }}>
+                                <span>Send Feedback</span>
                             </SidebarMenuButton>
                         </SidebarMenuItem>
                         <SidebarMenuItem>
