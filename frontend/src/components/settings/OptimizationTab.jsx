@@ -11,6 +11,7 @@ import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
 import { Label } from "@/components/ui/label"
 import { Sparkles, Play, Save, Loader2, TrendingUp, CheckCircle2, XCircle, Target, BarChart3, Info, AlertCircle, RotateCcw } from 'lucide-react'
 import { cn } from "@/lib/utils"
+import { screeningCache } from "@/utils/cache"
 
 // Character-specific slider configurations
 const CHARACTER_SLIDER_CONFIGS = {
@@ -421,6 +422,7 @@ export default function OptimizationTab() {
             }
 
             // Configuration saved successfully
+            await screeningCache.clear()
             alert('Configuration saved successfully!')
 
         } catch (error) {
