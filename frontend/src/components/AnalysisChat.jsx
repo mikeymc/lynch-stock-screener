@@ -247,7 +247,7 @@ const AnalysisChat = forwardRef(function AnalysisChat({ symbol, stockName, chatO
   const [cached, setCached] = useState(false)
   const [refreshing, setRefreshing] = useState(false)
   const [isGenerating, setIsGenerating] = useState(false)
-  const [selectedModel, setSelectedModel] = useState('gemini-3-flash-preview')
+  const [selectedModel, setSelectedModel] = useState('gemini-3-pro-preview')
 
   // Chat state
   const [messages, setMessages] = useState([])
