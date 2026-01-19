@@ -17,8 +17,12 @@ def register_character(config: CharacterConfig) -> None:
     errors = config.validate()
     if errors:
         logger.warning(f"Character '{config.id}' has validation errors: {errors}")
+    
+    # Only log if this is a new registration
+    if config.id not in _characters:
+        logger.info(f"Registered character: {config.id} ({config.name})")
+    
     _characters[config.id] = config
-    logger.info(f"Registered character: {config.id} ({config.name})")
 
 
 def get_character(character_id: str) -> Optional[CharacterConfig]:
