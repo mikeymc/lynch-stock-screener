@@ -1,7 +1,7 @@
 // ABOUTME: Stock charts component displaying 10 financial metrics in 3 thematic sections
 // ABOUTME: Full-width layout: charts content
 
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useMemo } from 'react'
 import { Line } from 'react-chartjs-2'
 import { Button } from "@/components/ui/button"
 import UnifiedChartAnalysis from './UnifiedChartAnalysis'
@@ -131,6 +131,87 @@ export default function StockCharts({ historyData, quarterlyHistoryData, loading
     setActiveIndex(null);
   }, []);
 
+  // Time Horizon State
+  const [timeHorizon, setTimeHorizon] = useState('5y') // '3y', '5y', '10y', 'all'
+
+  // Determine active dataset (Annual vs Quarterly)
+  const rawActiveData = viewMode === 'quarterly' && quarterlyHistoryData ? quarterlyHistoryData : historyData
+  const showQuarterly = viewMode === 'quarterly'
+
+  // Apply Time Horizon Filtering
+  const activeData = useMemo(() => {
+    if (!rawActiveData || timeHorizon === 'all') return rawActiveData
+
+    const years = parseInt(timeHorizon.replace('y', ''))
+    // Calculate points to keep:
+    // Annual: 1 point per year
+    // Quarterly: 4 points per year
+    const pointsToKeep = viewMode === 'quarterly' ? years * 4 : years
+
+    const len = (rawActiveData.labels || []).length
+    const startIdx = len > pointsToKeep ? len - pointsToKeep : 0
+    const slice = (arr) => Array.isArray(arr) ? arr.slice(startIdx) : arr
+
+    // Helper for time-based filtering (weekly data)
+    const filterByDate = (dates, values) => {
+      if (!dates || !values || dates.length === 0) return { dates, values }
+
+      const lastDateStr = dates[dates.length - 1]
+      if (!lastDateStr) return { dates, values }
+
+      const lastDate = new Date(lastDateStr)
+      const cutoffDate = new Date(lastDate)
+      cutoffDate.setFullYear(lastDate.getFullYear() - years)
+      const cutoffIso = cutoffDate.toISOString().split('T')[0]
+
+      const startIndex = dates.findIndex(d => d >= cutoffIso)
+      if (startIndex === -1) return { dates, values }
+
+      return {
+        dates: dates.slice(startIndex),
+        values: values.slice(startIndex)
+      }
+    }
+
+    // Filter weekly prices
+    const wp = rawActiveData.weekly_prices || {}
+    const filteredWp = wp.dates && wp.prices
+      ? ((res) => ({ dates: res.dates, prices: res.values }))(filterByDate(wp.dates, wp.prices))
+      : wp
+
+    // Filter weekly dividends
+    const wdy = rawActiveData.weekly_dividend_yields || {}
+    const filteredWdy = wdy.dates && wdy.values
+      ? filterByDate(wdy.dates, wdy.values)
+      : wdy
+
+    // Filter weekly PE
+    const wpe = rawActiveData.weekly_pe_ratios || {}
+    const filteredWpe = wpe.dates && wpe.values
+      ? filterByDate(wpe.dates, wpe.values)
+      : wpe
+
+    return {
+      ...rawActiveData,
+      labels: slice(rawActiveData.labels),
+      years: slice(rawActiveData.years),
+      revenue: slice(rawActiveData.revenue),
+      net_income: slice(rawActiveData.net_income),
+      eps: slice(rawActiveData.eps),
+      price: slice(rawActiveData.price),
+      pe_ratio: slice(rawActiveData.pe_ratio || rawActiveData.pe_history), // Use pe_ratio or pe_history
+      pe_history: slice(rawActiveData.pe_history),
+      debt_to_equity: slice(rawActiveData.debt_to_equity),
+      operating_cash_flow: slice(rawActiveData.operating_cash_flow),
+      free_cash_flow: slice(rawActiveData.free_cash_flow),
+      capital_expenditures: slice(rawActiveData.capital_expenditures),
+      // Add filtered weekly/granular data
+      weekly_prices: filteredWp,
+      weekly_dividend_yields: filteredWdy,
+      weekly_pe_ratios: filteredWpe
+    }
+  }, [rawActiveData, timeHorizon, viewMode])
+
   if (loading || !historyData) {
     return (
       <div className="flex items-center justify-center p-12">
@@ -138,10 +219,6 @@ export default function StockCharts({ historyData, quarterlyHistoryData, loading
       </div>
     )
   }
-
-  // Determine active dataset
-  const activeData = viewMode === 'quarterly' && quarterlyHistoryData ? quarterlyHistoryData : historyData
-  const showQuarterly = viewMode === 'quarterly'
 
   // Labels and Years
   // For quarterly, labels are "YYYY QX", years are "YYYY"
@@ -407,24 +484,47 @@ export default function StockCharts({ historyData, quarterlyHistoryData, loading
             <p className="text-muted-foreground text-sm">Historical revenue, earnings, and cash flow</p>
           </div>
 
-          <div className="flex items-center space-x-2 bg-muted p-1 rounded-lg">
-            <Button
-              variant={viewMode === 'annual' ? "default" : "ghost"}
-              size="sm"
-              onClick={() => setViewMode('annual')}
-              className="h-8 shadow-none"
-            >
-              Annual
-            </Button>
-            <Button
-              variant={viewMode === 'quarterly' ? "default" : "ghost"}
-              size="sm"
-              onClick={() => setViewMode('quarterly')}
-              disabled={!quarterlyHistoryData}
-              className="h-8 shadow-none"
-            >
-              Quarterly
-            </Button>
+          <div className="flex flex-wrap items-center gap-4">
+            {/* Time Horizon Selector */}
+            <div className="flex items-center space-x-1 bg-muted p-1 rounded-lg">
+              {[
+                { label: '3Y', value: '3y' },
+                { label: '5Y', value: '5y' },
+                { label: '10Y', value: '10y' },
+                { label: 'All', value: 'all' },
+              ].map((opt) => (
+                <Button
+                  key={opt.value}
+                  variant={timeHorizon === opt.value ? "default" : "ghost"}
+                  size="sm"
+                  onClick={() => setTimeHorizon(opt.value)}
+                  className="h-8 shadow-none px-3"
+                >
+                  {opt.label}
+                </Button>
+              ))}
+            </div>
+
+            {/* View Mode Selector */}
+            <div className="flex items-center space-x-2 bg-muted p-1 rounded-lg">
+              <Button
+                variant={viewMode === 'annual' ? "default" : "ghost"}
+                size="sm"
+                onClick={() => setViewMode('annual')}
+                className="h-8 shadow-none"
+              >
+                Annual
+              </Button>
+              <Button
+                variant={viewMode === 'quarterly' ? "default" : "ghost"}
+                size="sm"
+                onClick={() => setViewMode('quarterly')}
+                disabled={!quarterlyHistoryData}
+                className="h-8 shadow-none"
+              >
+                Quarterly
+              </Button>
+            </div>
           </div>
         </div>
 
@@ -585,11 +685,11 @@ export default function StockCharts({ historyData, quarterlyHistoryData, loading
                     <div className="h-64 chart-container">
                       <Line plugins={[zeroLinePlugin, crosshairPlugin]}
                         data={{
-                          labels: historyData.weekly_dividend_yields?.dates || [],
+                          labels: activeData.weekly_dividend_yields?.dates || [],
                           datasets: [
                             {
                               label: 'Dividend Yield (%)',
-                              data: historyData.weekly_dividend_yields?.values || [],
+                              data: activeData.weekly_dividend_yields?.values || [],
                               borderColor: 'rgb(255, 205, 86)',
                               backgroundColor: 'rgba(255, 205, 86, 0.2)',
                               pointRadius: 0,
@@ -702,7 +802,7 @@ export default function StockCharts({ historyData, quarterlyHistoryData, loading
                           datasets: [
                             {
                               label: 'Debt-to-Equity Ratio',
-                              data: scaleHistoryData(historyData.debt_to_equity || [], 1),
+                              data: debtToEquityData,
                               borderColor: 'rgb(255, 99, 132)',
                               backgroundColor: 'rgba(255, 99, 132, 0.2)',
                               pointRadius: activeIndex !== null ? 3 : 0,
@@ -731,15 +831,15 @@ export default function StockCharts({ historyData, quarterlyHistoryData, loading
                       <div className="h-64 chart-container">
                         <Line plugins={[zeroLinePlugin, crosshairPlugin]}
                           data={{
-                            labels: historyData.weekly_prices?.dates?.length > 0
-                              ? historyData.weekly_prices.dates
+                            labels: activeData.weekly_prices?.dates?.length > 0
+                              ? activeData.weekly_prices.dates
                               : labels,
                             datasets: [
                               {
                                 label: 'Stock Price ($)',
-                                data: historyData.weekly_prices?.prices?.length > 0
-                                  ? historyData.weekly_prices.prices
-                                  : historyData.price,
+                                data: activeData.weekly_prices?.prices?.length > 0
+                                  ? activeData.weekly_prices.prices
+                                  : activeData.price,
                                 borderColor: 'rgb(255, 159, 64)',
                                 backgroundColor: 'rgba(255, 159, 64, 0.2)',
                                 pointRadius: 0,
@@ -751,7 +851,7 @@ export default function StockCharts({ historyData, quarterlyHistoryData, loading
                               // Price target mean line
                               ...(historyData.price_targets?.mean ? [{
                                 label: 'Analyst Target (Mean)',
-                                data: (historyData.weekly_prices?.dates || labels).map(() => historyData.price_targets.mean),
+                                data: (activeData.weekly_prices?.dates || labels).map(() => historyData.price_targets.mean),
                                 borderColor: 'rgba(16, 185, 129, 0.7)',
                                 backgroundColor: 'transparent',
                                 borderDash: [8, 4],
@@ -762,7 +862,7 @@ export default function StockCharts({ historyData, quarterlyHistoryData, loading
                               // Price target high line (upper bound)
                               ...(historyData.price_targets?.high ? [{
                                 label: 'Target Range',
-                                data: (historyData.weekly_prices?.dates || labels).map(() => historyData.price_targets.high),
+                                data: (activeData.weekly_prices?.dates || labels).map(() => historyData.price_targets.high),
                                 borderColor: 'rgba(16, 185, 129, 0.3)',
                                 backgroundColor: 'rgba(16, 185, 129, 0.15)',
                                 borderWidth: 1,
@@ -775,7 +875,7 @@ export default function StockCharts({ historyData, quarterlyHistoryData, loading
                               // Price target low line (lower bound)
                               ...(historyData.price_targets?.low ? [{
                                 label: 'Target Low',
-                                data: (historyData.weekly_prices?.dates || labels).map(() => historyData.price_targets.low),
+                                data: (activeData.weekly_prices?.dates || labels).map(() => historyData.price_targets.low),
                                 borderColor: 'rgba(16, 185, 129, 0.3)',
                                 backgroundColor: 'transparent',
                                 borderWidth: 1,
