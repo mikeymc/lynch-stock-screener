@@ -191,7 +191,7 @@ get_dividend_analysis_decl = FunctionDeclaration(
 
 get_analyst_estimates_decl = FunctionDeclaration(
     name="get_analyst_estimates",
-    description="Get analyst consensus estimates for future earnings and revenue. Returns EPS and revenue projections for current/next quarter and year, along with growth expectations and analyst counts.",
+    description="Get analyst consensus estimates for future earnings and revenue. Returns EPS and revenue projections for current quarter (0q), next quarter (+1q), current year (0y), and next year (+1y). Each period includes low/avg/high estimate ranges, YoY growth %, and number of analysts. Use this to understand Wall Street's expectations and the spread of analyst opinions.",
     parameters=Schema(
         type=Type.OBJECT,
         properties={
