@@ -167,15 +167,39 @@ export default function Help() {
                                     <CardTitle>What is papertree.ai?</CardTitle>
                                 </CardHeader>
                                 <CardContent className="space-y-4">
-                                    <p className="text-sm">
-                                        We believe that it is always possible to find investment opportunities that can provide long-term returns. papertree.ai helps you find these opportunities by using time-tested fundamental investment strategies from legendary investors like Peter Lynch and Warren Buffett.
-                                    </p>
-                                    <p className="text-sm">
-                                        There is no need to
-                                    </p>
-                                    <p className="text-sm">
-                                        The app automatically screens thousands of stocks and scores them based on fundamental financial metrics. And for each, it provides detailed AI-powered insights and the ability to communicate with an AI agent who is deeply trained in Lynch and Buffett's approaches.
-                                    </p>
+                                    <div className="space-y-2">
+                                        <h4 className="font-medium text-sm">The Problem: Drowning in Data</h4>
+                                        <p className="text-sm text-muted-foreground">
+                                            The modern market offers unlimited data but very little wisdom. Investors are constantly bombarded with noise, biased speculation, and herd mentality. Most platforms exacerbate this by drowning you in charts and raw numbers, optimizing for technical trading rather than fundamental understanding.
+                                        </p>
+                                    </div>
+
+                                    <div className="space-y-2">
+                                        <h4 className="font-medium text-sm">Our Philosophy: Discipline Over Data</h4>
+                                        <p className="text-sm text-muted-foreground">
+                                            We are opinionated and focused. Instead of giving you every signal in the universe, we democratize access to the minds of the greatest investors who ever lived. Imagine having direct access to the discipline, patience, and rigorous criteria of Peter Lynch or Warren Buffett—applied instantly to every stock in the market.
+                                        </p>
+                                    </div>
+
+                                    <div className="space-y-2">
+                                        <h4 className="font-medium text-sm">How It Works: Quantitative Rigor + AI Insight</h4>
+                                        <p className="text-sm text-muted-foreground">We combine two powerful layers of analysis to help you build a winning thesis:</p>
+                                        <ul className="text-sm text-muted-foreground space-y-2 list-disc list-inside ml-2">
+                                            <li>
+                                                <strong className="text-foreground">The Screen (Quantitative):</strong> First, we apply a coarse-grained, "tuneable" algorithm to thousands of stocks. This mercilessly filters the market based on the hard numbers—growth rates, debt ratios, and valuations—that mattered most to the legends.
+                                            </li>
+                                            <li>
+                                                <strong className="text-foreground">The Agent (Qualitative):</strong> Once a candidate is found, our AI Agent takes over. It analyzes annual reports, earnings calls, insider trading, and macro data <em>through the specific lens</em> of your chosen investor. It doesn't just summarize news, SEC filings, and earnings calls; it evaluates them, asking: <em>"Does this company have a durable moat?"</em> or <em>"Is this a misunderstanding that creates a buying opportunity?"</em>
+                                            </li>
+                                        </ul>
+                                    </div>
+
+                                    <div className="space-y-2">
+                                        <h4 className="font-medium text-sm">The Result</h4>
+                                        <p className="text-sm text-muted-foreground">
+                                            By putting the discipline of the masters directly into your hands, we help you ignore the noise and focus on what actually drives long-term returns: fundamental value.
+                                        </p>
+                                    </div>
                                 </CardContent>
                             </Card>
 
