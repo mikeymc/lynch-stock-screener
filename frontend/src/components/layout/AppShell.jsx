@@ -123,7 +123,7 @@ function AppShellContent({
                     // Default to false if not present, check value string
                     const alertsOn = settings.feature_alerts_enabled?.value === true
                     const economyLinkOn = settings.feature_economy_link_enabled?.value === true
-                    const redditOn = settings.feature_reddit_enabled?.value === true
+                    const redditOn = settings.feature_reddit_enabled?.value === true || settings.feature_reddit_enabled?.value === 'true'
                     setAlertsEnabled(alertsOn)
                     setEconomyLinkEnabled(economyLinkOn)
                     setRedditEnabled(redditOn)

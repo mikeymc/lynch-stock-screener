@@ -2639,25 +2639,24 @@ def get_stock_reddit(symbol):
                     'source': 'database'
                 })
         
-        # No cached data - fetch live (with rate limiting and conversations)
-        from reddit_client import RedditClient, calculate_simple_sentiment
+        # No cached data - fetch live (using Google Search Grounding)
+        from reddit_client import RedditClient
         
+        # Get company name for disambiguation (important for short symbols like TW)
+        company_name = None
+        metrics = db.get_stock_metrics(symbol)
+        if metrics and metrics.get('company_name'):
+            company_name = metrics.get('company_name')
+
         client = RedditClient()
         raw_posts = client.find_stock_mentions_with_conversations(
             symbol=symbol,
-            time_filter='year',       # Longer window for quality DD posts
-            max_results=20,
-            min_comment_score=30      # All comments with 30+ upvotes
+            time_filter='month',
+            max_results=10,
+            company_name=company_name
         )
         
-        # Enrich with sentiment scores and symbol
-        for post in raw_posts:
-            post['symbol'] = symbol
-            post['sentiment_score'] = calculate_simple_sentiment(
-                post.get('title', '') + ' ' + post.get('selftext', '')
-            )
-        
-        # Cache for future requests (without conversation data for now)
+        # Cache for future requests
         if raw_posts:
             db.save_social_sentiment(raw_posts)
         
