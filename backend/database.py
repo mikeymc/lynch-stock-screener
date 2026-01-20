@@ -904,23 +904,74 @@ class Database:
                 last_checked TIMESTAMP,
                 triggered_at TIMESTAMP,
                 message TEXT,
+                condition_description TEXT,
                 UNIQUE(user_id, symbol, condition_type, condition_params)
             )
+        """)
+        
+        # Migration: Add condition_description for flexible LLM-based alerts
+        cursor.execute("""
+            DO $$
+            BEGIN
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                               WHERE table_name = 'alerts' AND column_name = 'condition_description') THEN
+                    ALTER TABLE alerts ADD COLUMN condition_description TEXT;
+                END IF;
+            END $$;
+        """)
+        
+        # Migration: Drop UNIQUE constraint to allow multiple custom alerts per ticker
+        # The constraint UNIQUE(user_id, symbol, condition_type, condition_params) prevents
+        # users from creating multiple custom alerts for the same ticker because all custom
+        # alerts use condition_type='custom' and condition_params={}. The actual conditions
+        # are stored in condition_description, so this constraint is overly restrictive.
+        cursor.execute("""
+            DO $$
+            BEGIN
+                -- Drop the constraint if it exists
+                IF EXISTS (
+                    SELECT 1 FROM pg_constraint 
+                    WHERE conname = 'alerts_user_id_symbol_condition_type_condition_params_key'
+                ) THEN
+                    ALTER TABLE alerts DROP CONSTRAINT alerts_user_id_symbol_condition_type_condition_params_key;
+                END IF;
+            END $$;
         """)
         
         # Initialize remaining schema (misplaced code wrapper)
         self._init_rest_of_schema(conn)
 
-    def create_alert(self, user_id: int, symbol: str, condition_type: str, condition_params: Dict[str, Any], frequency: str = 'daily') -> int:
-        """Create a new user alert."""
+    def create_alert(self, user_id: int, symbol: str, condition_type: str = 'custom', 
+                     condition_params: Optional[Dict[str, Any]] = None, 
+                     frequency: str = 'daily', 
+                     condition_description: Optional[str] = None) -> int:
+        """
+        Create a new user alert.
+        
+        Args:
+            user_id: User ID creating the alert
+            symbol: Stock symbol for the alert
+            condition_type: Legacy alert type ('price', 'pe_ratio', or 'custom' for LLM-based)
+            condition_params: Legacy condition parameters (dict with threshold/operator)
+            frequency: How often to check (not currently used, but kept for future)
+            condition_description: Natural language description of the alert condition (for LLM evaluation)
+        
+        Returns:
+            Alert ID
+        """
         conn = self.get_connection()
         try:
             cursor = conn.cursor()
+            
+            # Default to empty params if not provided
+            if condition_params is None:
+                condition_params = {}
+            
             cursor.execute("""
-                INSERT INTO alerts (user_id, symbol, condition_type, condition_params, frequency, status)
-                VALUES (%s, %s, %s, %s, %s, 'active')
+                INSERT INTO alerts (user_id, symbol, condition_type, condition_params, frequency, status, condition_description)
+                VALUES (%s, %s, %s, %s, %s, 'active', %s)
                 RETURNING id
-            """, (user_id, symbol, condition_type, json.dumps(condition_params), frequency))
+            """, (user_id, symbol, condition_type, json.dumps(condition_params), frequency, condition_description))
             alert_id = cursor.fetchone()[0]
             conn.commit()
             return alert_id
@@ -938,7 +989,7 @@ class Database:
             cursor = conn.cursor()
             query = """
                 SELECT id, symbol, condition_type, condition_params, frequency, status, 
-                       created_at, last_checked, triggered_at, message
+                       created_at, last_checked, triggered_at, message, condition_description
                 FROM alerts 
                 WHERE user_id = %s
             """
@@ -1029,7 +1080,7 @@ class Database:
         try:
             cursor = conn.cursor()
             cursor.execute("""
-                SELECT id, user_id, symbol, condition_type, condition_params, frequency, status, last_checked
+                SELECT id, user_id, symbol, condition_type, condition_params, frequency, status, last_checked, condition_description
                 FROM alerts 
                 WHERE status = 'active'
             """)

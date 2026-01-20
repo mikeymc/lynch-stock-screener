@@ -309,7 +309,16 @@ get_earnings_history_decl = FunctionDeclaration(
 
 manage_alerts_decl = FunctionDeclaration(
     name="manage_alerts",
-    description="Manage user alerts for stock metrics. Use this tool to create new alerts (e.g., 'notify me when AAPL hits $200'), list existing alerts, or delete unwanted alerts.",
+    description="""Manage user alerts for stock metrics. Supports flexible natural language alert conditions.
+    
+    You can create alerts for ANY stock metric or condition, including:
+    - Price movements (e.g., "notify when AAPL drops below $150")
+    - Valuation metrics (e.g., "alert when P/E ratio falls below 15")
+    - Financial ratios (e.g., "notify when gross margin exceeds 40%")
+    - Market metrics (e.g., "alert when market cap reaches $1B")
+    - Complex conditions (e.g., "notify when debt-to-equity is below 0.5 and P/E is under 20")
+    
+    Use this tool to create new alerts with natural language conditions, list existing alerts, or delete unwanted alerts.""",
     parameters=Schema(
         type=Type.OBJECT,
         properties={
@@ -319,16 +328,9 @@ manage_alerts_decl = FunctionDeclaration(
                 enum=["create", "list", "delete"]
             ),
             "ticker": Schema(type=Type.STRING, description="Stock ticker symbol (required for 'create')"),
-            "condition_type": Schema(
+            "condition_description": Schema(
                 type=Type.STRING, 
-                description="The metric to monitor (required for 'create')",
-                enum=["price", "pe_ratio", "market_cap", "RSI"]
-            ),
-            "threshold": Schema(type=Type.NUMBER, description="The value that triggers the alert (required for 'create')"),
-            "operator": Schema(
-                type=Type.STRING, 
-                description="Direction of the trigger (required for 'create')",
-                enum=["above", "below"]
+                description="Natural language description of the alert condition (required for 'create'). Be specific about the metric and threshold. Examples: 'notify me when the price drops below $145', 'alert when gross margin exceeds 35%', 'notify when P/E ratio is below 15'"
             ),
             "alert_id": Schema(type=Type.INTEGER, description="ID of the alert to delete (required for 'delete')"),
             "user_id": Schema(type=Type.INTEGER, description="Internal User ID (automatically injected by system, do not prompt for this)"),
@@ -2006,39 +2008,84 @@ class ToolExecutor:
         finally:
             self.db.return_connection(conn)
 
-    def _manage_alerts(self, action: str, ticker: str = None, condition_type: str = None, 
-                      threshold: float = None, operator: str = None, alert_id: int = None, user_id: int = None) -> Dict[str, Any]:
-        """Manage user alerts: create, list, or delete."""
+    def _manage_alerts(self, action: str, ticker: str = None, condition_description: str = None,
+                      condition_type: str = None, threshold: float = None, operator: str = None, 
+                      alert_id: int = None, user_id: int = None) -> Dict[str, Any]:
+        """
+        Manage user alerts: create, list, or delete.
+        
+        Supports two modes:
+        1. Flexible natural language conditions (recommended): Use condition_description parameter
+        2. Legacy hardcoded conditions: Use condition_type, threshold, operator parameters
+        
+        Args:
+            action: Action to perform ('create', 'list', or 'delete')
+            ticker: Stock symbol (for create)
+            condition_description: Natural language description of alert condition (e.g., "notify me when AAPL drops below $145")
+            condition_type: Legacy condition type ('price', 'pe_ratio')
+            threshold: Legacy threshold value
+            operator: Legacy operator ('above' or 'below')
+            alert_id: Alert ID (for delete)
+            user_id: User ID
+        """
         if not user_id:
-            # If user_id is missing (e.g. testing or not passed context), we can't manage alerts
-            # For now, return an error or use a default test user if needed
             return {"error": "Authentication required. Cannot manage alerts without a valid user session."}
             
         if action == "create":
-            if not ticker or not condition_type or threshold is None or not operator:
-                return {"error": "Missing required parameters for creating an alert. Need ticker, condition_type, threshold, and operator."}
-                
+            if not ticker:
+                return {"error": "Missing required parameter 'ticker' for creating an alert."}
+            
             ticker = ticker.upper()
             
-            # Create condition params dict
-            condition_params = {
-                "threshold": threshold,
-                "operator": operator
-            }
-            
-            try:
-                alert_id = self.db.create_alert(user_id, ticker, condition_type, condition_params)
-                return {
-                    "message": f"Successfully created alert for {ticker}.",
-                    "alert_details": {
-                        "id": alert_id,
-                        "ticker": ticker,
-                        "condition": f"{condition_type} {operator} {threshold}"
+            # Prefer condition_description (flexible LLM-based alerts)
+            if condition_description:
+                try:
+                    # Create flexible LLM-based alert
+                    alert_id = self.db.create_alert(
+                        user_id=user_id,
+                        symbol=ticker,
+                        condition_type='custom',  # Mark as LLM-evaluated
+                        condition_params={},  # Empty params for custom alerts
+                        condition_description=condition_description
+                    )
+                    return {
+                        "message": f"Successfully created alert for {ticker}.",
+                        "alert_details": {
+                            "id": alert_id,
+                            "ticker": ticker,
+                            "condition": condition_description
+                        }
                     }
+                except Exception as e:
+                    return {"error": f"Failed to create alert: {str(e)}"}
+            
+            # Fallback to legacy hardcoded alerts
+            elif condition_type and threshold is not None and operator:
+                condition_params = {
+                    "threshold": threshold,
+                    "operator": operator
                 }
-            except Exception as e:
-                return {"error": f"Failed to create alert: {str(e)}"}
                 
+                try:
+                    alert_id = self.db.create_alert(
+                        user_id=user_id,
+                        symbol=ticker,
+                        condition_type=condition_type,
+                        condition_params=condition_params
+                    )
+                    return {
+                        "message": f"Successfully created alert for {ticker}.",
+                        "alert_details": {
+                            "id": alert_id,
+                            "ticker": ticker,
+                            "condition": f"{condition_type} {operator} {threshold}"
+                        }
+                    }
+                except Exception as e:
+                    return {"error": f"Failed to create alert: {str(e)}"}
+            else:
+                return {"error": "Must provide either 'condition_description' for flexible alerts or all of (condition_type, threshold, operator) for legacy alerts."}
+            
         elif action == "list":
             try:
                 alerts = self.db.get_alerts(user_id)
@@ -2048,8 +2095,14 @@ class ToolExecutor:
                 # Format for display
                 formatted_alerts = []
                 for a in alerts:
-                    params = a['condition_params']
-                    condition_str = f"{a['condition_type']} {params.get('operator')} {params.get('threshold')}"
+                    # Prefer condition_description if available
+                    if a.get('condition_description'):
+                        condition_str = a['condition_description']
+                    else:
+                        # Fallback to legacy format
+                        params = a['condition_params']
+                        condition_str = f"{a['condition_type']} {params.get('operator')} {params.get('threshold')}"
+                    
                     formatted_alerts.append({
                         "id": a['id'],
                         "symbol": a['symbol'],
