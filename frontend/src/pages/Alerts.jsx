@@ -11,6 +11,7 @@ export default function Alerts() {
     const [alerts, setAlerts] = useState([])
     const [loading, setLoading] = useState(true)
     const [error, setError] = useState(null)
+    const [selectedAlerts, setSelectedAlerts] = useState(new Set())
 
     useEffect(() => {
         fetchAlerts()
@@ -53,6 +54,47 @@ export default function Alerts() {
         }
     }
 
+    const batchDeleteAlerts = async () => {
+        if (selectedAlerts.size === 0) return
+        if (!confirm(`Are you sure you want to delete ${selectedAlerts.size} alert(s)?`)) return
+
+        try {
+            const deletePromises = Array.from(selectedAlerts).map(alertId =>
+                fetch(`/api/alerts/${alertId}`, { method: 'DELETE' })
+            )
+
+            const results = await Promise.all(deletePromises)
+
+            if (results.every(r => r.ok)) {
+                setAlerts(alerts.filter(a => !selectedAlerts.has(a.id)))
+                setSelectedAlerts(new Set())
+            } else {
+                throw new Error('Some alerts failed to delete')
+            }
+        } catch (err) {
+            console.error('Error batch deleting alerts:', err)
+            // Show toast error here ideally
+        }
+    }
+
+    const toggleAlertSelection = (alertId) => {
+        const newSelected = new Set(selectedAlerts)
+        if (newSelected.has(alertId)) {
+            newSelected.delete(alertId)
+        } else {
+            newSelected.add(alertId)
+        }
+        setSelectedAlerts(newSelected)
+    }
+
+    const toggleAllTriggeredAlerts = () => {
+        if (selectedAlerts.size === triggeredAlerts.length) {
+            setSelectedAlerts(new Set())
+        } else {
+            setSelectedAlerts(new Set(triggeredAlerts.map(a => a.id)))
+        }
+    }
+
     const getConditionIcon = (type) => {
         switch (type) {
             case 'price': return <DollarSign className="h-4 w-4" />
@@ -62,8 +104,20 @@ export default function Alerts() {
     }
 
     const formatCondition = (alert) => {
+        // Prioritize condition_description for custom/LLM-based alerts
+        if (alert.condition_description) {
+            return alert.condition_description
+        }
+
+        // Fall back to legacy format for old alerts
         const { condition_type, condition_params } = alert
-        const { operator, threshold } = condition_params
+        const { operator, threshold } = condition_params || {}
+
+        // Handle case where condition_params is missing or incomplete
+        if (!operator || threshold === undefined) {
+            return condition_type || 'Custom condition'
+        }
+
         const opStr = operator === 'above' ? '>' : '<'
 
         if (condition_type === 'price') {
@@ -74,7 +128,7 @@ export default function Alerts() {
         return `${condition_type} ${opStr} ${threshold}`
     }
 
-    const activeAlerts = alerts.filter(a => a.status === 'active')
+    const pendingAlerts = alerts.filter(a => a.status === 'active')
     const triggeredAlerts = alerts.filter(a => a.status === 'triggered')
 
     if (loading && alerts.length === 0) {
@@ -83,24 +137,16 @@ export default function Alerts() {
 
     return (
         <div className="container py-8 max-w-4xl mx-auto">
-            <div className="flex items-center justify-between mb-8">
-                <div>
-                    <h1 className="text-3xl font-bold tracking-tight">Alerts</h1>
-                    <p className="text-muted-foreground mt-1">
-                        Manage your stock alerts and notifications
-                    </p>
-                </div>
-                <Button onClick={fetchAlerts} variant="outline" size="sm">
-                    Refresh
-                </Button>
+            <div className="mb-8">
+                <h1 className="text-3xl font-bold tracking-tight">Alerts</h1>
             </div>
 
-            <Tabs defaultValue="active" className="w-full">
+            <Tabs defaultValue="pending" className="w-full">
                 <TabsList className="mb-4">
-                    <TabsTrigger value="active">
-                        Active
-                        {activeAlerts.length > 0 && (
-                            <Badge variant="secondary" className="ml-2 h-5 min-w-5 px-1">{activeAlerts.length}</Badge>
+                    <TabsTrigger value="pending">
+                        Pending
+                        {pendingAlerts.length > 0 && (
+                            <Badge variant="secondary" className="ml-2 h-5 min-w-5 px-1">{pendingAlerts.length}</Badge>
                         )}
                     </TabsTrigger>
                     <TabsTrigger value="triggered">
@@ -111,17 +157,16 @@ export default function Alerts() {
                     </TabsTrigger>
                 </TabsList>
 
-                <TabsContent value="active" className="space-y-4">
-                    {activeAlerts.length === 0 ? (
+                <TabsContent value="pending" className="space-y-4">
+                    {pendingAlerts.length === 0 ? (
                         <Card>
                             <CardContent className="py-12 text-center text-muted-foreground">
                                 <Bell className="h-12 w-12 mx-auto mb-4 opacity-20" />
-                                <p>No active alerts.</p>
-                                <p className="text-sm mt-2">Ask the AI agent to set an alert for you.</p>
+                                <p>No pending alerts.</p>
                             </CardContent>
                         </Card>
                     ) : (
-                        activeAlerts.map(alert => (
+                        pendingAlerts.map(alert => (
                             <AlertCard
                                 key={alert.id}
                                 alert={alert}
@@ -141,16 +186,43 @@ export default function Alerts() {
                             </CardContent>
                         </Card>
                     ) : (
-                        triggeredAlerts.map(alert => (
-                            <AlertCard
-                                key={alert.id}
-                                alert={alert}
-                                onDelete={() => deleteAlert(alert.id)}
-                                icon={getConditionIcon(alert.condition_type)}
-                                conditionText={formatCondition(alert)}
-                                isTriggered
-                            />
-                        ))
+                        <>
+                            <div className="flex items-center justify-between p-4 bg-muted rounded-lg">
+                                <div className="flex items-center gap-4">
+                                    <input
+                                        type="checkbox"
+                                        checked={selectedAlerts.size === triggeredAlerts.length && triggeredAlerts.length > 0}
+                                        onChange={toggleAllTriggeredAlerts}
+                                        className="h-4 w-4 rounded border-gray-300 accent-primary cursor-pointer"
+                                    />
+                                    <span className="text-sm font-medium">
+                                        {selectedAlerts.size > 0 ? `${selectedAlerts.size} selected` : 'Select all'}
+                                    </span>
+                                </div>
+                                <Button
+                                    variant="default"
+                                    size="sm"
+                                    onClick={batchDeleteAlerts}
+                                    disabled={selectedAlerts.size === 0}
+                                >
+                                    <Trash2 className="h-4 w-4 mr-2" />
+                                    Delete Selected
+                                </Button>
+                            </div>
+                            {triggeredAlerts.map(alert => (
+                                <AlertCard
+                                    key={alert.id}
+                                    alert={alert}
+                                    onDelete={() => deleteAlert(alert.id)}
+                                    icon={getConditionIcon(alert.condition_type)}
+                                    conditionText={formatCondition(alert)}
+                                    isTriggered
+                                    selectable
+                                    selected={selectedAlerts.has(alert.id)}
+                                    onToggleSelect={() => toggleAlertSelection(alert.id)}
+                                />
+                            ))}
+                        </>
                     )}
                 </TabsContent>
             </Tabs>
@@ -158,15 +230,23 @@ export default function Alerts() {
     )
 }
 
-function AlertCard({ alert, onDelete, icon, conditionText, isTriggered }) {
+function AlertCard({ alert, onDelete, icon, conditionText, isTriggered, selectable, selected, onToggleSelect }) {
     return (
         <Card>
             <CardHeader className="p-4 flex flex-row items-start justify-between space-y-0">
-                <div className="flex items-center gap-3">
+                <div className="flex items-center gap-3 flex-1">
+                    {selectable && (
+                        <input
+                            type="checkbox"
+                            checked={selected}
+                            onChange={onToggleSelect}
+                            className="h-4 w-4 rounded border-gray-300 accent-primary cursor-pointer"
+                        />
+                    )}
                     <div className={`p-2 rounded-full ${isTriggered ? 'bg-red-100 text-red-600 dark:bg-red-900/20' : 'bg-primary/10 text-primary'}`}>
                         {icon}
                     </div>
-                    <div>
+                    <div className="flex-1">
                         <CardTitle className="text-base font-medium flex items-center gap-2">
                             {alert.symbol}
                             <span className="text-muted-foreground font-normal text-sm mx-1">•</span>
