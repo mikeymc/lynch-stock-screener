@@ -81,9 +81,9 @@ def _stop_cache_job(job_id: int):
         raise typer.Exit(1)
 
 
-# Price History Cache
-@app.command("prices")
-def prices(
+# Price History Cache (renamed from prices to avoid confusion)
+@app.command("history")
+def history(
     action: str = typer.Argument(..., help="Action: start or stop"),
     job_id: int = typer.Argument(None, help="Job ID (required for stop)"),
     prod: bool = typer.Option(False, "--prod", help="Trigger production API instead of local"),
@@ -177,6 +177,92 @@ def prices(
         headers = {"Authorization": f"Bearer {token}"}
         
         console.print(f"[bold blue]🛑 Cancelling cache job {job_id}...[/bold blue]")
+        
+        try:
+            response = httpx.post(
+                f"{api_url}/api/jobs/{job_id}/cancel",
+                headers=headers,
+                timeout=30.0
+            )
+            response.raise_for_status()
+            console.print(f"[bold green]✓ Job {job_id} cancelled![/bold green]")
+            
+        except httpx.HTTPError as e:
+            console.print(f"[bold red]✗ Failed to cancel job:[/bold red] {e}")
+            if not prod:
+                console.print("[yellow]Make sure local server is running[/yellow]")
+            raise typer.Exit(1)
+    else:
+        console.print(f"[bold red]✗ Unknown action: {action}[/bold red]")
+        raise typer.Exit(1)
+
+
+# Fast Price Update (TradingView Scanner)
+@app.command("prices")
+def prices(
+    action: str = typer.Argument(..., help="Action: start or stop"),
+    job_id: int = typer.Argument(None, help="Job ID (required for stop)"),
+    prod: bool = typer.Option(False, "--prod", help="Trigger production API instead of local"),
+    region: str = typer.Option("us", "--region", "-r", 
+                               help="Region: us, europe, asia, all (defaults to us for speed)"),
+):
+    """Fast price update via TradingView (15-min interval)"""
+    if action == "start":
+        # Build params
+        # Support comma-separated regions if passed manually (e.g. "us,europe")
+        params = {"regions": region.split(',')}
+
+        # Determine API URL
+        api_url = API_URL if prod else "http://localhost:5001"
+        
+        # Get token
+        token = get_api_token()
+        headers = {
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {token}"
+        }
+        
+        console.print(f"[bold blue]🚀 Starting fast price update ({region})...[/bold blue]")
+        
+        payload = {
+            "type": "price_update",
+            "params": params
+        }
+        
+        try:
+            response = httpx.post(
+                f"{api_url}/api/jobs",
+                json=payload,
+                headers=headers,
+                timeout=30.0
+            )
+            response.raise_for_status()
+            
+            data = response.json()
+            job_id = data.get("job_id")
+            
+            console.print(f"[bold green]✓ Price update job started![/bold green]")
+            console.print(f"[dim]Job ID: {job_id}[/dim]")
+            console.print(f"[dim]Monitor: {api_url}/api/jobs/{job_id}[/dim]")
+            return job_id
+            
+        except httpx.HTTPError as e:
+            console.print(f"[bold red]✗ Failed to start price update:[/bold red] {e}")
+            if not prod:
+                console.print("[yellow]Make sure local server is running[/yellow]")
+            raise typer.Exit(1)
+            
+    elif action == "stop":
+        # ... logic for stop (reuse helper if possible or duplicate)
+        if not job_id:
+            console.print("[bold red]✗ Job ID required for stop[/bold red]")
+            raise typer.Exit(1)
+        
+        api_url = API_URL if prod else "http://localhost:5001"
+        token = get_api_token()
+        headers = {"Authorization": f"Bearer {token}"}
+        
+        console.print(f"[bold blue]🛑 Cancelling price update job {job_id}...[/bold blue]")
         
         try:
             response = httpx.post(

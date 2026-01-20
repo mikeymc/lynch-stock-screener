@@ -221,6 +221,8 @@ class BackgroundWorker:
             self._run_check_alerts(job_id, params)
         elif job_type == 'forward_metrics_cache':
             self._run_forward_metrics_cache(job_id, params)
+        elif job_type == 'price_update':
+            self._run_price_update(job_id, params)
         else:
             raise ValueError(f"Unknown job type: {job_type}")
 
@@ -725,6 +727,104 @@ Return JSON only:
             raise
         finally:
             migrator.close()
+
+    def _run_price_update(self, job_id: int, params: Dict[str, Any]):
+        """
+        Fast price update job.
+        Fetches basic market data (price, volume, change, etc.) for ALL stocks
+        using TradingView scanner API (very fast, ~1-2 requests).
+        """
+        logger.info(f"Starting price update job {job_id}")
+        self.db.update_job_progress(job_id, progress_pct=5, progress_message='Fetching market data from TradingView...')
+        
+        from tradingview_fetcher import TradingViewFetcher
+        
+        try:
+            # fetch_all_stocks gets data for relevant regions (defaults to US/Europe/Asia)
+            # We want to force it to just US if we want it super fast, or all if we want global coverage
+            # Using same default as screening (all configured regions)
+            tv_fetcher = TradingViewFetcher()
+            
+            # Using a large limit to get everything. 
+            # Region filter can be passed in params if needed, defaulting to 'us' for speed/relevance
+            # based on user request "ALL US stocks"
+            regions = params.get('regions', ['us']) 
+            if isinstance(regions, str):
+                regions = regions.split(',')
+                
+            market_data = tv_fetcher.fetch_all_stocks(limit=20000, regions=regions)
+            
+            total_count = len(market_data)
+            logger.info(f"Fetched {total_count} stocks from TradingView")
+            
+            self.db.update_job_progress(job_id, progress_pct=20, progress_message=f'Updating {total_count} stocks...', total_count=total_count)
+            
+            # Get list of all existing symbols in DB to validate against
+            # This is crucial to avoid ForeignKeyViolations if TradingView returns a symbol we don't track
+            # (e.g., preferred shares that slipped through filters, or new listings not yet in our DB)
+            with self.db.get_connection() as conn:
+                with conn.cursor() as cursor:
+                    cursor.execute("SELECT symbol FROM stocks")
+                    existing_symbols = {row[0] for row in cursor.fetchall()}
+            
+            logger.info(f"Loaded {len(existing_symbols)} existing symbols from DB for validation")
+            
+            updated_count = 0
+            
+            # Batch updates are handled by the DB writer thread, so we can just loop and call update
+            # We only want to update keys that change frequently
+            for symbol, data in market_data.items():
+                if not symbol:
+                    continue
+                    
+                # Normalize symbol to match DB (BIO.B -> BIO-B)
+                # This mirrors logic in YFinancePriceClient._normalize_symbol
+                symbol = symbol.replace('.', '-')
+                
+                # SKIP if not in our database
+                if symbol not in existing_symbols:
+                    continue
+                    
+                # TradingViewFetcher returns normalized dict. We only need specific fields for price update.
+                    
+                # TradingViewFetcher returns normalized dict. We only need specific fields for price update.
+                metrics = {
+                    'price': data.get('price'),
+                    'pe_ratio': data.get('pe_ratio'),
+                    'market_cap': data.get('market_cap'),
+                    'volume': data.get('volume'),
+                    'dividend_yield': data.get('dividend_yield'),
+                    'beta': data.get('beta'),
+                    # We can update these too since we have them
+                    'total_revenue': data.get('total_revenue'), 
+                    'total_debt': data.get('total_debt'),
+                }
+                
+                # Check if we have valid price (essential)
+                if metrics.get('price') is None:
+                    continue
+                    
+                self.db.save_stock_metrics(symbol, metrics)
+                updated_count += 1
+                
+                if updated_count % 1000 == 0:
+                    pct = 20 + int((updated_count / total_count) * 75)
+                    self.db.update_job_progress(job_id, progress_pct=pct, processed_count=updated_count)
+                    self._send_heartbeat(job_id)
+            
+            # Ensure all writes are committed
+            self.db.flush()
+            
+            result = {
+                'total_fetched': total_count,
+                'updated_count': updated_count
+            }
+            self.db.complete_job(job_id, result)
+            logger.info(f"Price update job completed. Updated {updated_count} stocks.")
+            
+        except Exception as e:
+            logger.error(f"Price update job failed: {e}")
+            self.db.fail_job(job_id, str(e))
 
     def _run_price_history_cache(self, job_id: int, params: Dict[str, Any]):
         """

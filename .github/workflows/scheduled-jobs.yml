@@ -7,6 +7,8 @@ on:
   schedule:
     # Alerts check - every hour on the hour
     - cron: '0 * * * *'
+    # Price Update - every 15 minutes (fast TradingView fetch)
+    - cron: '*/15 * * * *'
     # Full screening at 10:00 PM ET (3:00 AM UTC) daily
     - cron: '0 3 * * *'
     # News cache at 10:10 PM ET (3:10 AM UTC) daily
@@ -43,6 +45,7 @@ on:
           - outlook_cache
           - transcript_cache
           - forward_metrics_cache
+          - price_update
 
 jobs:
   trigger-job:
@@ -59,6 +62,7 @@ jobs:
             SCHEDULE="${{ github.event.schedule }}"
 
             case "$SCHEDULE" in
+              "*/15 * * * *") echo "type=price_update" >> $GITHUB_OUTPUT ;;
               "0 * * * *")   echo "type=check_alerts" >> $GITHUB_OUTPUT ;;
               "0 3 * * *")   echo "type=full_screening" >> $GITHUB_OUTPUT ;;
               "10 3 * * *")  echo "type=news_cache" >> $GITHUB_OUTPUT ;;
@@ -81,6 +85,9 @@ jobs:
           # Set params based on job type (all default to US region)
           if [ "$JOB_TYPE" = "outlook_cache" ] || [ "$JOB_TYPE" = "form4_cache" ]; then
             PARAMS='{"region": "us"}'
+          elif [ "$JOB_TYPE" = "price_update" ]; then
+             # Default to US for speed, can be expanded if needed
+             PARAMS='{"regions": ["us"]}'
           elif [ "$JOB_TYPE" = "full_screening" ]; then
             PARAMS='{"force_refresh": true}'
           else
