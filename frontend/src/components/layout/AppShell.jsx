@@ -3,7 +3,7 @@
 
 import { useState, useEffect } from 'react'
 import { Outlet, useLocation, useNavigate, useParams } from 'react-router-dom'
-import { MessageSquare, Plus, Bell } from 'lucide-react'
+import { MessageSquare, Plus, Bell, SlidersHorizontal } from 'lucide-react'
 import AnalysisChat from '@/components/AnalysisChat'
 import ChatHistory from '@/components/ChatHistory'
 import SearchPopover from '@/components/SearchPopover'
@@ -555,41 +555,35 @@ function AppShellContent({
             <SidebarInset className="flex-1 flex flex-col min-w-0 overflow-hidden relative">
                 {/* Top bar with triggers */}
                 <header className="flex h-12 items-center justify-between border-b px-4 shrink-0">
-                    {/* Left side - Sidebar trigger and Search */}
-                    <div className="flex items-center gap-4">
-                        <SidebarTrigger />
+                    {/* Left side - Sidebar trigger, Search, and Filter */}
+                    <div className="flex items-center gap-2">
+                        <SidebarTrigger className="h-10 w-10 [&_svg]:size-[18px]" />
                         <SearchPopover onSelect={(sym) => navigate(`/stock/${sym}`)} />
+                        <Button
+                            variant="ghost"
+                            size="icon"
+                            className={`text-muted-foreground hover:text-foreground h-10 w-10 [&_svg]:size-5 ${showAdvancedFilters ? 'bg-accent text-accent-foreground' : ''}`}
+                            onClick={() => setShowAdvancedFilters(!showAdvancedFilters)}
+                        >
+                            <SlidersHorizontal />
+                        </Button>
                     </div>
 
-                    {/* Right side - Avatar (and Chat on small screens) */}
+                    {/* Right side - Alerts and Avatar */}
                     <div className="flex items-center gap-2">
-                        {/* Advanced Filter Button */}
-                        {/* Alerts Bell */}
-                        {/* Alerts Bell */}
                         {alertsEnabled && (
                             <Button
                                 variant="ghost"
                                 size="icon"
-                                className="relative"
+                                className="relative h-10 w-10 [&_svg]:size-[18px]"
                                 onClick={() => navigate('/alerts')}
                             >
-                                <Bell className="h-5 w-5" />
+                                <Bell />
                                 {alertsCount > 0 && (
                                     <span className="absolute top-1 right-1 h-2.5 w-2.5 rounded-full bg-red-600 border-2 border-background"></span>
                                 )}
                             </Button>
                         )}
-
-                        <Button
-                            variant="ghost"
-                            size="sm"
-                            className={`text-muted-foreground hover:text-foreground ${showAdvancedFilters ? 'bg-accent text-accent-foreground' : ''}`}
-                            onClick={() => setShowAdvancedFilters(!showAdvancedFilters)}
-                        >
-                            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"></polygon>
-                            </svg>
-                        </Button>
 
                         {/* Chat toggle - only show on small screens */}
                         {!isLargeScreen && (
