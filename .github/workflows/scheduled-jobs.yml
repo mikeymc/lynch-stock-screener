@@ -5,6 +5,8 @@ name: Scheduled Jobs
 
 on:
   schedule:
+    # Alerts check - every hour on the hour
+    - cron: '0 * * * *'
     # Full screening at 10:00 PM ET (3:00 AM UTC) daily
     - cron: '0 3 * * *'
     # News cache at 10:10 PM ET (3:10 AM UTC) daily
@@ -31,6 +33,7 @@ on:
         default: 'full_screening'
         type: choice
         options:
+          - check_alerts
           - full_screening
           - price_history_cache
           - news_cache
@@ -54,8 +57,9 @@ jobs:
             # Match on the ACTUAL cron expression that triggered this run
             # This is reliable even if the job is delayed by hours
             SCHEDULE="${{ github.event.schedule }}"
-            
+
             case "$SCHEDULE" in
+              "0 * * * *")   echo "type=check_alerts" >> $GITHUB_OUTPUT ;;
               "0 3 * * *")   echo "type=full_screening" >> $GITHUB_OUTPUT ;;
               "10 3 * * *")  echo "type=news_cache" >> $GITHUB_OUTPUT ;;
               "20 3 * * *")  echo "type=10k_cache" >> $GITHUB_OUTPUT ;;
