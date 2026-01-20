@@ -528,7 +528,7 @@ class Database:
                 END IF;
                 
                 -- gross_margin (for Buffett scoring)
-                IF NOT EXISTS (SELECT 1 FROM information_schema.columns 
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns
                                WHERE table_name = 'stock_metrics' AND column_name = 'gross_margin') THEN
                     ALTER TABLE stock_metrics ADD COLUMN gross_margin REAL;
                 END IF;
@@ -2192,7 +2192,9 @@ class Database:
                 where_clause = "WHERE symbol = %s AND period = 'annual'"
 
             cursor.execute(f"""
-                SELECT year, earnings_per_share, revenue, fiscal_end, debt_to_equity, period, net_income, dividend_amount, operating_cash_flow, capital_expenditures, free_cash_flow, last_updated
+                SELECT year, earnings_per_share, revenue, fiscal_end, debt_to_equity, period,
+                       net_income, dividend_amount, operating_cash_flow, capital_expenditures,
+                       free_cash_flow, shareholder_equity, last_updated
                 FROM earnings_history
                 {where_clause}
                 ORDER BY year DESC, period
@@ -2212,7 +2214,8 @@ class Database:
                     'operating_cash_flow': row[8],
                     'capital_expenditures': row[9],
                     'free_cash_flow': row[10],
-                    'last_updated': row[11]
+                    'shareholder_equity': row[11],
+                    'last_updated': row[12]
                 }
                 for row in rows
             ]
