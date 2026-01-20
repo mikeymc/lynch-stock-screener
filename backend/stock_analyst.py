@@ -4,10 +4,14 @@
 import os
 import json
 import re
+import time
+import logging
 from typing import Dict, Any, List, Optional
 from datetime import datetime
 from google import genai
 from google.genai.types import GenerateContentConfig
+
+logger = logging.getLogger(__name__)
 
 from characters import get_character
 from characters.config import CharacterConfig
@@ -15,6 +19,7 @@ from characters.config import CharacterConfig
 # Available AI models for analysis generation
 AVAILABLE_MODELS = ["gemini-2.5-flash", "gemini-3-flash-preview", "gemini-3-pro-preview"]
 DEFAULT_MODEL = "gemini-3-pro-preview"
+FALLBACK_MODEL = "gemini-3-flash-preview"
 
 class StockAnalyst:
     """Character-aware stock analyst that generates analyses using AI.
@@ -279,16 +284,52 @@ class StockAnalyst:
                                   material_events: Optional[List[Dict[str, Any]]] = None,
                                   model_version: str = DEFAULT_MODEL,
                                   user_id: Optional[int] = None):
-        """Stream a new analysis using the active character's voice."""
+        """Stream a new analysis using the active character's voice with retry logic."""
         if model_version not in AVAILABLE_MODELS:
             raise ValueError(f"Invalid model: {model_version}. Must be one of {AVAILABLE_MODELS}")
 
         prompt = self.format_prompt(stock_data, history, sections, news, material_events, user_id)
 
-        response = self.client.models.generate_content_stream(
-            model=model_version,
-            contents=prompt
-        )
+        # Retry logic with fallback to flash model
+        models_to_try = [model_version, FALLBACK_MODEL] if model_version != FALLBACK_MODEL else [model_version]
+        response = None
+
+        for model_index, model in enumerate(models_to_try):
+            retry_count = 0
+            max_retries = 3
+            base_delay = 1
+            model_success = False
+
+            while retry_count <= max_retries:
+                try:
+                    response = self.client.models.generate_content_stream(
+                        model=model,
+                        contents=prompt
+                    )
+                    model_success = True
+                    break
+                except Exception as e:
+                    is_overloaded = "503" in str(e) or "overloaded" in str(e).lower()
+
+                    # If retries left for this model, wait and retry
+                    if is_overloaded and retry_count < max_retries:
+                        sleep_time = base_delay * (2 ** retry_count)
+                        logger.warning(f"Gemini API ({model}) overloaded. Retrying in {sleep_time}s (attempt {retry_count + 1}/{max_retries})")
+                        time.sleep(sleep_time)
+                        retry_count += 1
+                        continue
+
+                    # If we are here, this model failed all retries (or non-retriable error)
+                    # If it's the last model, or not an overload error, raise it
+                    if model_index == len(models_to_try) - 1 or not is_overloaded:
+                        raise e
+
+                    # Otherwise break inner loop to try next model
+                    logger.warning(f"Primary model {model} failed. Switching to fallback...")
+                    break
+
+            if model_success:
+                break
 
         for chunk in response:
             try:
@@ -444,11 +485,46 @@ class StockAnalyst:
             brief_text += f"{lynch_brief}\n\n"
             final_prompt += brief_text
 
-        # Generate unified analysis
-        response = self.client.models.generate_content(
-            model=model_version,
-            contents=final_prompt
-        )
+        # Generate unified analysis with retry logic
+        models_to_try = [model_version, FALLBACK_MODEL] if model_version != FALLBACK_MODEL else [model_version]
+        response = None
+
+        for model_index, model in enumerate(models_to_try):
+            retry_count = 0
+            max_retries = 3
+            base_delay = 1
+            model_success = False
+
+            while retry_count <= max_retries:
+                try:
+                    response = self.client.models.generate_content(
+                        model=model,
+                        contents=final_prompt
+                    )
+                    model_success = True
+                    break
+                except Exception as e:
+                    is_overloaded = "503" in str(e) or "overloaded" in str(e).lower()
+
+                    # If retries left for this model, wait and retry
+                    if is_overloaded and retry_count < max_retries:
+                        sleep_time = base_delay * (2 ** retry_count)
+                        logger.warning(f"Gemini API ({model}) overloaded. Retrying in {sleep_time}s (attempt {retry_count + 1}/{max_retries})")
+                        time.sleep(sleep_time)
+                        retry_count += 1
+                        continue
+
+                    # If we are here, this model failed all retries (or non-retriable error)
+                    # If it's the last model, or not an overload error, raise it
+                    if model_index == len(models_to_try) - 1 or not is_overloaded:
+                        raise e
+
+                    # Otherwise break inner loop to try next model
+                    logger.warning(f"Primary model {model} failed. Switching to fallback...")
+                    break
+
+            if model_success:
+                break
 
         if not response.parts:
             error_msg = "Gemini API returned no content."
