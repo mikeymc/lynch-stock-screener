@@ -615,6 +615,32 @@ export default function ChartNarrativeRenderer({ narrative, historyData, isQuart
             const peLabels = useWeeklyPE ? weeklyPE.dates : (historyData?.labels || labels)
             const peData = useWeeklyPE ? weeklyPE.values : (historyData?.pe_ratio || historyData?.pe_history || [])
 
+            // Calculate 3-month (13-week) rolling average
+            const peSMA = (() => {
+                if (!useWeeklyPE || !peData || peData.length < 13) return []
+
+                const windowSize = 13
+                const sma = []
+
+                for (let i = 0; i < peData.length; i++) {
+                    if (i < windowSize - 1) {
+                        sma.push(null)
+                        continue
+                    }
+
+                    const windowinfo = peData.slice(i - windowSize + 1, i + 1)
+                    const validValues = windowinfo.filter(v => v !== null && v !== undefined)
+
+                    if (validValues.length === 0) {
+                        sma.push(null)
+                    } else {
+                        const sum = validValues.reduce((a, b) => a + b, 0)
+                        sma.push(sum / validValues.length)
+                    }
+                }
+                return sma
+            })()
+
             return (
                 <div className="h-64">
                     <Line
@@ -633,7 +659,19 @@ export default function ChartNarrativeRenderer({ narrative, historyData, isQuart
                                     borderWidth: 1.5,
                                     tension: 0.1,
                                     spanGaps: true
-                                }
+                                },
+                                // Add 3-Month Rolling Average Dataset
+                                ...(useWeeklyPE && peSMA.length > 0 ? [{
+                                    label: '3-Month Avg',
+                                    data: peSMA,
+                                    borderColor: 'rgba(75, 192, 192, 0.8)', // Teal with 80% opacity
+                                    backgroundColor: 'transparent',
+                                    pointRadius: 0,
+                                    pointHoverRadius: 0,
+                                    borderWidth: 2,
+                                    tension: 0.2,
+                                    spanGaps: true
+                                }] : [])
                             ]
                         }}
                         options={{

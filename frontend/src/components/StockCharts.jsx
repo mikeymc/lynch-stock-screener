@@ -922,6 +922,35 @@ export default function StockCharts({ historyData, quarterlyHistoryData, loading
                         const peLabels = useWeeklyPE ? weeklyPE.dates : labels
                         const peData = useWeeklyPE ? weeklyPE.values : activeData?.pe_ratio
 
+                        // Calculate 3-month (13-week) rolling average
+                        const peSMA = (() => {
+                          if (!useWeeklyPE || !peData || peData.length < 13) return []
+
+                          const windowSize = 13
+                          const sma = []
+
+                          for (let i = 0; i < peData.length; i++) {
+                            if (i < windowSize - 1) {
+                              sma.push(null)
+                              continue
+                            }
+
+                            // Calculate average of window
+                            const windowinfo = peData.slice(i - windowSize + 1, i + 1)
+                            // Skip max calculation if any nulls in window? Or treat as non-existent?
+                            // Simple approach: filter out nulls or strictly require all data
+                            const validValues = windowinfo.filter(v => v !== null && v !== undefined)
+
+                            if (validValues.length === 0) {
+                              sma.push(null)
+                            } else {
+                              const sum = validValues.reduce((a, b) => a + b, 0)
+                              sma.push(sum / validValues.length)
+                            }
+                          }
+                          return sma
+                        })()
+
                         return (
                           <Line
                             key={useWeeklyPE ? 'weekly' : 'annual'}
@@ -939,7 +968,19 @@ export default function StockCharts({ historyData, quarterlyHistoryData, loading
                                   borderWidth: 1.5,
                                   tension: 0.1,
                                   spanGaps: true
-                                }
+                                },
+                                // Add 3-Month Rolling Average Dataset
+                                ...(useWeeklyPE && peSMA.length > 0 ? [{
+                                  label: '3-Month Avg',
+                                  data: peSMA,
+                                  borderColor: 'rgba(75, 192, 192, 0.8)', // Teal with 80% opacity
+                                  backgroundColor: 'transparent',
+                                  pointRadius: 0,
+                                  pointHoverRadius: 0,
+                                  borderWidth: 2,
+                                  tension: 0.2, // Slightly smoother
+                                  spanGaps: true
+                                }] : [])
                               ]
                             }}
                             options={{
