@@ -52,7 +52,7 @@ const formatValue = (value, format, decimals) => {
     }
 };
 
-export default function StockOverview({ stock, activeCharacter = 'lynch' }) {
+export default function StockOverview({ stock, activeCharacter = 'lynch', flash = {} }) {
     const metrics = CHARACTER_METRICS[activeCharacter] || CHARACTER_METRICS.lynch;
 
     return (
@@ -73,7 +73,7 @@ export default function StockOverview({ stock, activeCharacter = 'lynch' }) {
                                 return (
                                     <div key={metric.key}>
                                         <div className="text-sm text-muted-foreground mb-1">{metric.label}</div>
-                                        <div className={`text-2xl font-bold ${isGood ? "text-green-500" : ""}`}>
+                                        <div className={`text-2xl font-bold rounded px-1 transition-colors duration-500 ${isGood ? "text-green-500" : ""} ${flash[metric.key] || ''}`}>
                                             {formatValue(value, metric.format, metric.decimals)}
                                         </div>
                                     </div>

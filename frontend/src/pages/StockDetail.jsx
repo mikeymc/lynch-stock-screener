@@ -124,6 +124,52 @@ export default function StockDetail({ watchlist, toggleWatchlist, algorithm, act
     return () => controller.abort()
   }, [symbol, algorithm])
 
+  const [flash, setFlash] = useState({})
+
+  // Handle real-time updates
+  useEffect(() => {
+    const handleUpdate = (e) => {
+      const updates = e.detail?.updates
+      if (!updates || !stock) return
+
+      const update = updates.find(u => u.symbol === stock.symbol)
+      if (update) {
+        const newFlash = {}
+        let hasChanges = false
+
+        // Fields to animate
+        const fieldsToCheck = [
+          'price', 'pe_ratio', 'peg_ratio', 'market_cap',
+          'dividend_yield', 'forward_pe', 'forward_peg_ratio',
+          'revenue_cagr', 'earnings_cagr', 'debt_to_equity', 'gross_margin'
+        ]
+
+        fieldsToCheck.forEach(field => {
+          const newValue = update[field]
+          const oldValue = stock[field]
+
+          if (newValue !== undefined && newValue !== null && newValue !== oldValue) {
+            if (field === 'price') {
+              newFlash[field] = (newValue > oldValue) ? 'animate-flash-green' : 'animate-flash-red'
+            } else {
+              newFlash[field] = 'animate-flash-green'
+            }
+            hasChanges = true
+          }
+        })
+
+        if (hasChanges) {
+          setStock(prev => ({ ...prev, ...update }))
+          setFlash(newFlash)
+          setTimeout(() => setFlash({}), 2000)
+        }
+      }
+    }
+
+    window.addEventListener('price-updates', handleUpdate)
+    return () => window.removeEventListener('price-updates', handleUpdate)
+  }, [stock]) // Re-bind when stock changes so we have correct oldValue
+
   // Fetch feature flags
   useEffect(() => {
     const fetchSettings = async () => {
@@ -348,13 +394,14 @@ export default function StockDetail({ watchlist, toggleWatchlist, algorithm, act
         stock={stock}
         toggleWatchlist={toggleWatchlist}
         watchlist={watchlist}
+        flash={flash}
       />
 
       {/* Content area - fills remaining space */}
       <ErrorBoundary>
         <div className="flex-1 w-full">
           {activeTab === 'overview' && (
-            <StockOverview stock={stock} activeCharacter={activeCharacter} />
+            <StockOverview stock={stock} activeCharacter={activeCharacter} flash={flash} />
           )}
 
           {activeTab === 'charts' && (

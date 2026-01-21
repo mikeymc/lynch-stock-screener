@@ -3,7 +3,7 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { formatLargeCurrency } from "../utils/formatters"
 
-export default function StockHeader({ stock, toggleWatchlist, watchlist, className, onClick }) {
+export default function StockHeader({ stock, toggleWatchlist, watchlist, className, onClick, flash = {} }) {
     const isWatchlisted = watchlist?.has(stock.symbol)
 
     return (
@@ -40,12 +40,14 @@ export default function StockHeader({ stock, toggleWatchlist, watchlist, classNa
                 <div className="flex items-center gap-6 shrink-0">
                     <div className="text-right hidden sm:block">
                         <div className="text-sm font-medium text-muted-foreground">Price</div>
-                        <div className="font-bold text-lg leading-none">${stock.price?.toFixed(2) ?? 'N/A'}</div>
+                        <div className={`font-bold text-lg leading-none rounded px-1 transition-colors duration-500 ${flash.price || ''}`}>
+                            ${stock.price?.toFixed(2) ?? 'N/A'}
+                        </div>
                     </div>
 
                     <div className="text-right hidden md:block">
                         <div className="text-sm font-medium text-muted-foreground">Market Cap</div>
-                        <div className="font-semibold leading-none">
+                        <div className={`font-semibold leading-none rounded px-1 transition-colors duration-500 ${flash.market_cap || ''}`}>
                             {formatLargeCurrency(stock.market_cap)}
                         </div>
                     </div>

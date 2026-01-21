@@ -8,7 +8,7 @@ import os
 import queue
 import time
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional, Dict, Any, List, Set
 import json
 
@@ -1818,7 +1818,9 @@ class Database:
         Supports partial updates - only keys present in metrics dict will be updated.
         """
         # Always update last_updated
-        metrics['last_updated'] = datetime.now()
+        metrics['last_updated'] = datetime.now(timezone.utc)
+        if 'price' in metrics:
+            metrics['last_price_updated'] = datetime.now(timezone.utc)
         
         # Valid columns map to ensure we only try to update valid fields
         valid_columns = {
@@ -1827,7 +1829,7 @@ class Database:
             'beta', 'total_debt', 'interest_expense', 'effective_tax_rate',
             'gross_margin',  # For Buffett scoring
             'forward_pe', 'forward_peg_ratio', 'forward_eps',
-            'insider_net_buying_6m', 'last_updated',
+            'insider_net_buying_6m', 'last_updated', 'last_price_updated',
             'analyst_rating', 'analyst_rating_score', 'analyst_count',
             'price_target_high', 'price_target_low', 'price_target_mean',
             'short_ratio', 'short_percent_float', 'next_earnings_date'
@@ -2178,6 +2180,98 @@ class Database:
             # This automatically handles columns added via migrations (price_target_*, analyst_*, short_*, etc.)
             columns = [desc[0] for desc in cursor.description]
             return dict(zip(columns, row))
+        finally:
+            self.return_connection(conn)
+
+    def get_recently_updated_stocks(self, since_timestamp: str, limit: int = 100) -> List[Dict[str, Any]]:
+        """
+        Get stocks that have been updated since the given timestamp.
+        Used for real-time UI updates.
+        
+        Args:
+            since_timestamp: ISO format timestamp string
+            limit: Max number of updates to return
+            
+        Returns:
+            List of dictionaries with updated fields (price, change, etc.)
+        """
+        conn = self.get_connection()
+        try:
+            cursor = conn.cursor()
+            cursor.execute("""
+                WITH recent_earnings AS (
+                    SELECT 
+                        symbol, 
+                        net_income,
+                        year,
+                        ROW_NUMBER() OVER (PARTITION BY symbol ORDER BY year DESC) as rn,
+                        COUNT(*) OVER (PARTITION BY symbol) as total_years
+                    FROM earnings_history
+                    -- Optimization: We could filter by symbol if we had the list upfront, 
+                    -- but here we filter by joining with the results of the main query.
+                    -- Actually, simpler to do it in one query.
+                ),
+                growth_calc AS (
+                    SELECT 
+                        t1.symbol,
+                        t1.net_income as end_ni,
+                        t2.net_income as start_ni,
+                        (t1.year - t2.year) as years_diff
+                    FROM recent_earnings t1
+                    JOIN recent_earnings t2 ON t1.symbol = t2.symbol 
+                    WHERE t1.rn = 1  -- Most recent
+                      AND t2.rn = LEAST(5, t1.total_years) -- 5th most recent (or oldest if < 5)
+                      AND t1.year > t2.year -- Ensure strictly newer
+                      AND t2.net_income != 0 -- Avoid div by zero
+                      AND t2.net_income IS NOT NULL
+                      AND t1.net_income IS NOT NULL
+                ),
+                calculated_metrics AS (
+                    SELECT 
+                        g.symbol,
+                        -- Linear Growth Rate Formula: ((End - Start) / |Start|) / Years * 100
+                        (((g.end_ni - g.start_ni) / ABS(g.start_ni)) / NULLIF(g.years_diff, 0)) * 100 as earnings_cagr
+                    FROM growth_calc g
+                )
+                SELECT 
+                    sm.symbol, sm.price, sm.pe_ratio, sm.market_cap, 
+                    sm.forward_pe, sm.forward_peg_ratio,
+                    sm.dividend_yield, sm.beta, 
+                    cm.earnings_cagr,
+                    sm.last_price_updated as last_updated
+                FROM stock_metrics sm
+                LEFT JOIN calculated_metrics cm ON sm.symbol = cm.symbol
+                WHERE sm.last_price_updated > %s
+                ORDER BY sm.last_price_updated DESC
+                LIMIT %s
+            """, (since_timestamp, limit))
+            
+            updates = []
+            if cursor.description:
+                columns = [desc[0] for desc in cursor.description]
+                for row in cursor.fetchall():
+                    # Handle datetime serialization for last_updated
+                    row_dict = dict(zip(columns, row))
+                    if isinstance(row_dict.get('last_updated'), datetime):
+                        row_dict['last_updated'] = row_dict['last_updated'].isoformat()
+                    
+                    # Calculate PEG Ratio on the fly (Lynch Style: PE / Growth)
+                    pe = row_dict.get('pe_ratio')
+                    growth = row_dict.get('earnings_cagr')
+                    
+                    # Ensure minimal growth for valid PEG (Lynch preferred > 0, usually > 5-10)
+                    if pe and growth and growth > 0:
+                        row_dict['peg_ratio'] = round(pe / growth, 2)
+                    else:
+                        row_dict['peg_ratio'] = None
+
+                    updates.append(row_dict)
+                
+            return updates
+        except Exception as e:
+            # Handle invalid timestamp format gracefully
+            print(f"Error fetching recently updated stocks: {e}")
+            return []
         finally:
             self.return_connection(conn)
 

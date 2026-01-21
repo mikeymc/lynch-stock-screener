@@ -4028,7 +4028,22 @@ def get_alerts(user_id):
     """Get all alerts for the current user."""
     try:
         alerts = db.get_alerts(user_id)
-        return jsonify({'alerts': alerts})
+        
+        # Check for sync since timestamp for real-time price updates
+        since = request.args.get('since')
+        updates = []
+        if since:
+            try:
+                updates = db.get_recently_updated_stocks(since)
+            except Exception as ex:
+                logger.warning(f"Error fetching updates: {ex}")
+                updates = []
+            
+        return jsonify({
+            'alerts': alerts,
+            'updates': updates,
+            'timestamp': datetime.now().isoformat()
+        })
     except Exception as e:
         logger.error(f"Error getting alerts: {e}")
         return jsonify({'error': str(e)}), 500

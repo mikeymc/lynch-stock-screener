@@ -1,7 +1,7 @@
 // ABOUTME: Main app shell layout with dual sidebars
 // ABOUTME: Left sidebar for navigation, right sidebar for chat
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { Outlet, useLocation, useNavigate, useParams } from 'react-router-dom'
 import { MessageSquare, Plus, Bell, SlidersHorizontal } from 'lucide-react'
 import AnalysisChat from '@/components/AnalysisChat'
@@ -135,25 +135,45 @@ function AppShellContent({
         fetchSettings()
     }, [])
 
+    const lastSyncRef = useRef(null)
+
     useEffect(() => {
         if (!alertsEnabled) return // Don't fetch counts if disabled
 
-        const fetchAlertsCount = async () => {
+        const fetchUpdates = async () => {
             try {
-                const response = await fetch('/api/alerts')
+                // Poll for both alerts and price updates
+                const url = lastSyncRef.current
+                    ? `/api/alerts?since=${encodeURIComponent(lastSyncRef.current)}`
+                    : '/api/alerts'
+
+                const response = await fetch(url)
                 if (response.ok) {
                     const data = await response.json()
                     // Count triggered alerts
                     const triggered = (data.alerts || []).filter(a => a.status === 'triggered').length
                     setAlertsCount(triggered)
+
+                    // Update timestamp for next poll
+                    if (data.timestamp) {
+                        lastSyncRef.current = data.timestamp
+                    }
+
+                    // Dispatch price updates if any
+                    if (data.updates && data.updates.length > 0) {
+                        console.log(`Received ${data.updates.length} stock updates`)
+                        window.dispatchEvent(new CustomEvent('price-updates', {
+                            detail: { updates: data.updates }
+                        }))
+                    }
                 }
             } catch (error) {
-                console.error('Error fetching alerts count:', error)
+                console.error('Error fetching updates:', error)
             }
         }
-        fetchAlertsCount()
+        fetchUpdates()
         // Poll every minute
-        const interval = setInterval(fetchAlertsCount, 60000)
+        const interval = setInterval(fetchUpdates, 60000)
         return () => clearInterval(interval)
     }, [alertsEnabled])
 

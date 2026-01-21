@@ -225,3 +225,33 @@
     background-color: hsl(var(--sidebar-primary));
   }
 }
+
+@layer utilities {
+  @keyframes flash-green {
+    0% {
+      background-color: rgba(22, 163, 74, 0.25);
+    }
+
+    100% {
+      background-color: transparent;
+    }
+  }
+
+  @keyframes flash-red {
+    0% {
+      background-color: rgba(220, 38, 38, 0.25);
+    }
+
+    100% {
+      background-color: transparent;
+    }
+  }
+
+  .animate-flash-green {
+    animation: flash-green 1.5s ease-out;
+  }
+
+  .animate-flash-red {
+    animation: flash-red 1.5s ease-out;
+  }
+}

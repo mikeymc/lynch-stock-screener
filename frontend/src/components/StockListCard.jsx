@@ -7,6 +7,7 @@ import { Card, CardContent } from "@/components/ui/card"
 import { useNavigate } from "react-router-dom"
 import StatusBar from "./StatusBar"
 import { formatLargeCurrency } from "../utils/formatters"
+import { useState, useEffect } from 'react'
 
 // Metric configurations for each character
 const CHARACTER_METRICS = {
@@ -71,9 +72,64 @@ function formatMetricValue(value, format) {
     }
 }
 
-export default function StockListCard({ stock, toggleWatchlist, watchlist, activeCharacter = 'lynch' }) {
+export default function StockListCard({ stock: initialStock, toggleWatchlist, watchlist, activeCharacter = 'lynch' }) {
     const navigate = useNavigate()
-    const isWatchlisted = watchlist?.has(stock.symbol)
+    const isWatchlisted = watchlist?.has(initialStock.symbol)
+
+    // Local state to handle real-time updates
+    const [stock, setStock] = useState(initialStock)
+    const [flash, setFlash] = useState({}) // { price: 'animate-flash-green', ... }
+
+    // Sync prop changes (e.g. parent re-render or new search)
+    useEffect(() => {
+        setStock(initialStock)
+    }, [initialStock])
+
+    // Listen for real-time updates
+    useEffect(() => {
+        const handleUpdate = (e) => {
+            const updates = e.detail?.updates
+            if (!updates) return
+
+            // Find update for this stock
+            const update = updates.find(u => u.symbol === stock.symbol)
+            if (update) {
+                // Determine which fields changed and set flash
+                const newFlash = {}
+                let hasChanges = false
+
+                // Fields to check and animate
+                const fieldsToCheck = ['price', 'pe_ratio', 'dividend_yield', 'market_cap', 'peg_ratio', 'forward_pe', 'forward_peg_ratio']
+
+                fieldsToCheck.forEach(field => {
+                    const newValue = update[field]
+                    const oldValue = stock[field]
+
+                    // Simple equality check, can be improved for floats
+                    if (newValue !== undefined && newValue !== null && newValue !== oldValue) {
+                        // Determine color based on diff (only for price mainly)
+                        if (field === 'price') {
+                            newFlash[field] = (newValue > oldValue) ? 'animate-flash-green' : 'animate-flash-red'
+                        } else {
+                            newFlash[field] = 'animate-flash-green'
+                        }
+                        hasChanges = true
+                    }
+                })
+
+                if (hasChanges) {
+                    setStock(prev => ({ ...prev, ...update }))
+                    setFlash(newFlash)
+
+                    // Clear flash after animation
+                    setTimeout(() => setFlash({}), 2000)
+                }
+            }
+        }
+
+        window.addEventListener('price-updates', handleUpdate)
+        return () => window.removeEventListener('price-updates', handleUpdate)
+    }, [stock.symbol, stock]) // Dependency on stock needed for oldValue compariso
 
     return (
         <Card
@@ -109,11 +165,11 @@ export default function StockListCard({ stock, toggleWatchlist, watchlist, activ
                     <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 pb-2 border-b">
                         <div>
                             <div className="text-xs text-muted-foreground">Price</div>
-                            <div className="font-semibold text-base">${stock.price?.toFixed(2) ?? 'N/A'}</div>
+                            <div className={`font-semibold text-base px-1 rounded transition-colors ${flash.price || ''}`}>${stock.price?.toFixed(2) ?? 'N/A'}</div>
                         </div>
                         <div>
                             <div className="text-xs text-muted-foreground">Market Cap</div>
-                            <div className="font-semibold text-base">
+                            <div className={`font-semibold text-base px-1 rounded transition-colors ${flash.market_cap || ''}`}>
                                 {formatLargeCurrency(stock.market_cap)}
                             </div>
                         </div>
@@ -153,7 +209,7 @@ export default function StockListCard({ stock, toggleWatchlist, watchlist, activ
                         {CHARACTER_METRICS[activeCharacter]?.row3.map(metric => (
                             <div key={metric.key}>
                                 <div className="text-xs text-muted-foreground">{metric.label}</div>
-                                <div className={metric.goodWhen?.(stock[metric.key]) ? "text-green-600 font-medium" : "font-medium"}>
+                                <div className={`${metric.goodWhen?.(stock[metric.key]) ? "text-green-600 font-medium" : "font-medium"} px-1 rounded transition-colors ${flash[metric.key] || ''}`}>
                                     {formatMetricValue(stock[metric.key], metric.format)}
                                 </div>
                             </div>
