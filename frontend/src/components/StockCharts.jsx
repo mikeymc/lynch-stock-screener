@@ -917,10 +917,10 @@ export default function StockCharts({ historyData, quarterlyHistoryData, loading
                     {/* P/E Ratio - Uses weekly data for granular display */}
                     <div className="h-64 chart-container">
                       {(() => {
-                        const weeklyPE = historyData?.weekly_pe_ratios
+                        const weeklyPE = activeData?.weekly_pe_ratios
                         const useWeeklyPE = weeklyPE?.dates?.length > 0 && weeklyPE?.values?.length > 0
                         const peLabels = useWeeklyPE ? weeklyPE.dates : labels
-                        const peData = useWeeklyPE ? weeklyPE.values : historyData?.pe_ratio
+                        const peData = useWeeklyPE ? weeklyPE.values : activeData?.pe_ratio
 
                         return (
                           <Line
