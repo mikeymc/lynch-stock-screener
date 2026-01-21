@@ -1763,6 +1763,17 @@ class Database:
             END $$;
         """)
 
+        # Migration: Add last_price_updated to stock_metrics
+        cursor.execute("""
+            DO $$
+            BEGIN
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                               WHERE table_name = 'stock_metrics' AND column_name = 'last_price_updated') THEN
+                    ALTER TABLE stock_metrics ADD COLUMN last_price_updated TIMESTAMP WITH TIME ZONE;
+                END IF;
+            END $$;
+        """)
+
         conn.commit()
 
     def save_stock_basic(self, symbol: str, company_name: str, exchange: str, sector: str = None,
