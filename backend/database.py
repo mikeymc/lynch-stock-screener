@@ -3385,6 +3385,86 @@ class Database:
         finally:
             self.return_connection(conn)
 
+    def get_portfolio_holdings_detailed(self, portfolio_id: int, use_live_prices: bool = True) -> List[Dict[str, Any]]:
+        """Get detailed holdings information including purchase prices and current values.
+        
+        Args:
+            portfolio_id: Portfolio to get holdings for
+            use_live_prices: If True, fetch live prices from yfinance. If False, use cached prices.
+            
+        Returns:
+            List of dicts with keys: symbol, quantity, avg_purchase_price, current_price,
+                                     total_cost, current_value, gain_loss, gain_loss_percent
+        """
+        conn = self.get_connection()
+        try:
+            cursor = conn.cursor()
+            # Calculate average purchase price using weighted average of BUY transactions
+            # This uses FIFO-like logic: we calculate the weighted average cost basis
+            cursor.execute("""
+                SELECT 
+                    symbol,
+                    SUM(CASE WHEN transaction_type = 'BUY' THEN quantity ELSE -quantity END) as net_qty,
+                    SUM(CASE WHEN transaction_type = 'BUY' THEN quantity * price_per_share ELSE 0 END) / 
+                        NULLIF(SUM(CASE WHEN transaction_type = 'BUY' THEN quantity ELSE 0 END), 0) as avg_purchase_price
+                FROM portfolio_transactions
+                WHERE portfolio_id = %s
+                GROUP BY symbol
+                HAVING SUM(CASE WHEN transaction_type = 'BUY' THEN quantity ELSE -quantity END) > 0
+            """, (portfolio_id,))
+            
+            holdings_data = cursor.fetchall()
+            
+            # Fetch current prices
+            detailed_holdings = []
+            
+            if use_live_prices:
+                from portfolio_service import fetch_current_price
+                for symbol, quantity, avg_purchase_price in holdings_data:
+                    current_price = fetch_current_price(symbol, db=self)
+                    if current_price and avg_purchase_price:
+                        total_cost = quantity * avg_purchase_price
+                        current_value = quantity * current_price
+                        gain_loss = current_value - total_cost
+                        gain_loss_percent = (gain_loss / total_cost * 100) if total_cost > 0 else 0.0
+                        
+                        detailed_holdings.append({
+                            'symbol': symbol,
+                            'quantity': quantity,
+                            'avg_purchase_price': avg_purchase_price,
+                            'current_price': current_price,
+                            'total_cost': total_cost,
+                            'current_value': current_value,
+                            'gain_loss': gain_loss,
+                            'gain_loss_percent': gain_loss_percent
+                        })
+            else:
+                # Use cached prices from stock_metrics
+                for symbol, quantity, avg_purchase_price in holdings_data:
+                    cursor.execute("SELECT price FROM stock_metrics WHERE symbol = %s", (symbol,))
+                    row = cursor.fetchone()
+                    if row and row[0] and avg_purchase_price:
+                        current_price = row[0]
+                        total_cost = quantity * avg_purchase_price
+                        current_value = quantity * current_price
+                        gain_loss = current_value - total_cost
+                        gain_loss_percent = (gain_loss / total_cost * 100) if total_cost > 0 else 0.0
+                        
+                        detailed_holdings.append({
+                            'symbol': symbol,
+                            'quantity': quantity,
+                            'avg_purchase_price': avg_purchase_price,
+                            'current_price': current_price,
+                            'total_cost': total_cost,
+                            'current_value': current_value,
+                            'gain_loss': gain_loss,
+                            'gain_loss_percent': gain_loss_percent
+                        })
+            
+            return detailed_holdings
+        finally:
+            self.return_connection(conn)
+
     def get_portfolio_cash(self, portfolio_id: int) -> float:
         """Compute current cash balance from initial cash and transactions.
 
@@ -3469,29 +3549,10 @@ class Database:
 
         cash = self.get_portfolio_cash(portfolio_id)
         holdings = self.get_portfolio_holdings(portfolio_id)
+        holdings_detailed = self.get_portfolio_holdings_detailed(portfolio_id, use_live_prices)
 
-        # Calculate holdings value using prices
-        holdings_value = 0.0
-
-        if use_live_prices and holdings:
-            # Use live prices from yfinance for accurate real-time valuation
-            from portfolio_service import fetch_current_price
-            for symbol, quantity in holdings.items():
-                price = fetch_current_price(symbol, db=self)
-                if price:
-                    holdings_value += quantity * price
-        else:
-            # Use cached database prices (faster, for worker snapshots)
-            conn = self.get_connection()
-            try:
-                cursor = conn.cursor()
-                for symbol, quantity in holdings.items():
-                    cursor.execute("SELECT price FROM stock_metrics WHERE symbol = %s", (symbol,))
-                    row = cursor.fetchone()
-                    if row and row[0]:
-                        holdings_value += quantity * row[0]
-            finally:
-                self.return_connection(conn)
+        # Calculate holdings value from detailed holdings
+        holdings_value = sum(h['current_value'] for h in holdings_detailed)
 
         total_value = cash + holdings_value
         initial_cash = portfolio['initial_cash']
@@ -3505,7 +3566,8 @@ class Database:
             'initial_cash': initial_cash,
             'created_at': portfolio['created_at'],
             'cash': cash,
-            'holdings': holdings,
+            'holdings': holdings,  # Keep simple dict for backward compatibility
+            'holdings_detailed': holdings_detailed,  # New detailed holdings list
             'holdings_value': holdings_value,
             'total_value': total_value,
             'gain_loss': gain_loss,

@@ -3285,10 +3285,21 @@ def remove_from_watchlist(symbol, user_id):
 @app.route('/api/portfolios', methods=['GET'])
 @require_user_auth
 def list_portfolios(user_id):
-    """List all portfolios for the authenticated user."""
+    """List all portfolios for the authenticated user with computed values."""
     try:
         portfolios = db.get_user_portfolios(user_id)
-        return jsonify({'portfolios': portfolios})
+        
+        # Enrich each portfolio with computed summary data
+        enriched_portfolios = []
+        for portfolio in portfolios:
+            summary = db.get_portfolio_summary(portfolio['id'], use_live_prices=True)
+            if summary:
+                enriched_portfolios.append(summary)
+            else:
+                # Fallback to basic portfolio data if summary fails
+                enriched_portfolios.append(portfolio)
+        
+        return jsonify({'portfolios': enriched_portfolios})
     except Exception as e:
         logger.error(f"Error listing portfolios: {e}")
         return jsonify({'error': str(e)}), 500

@@ -297,11 +297,11 @@ export default function Portfolios() {
 }
 
 function PortfolioCard({ portfolio, onClick, onDelete }) {
-    // For list view, we only have basic info - compute what we can
+    // Use pre-computed values from backend (now includes live prices)
     const totalValue = portfolio.total_value || portfolio.initial_cash || 100000
     const initialCash = portfolio.initial_cash || 100000
-    const gainLoss = totalValue - initialCash
-    const gainLossPercent = initialCash > 0 ? (gainLoss / initialCash) * 100 : 0
+    const gainLoss = portfolio.gain_loss ?? (totalValue - initialCash)
+    const gainLossPercent = portfolio.gain_loss_percent ?? (initialCash > 0 ? (gainLoss / initialCash) * 100 : 0)
     const isPositive = gainLoss >= 0
 
     return (
@@ -341,7 +341,7 @@ function PortfolioCard({ portfolio, onClick, onDelete }) {
                             className={`${isPositive
                                 ? 'bg-emerald-500/10 text-emerald-600 hover:bg-emerald-500/20 dark:bg-emerald-500/20 dark:text-emerald-400'
                                 : 'bg-red-500/10 text-red-600 hover:bg-red-500/20 dark:bg-red-500/20 dark:text-red-400'
-                            }`}
+                                }`}
                         >
                             {isPositive ? (
                                 <TrendingUp className="h-3 w-3 mr-1" />
@@ -489,7 +489,7 @@ function PortfolioDetail({ portfolio, onBack, onRefresh, onDelete }) {
                 </TabsList>
 
                 <TabsContent value="holdings">
-                    <HoldingsTab holdings={holdings} />
+                    <HoldingsTab portfolio={portfolio} />
                 </TabsContent>
 
                 <TabsContent value="trade">
@@ -520,10 +520,11 @@ function PortfolioDetail({ portfolio, onBack, onRefresh, onDelete }) {
     )
 }
 
-function HoldingsTab({ holdings }) {
-    const holdingsList = Object.entries(holdings || {})
+function HoldingsTab({ portfolio }) {
+    // Check if we have detailed holdings data
+    const holdingsDetailed = portfolio?.holdings_detailed || []
 
-    if (holdingsList.length === 0) {
+    if (holdingsDetailed.length === 0) {
         return (
             <Card>
                 <CardContent className="py-12 text-center text-muted-foreground">
@@ -541,15 +542,34 @@ function HoldingsTab({ holdings }) {
                     <TableRow>
                         <TableHead>Symbol</TableHead>
                         <TableHead className="text-right">Shares</TableHead>
+                        <TableHead className="text-right">Purchase Price</TableHead>
+                        <TableHead className="text-right">Current Price</TableHead>
+                        <TableHead className="text-right">Total Cost</TableHead>
+                        <TableHead className="text-right">Current Value</TableHead>
+                        <TableHead className="text-right">Gain/Loss</TableHead>
+                        <TableHead className="text-right">Yield %</TableHead>
                     </TableRow>
                 </TableHeader>
                 <TableBody>
-                    {holdingsList.map(([symbol, quantity]) => (
-                        <TableRow key={symbol}>
-                            <TableCell className="font-medium">{symbol}</TableCell>
-                            <TableCell className="text-right">{quantity}</TableCell>
-                        </TableRow>
-                    ))}
+                    {holdingsDetailed.map((holding) => {
+                        const isPositive = holding.gain_loss >= 0
+                        return (
+                            <TableRow key={holding.symbol}>
+                                <TableCell className="font-medium">{holding.symbol}</TableCell>
+                                <TableCell className="text-right">{holding.quantity}</TableCell>
+                                <TableCell className="text-right">{formatCurrency(holding.avg_purchase_price)}</TableCell>
+                                <TableCell className="text-right">{formatCurrency(holding.current_price)}</TableCell>
+                                <TableCell className="text-right">{formatCurrency(holding.total_cost)}</TableCell>
+                                <TableCell className="text-right">{formatCurrency(holding.current_value)}</TableCell>
+                                <TableCell className={`text-right font-medium ${isPositive ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400'}`}>
+                                    {formatCurrency(holding.gain_loss)}
+                                </TableCell>
+                                <TableCell className={`text-right font-medium ${isPositive ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400'}`}>
+                                    {formatPercent(holding.gain_loss_percent)}
+                                </TableCell>
+                            </TableRow>
+                        )
+                    })}
                 </TableBody>
             </Table>
         </Card>
@@ -674,11 +694,10 @@ function TradeTab({ portfolioId, cash, holdings, onTradeComplete }) {
                     </div>
 
                     {result && (
-                        <div className={`flex items-center gap-2 p-3 rounded-lg ${
-                            result.type === 'success'
-                                ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400'
-                                : 'bg-red-500/10 text-red-600 dark:text-red-400'
-                        }`}>
+                        <div className={`flex items-center gap-2 p-3 rounded-lg ${result.type === 'success'
+                            ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400'
+                            : 'bg-red-500/10 text-red-600 dark:text-red-400'
+                            }`}>
                             {result.type === 'success' ? (
                                 <CheckCircle2 className="h-4 w-4" />
                             ) : (
@@ -820,11 +839,10 @@ function PerformanceTab({ snapshots, loading, initialCash }) {
                             return (
                                 <div
                                     key={i}
-                                    className={`flex-1 min-w-1 rounded-t transition-all ${
-                                        isPositive
-                                            ? 'bg-emerald-500/60 hover:bg-emerald-500'
-                                            : 'bg-red-500/60 hover:bg-red-500'
-                                    }`}
+                                    className={`flex-1 min-w-1 rounded-t transition-all ${isPositive
+                                        ? 'bg-emerald-500/60 hover:bg-emerald-500'
+                                        : 'bg-red-500/60 hover:bg-red-500'
+                                        }`}
                                     style={{ height: `${Math.max(height, 5)}%` }}
                                     title={`${formatDate(snapshot.snapshot_at)}: ${formatCurrency(snapshot.total_value)}`}
                                 />
