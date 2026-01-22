@@ -403,7 +403,14 @@ class DataFetcher:
                 if not using_tradingview_cache:
                     self._fetch_and_store_earnings(symbol)
                 else:
-                    logger.info(f"[{symbol}] Skipping yfinance fallback (using TradingView cache)")
+                    # Smart Fallback: Allow yfinance fetch during screening for companies > $2B
+                    # This catches recent major IPOs (like FIG) that lack 5-year EDGAR history
+                    market_cap = metrics.get('market_cap')
+                    if market_cap and market_cap > 2_000_000_000:
+                        logger.info(f"[{symbol}] Significant Market Cap ({market_cap/1e9:.1f}B) missing EDGAR data - forcing yfinance fallback")
+                        self._fetch_and_store_earnings(symbol)
+                    else:
+                        logger.info(f"[{symbol}] Skipping yfinance fallback (using TradingView cache)")
 
             # Flush queued writes to ensure data is committed
             self.db.flush()
