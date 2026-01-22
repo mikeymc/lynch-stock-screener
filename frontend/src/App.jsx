@@ -27,6 +27,7 @@ import UserAvatar from './components/UserAvatar'
 import Settings from './pages/Settings'
 import Alerts from './pages/Alerts'
 import Economy from './pages/Economy'
+import Portfolios from './pages/Portfolios'
 import { screeningCache } from './utils/cache'
 import Help from './pages/Help'
 // import './App.css' // Disabled for shadcn migration
@@ -1348,6 +1349,7 @@ function App() {
         <Route path="/tuning" element={<AlgorithmTuning />} />
         <Route path="/settings" element={<Settings />} />
         <Route path="/alerts" element={<Alerts />} />
+        <Route path="/portfolios" element={<Portfolios />} />
         <Route path="/economy" element={<Economy />} />
         <Route path="/help" element={<Help />} />
       </Route>

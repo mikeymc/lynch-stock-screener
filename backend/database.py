@@ -1774,6 +1774,59 @@ class Database:
             END $$;
         """)
 
+        # Paper trading portfolios
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS portfolios (
+                id SERIAL PRIMARY KEY,
+                user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                name TEXT NOT NULL,
+                initial_cash REAL DEFAULT 100000.0,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+
+        cursor.execute("""
+            CREATE INDEX IF NOT EXISTS idx_portfolios_user
+            ON portfolios(user_id)
+        """)
+
+        # Portfolio transactions (source of truth for holdings and cash)
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS portfolio_transactions (
+                id SERIAL PRIMARY KEY,
+                portfolio_id INTEGER NOT NULL REFERENCES portfolios(id) ON DELETE CASCADE,
+                symbol TEXT NOT NULL,
+                transaction_type TEXT NOT NULL CHECK (transaction_type IN ('BUY', 'SELL')),
+                quantity INTEGER NOT NULL CHECK (quantity > 0),
+                price_per_share REAL NOT NULL,
+                total_value REAL NOT NULL,
+                executed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                note TEXT
+            )
+        """)
+
+        cursor.execute("""
+            CREATE INDEX IF NOT EXISTS idx_portfolio_transactions_portfolio
+            ON portfolio_transactions(portfolio_id)
+        """)
+
+        # Portfolio value snapshots (for historical charts)
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS portfolio_value_snapshots (
+                id SERIAL PRIMARY KEY,
+                portfolio_id INTEGER NOT NULL REFERENCES portfolios(id) ON DELETE CASCADE,
+                total_value REAL NOT NULL,
+                cash_value REAL NOT NULL,
+                holdings_value REAL NOT NULL,
+                snapshot_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+
+        cursor.execute("""
+            CREATE INDEX IF NOT EXISTS idx_portfolio_snapshots_portfolio_time
+            ON portfolio_value_snapshots(portfolio_id, snapshot_at)
+        """)
+
         conn.commit()
 
     def save_stock_basic(self, symbol: str, company_name: str, exchange: str, sector: str = None,
@@ -3191,6 +3244,284 @@ class Database:
             cursor.execute("SELECT 1 FROM watchlist WHERE user_id = %s AND symbol = %s", (user_id, symbol))
             result = cursor.fetchone()
             return result is not None
+        finally:
+            self.return_connection(conn)
+
+    # =========================================================================
+    # Paper Trading Portfolio Methods
+    # =========================================================================
+
+    def create_portfolio(self, user_id: int, name: str, initial_cash: float = 100000.0) -> int:
+        """Create a new paper trading portfolio for a user"""
+        conn = self.get_connection()
+        try:
+            cursor = conn.cursor()
+            cursor.execute("""
+                INSERT INTO portfolios (user_id, name, initial_cash)
+                VALUES (%s, %s, %s)
+                RETURNING id
+            """, (user_id, name, initial_cash))
+            portfolio_id = cursor.fetchone()[0]
+            conn.commit()
+            return portfolio_id
+        finally:
+            self.return_connection(conn)
+
+    def get_portfolio(self, portfolio_id: int) -> Optional[Dict[str, Any]]:
+        """Get a portfolio by ID"""
+        conn = self.get_connection()
+        try:
+            cursor = conn.cursor(row_factory=psycopg.rows.dict_row)
+            cursor.execute("""
+                SELECT id, user_id, name, initial_cash, created_at
+                FROM portfolios
+                WHERE id = %s
+            """, (portfolio_id,))
+            return cursor.fetchone()
+        finally:
+            self.return_connection(conn)
+
+    def get_user_portfolios(self, user_id: int) -> List[Dict[str, Any]]:
+        """Get all portfolios for a user"""
+        conn = self.get_connection()
+        try:
+            cursor = conn.cursor(row_factory=psycopg.rows.dict_row)
+            cursor.execute("""
+                SELECT id, user_id, name, initial_cash, created_at
+                FROM portfolios
+                WHERE user_id = %s
+                ORDER BY created_at DESC
+            """, (user_id,))
+            return cursor.fetchall()
+        finally:
+            self.return_connection(conn)
+
+    def rename_portfolio(self, portfolio_id: int, new_name: str):
+        """Rename a portfolio"""
+        conn = self.get_connection()
+        try:
+            cursor = conn.cursor()
+            cursor.execute("""
+                UPDATE portfolios SET name = %s WHERE id = %s
+            """, (new_name, portfolio_id))
+            conn.commit()
+        finally:
+            self.return_connection(conn)
+
+    def delete_portfolio(self, portfolio_id: int, user_id: int) -> bool:
+        """Delete a portfolio (verifies ownership). Returns True if deleted."""
+        conn = self.get_connection()
+        try:
+            cursor = conn.cursor()
+            cursor.execute("""
+                DELETE FROM portfolios
+                WHERE id = %s AND user_id = %s
+            """, (portfolio_id, user_id))
+            deleted = cursor.rowcount > 0
+            conn.commit()
+            return deleted
+        finally:
+            self.return_connection(conn)
+
+    def record_transaction(
+        self,
+        portfolio_id: int,
+        symbol: str,
+        transaction_type: str,
+        quantity: int,
+        price_per_share: float,
+        note: str = None
+    ) -> int:
+        """Record a buy or sell transaction"""
+        total_value = quantity * price_per_share
+        conn = self.get_connection()
+        try:
+            cursor = conn.cursor()
+            cursor.execute("""
+                INSERT INTO portfolio_transactions
+                (portfolio_id, symbol, transaction_type, quantity, price_per_share, total_value, note)
+                VALUES (%s, %s, %s, %s, %s, %s, %s)
+                RETURNING id
+            """, (portfolio_id, symbol, transaction_type, quantity, price_per_share, total_value, note))
+            tx_id = cursor.fetchone()[0]
+            conn.commit()
+            return tx_id
+        finally:
+            self.return_connection(conn)
+
+    def get_portfolio_transactions(self, portfolio_id: int) -> List[Dict[str, Any]]:
+        """Get all transactions for a portfolio"""
+        conn = self.get_connection()
+        try:
+            cursor = conn.cursor(row_factory=psycopg.rows.dict_row)
+            cursor.execute("""
+                SELECT id, portfolio_id, symbol, transaction_type, quantity,
+                       price_per_share, total_value, executed_at, note
+                FROM portfolio_transactions
+                WHERE portfolio_id = %s
+                ORDER BY executed_at DESC
+            """, (portfolio_id,))
+            return cursor.fetchall()
+        finally:
+            self.return_connection(conn)
+
+    def get_portfolio_holdings(self, portfolio_id: int) -> Dict[str, int]:
+        """Compute current holdings from transactions.
+
+        Returns a dict mapping symbol -> quantity for positions > 0.
+        """
+        conn = self.get_connection()
+        try:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT symbol,
+                       SUM(CASE WHEN transaction_type = 'BUY' THEN quantity ELSE -quantity END) as net_qty
+                FROM portfolio_transactions
+                WHERE portfolio_id = %s
+                GROUP BY symbol
+                HAVING SUM(CASE WHEN transaction_type = 'BUY' THEN quantity ELSE -quantity END) > 0
+            """, (portfolio_id,))
+            return {row[0]: row[1] for row in cursor.fetchall()}
+        finally:
+            self.return_connection(conn)
+
+    def get_portfolio_cash(self, portfolio_id: int) -> float:
+        """Compute current cash balance from initial cash and transactions.
+
+        cash = initial_cash - sum(BUY totals) + sum(SELL totals)
+        """
+        conn = self.get_connection()
+        try:
+            cursor = conn.cursor()
+            # Get initial cash
+            cursor.execute("SELECT initial_cash FROM portfolios WHERE id = %s", (portfolio_id,))
+            row = cursor.fetchone()
+            if not row:
+                return 0.0
+            initial_cash = row[0]
+
+            # Get transaction totals
+            cursor.execute("""
+                SELECT
+                    COALESCE(SUM(CASE WHEN transaction_type = 'BUY' THEN total_value ELSE 0 END), 0) as buys,
+                    COALESCE(SUM(CASE WHEN transaction_type = 'SELL' THEN total_value ELSE 0 END), 0) as sells
+                FROM portfolio_transactions
+                WHERE portfolio_id = %s
+            """, (portfolio_id,))
+            buys, sells = cursor.fetchone()
+
+            return initial_cash - buys + sells
+        finally:
+            self.return_connection(conn)
+
+    def save_portfolio_snapshot(
+        self,
+        portfolio_id: int,
+        total_value: float,
+        cash_value: float,
+        holdings_value: float
+    ) -> int:
+        """Save a portfolio value snapshot for historical tracking"""
+        conn = self.get_connection()
+        try:
+            cursor = conn.cursor()
+            cursor.execute("""
+                INSERT INTO portfolio_value_snapshots
+                (portfolio_id, total_value, cash_value, holdings_value)
+                VALUES (%s, %s, %s, %s)
+                RETURNING id
+            """, (portfolio_id, total_value, cash_value, holdings_value))
+            snapshot_id = cursor.fetchone()[0]
+            conn.commit()
+            return snapshot_id
+        finally:
+            self.return_connection(conn)
+
+    def get_portfolio_snapshots(self, portfolio_id: int, limit: int = None) -> List[Dict[str, Any]]:
+        """Get portfolio value history snapshots"""
+        conn = self.get_connection()
+        try:
+            cursor = conn.cursor(row_factory=psycopg.rows.dict_row)
+            query = """
+                SELECT id, portfolio_id, total_value, cash_value, holdings_value, snapshot_at
+                FROM portfolio_value_snapshots
+                WHERE portfolio_id = %s
+                ORDER BY snapshot_at ASC
+            """
+            if limit:
+                query += f" LIMIT {limit}"
+            cursor.execute(query, (portfolio_id,))
+            return cursor.fetchall()
+        finally:
+            self.return_connection(conn)
+
+    def get_portfolio_summary(self, portfolio_id: int, use_live_prices: bool = True) -> Optional[Dict[str, Any]]:
+        """Get portfolio with computed cash, holdings value, and performance.
+
+        Args:
+            portfolio_id: Portfolio to summarize
+            use_live_prices: If True, fetch live prices from yfinance for accuracy.
+                             If False, use cached prices from stock_metrics (faster, for snapshots).
+        """
+        portfolio = self.get_portfolio(portfolio_id)
+        if not portfolio:
+            return None
+
+        cash = self.get_portfolio_cash(portfolio_id)
+        holdings = self.get_portfolio_holdings(portfolio_id)
+
+        # Calculate holdings value using prices
+        holdings_value = 0.0
+
+        if use_live_prices and holdings:
+            # Use live prices from yfinance for accurate real-time valuation
+            from portfolio_service import fetch_current_price
+            for symbol, quantity in holdings.items():
+                price = fetch_current_price(symbol, db=self)
+                if price:
+                    holdings_value += quantity * price
+        else:
+            # Use cached database prices (faster, for worker snapshots)
+            conn = self.get_connection()
+            try:
+                cursor = conn.cursor()
+                for symbol, quantity in holdings.items():
+                    cursor.execute("SELECT price FROM stock_metrics WHERE symbol = %s", (symbol,))
+                    row = cursor.fetchone()
+                    if row and row[0]:
+                        holdings_value += quantity * row[0]
+            finally:
+                self.return_connection(conn)
+
+        total_value = cash + holdings_value
+        initial_cash = portfolio['initial_cash']
+        gain_loss = total_value - initial_cash
+        gain_loss_percent = (gain_loss / initial_cash * 100) if initial_cash > 0 else 0.0
+
+        return {
+            'id': portfolio['id'],
+            'user_id': portfolio['user_id'],
+            'name': portfolio['name'],
+            'initial_cash': initial_cash,
+            'created_at': portfolio['created_at'],
+            'cash': cash,
+            'holdings': holdings,
+            'holdings_value': holdings_value,
+            'total_value': total_value,
+            'gain_loss': gain_loss,
+            'gain_loss_percent': gain_loss_percent
+        }
+
+    def get_all_portfolios(self) -> List[Dict[str, Any]]:
+        """Get all portfolios (for batch snapshot operations)"""
+        conn = self.get_connection()
+        try:
+            cursor = conn.cursor(row_factory=psycopg.rows.dict_row)
+            cursor.execute("""
+                SELECT id, user_id, name, initial_cash, created_at
+                FROM portfolios
+            """)
+            return cursor.fetchall()
         finally:
             self.return_connection(conn)
 

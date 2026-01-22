@@ -3279,6 +3279,164 @@ def remove_from_watchlist(symbol, user_id):
 
 
 # =============================================================================
+# Paper Trading Portfolio Endpoints
+# =============================================================================
+
+@app.route('/api/portfolios', methods=['GET'])
+@require_user_auth
+def list_portfolios(user_id):
+    """List all portfolios for the authenticated user."""
+    try:
+        portfolios = db.get_user_portfolios(user_id)
+        return jsonify({'portfolios': portfolios})
+    except Exception as e:
+        logger.error(f"Error listing portfolios: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/portfolios', methods=['POST'])
+@require_user_auth
+def create_portfolio(user_id):
+    """Create a new portfolio."""
+    try:
+        data = request.get_json()
+        if not data or 'name' not in data:
+            return jsonify({'error': 'Name is required'}), 400
+
+        name = data['name']
+        initial_cash = data.get('initial_cash', 100000.0)
+
+        portfolio_id = db.create_portfolio(user_id, name, initial_cash)
+        portfolio = db.get_portfolio(portfolio_id)
+
+        return jsonify(portfolio), 201
+    except Exception as e:
+        logger.error(f"Error creating portfolio: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/portfolios/<int:portfolio_id>', methods=['GET'])
+@require_user_auth
+def get_portfolio(portfolio_id, user_id):
+    """Get portfolio details with computed values."""
+    try:
+        portfolio = db.get_portfolio(portfolio_id)
+        if not portfolio or portfolio['user_id'] != user_id:
+            return jsonify({'error': 'Portfolio not found'}), 404
+
+        summary = db.get_portfolio_summary(portfolio_id)
+        return jsonify(summary)
+    except Exception as e:
+        logger.error(f"Error getting portfolio {portfolio_id}: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/portfolios/<int:portfolio_id>', methods=['PUT'])
+@require_user_auth
+def update_portfolio(portfolio_id, user_id):
+    """Update portfolio (currently only name)."""
+    try:
+        portfolio = db.get_portfolio(portfolio_id)
+        if not portfolio or portfolio['user_id'] != user_id:
+            return jsonify({'error': 'Portfolio not found'}), 404
+
+        data = request.get_json()
+        if data and 'name' in data:
+            db.rename_portfolio(portfolio_id, data['name'])
+
+        updated = db.get_portfolio(portfolio_id)
+        return jsonify(updated)
+    except Exception as e:
+        logger.error(f"Error updating portfolio {portfolio_id}: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/portfolios/<int:portfolio_id>', methods=['DELETE'])
+@require_user_auth
+def delete_portfolio(portfolio_id, user_id):
+    """Delete a portfolio and all its transactions."""
+    try:
+        deleted = db.delete_portfolio(portfolio_id, user_id)
+        if not deleted:
+            return jsonify({'error': 'Portfolio not found'}), 404
+
+        return jsonify({'success': True})
+    except Exception as e:
+        logger.error(f"Error deleting portfolio {portfolio_id}: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/portfolios/<int:portfolio_id>/transactions', methods=['GET'])
+@require_user_auth
+def get_portfolio_transactions(portfolio_id, user_id):
+    """Get transaction history for a portfolio."""
+    try:
+        portfolio = db.get_portfolio(portfolio_id)
+        if not portfolio or portfolio['user_id'] != user_id:
+            return jsonify({'error': 'Portfolio not found'}), 404
+
+        transactions = db.get_portfolio_transactions(portfolio_id)
+        return jsonify({'transactions': transactions})
+    except Exception as e:
+        logger.error(f"Error getting transactions for portfolio {portfolio_id}: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/portfolios/<int:portfolio_id>/trade', methods=['POST'])
+@require_user_auth
+def execute_portfolio_trade(portfolio_id, user_id):
+    """Execute a buy or sell trade."""
+    try:
+        portfolio = db.get_portfolio(portfolio_id)
+        if not portfolio or portfolio['user_id'] != user_id:
+            return jsonify({'error': 'Portfolio not found'}), 404
+
+        data = request.get_json()
+        if not data:
+            return jsonify({'error': 'Request body is required'}), 400
+
+        required_fields = ['symbol', 'transaction_type', 'quantity']
+        for field in required_fields:
+            if field not in data:
+                return jsonify({'error': f'{field} is required'}), 400
+
+        from portfolio_service import execute_trade
+
+        result = execute_trade(
+            db=db,
+            portfolio_id=portfolio_id,
+            symbol=data['symbol'].upper(),
+            transaction_type=data['transaction_type'].upper(),
+            quantity=int(data['quantity']),
+            note=data.get('note')
+        )
+
+        if result['success']:
+            return jsonify(result)
+        else:
+            return jsonify(result), 400
+    except Exception as e:
+        logger.error(f"Error executing trade for portfolio {portfolio_id}: {e}")
+        return jsonify({'error': str(e), 'success': False}), 500
+
+
+@app.route('/api/portfolios/<int:portfolio_id>/value-history', methods=['GET'])
+@require_user_auth
+def get_portfolio_value_history(portfolio_id, user_id):
+    """Get portfolio value history for charts."""
+    try:
+        portfolio = db.get_portfolio(portfolio_id)
+        if not portfolio or portfolio['user_id'] != user_id:
+            return jsonify({'error': 'Portfolio not found'}), 404
+
+        snapshots = db.get_portfolio_snapshots(portfolio_id)
+        return jsonify({'snapshots': snapshots})
+    except Exception as e:
+        logger.error(f"Error getting value history for portfolio {portfolio_id}: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+# =============================================================================
 # Smart Chat Agent Endpoint (ReAct-based agentic chat)
 # =============================================================================
 

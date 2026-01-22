@@ -232,7 +232,43 @@ class BackgroundWorker:
         if now - self.last_heartbeat > 30:  # Every 30 seconds
             self.db.update_job_heartbeat(job_id)
             self.last_heartbeat = now
-            
+
+    def _snapshot_portfolio_values(self) -> int:
+        """
+        Snapshot current value of all portfolios.
+
+        Called after price updates to record portfolio values for historical charts.
+        Uses cached prices from stock_metrics (just updated) to value holdings.
+
+        Returns:
+            Number of portfolios snapshotted
+        """
+        portfolios = self.db.get_all_portfolios()
+        if not portfolios:
+            return 0
+
+        snapshot_count = 0
+        for portfolio in portfolios:
+            try:
+                portfolio_id = portfolio['id']
+                # Use cached prices (use_live_prices=False) since we just updated them
+                summary = self.db.get_portfolio_summary(portfolio_id, use_live_prices=False)
+                if summary:
+                    self.db.save_portfolio_snapshot(
+                        portfolio_id=portfolio_id,
+                        total_value=summary['total_value'],
+                        cash_value=summary['cash'],
+                        holdings_value=summary['holdings_value']
+                    )
+                    snapshot_count += 1
+            except Exception as e:
+                logger.warning(f"Failed to snapshot portfolio {portfolio.get('id')}: {e}")
+                continue
+
+        self.db.flush()
+        logger.info(f"Created {snapshot_count} portfolio value snapshots")
+        return snapshot_count
+
     def _run_check_alerts(self, job_id: int, params: Dict[str, Any]):
         """Check all active alerts and trigger if conditions are met using LLM evaluation."""
         logger.info(f"Running check_alerts job {job_id}")
@@ -814,13 +850,17 @@ Return JSON only:
             
             # Ensure all writes are committed
             self.db.flush()
-            
+
+            # Snapshot all portfolio values with updated prices
+            snapshot_count = self._snapshot_portfolio_values()
+
             result = {
                 'total_fetched': total_count,
-                'updated_count': updated_count
+                'updated_count': updated_count,
+                'portfolio_snapshots': snapshot_count
             }
             self.db.complete_job(job_id, result)
-            logger.info(f"Price update job completed. Updated {updated_count} stocks.")
+            logger.info(f"Price update job completed. Updated {updated_count} stocks, {snapshot_count} portfolio snapshots.")
             
         except Exception as e:
             logger.error(f"Price update job failed: {e}")

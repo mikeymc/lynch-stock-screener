@@ -308,6 +308,18 @@ function AppShellContent({
                                                         )}
                                                     </SidebarMenuButton>
                                                 </SidebarMenuItem>
+                                                <SidebarMenuItem>
+                                                    <SidebarMenuButton
+                                                        onClick={() => {
+                                                            navigate('/portfolios')
+                                                            onNavClick()
+                                                        }}
+                                                        isActive={location.pathname === '/portfolios'}
+                                                        className="pl-6 font-normal text-muted-foreground data-[active=true]:font-medium data-[active=true]:text-sidebar-primary"
+                                                    >
+                                                        <span className="flex-1">Portfolios</span>
+                                                    </SidebarMenuButton>
+                                                </SidebarMenuItem>
 
                                                 <div className="my-2 border-t mx-2 opacity-50" />
 

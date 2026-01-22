@@ -146,6 +146,8 @@ def test_db(shared_db):
         'filing_sections', 'sec_filings', 'screening_results',
         'insider_trades', 'dcf_recommendations', 'backtest_results',
         'optimization_runs', 'algorithm_configurations',
+        # Paper trading tables
+        'portfolio_value_snapshots', 'portfolio_transactions', 'portfolios',
         # Parent tables last
         'screening_sessions', 'background_jobs', 'app_settings',
         'stocks', 'users'
