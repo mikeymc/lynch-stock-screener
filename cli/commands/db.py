@@ -13,9 +13,7 @@ from cli.utils.fly import run_fly_command
 console = Console()
 app = typer.Typer(help="Database operations")
 
-# Proxy app group
-proxy_app = typer.Typer(help="Manage database proxy")
-app.add_typer(proxy_app, name="proxy")
+
 
 PID_FILE = Path("/tmp/bag_db_proxy.pid")
 LOG_FILE = Path("/tmp/bag_db_proxy.log")
@@ -28,8 +26,8 @@ def connect():
     run_fly_command(["postgres", "connect", "-a", "lynch-postgres"])
 
 
-@proxy_app.command("start")
-def proxy_start(
+@app.command("start")
+def start(
     port: int = typer.Option(15432, help="Local port to proxy to"),
     db_port: int = typer.Option(5432, help="Remote database port"),
 ):
@@ -82,8 +80,8 @@ def proxy_start(
             PID_FILE.unlink()
 
 
-@proxy_app.command("stop")
-def proxy_stop():
+@app.command("stop")
+def stop():
     """Stop the running database proxy"""
     if not PID_FILE.exists():
         console.print("[yellow]No proxy running (PID file not found).[/yellow]")
@@ -101,8 +99,8 @@ def proxy_stop():
         PID_FILE.unlink(missing_ok=True)
 
 
-@proxy_app.command("status")
-def proxy_status():
+@app.command("status")
+def status():
     """Check status of the database proxy"""
     if not PID_FILE.exists():
         console.print("[red]Proxy is not running[/red]")
