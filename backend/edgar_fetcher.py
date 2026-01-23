@@ -386,8 +386,10 @@ class EdgarFetcher:
                 fiscal_end = entry.get('end')
                 start_date = entry.get('start')
                 
-                # Extract year from fiscal_end date
-                year = int(fiscal_end[:4]) if fiscal_end else entry.get('fy')
+                # Use fiscal year from EDGAR's fy field (not calendar year from fiscal_end)
+                # This ensures quarterly data matches annual data by fiscal year, not calendar year
+                # Critical for companies with non-calendar fiscal years (Apple, Microsoft, etc.)
+                year = entry.get('fy')
                 if not year:
                     continue
 
@@ -453,35 +455,77 @@ class EdgarFetcher:
                         })
                         seen_quarters.add((year, quarter))
 
-        # GAP FILLING: Calculate Q4 if missing using Annual - (Q1+Q2+Q3)
-        # Group found quarters by year
-        quarters_by_year = {}
-        for q in quarterly_eps:
-            y = q['year']
-            if y not in quarters_by_year: quarters_by_year[y] = {}
-            quarters_by_year[y][q['quarter']] = q['eps']
+        # EDGAR reports cumulative (year-to-date) EPS for quarterly filings
+        # Q1 = Q1, Q2 = Q1+Q2 cumulative, Q3 = Q1+Q2+Q3 cumulative
+        # We need to convert to individual quarters: Q2_actual = Q2_cumulative - Q1, etc.
 
-        for year, annual_data in annual_eps_map.items():
-            if year in quarters_by_year:
-                qs = quarters_by_year[year]
-                # If Q4 is missing but we have Q1, Q2, Q3
-                if 'Q4' not in qs and 'Q1' in qs and 'Q2' in qs and 'Q3' in qs:
-                    annual_val = annual_data['val']
-                    q1 = qs['Q1']; q2 = qs['Q2']; q3 = qs['Q3']
-                    
-                    # Calculate Q4
-                    # Note: EPS is not strictly additive due to share count changes, but it's the standard approximation.
-                    q4_val = annual_val - (q1 + q2 + q3)
-                    
-                    # Add Q4
-                    quarterly_eps.append({
-                        'year': year,
-                        'quarter': 'Q4',
-                        'eps': q4_val,
-                        'fiscal_end': annual_data['end'],
-                        'is_calculated': True 
-                    })
-                    logger.debug(f"Calculated Q4 EPS for {year}: {q4_val} (Annual {annual_val} - SumQ1-3)")
+        annual_by_year = {year: data for year, data in annual_eps_map.items()}
+
+        # Group quarterly data by year
+        quarterly_by_year = {}
+        for entry in quarterly_eps:
+            year = entry['year']
+            if year not in quarterly_by_year:
+                quarterly_by_year[year] = []
+            quarterly_by_year[year].append(entry)
+
+        # Convert cumulative quarters to individual quarters and calculate Q4
+        converted_quarterly = []
+
+        for year, annual_data in annual_by_year.items():
+            if year in quarterly_by_year:
+                quarters = quarterly_by_year[year]
+                quarters_dict = {q['quarter']: q for q in quarters}
+
+                # Only proceed if we have Q1, Q2, and Q3
+                if all(f'Q{i}' in quarters_dict for i in [1, 2, 3]):
+                    # Get cumulative values from EDGAR
+                    q1_cumulative = quarters_dict['Q1']['eps']
+                    q2_cumulative = quarters_dict['Q2']['eps']
+                    q3_cumulative = quarters_dict['Q3']['eps']
+                    annual_eps = annual_data['val']
+
+                    # Convert to individual quarter values
+                    q1_individual = q1_cumulative
+                    q2_individual = q2_cumulative - q1_cumulative
+                    q3_individual = q3_cumulative - q2_cumulative
+                    q4_individual = annual_eps - q3_cumulative
+
+                    # Validate that individual quarters sum to annual (within rounding tolerance)
+                    # Note: EPS is not strictly additive due to share count changes, but should be close
+                    calculated_annual = q1_individual + q2_individual + q3_individual + q4_individual
+                    if abs(calculated_annual - annual_eps) < 0.5:
+                        # Add converted individual quarters
+                        converted_quarterly.append({
+                            'year': year,
+                            'quarter': 'Q1',
+                            'eps': q1_individual,
+                            'fiscal_end': quarters_dict['Q1']['fiscal_end']
+                        })
+                        converted_quarterly.append({
+                            'year': year,
+                            'quarter': 'Q2',
+                            'eps': q2_individual,
+                            'fiscal_end': quarters_dict['Q2']['fiscal_end']
+                        })
+                        converted_quarterly.append({
+                            'year': year,
+                            'quarter': 'Q3',
+                            'eps': q3_individual,
+                            'fiscal_end': quarters_dict['Q3']['fiscal_end']
+                        })
+                        converted_quarterly.append({
+                            'year': year,
+                            'quarter': 'Q4',
+                            'eps': q4_individual,
+                            'fiscal_end': annual_data['end'],
+                            'is_calculated': True
+                        })
+                        logger.debug(f"[FY{year}] Individual quarters: Q1=${q1_individual:.2f}, Q2=${q2_individual:.2f}, Q3=${q3_individual:.2f}, Q4=${q4_individual:.2f} (sum=${calculated_annual:.2f} vs annual=${annual_eps:.2f})")
+                    else:
+                        logger.warning(f"[FY{year}] Inconsistent quarterly EPS data: quarters sum to ${calculated_annual:.2f} but annual is ${annual_eps:.2f}. Q1=${q1_individual:.2f}, Q2=${q2_individual:.2f}, Q3=${q3_individual:.2f}, Q4=${q4_individual:.2f}")
+
+        quarterly_eps = converted_quarterly
 
         # Sort by year descending, then by quarter
         def quarter_sort_key(entry):
@@ -801,8 +845,9 @@ class EdgarFetcher:
         for entry in net_income_data_list:
             if entry.get('form') in ['10-Q', '6-K']:
                 fiscal_end = entry.get('end')
-                # Extract year from fiscal_end date (more reliable than fy field)
-                year = int(fiscal_end[:4]) if fiscal_end else entry.get('fy')
+                # Use fiscal year from EDGAR's fy field (not calendar year from fiscal_end)
+                # This ensures quarterly data matches annual data by fiscal year, not calendar year
+                year = entry.get('fy')
                 quarter = entry.get('fp')  # Fiscal period: Q1, Q2, Q3
                 net_income = entry.get('val')
 
@@ -1017,7 +1062,8 @@ class EdgarFetcher:
         for entry in revenue_data_list:
             if entry.get('form') in ['10-Q', '6-K']:
                 fiscal_end = entry.get('end')
-                year = int(fiscal_end[:4]) if fiscal_end else entry.get('fy')
+                # Use fiscal year from EDGAR's fy field
+                year = entry.get('fy')
                 quarter = entry.get('fp')  # Fiscal period: Q1, Q2, Q3
                 revenue = entry.get('val')
 
@@ -1463,8 +1509,8 @@ class EdgarFetcher:
         for entry in shares_data_list:
             if entry.get('form') in ['10-Q', '6-K']:
                 fiscal_end = entry.get('end')
-                # Extract year from fiscal_end date (more reliable than fy field)
-                year = int(fiscal_end[:4]) if fiscal_end else entry.get('fy')
+                # Use fiscal year from EDGAR's fy field
+                year = entry.get('fy')
                 quarter = entry.get('fp')  # Fiscal period: Q1, Q2, Q3
                 shares = entry.get('val')
 
