@@ -915,30 +915,47 @@ export default function StockCharts({ historyData, quarterlyHistoryData, loading
                     </div>
 
                     {/* P/E Ratio - Uses weekly data for granular display */}
-                    <div className="h-64 chart-container">
+                    <div>
                       {(() => {
                         const weeklyPE = activeData?.weekly_pe_ratios
                         const useWeeklyPE = weeklyPE?.dates?.length > 0 && weeklyPE?.values?.length > 0
                         const peLabels = useWeeklyPE ? weeklyPE.dates : labels
                         const peData = useWeeklyPE ? weeklyPE.values : activeData?.pe_ratio
 
-                        // Calculate 3-month (13-week) rolling average
-                        const peSMA = (() => {
-                          if (!useWeeklyPE || !peData || peData.length < 13) return []
+                        // Calculate 13-week rolling average (using partial windows at the start)
+                        const peSMA13 = (() => {
+                          if (!useWeeklyPE || !peData || peData.length < 1) return []
 
                           const windowSize = 13
                           const sma = []
 
                           for (let i = 0; i < peData.length; i++) {
-                            if (i < windowSize - 1) {
-                              sma.push(null)
-                              continue
-                            }
+                            // Use smaller window at the start (1, 2, 3... up to windowSize)
+                            const actualWindowSize = Math.min(i + 1, windowSize)
+                            const windowinfo = peData.slice(Math.max(0, i - actualWindowSize + 1), i + 1)
+                            const validValues = windowinfo.filter(v => v !== null && v !== undefined)
 
-                            // Calculate average of window
-                            const windowinfo = peData.slice(i - windowSize + 1, i + 1)
-                            // Skip max calculation if any nulls in window? Or treat as non-existent?
-                            // Simple approach: filter out nulls or strictly require all data
+                            if (validValues.length === 0) {
+                              sma.push(null)
+                            } else {
+                              const sum = validValues.reduce((a, b) => a + b, 0)
+                              sma.push(sum / validValues.length)
+                            }
+                          }
+                          return sma
+                        })()
+
+                        // Calculate 52-week rolling average (using partial windows at the start)
+                        const peSMA52 = (() => {
+                          if (!useWeeklyPE || !peData || peData.length < 1) return []
+
+                          const windowSize = 52
+                          const sma = []
+
+                          for (let i = 0; i < peData.length; i++) {
+                            // Use smaller window at the start (1, 2, 3... up to windowSize)
+                            const actualWindowSize = Math.min(i + 1, windowSize)
+                            const windowinfo = peData.slice(Math.max(0, i - actualWindowSize + 1), i + 1)
                             const validValues = windowinfo.filter(v => v !== null && v !== undefined)
 
                             if (validValues.length === 0) {
@@ -952,54 +969,76 @@ export default function StockCharts({ historyData, quarterlyHistoryData, loading
                         })()
 
                         return (
-                          <Line
-                            key={useWeeklyPE ? 'weekly' : 'annual'}
-                            plugins={[zeroLinePlugin, crosshairPlugin]}
-                            data={{
-                              labels: peLabels,
-                              datasets: [
-                                {
-                                  label: 'P/E Ratio',
-                                  data: peData,
-                                  borderColor: 'rgb(201, 203, 207)',
-                                  backgroundColor: 'rgba(201, 203, 207, 0.2)',
-                                  pointRadius: 0,
-                                  pointHoverRadius: 3,
-                                  borderWidth: 1.5,
-                                  tension: 0.1,
-                                  spanGaps: true
-                                },
-                                // Add 3-Month Rolling Average Dataset
-                                ...(useWeeklyPE && peSMA.length > 0 ? [{
-                                  label: '3-Month Avg',
-                                  data: peSMA,
-                                  borderColor: 'rgba(75, 192, 192, 0.8)', // Teal with 80% opacity
-                                  backgroundColor: 'transparent',
-                                  pointRadius: 0,
-                                  pointHoverRadius: 0,
-                                  borderWidth: 2,
-                                  tension: 0.2, // Slightly smoother
-                                  spanGaps: true
-                                }] : [])
-                              ]
-                            }}
-                            options={{
-                              ...createChartOptions('P/E Ratio', 'P/E Ratio', showQuarterly),
-                              scales: {
-                                ...createChartOptions('P/E Ratio', 'P/E Ratio', showQuarterly).scales,
-                                x: {
-                                  type: 'category',
-                                  ticks: {
-                                    callback: yearTickCallback,
-                                    maxRotation: 45,
-                                    minRotation: 45,
-                                    autoSkip: true,
-                                    maxTicksLimit: 20
+                          <>
+                            <div className="h-64 chart-container">
+                              <Line
+                                key={useWeeklyPE ? 'weekly' : 'annual'}
+                                plugins={[zeroLinePlugin, crosshairPlugin]}
+                                data={{
+                                  labels: peLabels,
+                                  datasets: [
+                                    {
+                                      label: 'P/E Ratio',
+                                      data: peData,
+                                      borderColor: 'rgb(168, 85, 247)',
+                                      backgroundColor: 'rgba(168, 85, 247, 0.2)',
+                                      pointRadius: 0,
+                                      pointHoverRadius: 3,
+                                      borderWidth: 1.5,
+                                      tension: 0.1,
+                                      spanGaps: true
+                                    },
+                                    // Add 13-Week Rolling Average Dataset
+                                    ...(useWeeklyPE && peSMA13.length > 0 ? [{
+                                      label: '13-Week Avg',
+                                      data: peSMA13,
+                                      borderColor: 'rgba(75, 192, 192, 0.8)', // Teal with 80% opacity
+                                      backgroundColor: 'transparent',
+                                      pointRadius: 0,
+                                      pointHoverRadius: 0,
+                                      borderWidth: 2,
+                                      tension: 0.2,
+                                      spanGaps: true
+                                    }] : []),
+                                    // Add 52-Week Rolling Average Dataset
+                                    ...(useWeeklyPE && peSMA52.length > 0 ? [{
+                                      label: '52-Week Avg',
+                                      data: peSMA52,
+                                      borderColor: 'rgba(168, 85, 247, 0.5)', // Purple with 50% opacity
+                                      backgroundColor: 'transparent',
+                                      borderDash: [5, 5], // Dashed line
+                                      pointRadius: 0,
+                                      pointHoverRadius: 0,
+                                      borderWidth: 2.5,
+                                      tension: 0.3,
+                                      spanGaps: true
+                                    }] : [])
+                                  ]
+                                }}
+                                options={{
+                                  ...createChartOptions('P/E Ratio', 'P/E', showQuarterly),
+                                  scales: {
+                                    ...createChartOptions('P/E Ratio', 'P/E', showQuarterly).scales,
+                                    x: {
+                                      type: 'category',
+                                      ticks: {
+                                        callback: yearTickCallback,
+                                        maxRotation: 45,
+                                        minRotation: 45,
+                                        autoSkip: true,
+                                        maxTicksLimit: 20
+                                      }
+                                    }
                                   }
-                                }
-                              }
-                            }}
-                          />
+                                }}
+                              />
+                            </div>
+                            <CustomLegend items={[
+                              { label: 'P/E Ratio', color: 'rgb(168, 85, 247)' },
+                              ...(useWeeklyPE && peSMA13.length > 0 ? [{ label: '13-Week Avg', color: 'rgba(75, 192, 192, 0.8)' }] : []),
+                              ...(useWeeklyPE && peSMA52.length > 0 ? [{ label: '52-Week Avg', color: 'rgba(168, 85, 247, 0.5)', dashed: true }] : [])
+                            ]} />
+                          </>
                         )
                       })()}
                     </div>
