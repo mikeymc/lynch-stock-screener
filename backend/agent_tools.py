@@ -383,6 +383,24 @@ get_analyst_sentiment_decl = FunctionDeclaration(
     ),
 )
 
+get_average_pe_ratio_decl = FunctionDeclaration(
+    name="get_average_pe_ratio",
+    description="Calculate average P/E (Price-to-Earnings) ratios over time for a stock. Returns P/E ratios for each period (quarterly or annual) along with the overall average. Useful for understanding typical valuation ranges and how P/E has trended over time.",
+    parameters=Schema(
+        type=Type.OBJECT,
+        properties={
+            "ticker": Schema(type=Type.STRING, description="Stock ticker symbol"),
+            "period_type": Schema(
+                type=Type.STRING, 
+                description="Type of periods to analyze: 'quarterly' for quarterly P/E ratios, 'annual' for annual P/E ratios (default: 'annual')",
+                enum=["quarterly", "annual"]
+            ),
+            "periods": Schema(type=Type.INTEGER, description="Number of periods to include in the average (default: 5 for annual, 12 for quarterly)"),
+        },
+        required=["ticker"],
+    ),
+)
+
 
 # =============================================================================
 # Tool Registry: Maps tool names to their declarations
@@ -414,6 +432,7 @@ TOOL_DECLARATIONS = [
     get_fred_series_decl,
     get_economic_indicators_decl,
     get_analyst_sentiment_decl,
+    get_average_pe_ratio_decl,
 ]
 
 # Create the Tool object for Gemini API
@@ -476,6 +495,7 @@ class ToolExecutor:
             "get_fred_series": self._get_fred_series,
             "get_economic_indicators": self._get_economic_indicators,
             "get_analyst_sentiment": self._get_analyst_sentiment,
+            "get_average_pe_ratio": self._get_average_pe_ratio,
         }
         
         executor = executor_map.get(tool_name)
@@ -976,6 +996,130 @@ class ToolExecutor:
             "ticker": ticker,
             "years_of_data": len(pe_data),
             "pe_history": pe_data,
+        }
+    
+    def _get_average_pe_ratio(self, ticker: str, period_type: str = 'annual', periods: int = None) -> Dict[str, Any]:
+        """Calculate average P/E ratios over time (quarterly or annual)."""
+        ticker = ticker.upper()
+        
+        # Set default periods based on period_type
+        if periods is None:
+            periods = 12 if period_type == 'quarterly' else 5
+        
+        # Get earnings history (quarterly or annual)
+        earnings = self.db.get_earnings_history(ticker, period_type=period_type)
+        
+        if not earnings:
+            return {
+                "error": f"No {period_type} earnings history found for {ticker}",
+                "suggestion": "Try using get_stock_metrics for current P/E ratio."
+            }
+        
+        # Get price history
+        price_data = self.db.get_weekly_prices(ticker)
+        
+        if not price_data or not price_data.get('dates'):
+            return {
+                "error": f"No price history found for {ticker}",
+            }
+        
+        # Build a dict of date -> price for lookup
+        price_by_date = {}
+        for date_str, price in zip(price_data['dates'], price_data['prices']):
+            price_by_date[date_str] = price
+        
+        # Calculate P/E for each period
+        pe_data = []
+        
+        for record in earnings[:periods]:  # Limit to requested number of periods
+            year = record.get('year')
+            period = record.get('period')
+            eps = record.get('eps')
+            fiscal_end = record.get('fiscal_end')
+            
+            if not year or not eps or eps <= 0:
+                continue
+            
+            # Find the appropriate price for this period
+            price = None
+            
+            if period_type == 'annual':
+                # For annual: use year-end price (December of that year)
+                for date_str in price_by_date:
+                    if date_str.startswith(f"{year}-12"):
+                        price = price_by_date[date_str]
+                        break
+                # If no December price, try fiscal_end date or closest date
+                if not price and fiscal_end:
+                    fiscal_year = fiscal_end[:4]
+                    fiscal_month = fiscal_end[5:7]
+                    for date_str in price_by_date:
+                        if date_str.startswith(f"{fiscal_year}-{fiscal_month}"):
+                            price = price_by_date[date_str]
+                            break
+            else:  # quarterly
+                # For quarterly: use price at quarter end
+                # Q1 = March (03), Q2 = June (06), Q3 = September (09), Q4 = December (12)
+                quarter_months = {'Q1': '03', 'Q2': '06', 'Q3': '09', 'Q4': '12'}
+                target_month = quarter_months.get(period)
+                
+                if target_month:
+                    for date_str in price_by_date:
+                        if date_str.startswith(f"{year}-{target_month}"):
+                            price = price_by_date[date_str]
+                            break
+                
+                # Fallback to fiscal_end if available
+                if not price and fiscal_end:
+                    fiscal_year = fiscal_end[:4]
+                    fiscal_month = fiscal_end[5:7]
+                    for date_str in price_by_date:
+                        if date_str.startswith(f"{fiscal_year}-{fiscal_month}"):
+                            price = price_by_date[date_str]
+                            break
+            
+            if price and eps > 0:
+                pe = round(price / eps, 2)
+                period_label = f"{year}" if period_type == 'annual' else f"{year} {period}"
+                pe_data.append({
+                    "period": period_label,
+                    "year": year,
+                    "quarter": period if period_type == 'quarterly' else None,
+                    "eps": round(eps, 2),
+                    "price": round(price, 2),
+                    "pe_ratio": pe
+                })
+        
+        if not pe_data:
+            return {
+                "ticker": ticker,
+                "period_type": period_type,
+                "pe_data": [],
+                "message": f"Could not calculate P/E ratios - missing price or EPS data for {period_type} periods."
+            }
+        
+        # Sort by year and period (most recent first)
+        pe_data.sort(key=lambda x: (x['year'], x.get('quarter') or ''), reverse=True)
+        
+        # Calculate average P/E
+        pe_values = [entry['pe_ratio'] for entry in pe_data]
+        average_pe = round(sum(pe_values) / len(pe_values), 2)
+        
+        # Calculate min, max, and median
+        min_pe = round(min(pe_values), 2)
+        max_pe = round(max(pe_values), 2)
+        sorted_pe = sorted(pe_values)
+        median_pe = round(sorted_pe[len(sorted_pe) // 2], 2) if sorted_pe else None
+        
+        return {
+            "ticker": ticker,
+            "period_type": period_type,
+            "periods_analyzed": len(pe_data),
+            "average_pe": average_pe,
+            "min_pe": min_pe,
+            "max_pe": max_pe,
+            "median_pe": median_pe,
+            "pe_data": pe_data,
         }
     
     def _get_growth_rates(self, ticker: str) -> Dict[str, Any]:
