@@ -1818,6 +1818,95 @@ class EdgarFetcher:
         
         logger.info(f"Successfully parsed {len(annual_equity)} years of Shareholder Equity from EDGAR")
         return annual_equity
+
+    def parse_cash_equivalents_history(self, company_facts: Dict[str, Any]) -> List[Dict[str, Any]]:
+        """
+        Extract Cash and Cash Equivalents history from company facts.
+
+        Args:
+            company_facts: Company facts data from EDGAR API
+
+        Returns:
+            List of dictionaries with year, cash_and_cash_equivalents, and fiscal_end values
+        """
+        cash_data_list = None
+
+        # Try US-GAAP first
+        try:
+            if 'us-gaap' in company_facts['facts']:
+                # Try CashAndCashEquivalentsAtCarryingValue first (most common)
+                if 'CashAndCashEquivalentsAtCarryingValue' in company_facts['facts']['us-gaap']:
+                    units = company_facts['facts']['us-gaap']['CashAndCashEquivalentsAtCarryingValue']['units']
+                    if 'USD' in units:
+                        cash_data_list = units['USD']
+
+                # Fallback: CashAndCashEquivalents
+                if cash_data_list is None and 'CashAndCashEquivalents' in company_facts['facts']['us-gaap']:
+                    units = company_facts['facts']['us-gaap']['CashAndCashEquivalents']['units']
+                    if 'USD' in units:
+                        cash_data_list = units['USD']
+
+                # Fallback: Cash (less common, but some companies use it)
+                if cash_data_list is None and 'Cash' in company_facts['facts']['us-gaap']:
+                    units = company_facts['facts']['us-gaap']['Cash']['units']
+                    if 'USD' in units:
+                        cash_data_list = units['USD']
+
+        except (KeyError, TypeError):
+            pass
+
+        # Try IFRS
+        if cash_data_list is None:
+            try:
+                if 'ifrs-full' in company_facts['facts']:
+                    if 'CashAndCashEquivalents' in company_facts['facts']['ifrs-full']:
+                        units = company_facts['facts']['ifrs-full']['CashAndCashEquivalents']['units']
+                        if 'USD' in units:
+                            cash_data_list = units['USD']
+                        else:
+                            # Find first currency unit
+                            currency_units = [u for u in units.keys() if len(u) == 3 and u.isupper()]
+                            if currency_units:
+                                cash_data_list = units[currency_units[0]]
+            except (KeyError, TypeError):
+                pass
+
+        if cash_data_list is None:
+            logger.debug("Could not parse Cash and Cash Equivalents history from EDGAR")
+            return []
+
+        # Process and filter for annual data
+        annual_cash_by_fiscal_end = {}
+
+        for entry in cash_data_list:
+            if entry.get('form') in ['10-K', '20-F']:
+                fiscal_end = entry.get('end')
+                val = entry.get('val')
+
+                # For point-in-time metrics like Cash, we care about the 'end' date matching the fiscal year end
+                if val is not None and fiscal_end:
+                    # Keep entry for each unique fiscal_end, preferring later entries (restatements)
+                    if fiscal_end not in annual_cash_by_fiscal_end:
+                        annual_cash_by_fiscal_end[fiscal_end] = {
+                            'fiscal_end': fiscal_end,
+                            'cash_and_cash_equivalents': val
+                        }
+
+        # Group by year
+        by_year = {}
+        for fiscal_end, entry in annual_cash_by_fiscal_end.items():
+            year = int(fiscal_end[:4])
+            entry['year'] = year
+            # Prefer the latest fiscal_end for the year if duplicates exist
+            if year not in by_year:
+                by_year[year] = entry
+
+        annual_cash = list(by_year.values())
+        annual_cash.sort(key=lambda x: x['year'], reverse=True)
+
+        logger.info(f"Successfully parsed {len(annual_cash)} years of Cash and Cash Equivalents from EDGAR")
+        return annual_cash
+
         shares_annual = self.parse_shares_outstanding_history(company_facts)
 
         # Create lookup dict for shares by year
@@ -2537,6 +2626,7 @@ class EdgarFetcher:
         debt_to_equity = self.parse_debt_to_equity(company_facts)
         debt_to_equity_history = self.parse_debt_to_equity_history(company_facts)
         shareholder_equity_history = self.parse_shareholder_equity_history(company_facts)
+        cash_equivalents_history = self.parse_cash_equivalents_history(company_facts)
         cash_flow_history = self.parse_cash_flow_history(company_facts)
         
         # Extract Interest Expense and Tax Rate
@@ -2566,7 +2656,7 @@ class EdgarFetcher:
         # Parse dividend history
         dividend_history = self.parse_dividend_history(company_facts)
 
-        logger.info(f"[{ticker}] EDGAR fetch complete: {len(eps_history or [])} EPS years, {len(calculated_eps_history or [])} calculated EPS years, {len(net_income_annual or [])} annual NI, {len(net_income_quarterly or [])} quarterly NI, {len(revenue_quarterly or [])} quarterly Rev, {len(eps_quarterly or [])} quarterly EPS, {len(cash_flow_quarterly or [])} quarterly CF, {len(revenue_history or [])} revenue years, {len(debt_to_equity_history or [])} D/E years, {len(debt_to_equity_quarterly)} quarterly D/E, {len(shareholder_equity_history or [])} Equity years, {len(shares_outstanding_history or [])} shares outstanding years, {len(cash_flow_history or [])} cash flow years, {len(dividend_history or [])} dividend entries, current D/E: {debt_to_equity}")
+        logger.info(f"[{ticker}] EDGAR fetch complete: {len(eps_history or [])} EPS years, {len(calculated_eps_history or [])} calculated EPS years, {len(net_income_annual or [])} annual NI, {len(net_income_quarterly or [])} quarterly NI, {len(revenue_quarterly or [])} quarterly Rev, {len(eps_quarterly or [])} quarterly EPS, {len(cash_flow_quarterly or [])} quarterly CF, {len(revenue_history or [])} revenue years, {len(debt_to_equity_history or [])} D/E years, {len(debt_to_equity_quarterly)} quarterly D/E, {len(shareholder_equity_history or [])} Equity years, {len(cash_equivalents_history or [])} Cash years, {len(shares_outstanding_history or [])} shares outstanding years, {len(cash_flow_history or [])} cash flow years, {len(dividend_history or [])} dividend entries, current D/E: {debt_to_equity}")
 
         fundamentals = {
             'ticker': ticker,
@@ -2576,6 +2666,7 @@ class EdgarFetcher:
             'calculated_eps_history': calculated_eps_history,
             'net_income_annual': net_income_annual,
             'shareholder_equity_history': shareholder_equity_history,
+            'cash_equivalents_history': cash_equivalents_history,
             'shares_outstanding_history': shares_outstanding_history,
             'net_income_quarterly': net_income_quarterly,
             'revenue_quarterly': revenue_quarterly,

@@ -32,7 +32,7 @@ get_financials_decl = FunctionDeclaration(
             "metric": Schema(
                 type=Type.STRING,
                 description="The specific financial metric to retrieve",
-                enum=["revenue", "eps", "net_income", "free_cash_flow", "operating_cash_flow", "capital_expenditures", "dividend_amount", "debt_to_equity", "shareholder_equity", "shares_outstanding"]
+                enum=["revenue", "eps", "net_income", "free_cash_flow", "operating_cash_flow", "capital_expenditures", "dividend_amount", "debt_to_equity", "shareholder_equity", "shares_outstanding", "cash_and_cash_equivalents"]
             ),
             "years": Schema(
                 type=Type.ARRAY, 
@@ -119,6 +119,18 @@ get_price_to_book_ratio_decl = FunctionDeclaration(
 get_share_buyback_activity_decl = FunctionDeclaration(
     name="get_share_buyback_activity",
     description="Analyze share buyback/issuance activity over time. Shows year-over-year changes in shares outstanding. Lynch says 'Look for companies that consistently buy back their own shares.' Decreasing shares = buybacks (positive signal). Increasing shares = dilution (negative signal).",
+    parameters=Schema(
+        type=Type.OBJECT,
+        properties={
+            "ticker": Schema(type=Type.STRING, description="Stock ticker symbol"),
+        },
+        required=["ticker"],
+    ),
+)
+
+get_cash_position_decl = FunctionDeclaration(
+    name="get_cash_position",
+    description="Get cash and cash equivalents position over time. Lynch says 'The cash position. That's the floor on the stock.' Shows historical cash levels and cash per share. High cash relative to market cap provides downside protection.",
     parameters=Schema(
         type=Type.OBJECT,
         properties={
@@ -500,6 +512,7 @@ TOOL_DECLARATIONS = [
     get_earnings_consistency_decl,
     get_price_to_book_ratio_decl,
     get_share_buyback_activity_decl,
+    get_cash_position_decl,
     get_peers_decl,
     get_insider_activity_decl,
     search_news_decl,
@@ -569,6 +582,7 @@ class ToolExecutor:
             "get_earnings_consistency": self._get_earnings_consistency,
             "get_price_to_book_ratio": self._get_price_to_book_ratio,
             "get_share_buyback_activity": self._get_share_buyback_activity,
+            "get_cash_position": self._get_cash_position,
             "get_peers": self._get_peers,
             "get_insider_activity": self._get_insider_activity,
             "search_news": self._search_news,
@@ -718,6 +732,7 @@ class ToolExecutor:
             "debt_to_equity": "debt_to_equity",
             "shareholder_equity": "shareholder_equity",
             "shares_outstanding": "shares_outstanding",
+            "cash_and_cash_equivalents": "cash_and_cash_equivalents",
         }
         
         field = metric_field_map.get(metric)
@@ -993,6 +1008,136 @@ class ToolExecutor:
                 f"Total shares outstanding {'decreased' if total_change_pct < 0 else 'increased'} by {abs(total_change_pct):.1f}%. "
                 f"{'✓ Consistent buybacks - Lynch loves this!' if consistent_buybacks and total_change_pct < 0 else '⚠ Dilution detected - issuing shares reduces ownership value.' if total_change_pct > 5 else 'Neutral - minimal share count changes.'}"
             )
+        }
+
+    def _get_cash_position(self, ticker: str) -> Dict[str, Any]:
+        """Get cash and cash equivalents position for a company.
+
+        Lynch says: 'The cash position. That's the floor on the stock.'
+        High cash provides downside protection and flexibility.
+        """
+        ticker = ticker.upper()
+
+        # Get historical cash positions
+        earnings_history = self.db.get_earnings_history(ticker)
+        if not earnings_history:
+            return {
+                "error": f"No earnings history found for {ticker}",
+                "suggestion": "Cash position data requires EDGAR filings."
+            }
+
+        # Filter for entries with cash data and sort by year
+        cash_history = [
+            entry for entry in earnings_history
+            if entry.get('cash_and_cash_equivalents') is not None
+        ]
+
+        if not cash_history:
+            return {
+                "error": f"No cash position data available for {ticker}",
+                "suggestion": "Cash data may need to be refreshed from EDGAR filings."
+            }
+
+        cash_history.sort(key=lambda x: x['year'])
+
+        # Get latest cash position
+        latest = cash_history[-1]
+        latest_cash_dollars = latest['cash_and_cash_equivalents']
+        latest_cash = latest_cash_dollars / 1_000_000  # Convert to millions
+        latest_year = latest['year']
+
+        # Build historical cash data
+        cash_by_year = [
+            {
+                "year": entry['year'],
+                "cash_millions": round(entry['cash_and_cash_equivalents'] / 1_000_000, 2),
+                "period": entry.get('period', 'annual')
+            }
+            for entry in cash_history[-10:]  # Last 10 periods
+        ]
+
+        # Get current stock info for cash per share and cash/market cap
+        conn = None
+        cash_per_share = None
+        cash_to_market_cap_pct = None
+
+        try:
+            conn = self.db.get_connection()
+            cursor = conn.cursor()
+
+            # Get current price and market cap
+            cursor.execute("""
+                SELECT m.price, m.market_cap
+                FROM stock_metrics m
+                WHERE m.symbol = %s
+            """, (ticker,))
+
+            metrics_row = cursor.fetchone()
+            if metrics_row:
+                current_price = metrics_row[0]
+                market_cap = metrics_row[1]
+
+                # Calculate cash per share using shares outstanding
+                shares_outstanding = latest.get('shares_outstanding')
+                if shares_outstanding and shares_outstanding > 0:
+                    cash_per_share = (latest_cash_dollars / shares_outstanding)
+                elif market_cap and market_cap > 0 and current_price and current_price > 0:
+                    # Fallback: estimate shares from market cap / price
+                    estimated_shares = market_cap / current_price
+                    cash_per_share = (latest_cash_dollars / estimated_shares)
+
+                # Calculate cash as % of market cap
+                if market_cap and market_cap > 0:
+                    cash_to_market_cap_pct = (latest_cash_dollars / market_cap) * 100
+
+        except Exception as e:
+            print(f"Error calculating cash metrics: {e}")
+        finally:
+            if conn:
+                conn.close()
+
+        # Calculate cash trend (increasing, decreasing, stable)
+        if len(cash_history) >= 3:
+            recent_cash_values = [entry['cash_and_cash_equivalents'] for entry in cash_history[-3:]]
+            if recent_cash_values[-1] > recent_cash_values[0] * 1.1:
+                cash_trend = "increasing"
+            elif recent_cash_values[-1] < recent_cash_values[0] * 0.9:
+                cash_trend = "decreasing"
+            else:
+                cash_trend = "stable"
+        else:
+            cash_trend = "insufficient_data"
+
+        # Lynch-style interpretation
+        interpretation_parts = [
+            f"Cash Position ({latest_year}): ${latest_cash:.0f}M."
+        ]
+
+        if cash_per_share:
+            interpretation_parts.append(f"Cash per share: ${cash_per_share:.2f}.")
+
+        if cash_to_market_cap_pct:
+            if cash_to_market_cap_pct > 20:
+                interpretation_parts.append(f"Cash is {cash_to_market_cap_pct:.1f}% of market cap - substantial downside protection! This is Lynch's 'floor' on the stock.")
+            elif cash_to_market_cap_pct > 10:
+                interpretation_parts.append(f"Cash is {cash_to_market_cap_pct:.1f}% of market cap - good downside protection.")
+            else:
+                interpretation_parts.append(f"Cash is {cash_to_market_cap_pct:.1f}% of market cap - moderate cash position.")
+
+        if cash_trend == "increasing":
+            interpretation_parts.append("Cash position is growing - building financial strength.")
+        elif cash_trend == "decreasing":
+            interpretation_parts.append("Cash position is declining - monitor for financial stress or strategic investments.")
+
+        return {
+            "ticker": ticker,
+            "latest_cash_millions": round(latest_cash, 2),
+            "latest_year": latest_year,
+            "cash_per_share": round(cash_per_share, 2) if cash_per_share else None,
+            "cash_to_market_cap_pct": round(cash_to_market_cap_pct, 2) if cash_to_market_cap_pct else None,
+            "cash_trend": cash_trend,
+            "cash_history": cash_by_year,
+            "interpretation": " ".join(interpretation_parts)
         }
 
     def _get_peers(self, ticker: str, limit: int = 10) -> Dict[str, Any]:
