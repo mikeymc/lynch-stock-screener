@@ -2558,11 +2558,15 @@ class EdgarFetcher:
         eps_quarterly = self.parse_quarterly_eps_history(company_facts)
         cash_flow_quarterly = self.parse_quarterly_cash_flow_history(company_facts)
         debt_to_equity_quarterly = self.parse_quarterly_debt_to_equity_history(company_facts)
-        
+
+        # Extract shares outstanding history
+        shares_outstanding_history = self.parse_shares_outstanding_history(company_facts)
+        shares_outstanding_quarterly = self.parse_quarterly_shares_outstanding_history(company_facts)
+
         # Parse dividend history
         dividend_history = self.parse_dividend_history(company_facts)
 
-        logger.info(f"[{ticker}] EDGAR fetch complete: {len(eps_history or [])} EPS years, {len(calculated_eps_history or [])} calculated EPS years, {len(net_income_annual or [])} annual NI, {len(net_income_quarterly or [])} quarterly NI, {len(revenue_quarterly or [])} quarterly Rev, {len(eps_quarterly or [])} quarterly EPS, {len(cash_flow_quarterly or [])} quarterly CF, {len(revenue_history or [])} revenue years, {len(debt_to_equity_history or [])} D/E years, {len(debt_to_equity_quarterly)} quarterly D/E, {len(shareholder_equity_history or [])} Equity years, {len(cash_flow_history or [])} cash flow years, {len(dividend_history or [])} dividend entries, current D/E: {debt_to_equity}")
+        logger.info(f"[{ticker}] EDGAR fetch complete: {len(eps_history or [])} EPS years, {len(calculated_eps_history or [])} calculated EPS years, {len(net_income_annual or [])} annual NI, {len(net_income_quarterly or [])} quarterly NI, {len(revenue_quarterly or [])} quarterly Rev, {len(eps_quarterly or [])} quarterly EPS, {len(cash_flow_quarterly or [])} quarterly CF, {len(revenue_history or [])} revenue years, {len(debt_to_equity_history or [])} D/E years, {len(debt_to_equity_quarterly)} quarterly D/E, {len(shareholder_equity_history or [])} Equity years, {len(shares_outstanding_history or [])} shares outstanding years, {len(cash_flow_history or [])} cash flow years, {len(dividend_history or [])} dividend entries, current D/E: {debt_to_equity}")
 
         fundamentals = {
             'ticker': ticker,
@@ -2572,11 +2576,13 @@ class EdgarFetcher:
             'calculated_eps_history': calculated_eps_history,
             'net_income_annual': net_income_annual,
             'shareholder_equity_history': shareholder_equity_history,
+            'shares_outstanding_history': shares_outstanding_history,
             'net_income_quarterly': net_income_quarterly,
             'revenue_quarterly': revenue_quarterly,
             'eps_quarterly': eps_quarterly,
             'cash_flow_quarterly': cash_flow_quarterly,
             'debt_to_equity_quarterly': debt_to_equity_quarterly,
+            'shares_outstanding_quarterly': shares_outstanding_quarterly,
             'revenue_history': revenue_history,
             'debt_to_equity': debt_to_equity,
             'debt_to_equity_history': debt_to_equity_history,

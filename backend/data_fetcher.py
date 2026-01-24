@@ -481,6 +481,10 @@ class DataFetcher:
         # Create mapping of year to shareholder_equity for easy lookup
         shareholder_equity_by_year = {entry['year']: entry['shareholder_equity'] for entry in shareholder_equity_history}
 
+        # Create mapping of year to shares_outstanding for easy lookup
+        shares_outstanding_history = edgar_data.get('shares_outstanding_history', [])
+        shares_outstanding_by_year = {entry['year']: entry['shares'] for entry in shares_outstanding_history}
+
         # Create mapping of year to EPS - prioritize calculated EPS, fallback to direct EPS
         # calculated_eps_history = Net Income / Shares Outstanding (split-adjusted)
         # eps_history = Direct EPS from SEC filings (may not be split-adjusted for older years)
@@ -548,6 +552,7 @@ class DataFetcher:
             fiscal_end = rev_entry.get('fiscal_end')
             debt_to_equity = debt_to_equity_by_year.get(year)
             shareholder_equity = shareholder_equity_by_year.get(year)
+            shares_outstanding = shares_outstanding_by_year.get(year)
             eps = eps_by_year.get(year)
             dividend = dividends_by_year.get(year)
 
@@ -569,7 +574,7 @@ class DataFetcher:
             if missing_cf:
                  years_needing_cf.append(year)
 
-            self.db.save_earnings_history(symbol, year, float(eps) if eps else None, float(revenue), fiscal_end=fiscal_end, debt_to_equity=debt_to_equity, net_income=float(net_income) if net_income else None, dividend_amount=float(dividend) if dividend is not None else None, operating_cash_flow=float(operating_cash_flow) if operating_cash_flow is not None else None, capital_expenditures=float(capital_expenditures) if capital_expenditures is not None else None, free_cash_flow=float(free_cash_flow) if free_cash_flow is not None else None, shareholder_equity=float(shareholder_equity) if shareholder_equity is not None else None)
+            self.db.save_earnings_history(symbol, year, float(eps) if eps else None, float(revenue), fiscal_end=fiscal_end, debt_to_equity=debt_to_equity, net_income=float(net_income) if net_income else None, dividend_amount=float(dividend) if dividend is not None else None, operating_cash_flow=float(operating_cash_flow) if operating_cash_flow is not None else None, capital_expenditures=float(capital_expenditures) if capital_expenditures is not None else None, free_cash_flow=float(free_cash_flow) if free_cash_flow is not None else None, shareholder_equity=float(shareholder_equity) if shareholder_equity is not None else None, shares_outstanding=float(shares_outstanding) if shares_outstanding is not None else None)
             logger.debug(f"[{symbol}] Stored EDGAR for {year}: Revenue: ${revenue:,.0f}" + (f", NI: ${net_income:,.0f}" if net_income else " (no NI)") + (f", Div: ${dividend:.2f}" if dividend else "") + (f", FCF: ${free_cash_flow:,.0f}" if free_cash_flow else ""))
 
             # Track years missing D/E data
@@ -619,8 +624,12 @@ class DataFetcher:
         cf_by_key = {(e['year'], e['quarter']): e for e in cash_flow_quarterly}
         de_by_key = {(e['year'], e['quarter']): e for e in debt_to_equity_quarterly}
 
+        # Add shares_outstanding quarterly lookup
+        shares_outstanding_quarterly = edgar_data.get('shares_outstanding_quarterly', [])
+        so_by_key = {(e['year'], e['quarter']): e for e in shares_outstanding_quarterly}
+
         # Merge all quarter keys
-        all_keys = set(ni_by_key.keys()) | set(rev_by_key.keys()) | set(eps_by_key.keys()) | set(cf_by_key.keys()) | set(de_by_key.keys())
+        all_keys = set(ni_by_key.keys()) | set(rev_by_key.keys()) | set(eps_by_key.keys()) | set(cf_by_key.keys()) | set(de_by_key.keys()) | set(so_by_key.keys())
         
         quarters_stored = 0
         for key in all_keys:
@@ -632,7 +641,8 @@ class DataFetcher:
             eps_entry = eps_by_key.get(key, {})
             cf_entry = cf_by_key.get(key, {})
             de_entry = de_by_key.get(key, {})
-            
+            so_entry = so_by_key.get(key, {})
+
             net_income = ni_entry.get('net_income')
             revenue = rev_entry.get('revenue')
             eps = eps_entry.get('eps')
@@ -640,6 +650,7 @@ class DataFetcher:
             capital_expenditures = cf_entry.get('capital_expenditures')
             free_cash_flow = cf_entry.get('free_cash_flow')
             debt_to_equity = de_entry.get('debt_to_equity')
+            shares_outstanding = so_entry.get('shares')
             
             # Use fiscal_end from whichever source has it
             fiscal_end = ni_entry.get('fiscal_end') or rev_entry.get('fiscal_end') or eps_entry.get('fiscal_end') or cf_entry.get('fiscal_end') or de_entry.get('fiscal_end')
@@ -660,6 +671,7 @@ class DataFetcher:
                     operating_cash_flow=float(operating_cash_flow) if operating_cash_flow else None,
                     capital_expenditures=float(capital_expenditures) if capital_expenditures else None,
                     free_cash_flow=float(free_cash_flow) if free_cash_flow else None,
+                    shares_outstanding=float(shares_outstanding) if shares_outstanding is not None else None,
                 )
                 quarters_stored += 1
 
