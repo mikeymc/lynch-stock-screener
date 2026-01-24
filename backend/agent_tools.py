@@ -24,15 +24,15 @@ get_stock_metrics_decl = FunctionDeclaration(
 
 get_financials_decl = FunctionDeclaration(
     name="get_financials",
-    description="Get historical financial metrics for a stock. Returns annual data including revenue, EPS, net income, cash flows, capital expenditures, dividends, and debt ratios.",
+    description="Get historical financial metrics for a stock. Returns annual data including revenue, EPS, net income, cash flows, capital expenditures, dividends, debt ratios, and shareholder equity.",
     parameters=Schema(
         type=Type.OBJECT,
         properties={
             "ticker": Schema(type=Type.STRING, description="Stock ticker symbol"),
             "metric": Schema(
-                type=Type.STRING, 
+                type=Type.STRING,
                 description="The specific financial metric to retrieve",
-                enum=["revenue", "eps", "net_income", "free_cash_flow", "operating_cash_flow", "capital_expenditures", "dividend_amount", "debt_to_equity"]
+                enum=["revenue", "eps", "net_income", "free_cash_flow", "operating_cash_flow", "capital_expenditures", "dividend_amount", "debt_to_equity", "shareholder_equity"]
             ),
             "years": Schema(
                 type=Type.ARRAY, 
@@ -41,6 +41,18 @@ get_financials_decl = FunctionDeclaration(
             ),
         },
         required=["ticker", "metric", "years"],
+    ),
+)
+
+get_roe_metrics_decl = FunctionDeclaration(
+    name="get_roe_metrics",
+    description="Calculate Return on Equity (ROE) metrics for a stock. Returns current ROE, 5-year average ROE, 10-year average ROE, and historical ROE by year. ROE = Net Income / Shareholders Equity. Useful for Buffett-style analysis (target: >15% consistently).",
+    parameters=Schema(
+        type=Type.OBJECT,
+        properties={
+            "ticker": Schema(type=Type.STRING, description="Stock ticker symbol"),
+        },
+        required=["ticker"],
     ),
 )
 
@@ -409,6 +421,7 @@ get_average_pe_ratio_decl = FunctionDeclaration(
 TOOL_DECLARATIONS = [
     get_stock_metrics_decl,
     get_financials_decl,
+    get_roe_metrics_decl,
     get_peers_decl,
     get_insider_activity_decl,
     search_news_decl,
@@ -471,6 +484,7 @@ class ToolExecutor:
         executor_map = {
             "get_stock_metrics": self._get_stock_metrics,
             "get_financials": self._get_financials,
+            "get_roe_metrics": self._get_roe_metrics,
             "get_peers": self._get_peers,
             "get_insider_activity": self._get_insider_activity,
             "search_news": self._search_news,
@@ -618,6 +632,7 @@ class ToolExecutor:
             "capital_expenditures": "capital_expenditures",
             "dividend_amount": "dividend_amount",
             "debt_to_equity": "debt_to_equity",
+            "shareholder_equity": "shareholder_equity",
         }
         
         field = metric_field_map.get(metric)
@@ -633,7 +648,36 @@ class ToolExecutor:
                 result["data"][year] = value
         
         return result
-    
+
+    def _get_roe_metrics(self, ticker: str) -> Dict[str, Any]:
+        """Calculate Return on Equity (ROE) metrics."""
+        ticker = ticker.upper()
+
+        # Use MetricCalculator to compute ROE
+        from metric_calculator import MetricCalculator
+        calc = MetricCalculator(self.db)
+        roe_data = calc.calculate_roe(ticker)
+
+        if not roe_data or not roe_data.get('roe_history'):
+            return {
+                "error": f"Could not calculate ROE for {ticker}",
+                "suggestion": "ROE requires historical net income and shareholder equity data. Check if the stock has complete financial history."
+            }
+
+        return {
+            "ticker": ticker,
+            "current_roe": roe_data.get('current_roe'),
+            "avg_roe_5yr": roe_data.get('avg_roe_5yr'),
+            "avg_roe_10yr": roe_data.get('avg_roe_10yr'),
+            "roe_history": roe_data.get('roe_history'),
+            "interpretation": (
+                f"Current ROE: {roe_data.get('current_roe')}%. "
+                f"Buffett typically looks for ROE consistently above 15%, ideally 20%+. "
+                f"5-year average: {roe_data.get('avg_roe_5yr')}%. "
+                f"{'10-year average: ' + str(roe_data.get('avg_roe_10yr')) + '%.' if roe_data.get('avg_roe_10yr') else 'Insufficient data for 10-year average.'}"
+            )
+        }
+
     def _get_peers(self, ticker: str, limit: int = 10) -> Dict[str, Any]:
         """Get peer companies in the same sector with their financial metrics."""
         ticker = ticker.upper()

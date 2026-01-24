@@ -38,15 +38,24 @@ class MetricCalculator:
             'roe_history': [],
         }
 
-        # Get earnings history (has net_income)
+        # Get earnings history (has net_income and shareholder_equity from EDGAR)
         earnings_history = self.db.get_earnings_history(symbol, 'annual')
         if not earnings_history:
             return result
 
-        # Get equity data from yfinance
-        equity_by_year = self._fetch_equity_history(symbol)
+        # Build equity_by_year from database first (preferred - high quality EDGAR data)
+        equity_by_year = {}
+        for entry in earnings_history:
+            year = entry.get('year')
+            equity = entry.get('shareholder_equity')
+            if year and equity:
+                equity_by_year[year] = equity
+
+        # Fall back to yfinance if database doesn't have equity data
         if not equity_by_year:
-            return result
+            equity_by_year = self._fetch_equity_history(symbol)
+            if not equity_by_year:
+                return result
 
         # Calculate ROE for each year we have both net income and equity
         roe_values = []
