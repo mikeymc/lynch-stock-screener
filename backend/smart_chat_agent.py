@@ -238,8 +238,9 @@ class SmartChatAgent:
                         tool_name = fc.name
                         tool_args = dict(fc.args) if fc.args else {}
                         
-                        # Inject user_id context for alerts management
-                        if tool_name == "manage_alerts" and user_id:
+                        # Inject user_id context for alerts and portfolios
+                        portfolio_tools = ["create_portfolio", "get_my_portfolios", "get_portfolio_status", "buy_stock", "sell_stock"]
+                        if (tool_name == "manage_alerts" or tool_name in portfolio_tools) and user_id:
                             tool_args["user_id"] = user_id
                         
                         logger.info(f"[Agent] Calling tool: {tool_name}({tool_args})")
@@ -395,8 +396,9 @@ class SmartChatAgent:
                         tool_name = fc.name
                         tool_args = dict(fc.args) if fc.args else {}
                         
-                        # Inject user_id context for alerts management
-                        if tool_name == "manage_alerts" and user_id:
+                        # Inject user_id context for alerts and portfolios
+                        portfolio_tools = ["create_portfolio", "get_my_portfolios", "get_portfolio_status", "buy_stock", "sell_stock"]
+                        if (tool_name == "manage_alerts" or tool_name in portfolio_tools) and user_id:
                             tool_args["user_id"] = user_id
                         
                         yield {"type": "thinking", "data": f"Calling {tool_name}..."}

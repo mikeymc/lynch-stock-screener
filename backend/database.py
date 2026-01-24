@@ -1807,6 +1807,17 @@ class Database:
             )
         """)
 
+        # Migration: Add dividend_preference to portfolios table
+        cursor.execute("""
+            DO $$
+            BEGIN
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                               WHERE table_name = 'portfolios' AND column_name = 'dividend_preference') THEN
+                    ALTER TABLE portfolios ADD COLUMN dividend_preference TEXT DEFAULT 'cash' CHECK (dividend_preference IN ('cash', 'reinvest'));
+                END IF;
+            END $$;
+        """)
+
         cursor.execute("""
             CREATE INDEX IF NOT EXISTS idx_portfolios_user
             ON portfolios(user_id)
@@ -1824,6 +1835,37 @@ class Database:
                 total_value REAL NOT NULL,
                 executed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 note TEXT
+            )
+        """)
+
+        # Migration: Update portfolio_transactions check constraint to allow DIVIDEND
+        cursor.execute("""
+            DO $$
+            BEGIN
+                -- Drop the old constraint if it exists
+                IF EXISTS (
+                    SELECT 1 FROM pg_constraint 
+                    WHERE conname = 'portfolio_transactions_transaction_type_check'
+                ) THEN
+                    ALTER TABLE portfolio_transactions DROP CONSTRAINT portfolio_transactions_transaction_type_check;
+                END IF;
+                
+                -- Add updated constraint
+                ALTER TABLE portfolio_transactions ADD CONSTRAINT portfolio_transactions_transaction_type_check 
+                CHECK (transaction_type IN ('BUY', 'SELL', 'DIVIDEND'));
+            END $$;
+        """)
+
+        # Cache for dividend payouts to avoid excessive API calls
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS dividend_payouts (
+                id SERIAL PRIMARY KEY,
+                symbol TEXT NOT NULL REFERENCES stocks(symbol),
+                amount REAL NOT NULL,
+                payment_date DATE NOT NULL,
+                ex_dividend_date DATE,
+                last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(symbol, payment_date)
             )
         """)
 
@@ -3401,11 +3443,19 @@ class Database:
             cursor = conn.cursor()
             cursor.execute("""
                 SELECT symbol,
-                       SUM(CASE WHEN transaction_type = 'BUY' THEN quantity ELSE -quantity END) as net_qty
+                       SUM(CASE 
+                           WHEN transaction_type = 'BUY' THEN quantity 
+                           WHEN transaction_type = 'SELL' THEN -quantity 
+                           ELSE 0 
+                       END) as net_qty
                 FROM portfolio_transactions
                 WHERE portfolio_id = %s
                 GROUP BY symbol
-                HAVING SUM(CASE WHEN transaction_type = 'BUY' THEN quantity ELSE -quantity END) > 0
+                HAVING SUM(CASE 
+                           WHEN transaction_type = 'BUY' THEN quantity 
+                           WHEN transaction_type = 'SELL' THEN -quantity 
+                           ELSE 0 
+                       END) > 0
             """, (portfolio_id,))
             return {row[0]: row[1] for row in cursor.fetchall()}
         finally:
@@ -3430,13 +3480,21 @@ class Database:
             cursor.execute("""
                 SELECT 
                     symbol,
-                    SUM(CASE WHEN transaction_type = 'BUY' THEN quantity ELSE -quantity END) as net_qty,
+                    SUM(CASE 
+                        WHEN transaction_type = 'BUY' THEN quantity 
+                        WHEN transaction_type = 'SELL' THEN -quantity 
+                        ELSE 0 
+                    END) as net_qty,
                     SUM(CASE WHEN transaction_type = 'BUY' THEN quantity * price_per_share ELSE 0 END) / 
                         NULLIF(SUM(CASE WHEN transaction_type = 'BUY' THEN quantity ELSE 0 END), 0) as avg_purchase_price
                 FROM portfolio_transactions
                 WHERE portfolio_id = %s
                 GROUP BY symbol
-                HAVING SUM(CASE WHEN transaction_type = 'BUY' THEN quantity ELSE -quantity END) > 0
+                HAVING SUM(CASE 
+                        WHEN transaction_type = 'BUY' THEN quantity 
+                        WHEN transaction_type = 'SELL' THEN -quantity 
+                        ELSE 0 
+                    END) > 0
             """, (portfolio_id,))
             
             holdings_data = cursor.fetchall()
@@ -3510,13 +3568,14 @@ class Database:
             cursor.execute("""
                 SELECT
                     COALESCE(SUM(CASE WHEN transaction_type = 'BUY' THEN total_value ELSE 0 END), 0) as buys,
-                    COALESCE(SUM(CASE WHEN transaction_type = 'SELL' THEN total_value ELSE 0 END), 0) as sells
+                    COALESCE(SUM(CASE WHEN transaction_type = 'SELL' THEN total_value ELSE 0 END), 0) as sells,
+                    COALESCE(SUM(CASE WHEN transaction_type = 'DIVIDEND' THEN total_value ELSE 0 END), 0) as dividends
                 FROM portfolio_transactions
                 WHERE portfolio_id = %s
             """, (portfolio_id,))
-            buys, sells = cursor.fetchone()
+            buys, sells, dividends = cursor.fetchone()
 
-            return initial_cash - buys + sells
+            return initial_cash - buys + sells + dividends
         finally:
             self.return_connection(conn)
 

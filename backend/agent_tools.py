@@ -4,6 +4,7 @@
 from typing import Dict, Any, List, Optional, Callable
 from google.genai.types import FunctionDeclaration, Schema, Type, Tool
 from fred_service import get_fred_service, SUPPORTED_SERIES
+import portfolio_service
 
 
 # =============================================================================
@@ -436,6 +437,82 @@ manage_alerts_decl = FunctionDeclaration(
 )
 
 
+create_portfolio_decl = FunctionDeclaration(
+    name="create_portfolio",
+    description="Create a new paper trading portfolio for the user.",
+    parameters=Schema(
+        type=Type.OBJECT,
+        properties={
+            "name": Schema(type=Type.STRING, description="Name for the portfolio (e.g., 'Tech Growth', 'Retirement Mockup')"),
+            "initial_cash": Schema(type=Type.NUMBER, description="Starting cash amount (default: 100,000)"),
+            "user_id": Schema(type=Type.INTEGER, description="Internal User ID (automatically injected)"),
+        },
+        required=["name"],
+    ),
+)
+
+
+get_my_portfolios_decl = FunctionDeclaration(
+    name="get_my_portfolios",
+    description="Get a list of all paper trading portfolios owned by the user.",
+    parameters=Schema(
+        type=Type.OBJECT,
+        properties={
+            "user_id": Schema(type=Type.INTEGER, description="Internal User ID (automatically injected)"),
+        },
+        required=[],
+    ),
+)
+
+
+get_portfolio_status_decl = FunctionDeclaration(
+    name="get_portfolio_status",
+    description="Get detailed status of a specific portfolio, including cash balance, current holdings, and total value.",
+    parameters=Schema(
+        type=Type.OBJECT,
+        properties={
+            "portfolio_id": Schema(type=Type.INTEGER, description="ID of the portfolio to check"),
+            "user_id": Schema(type=Type.INTEGER, description="Internal User ID (automatically injected)"),
+        },
+        required=["portfolio_id"],
+    ),
+)
+
+
+buy_stock_decl = FunctionDeclaration(
+    name="buy_stock",
+    description="Buy shares of a stock in a paper trading portfolio. Uses current market price.",
+    parameters=Schema(
+        type=Type.OBJECT,
+        properties={
+            "portfolio_id": Schema(type=Type.INTEGER, description="ID of the portfolio to trade in"),
+            "ticker": Schema(type=Type.STRING, description="Stock ticker symbol (e.g., 'AAPL')"),
+            "quantity": Schema(type=Type.INTEGER, description="Number of shares to buy"),
+            "note": Schema(type=Type.STRING, description="Optional note describing why you are buying this stock"),
+            "user_id": Schema(type=Type.INTEGER, description="Internal User ID (automatically injected)"),
+        },
+        required=["portfolio_id", "ticker", "quantity"],
+    ),
+)
+
+
+sell_stock_decl = FunctionDeclaration(
+    name="sell_stock",
+    description="Sell shares of a stock in a paper trading portfolio. Uses current market price.",
+    parameters=Schema(
+        type=Type.OBJECT,
+        properties={
+            "portfolio_id": Schema(type=Type.INTEGER, description="ID of the portfolio to trade in"),
+            "ticker": Schema(type=Type.STRING, description="Stock ticker symbol (e.g., 'AAPL')"),
+            "quantity": Schema(type=Type.INTEGER, description="Number of shares to sell"),
+            "note": Schema(type=Type.STRING, description="Optional note describing why you are selling this stock"),
+            "user_id": Schema(type=Type.INTEGER, description="Internal User ID (automatically injected)"),
+        },
+        required=["portfolio_id", "ticker", "quantity"],
+    ),
+)
+
+
 # =============================================================================
 # FRED Macroeconomic Data Tools
 # =============================================================================
@@ -537,6 +614,12 @@ TOOL_DECLARATIONS = [
     get_economic_indicators_decl,
     get_analyst_sentiment_decl,
     get_average_pe_ratio_decl,
+    # Portfolio management tools
+    create_portfolio_decl,
+    get_my_portfolios_decl,
+    get_portfolio_status_decl,
+    buy_stock_decl,
+    sell_stock_decl,
 ]
 
 # Create the Tool object for Gemini API
@@ -608,6 +691,12 @@ class ToolExecutor:
             "get_economic_indicators": self._get_economic_indicators,
             "get_analyst_sentiment": self._get_analyst_sentiment,
             "get_average_pe_ratio": self._get_average_pe_ratio,
+            # Portfolio management tools
+            "create_portfolio": self._create_portfolio,
+            "get_my_portfolios": self._get_my_portfolios,
+            "get_portfolio_status": self._get_portfolio_status,
+            "buy_stock": self._buy_stock,
+            "sell_stock": self._sell_stock,
         }
         
         executor = executor_map.get(tool_name)
@@ -1139,6 +1228,96 @@ class ToolExecutor:
             "cash_history": cash_by_year,
             "interpretation": " ".join(interpretation_parts)
         }
+
+    # =========================================================================
+    # Portfolio Management Executor Methods
+    # =========================================================================
+
+    def _create_portfolio(self, name: str, user_id: int, initial_cash: float = 100000.0) -> Dict[str, Any]:
+        """Create a new paper trading portfolio."""
+        try:
+            portfolio_id = self.db.create_portfolio(user_id=user_id, name=name, initial_cash=initial_cash)
+            return {
+                "success": True,
+                "portfolio_id": portfolio_id,
+                "name": name,
+                "initial_cash": initial_cash,
+                "message": f"Portfolio '{name}' created successfully with ${initial_cash:,.2f}."
+            }
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
+    def _get_my_portfolios(self, user_id: int) -> Dict[str, Any]:
+        """List all portfolios for a user."""
+        try:
+            portfolios = self.db.get_user_portfolios(user_id)
+            summaries = []
+            for p in portfolios:
+                summary = self.db.get_portfolio_summary(p['id'], use_live_prices=False) # fast summary
+                summaries.append(summary)
+            
+            return {
+                "success": True,
+                "portfolios": summaries
+            }
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
+    def _get_portfolio_status(self, portfolio_id: int, user_id: int) -> Dict[str, Any]:
+        """Get detailed status of a specific portfolio."""
+        try:
+            # Verify ownership
+            portfolio = self.db.get_portfolio(portfolio_id)
+            if not portfolio or portfolio['user_id'] != user_id:
+                return {"success": False, "error": "Portfolio not found or unauthorized access."}
+            
+            summary = self.db.get_portfolio_summary(portfolio_id, use_live_prices=True)
+            return {
+                "success": True,
+                "status": summary
+            }
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
+    def _buy_stock(self, portfolio_id: int, ticker: str, quantity: int, user_id: int, note: str = None) -> Dict[str, Any]:
+        """Buy stock in a portfolio."""
+        try:
+            # Verify ownership
+            portfolio = self.db.get_portfolio(portfolio_id)
+            if not portfolio or portfolio['user_id'] != user_id:
+                return {"success": False, "error": "Portfolio not found or unauthorized access."}
+            
+            result = portfolio_service.execute_trade(
+                db=self.db,
+                portfolio_id=portfolio_id,
+                symbol=ticker.upper(),
+                transaction_type='BUY',
+                quantity=quantity,
+                note=note
+            )
+            return result
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
+    def _sell_stock(self, portfolio_id: int, ticker: str, quantity: int, user_id: int, note: str = None) -> Dict[str, Any]:
+        """Sell stock from a portfolio."""
+        try:
+            # Verify ownership
+            portfolio = self.db.get_portfolio(portfolio_id)
+            if not portfolio or portfolio['user_id'] != user_id:
+                return {"success": False, "error": "Portfolio not found or unauthorized access."}
+            
+            result = portfolio_service.execute_trade(
+                db=self.db,
+                portfolio_id=portfolio_id,
+                symbol=ticker.upper(),
+                transaction_type='SELL',
+                quantity=quantity,
+                note=note
+            )
+            return result
+        except Exception as e:
+            return {"success": False, "error": str(e)}
 
     def _get_peers(self, ticker: str, limit: int = 10) -> Dict[str, Any]:
         """Get peer companies in the same sector with their financial metrics."""

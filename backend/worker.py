@@ -52,6 +52,7 @@ from price_history_fetcher import PriceHistoryFetcher
 from sec_data_fetcher import SECDataFetcher
 from news_fetcher import NewsFetcher
 from material_events_fetcher import MaterialEventsFetcher
+from dividend_manager import DividendManager
 
 # Import global rate limiter for SEC API (shared across all threads)
 from sec_rate_limiter import SEC_RATE_LIMITER, configure_edgartools_rate_limit
@@ -138,6 +139,9 @@ class BackgroundWorker:
         signal.signal(signal.SIGTERM, self._handle_shutdown)
         signal.signal(signal.SIGINT, self._handle_shutdown)
 
+        # Initialize Dividend Manager
+        self.dividend_manager = DividendManager(self.db)
+
         logger.info(f"Worker {self.worker_id} initialized")
 
     def _handle_shutdown(self, signum, frame):
@@ -223,6 +227,8 @@ class BackgroundWorker:
             self._run_forward_metrics_cache(job_id, params)
         elif job_type == 'price_update':
             self._run_price_update(job_id, params)
+        elif job_type == 'process_dividends':
+            self._run_process_dividends(job_id, params)
         else:
             raise ValueError(f"Unknown job type: {job_type}")
 
@@ -2560,6 +2566,30 @@ Return JSON only:
         self.db.flush()
         self.db.complete_job(job_id, result)
         logger.info(f"Forward metrics cache complete: {result}")
+
+
+    def _run_process_dividends(self, job_id: int, params: Dict[str, Any]):
+        """Execute dividend processing for all portfolios"""
+        logger.info(f"Running process_dividends job {job_id}")
+        
+        try:
+            target_date_str = params.get('target_date')
+            target_date = None
+            if target_date_str:
+                target_date = datetime.strptime(target_date_str, '%Y-%m-%d').date()
+            
+            self.db.update_job_progress(job_id, progress_pct=10, progress_message='Checking dividends for all portfolio holdings...')
+            
+            # This is a bit of a wrapper around the manager logic
+            # to provide progress updates if possible, but manager handles the bulk.
+            self.dividend_manager.process_all_portfolios(target_date=target_date)
+            
+            self.db.complete_job(job_id, result={'status': 'completed'})
+            logger.info("Dividend processing complete")
+            
+        except Exception as e:
+            logger.error(f"Dividend processing job failed: {e}")
+            self.db.fail_job(job_id, str(e))
 
 
 def main():
