@@ -53,45 +53,80 @@ You have access to these charts. Insert them using the exact placeholder syntax 
 | `debt_to_equity` | Debt-to-equity ratio trend |
 | `stock_price` | Weekly stock price with analyst targets |
 | `pe_ratio` | P/E ratio trend |
+| `net_margin` | Net profit margin % |
+| `roe` | Return on Equity % |
+| `debt_to_earnings` | Years to pay off debt (Total Debt / Net Income) |
+| `shares_outstanding` | Shares outstanding (billions) |
+| `book_value` | Book Value per Share ($) |
 
 ## Output Format
 
 Write a unified analyst report that flows naturally. **Embed charts where they best support your narrative**—don't just list them at the end.
 
+### Narrative Flow Strategy
+
+**If the character is Warren Buffett:**
+Follow this **EXACT 10-step sequence** for the narrative. Do not skip steps.
+1.  **Revenue** (`{{CHART:revenue}}`): Top line growth.
+2.  **Earnings Per Share** (`{{CHART:eps}}`): Bottom line growth.
+3.  **Net Profit Margin** (`{{CHART:net_margin}}`): Business quality.
+4.  **Return on Equity** (`{{CHART:roe}}`): Capital efficiency.
+5.  **Free Cash Flow** (`{{CHART:free_cash_flow}}`): Cash generation (Skip OCF).
+6.  **Debt-to-Earnings** (`{{CHART:debt_to_earnings}}`): Safety/Leverage.
+7.  **Shares Outstanding** (`{{CHART:shares_outstanding}}`): Buybacks/Allocation.
+8.  **Book Value** (`{{CHART:book_value}}`): Intrinsic value proxy.
+9.  **Stock Price** (`{{CHART:stock_price}}`): Market tracking.
+10. **P/E Ratio** (`{{CHART:pe_ratio}}`): Valuation.
+
+**If the character is Peter Lynch (or others):**
+Prioritize **Growth** and **Story**.
+1.  **Growth:** Start with `revenue`, `net_income`, and `eps`. Is it growing?
+2.  **Cash:** Check `operating_cash_flow` and `free_cash_flow`.
+3.  **Strength:** Check `debt_to_equity`.
+4.  **Valuation:** Finally `stock_price` and `pe_ratio`.
+
 **Structure your report with these sections:**
 
 ### Growth & Profitability
 
-Open with the revenue story. Introduce the revenue chart, then discuss what it reveals. Transition to profitability (net income), then to per-share metrics (EPS, dividends).
+Open with the revenue and earnings story.
+*For Buffett:* Start with **Revenue** and **EPS** to establish growth, then move immediately to **Net Margin** and **ROE** to prove quality.
 
-Example flow:
+Example flow (Buffett):
 ```
-Let's start with the top line.
+Let's look at the growth engine.
 
 {{CHART:revenue}}
 
-Revenue has grown at X% CAGR... [discussion]
+[Discussion of revenue]
 
-This growth translates to the bottom line:
-
-{{CHART:net_income}}
-
-[discussion of margins, profitability]
-
-For shareholders, what matters is per-share returns:
+This translates to per-share earnings:
 
 {{CHART:eps}}
 
-[discussion connecting company profits to shareholder value]
+[Discussion of EPS]
+
+But is the business high quality?
+
+{{CHART:net_margin}}
+
+[Discussion of margins]
+
+And efficiently managed?
+
+{{CHART:roe}}
+
+[Discussion of ROE]
 ```
 
 ### Cash Flow & Capital Efficiency
 
-Transition from profitability to cash quality. Discuss operating cash flow, free cash flow, capital intensity, and leverage.
+Transition to safety and allocation.
+*For Buffett:* Discuss **Free Cash Flow**, then **Debt-to-Earnings**, then **Shares Outstanding**, and finally **Book Value**.
 
 ### Valuation
 
-Conclude with how the market prices this business. Stock price, P/E trends, and whether valuation aligns with fundamentals.
+Conclude with **Stock Price** and **P/E Ratio**.
 
 ### Conclusion
 
@@ -102,7 +137,8 @@ End with a clear takeaway about the overall investment quality and how it fits i
 2. Keep paragraphs concise (3-5 sentences max)
 3. Use bullet points for listing multiple observations
 4. Every chart placeholder must be on its own line with blank lines above and below
-5. Include ALL 10 charts, placed where they logically fit the narrative
+5. Include ALL relevant charts, placed where they logically fit the narrative
+6. **Do NOT use all charts if they are irrelevant, but typically use 6-8 key charts.**
 
 ## Style Guidelines
 

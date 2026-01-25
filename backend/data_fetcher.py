@@ -625,16 +625,32 @@ class DataFetcher:
         # Create lookup dictionaries keyed by (year, quarter)
         ni_by_key = {(e['year'], e['quarter']): e for e in net_income_quarterly}
         rev_by_key = {(e['year'], e['quarter']): e for e in revenue_quarterly}
-        eps_by_key = {(e['year'], e['quarter']): e for e in eps_quarterly}
+        
+        # Merge EPS sources: Prefer Reported, Fallback to Calculated
+        eps_by_key = {}
+        # First populate with calculated
+        calculated_eps_quarterly = edgar_data.get('calculated_eps_quarterly', [])
+        for e in calculated_eps_quarterly:
+            eps_by_key[(e['year'], e['quarter'])] = e
+        
+        # Then overwrite with reported (if exists)
+        eps_quarterly = edgar_data.get('eps_quarterly', [])
+        for e in eps_quarterly:
+             eps_by_key[(e['year'], e['quarter'])] = e
+
         cf_by_key = {(e['year'], e['quarter']): e for e in cash_flow_quarterly}
         de_by_key = {(e['year'], e['quarter']): e for e in debt_to_equity_quarterly}
 
         # Add shares_outstanding quarterly lookup
         shares_outstanding_quarterly = edgar_data.get('shares_outstanding_quarterly', [])
         so_by_key = {(e['year'], e['quarter']): e for e in shares_outstanding_quarterly}
+        
+        # Add shareholder_equity quarterly lookup
+        shareholder_equity_quarterly = edgar_data.get('shareholder_equity_quarterly', [])
+        equity_by_key = {(e['year'], e['quarter']): e for e in shareholder_equity_quarterly}
 
         # Merge all quarter keys
-        all_keys = set(ni_by_key.keys()) | set(rev_by_key.keys()) | set(eps_by_key.keys()) | set(cf_by_key.keys()) | set(de_by_key.keys()) | set(so_by_key.keys())
+        all_keys = set(ni_by_key.keys()) | set(rev_by_key.keys()) | set(eps_by_key.keys()) | set(cf_by_key.keys()) | set(de_by_key.keys()) | set(so_by_key.keys()) | set(equity_by_key.keys())
         
         quarters_stored = 0
         for key in all_keys:
@@ -647,6 +663,7 @@ class DataFetcher:
             cf_entry = cf_by_key.get(key, {})
             de_entry = de_by_key.get(key, {})
             so_entry = so_by_key.get(key, {})
+            equity_entry = equity_by_key.get(key, {})
 
             net_income = ni_entry.get('net_income')
             revenue = rev_entry.get('revenue')
@@ -656,13 +673,14 @@ class DataFetcher:
             free_cash_flow = cf_entry.get('free_cash_flow')
             debt_to_equity = de_entry.get('debt_to_equity')
             shares_outstanding = so_entry.get('shares')
+            shareholder_equity = equity_entry.get('shareholder_equity')
             
             # Use fiscal_end from whichever source has it
-            fiscal_end = ni_entry.get('fiscal_end') or rev_entry.get('fiscal_end') or eps_entry.get('fiscal_end') or cf_entry.get('fiscal_end') or de_entry.get('fiscal_end')
+            fiscal_end = ni_entry.get('fiscal_end') or rev_entry.get('fiscal_end') or eps_entry.get('fiscal_end') or cf_entry.get('fiscal_end') or de_entry.get('fiscal_end') or equity_entry.get('fiscal_end')
             dividend = dividends_by_quarter.get(key)
 
-            # Only store if we have at least some data (check D/E too)
-            if net_income or revenue or eps or operating_cash_flow or free_cash_flow or debt_to_equity is not None:
+            # Only store if we have at least some data (check D/E and Equity too)
+            if net_income or revenue or eps or operating_cash_flow or free_cash_flow or debt_to_equity is not None or shareholder_equity is not None:
                 self.db.save_earnings_history(
                     symbol,
                     year,
@@ -677,6 +695,7 @@ class DataFetcher:
                     capital_expenditures=float(capital_expenditures) if capital_expenditures else None,
                     free_cash_flow=float(free_cash_flow) if free_cash_flow else None,
                     shares_outstanding=float(shares_outstanding) if shares_outstanding is not None else None,
+                    shareholder_equity=float(shareholder_equity) if shareholder_equity is not None else None,
                     cash_and_cash_equivalents=None,  # Quarterly cash not currently tracked
                 )
                 quarters_stored += 1

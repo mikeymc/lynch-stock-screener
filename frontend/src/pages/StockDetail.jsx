@@ -410,6 +410,7 @@ export default function StockDetail({ watchlist, toggleWatchlist, algorithm, act
               quarterlyHistoryData={quarterlyHistoryData}
               loading={loadingHistory}
               symbol={symbol}
+              activeCharacter={activeCharacter}
             />
           )}
 

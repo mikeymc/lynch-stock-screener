@@ -110,14 +110,29 @@ class StockAnalyst:
             ocf = h.get('operating_cash_flow')
             capex = h.get('capital_expenditures')
             fcf = h.get('free_cash_flow')
+            
+            # New metrics for Buffett analysis
+            shares = h.get('shares_outstanding')
+            book_value = h.get('book_value_per_share')
+            equity = h.get('total_equity')
+            total_debt = h.get('total_debt')
+            
+            # Calculations
+            net_margin_str = f"{net_income/revenue*100:.1f}%" if (net_income and revenue) else "N/A"
+            roe_str = f"{net_income/equity*100:.1f}%" if (net_income and equity) else "N/A"
+            debt_to_earnings_str = f"{total_debt/net_income:.1f}x" if (total_debt is not None and net_income and net_income > 0) else "N/A"
 
             net_income_str = f"${net_income/1e9:.2f}B" if net_income is not None else "N/A"
             revenue_str = f"${revenue/1e9:.2f}B" if revenue is not None else "N/A"
             ocf_str = f"${ocf/1e9:.2f}B" if ocf is not None else "N/A"
             capex_str = f"${abs(capex)/1e9:.2f}B" if capex is not None else "N/A"
             fcf_str = f"${fcf/1e9:.2f}B" if fcf is not None else "N/A"
+            shares_str = f"{shares/1e9:.2f}B" if shares is not None else "N/A"
+            book_value_str = f"${book_value:.2f}" if book_value is not None else "N/A"
 
-            history_lines.append(f"  {h['year']}: Net Income={net_income_str}, Revenue={revenue_str}, OCF={ocf_str}, CapEx={capex_str}, FCF={fcf_str}")
+            history_lines.append(f"  {h['year']}: Revenue={revenue_str}, Net Income={net_income_str} (Margin={net_margin_str}), ROE={roe_str}, "
+                                 f"OCF={ocf_str}, FCF={fcf_str}, Debt/Earnings={debt_to_earnings_str}, "
+                                 f"Shares={shares_str}, BVPS={book_value_str}")
         history_text = "\n".join(history_lines)
 
         price = stock_data.get('price') or 0

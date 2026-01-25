@@ -609,6 +609,121 @@ export default function ChartNarrativeRenderer({ narrative, historyData, isQuart
             </div>
         ),
 
+        net_margin: () => (
+            <div className="h-64">
+                <Line plugins={[zeroLinePlugin, crosshairPlugin]}
+                    data={{
+                        labels: getExtendedLabels(),
+                        datasets: [
+                            {
+                                label: 'Net Profit Margin (%)',
+                                // Calculate margin on the fly (Backend sends net_income and revenue)
+                                data: scaleHistoryData(
+                                    (historyData.net_income && historyData.revenue)
+                                        ? historyData.net_income.map((ni, i) =>
+                                            (ni && historyData.revenue[i]) ? (ni / historyData.revenue[i] * 100) : null
+                                        )
+                                        : [],
+                                    1
+                                ),
+                                borderColor: 'rgb(236, 72, 153)', // Pink
+                                backgroundColor: 'rgba(236, 72, 153, 0.2)',
+                                pointRadius: activeIndex !== null ? 3 : 0,
+                                pointHoverRadius: 5
+                            }
+                        ]
+                    }}
+                    options={createChartOptions('Net Profit Margin', 'Margin (%)')}
+                />
+            </div>
+        ),
+
+        roe: () => (
+            <div className="h-64">
+                <Line plugins={[zeroLinePlugin, crosshairPlugin]}
+                    data={{
+                        labels: getExtendedLabels(),
+                        datasets: [
+                            {
+                                label: 'Return on Equity (%)',
+                                // Use pre-calculated ROE from backend
+                                data: scaleHistoryData(historyData.roe || [], 1),
+                                borderColor: 'rgb(245, 158, 11)', // Amber
+                                backgroundColor: 'rgba(245, 158, 11, 0.2)',
+                                pointRadius: activeIndex !== null ? 3 : 0,
+                                pointHoverRadius: 5
+                            }
+                        ]
+                    }}
+                    options={createChartOptions('Return on Equity', 'ROE (%)')}
+                />
+            </div>
+        ),
+
+        debt_to_earnings: () => (
+            <div className="h-64">
+                <Line plugins={[zeroLinePlugin, crosshairPlugin]}
+                    data={{
+                        labels: getExtendedLabels(),
+                        datasets: [
+                            {
+                                label: 'Debt-to-Earnings (Years)',
+                                // Use pre-calculated D/E from backend
+                                data: scaleHistoryData(historyData.debt_to_earnings || [], 1),
+                                borderColor: 'rgb(244, 63, 94)', // Rose
+                                backgroundColor: 'rgba(244, 63, 94, 0.2)',
+                                pointRadius: activeIndex !== null ? 3 : 0,
+                                pointHoverRadius: 5
+                            }
+                        ]
+                    }}
+                    options={createChartOptions('Debt-to-Earnings', 'Years')}
+                />
+            </div>
+        ),
+
+        shares_outstanding: () => (
+            <div className="h-64">
+                <Line plugins={[zeroLinePlugin, crosshairPlugin]}
+                    data={{
+                        labels: getExtendedLabels(),
+                        datasets: [
+                            {
+                                label: 'Shares Outstanding (Billions)',
+                                data: scaleHistoryData(historyData.shares_outstanding || [], 1e9),
+                                borderColor: 'rgb(59, 130, 246)', // Blue
+                                backgroundColor: 'rgba(59, 130, 246, 0.2)',
+                                pointRadius: activeIndex !== null ? 3 : 0,
+                                pointHoverRadius: 5
+                            }
+                        ]
+                    }}
+                    options={createChartOptions('Shares Outstanding', 'Billions')}
+                />
+            </div>
+        ),
+
+        book_value: () => (
+            <div className="h-64">
+                <Line plugins={[zeroLinePlugin, crosshairPlugin]}
+                    data={{
+                        labels: getExtendedLabels(),
+                        datasets: [
+                            {
+                                label: 'Book Value Per Share ($)',
+                                data: scaleHistoryData(historyData.book_value_per_share || [], 1),
+                                borderColor: 'rgb(14, 165, 233)', // Sky Blue
+                                backgroundColor: 'rgba(14, 165, 233, 0.2)',
+                                pointRadius: activeIndex !== null ? 3 : 0,
+                                pointHoverRadius: 5
+                            }
+                        ]
+                    }}
+                    options={createChartOptions('Book Value Per Share', 'BVPS ($)')}
+                />
+            </div>
+        ),
+
         pe_ratio: () => {
             const weeklyPE = historyData?.weekly_pe_ratios
             const useWeeklyPE = weeklyPE?.dates?.length > 0 && weeklyPE?.values?.length > 0

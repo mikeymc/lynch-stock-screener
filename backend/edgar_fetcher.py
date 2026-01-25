@@ -691,6 +691,12 @@ class EdgarFetcher:
                     units = company_facts['facts']['us-gaap']['PaymentsToAcquireProductiveAssets']['units']
                     if 'USD' in units:
                         capex_data.extend(units['USD'])
+                
+                # Alternative tag for Banks (MS)
+                if 'PaymentsForProceedsFromProductiveAssets' in company_facts['facts']['us-gaap']:
+                    units = company_facts['facts']['us-gaap']['PaymentsForProceedsFromProductiveAssets']['units']
+                    if 'USD' in units:
+                        capex_data.extend(units['USD'])
 
             # Try IFRS
             elif 'ifrs-full' in company_facts['facts'] and 'CashFlowsUsedInObtainingControlOfSubsidiariesOrOtherBusinessesClassifiedAsInvestingActivities' in company_facts['facts']['ifrs-full']:
@@ -810,10 +816,22 @@ class EdgarFetcher:
         net_income_data_list = None
 
         # Try US-GAAP first (domestic companies)
+        # Try US-GAAP first (domestic companies)
         try:
-            ni_units = company_facts['facts']['us-gaap']['NetIncomeLoss']['units']
-            if 'USD' in ni_units:
-                net_income_data_list = ni_units['USD']
+            ni_tags = [
+                'NetIncomeLoss',
+                'NetIncomeLossAvailableToCommonStockholdersBasic',
+                'ProfitLoss',
+                'NetIncomeLossAvailableToCommonStockholdersDiluted'
+            ]
+            
+            for tag in ni_tags:
+                if tag in company_facts['facts']['us-gaap']:
+                    units = company_facts['facts']['us-gaap'][tag]['units']
+                    if 'USD' in units:
+                        net_income_data_list = units['USD']
+                        logger.debug(f"Found Net Income data using tag: {tag}")
+                        break
         except (KeyError, TypeError):
             pass
 
@@ -1019,6 +1037,7 @@ class EdgarFetcher:
                     'RevenueFromContractWithCustomerExcludingAssessedTax',  # ASC 606
                     'Revenues',  # General revenue tag
                     'SalesRevenueNet',  # Manufacturing/retail
+                    'RevenuesNetOfInterestExpense', # Banks/Financials (e.g. MS)
                     'RevenueFromContractWithCustomerIncludingAssessedTax',
                 ]
                 
@@ -1185,6 +1204,7 @@ class EdgarFetcher:
                 capex_tags = [
                     'PaymentsToAcquirePropertyPlantAndEquipment',
                     'PaymentsToAcquireProductiveAssets',
+                    'PaymentsForProceedsFromProductiveAssets', # Banks (MS)
                 ]
                 for tag in capex_tags:
                     if tag in company_facts['facts']['us-gaap']:
@@ -1227,7 +1247,9 @@ class EdgarFetcher:
 
                 # Quarterly data (10-Q)
                 elif form in ['10-Q', '6-K'] and fp:
-                    year = int(fiscal_end[:4]) if fiscal_end else fy
+                    # PRIORITIZE FISCAL YEAR (fy) to align with Annual Report
+                    # Only fallback to calendar year if fy is missing
+                    year = fy if fy else (int(fiscal_end[:4]) if fiscal_end else None)
                     quarter = fp
                     if year and quarter and (year, quarter) not in seen_quarters:
                         quarterly.append({
@@ -1335,28 +1357,29 @@ class EdgarFetcher:
         Returns:
             List of dictionaries with year, shares, and fiscal_end values
         """
-        shares_data_list = None
+        shares_data_list = []
 
-        # Try US-GAAP first (domestic companies)
-        try:
-            shares_units = company_facts['facts']['us-gaap']['WeightedAverageNumberOfDilutedSharesOutstanding']['units']
-            if 'shares' in shares_units:
-                shares_data_list = shares_units['shares']
-        except (KeyError, TypeError):
-            pass
-
-        # Fall back to IFRS (foreign companies filing 20-F)
-        if shares_data_list is None:
+        # Helper to safely extend shares list
+        def collect_shares(namespace, tag):
             try:
-                shares_units = company_facts['facts']['ifrs-full']['WeightedAverageNumberOfSharesOutstandingDiluted']['units']
-                if 'shares' in shares_units:
-                    shares_data_list = shares_units['shares']
+                units = company_facts['facts'].get(namespace, {}).get(tag, {}).get('units', {})
+                if 'shares' in units:
+                    shares_data_list.extend(units['shares'])
+                    logger.debug(f"Found {len(units['shares'])} entries for {tag}")
             except (KeyError, TypeError):
                 pass
 
-        # If we still don't have data, return empty
-        if shares_data_list is None:
-            logger.debug("Could not parse shares outstanding history from EDGAR: No us-gaap or ifrs-full data found")
+        # Collect from all known tags (Primary + Fallbacks)
+        collect_shares('us-gaap', 'WeightedAverageNumberOfDilutedSharesOutstanding')
+        collect_shares('us-gaap', 'CommonStockSharesOutstanding')
+        collect_shares('dei', 'EntityCommonStockSharesOutstanding')
+        
+        # Also check IFRS
+        collect_shares('ifrs-full', 'WeightedAverageNumberOfSharesOutstandingDiluted')
+
+        # If zero data found
+        if not shares_data_list:
+            logger.debug("Could not parse shares outstanding history from EDGAR: No known tags found")
             return []
 
         # Filter for annual reports (10-K for US, 20-F for foreign)
@@ -1478,27 +1501,25 @@ class EdgarFetcher:
         Returns:
             List of dictionaries with year, quarter, shares, and fiscal_end values
         """
-        shares_data_list = None
+        shares_data_list = []
 
-        # Try US-GAAP first (domestic companies)
-        try:
-            shares_units = company_facts['facts']['us-gaap']['WeightedAverageNumberOfDilutedSharesOutstanding']['units']
-            if 'shares' in shares_units:
-                shares_data_list = shares_units['shares']
-        except (KeyError, TypeError):
-            pass
-
-        # Fall back to IFRS (foreign companies filing 6-K)
-        if shares_data_list is None:
+        # Helper to safely extend shares list
+        def collect_shares(namespace, tag):
             try:
-                shares_units = company_facts['facts']['ifrs-full']['WeightedAverageNumberOfSharesOutstandingDiluted']['units']
-                if 'shares' in shares_units:
-                    shares_data_list = shares_units['shares']
+                units = company_facts['facts'].get(namespace, {}).get(tag, {}).get('units', {})
+                if 'shares' in units:
+                    shares_data_list.extend(units['shares'])
             except (KeyError, TypeError):
                 pass
+        
+        # Collect from all known tags (Primary + Fallbacks)
+        collect_shares('us-gaap', 'WeightedAverageNumberOfDilutedSharesOutstanding')
+        collect_shares('us-gaap', 'CommonStockSharesOutstanding')
+        collect_shares('dei', 'EntityCommonStockSharesOutstanding')
+        collect_shares('ifrs-full', 'WeightedAverageNumberOfSharesOutstandingDiluted')
 
         # If we still don't have data, return empty
-        if shares_data_list is None:
+        if not shares_data_list:
             logger.debug("Could not parse quarterly shares outstanding history from EDGAR: No us-gaap or ifrs-full data found")
             return []
 
@@ -1533,8 +1554,9 @@ class EdgarFetcher:
         for entry in shares_data_list:
             if entry.get('form') in ['10-K', '20-F']:
                 fiscal_end = entry.get('end')
-                # Use fy field (fiscal year) as primary source, fall back to extracting from fiscal_end date
-                year = entry.get('fy') or (int(fiscal_end[:4]) if fiscal_end else None)
+                # Use fiscal_end date for year determination to ensure historical data points
+                # in current filings (e.g. 2022 data in 2024 10-K) are assigned to right year.
+                year = int(fiscal_end[:4]) if fiscal_end else entry.get('fy')
                 shares = entry.get('val')
 
                 if year and shares is not None and year not in seen_annual_years:
@@ -1577,6 +1599,21 @@ class EdgarFetcher:
                     'shares': annual_entry['shares'],
                     'fiscal_end': annual_entry['fiscal_end']
                 })
+            
+            # IMPUTATION: If Q1, Q2, Q3 are completely missing (e.g. HSY where 10-Q tags are absent),
+            # fill them with the Annual value. This allows EPS calculation for those quarters.
+            shares = annual_entry['shares']
+            # Only impute if we have NO data for these quarters
+            # We don't have exact fiscal_end dates, so use None or approximate? None is safer.
+            for q in ['Q1', 'Q2', 'Q3']:
+                 if (year, q) not in seen_quarters:
+                     quarterly_shares.append({
+                        'year': year,
+                        'quarter': q,
+                        'shares': shares,
+                        'fiscal_end': None # Date unknown, but not needed for EPS calculation matching
+                     })
+                     logger.debug(f"Imputed {q} shares for {year} using Annual value: {shares:,.0f}")
 
         # Sort by year descending, then by quarter
         def quarter_sort_key(entry):
@@ -1636,6 +1673,37 @@ class EdgarFetcher:
         # Sort by year descending
         eps_history.sort(key=lambda x: x['year'], reverse=True)
         logger.info(f"Successfully calculated {len(eps_history)} years of split-adjusted EPS")
+        return eps_history
+
+    def calculate_quarterly_eps_history(self, company_facts: Dict[str, Any]) -> List[Dict[str, Any]]:
+        """
+        Calculate quarterly EPS from Net Income and Shares Outstanding.
+        Fallback for when reported EPS tags are missing (e.g. HSY).
+        """
+        # Get Quarterly Net Income
+        net_income_quarterly = self.parse_quarterly_net_income_history(company_facts)
+        
+        # Get Quarterly Shares
+        shares_quarterly = self.parse_quarterly_shares_outstanding_history(company_facts)
+        
+        # Create lookup for shares by (year, quarter)
+        shares_lookup = {(e['year'], e['quarter']): e['shares'] for e in shares_quarterly}
+        
+        eps_history = []
+        for ni in net_income_quarterly:
+            key = (ni['year'], ni['quarter'])
+            if key in shares_lookup:
+                shares = shares_lookup[key]
+                if shares > 0:
+                    eps = ni['net_income'] / shares
+                    eps_history.append({
+                        'year': ni['year'],
+                        'quarter': ni['quarter'],
+                        'eps': eps,
+                        'fiscal_end': ni['fiscal_end']
+                    })
+                    
+        eps_history.sort(key=lambda x: (x['year'], x['quarter']), reverse=True)
         return eps_history
 
     def parse_interest_expense(self, company_facts: Dict[str, Any]) -> Optional[float]:
@@ -1818,6 +1886,101 @@ class EdgarFetcher:
         
         logger.info(f"Successfully parsed {len(annual_equity)} years of Shareholder Equity from EDGAR")
         return annual_equity
+
+    def parse_quarterly_shareholder_equity_history(self, company_facts: Dict[str, Any]) -> List[Dict[str, Any]]:
+        """
+        Extract Quarterly Shareholder Equity history from company facts.
+        
+        Args:
+            company_facts: Company facts data from EDGAR API
+            
+        Returns:
+            List of dictionaries with year, quarter, shareholder_equity, and fiscal_end values
+        """
+        equity_data_list = []
+        
+        # Helper to safely extend list
+        def collect_equity(namespace, tag):
+            try:
+                units = company_facts['facts'].get(namespace, {}).get(tag, {}).get('units', {})
+                if 'USD' in units:
+                    equity_data_list.extend(units['USD'])
+            except (KeyError, TypeError):
+                pass
+
+        # Try US-GAAP first
+        try:
+            collect_equity('us-gaap', 'StockholdersEquity')
+            collect_equity('us-gaap', 'StockholdersEquityIncludingPortionAttributableToNoncontrollingInterest')
+            collect_equity('us-gaap', 'Equity') # Generic fallback
+        except (KeyError, TypeError):
+            pass
+
+        except (KeyError, TypeError):
+            pass
+            
+        # Try IFRS
+        if equity_data_list is None:
+            try:
+                if 'ifrs-full' in company_facts['facts']:
+                    if 'Equity' in company_facts['facts']['ifrs-full']:
+                        units = company_facts['facts']['ifrs-full']['Equity']['units']
+                        if 'USD' in units:
+                            equity_data_list = units['USD']
+                        else:
+                            # Find first currency unit
+                            currency_units = [u for u in units.keys() if len(u) == 3 and u.isupper()]
+                            if currency_units:
+                                equity_data_list = units[currency_units[0]]
+            except (KeyError, TypeError):
+                pass
+                
+        if equity_data_list is None:
+            logger.debug("Could not parse Quarterly Shareholder Equity history from EDGAR")
+            return []
+            
+        # Process and filter for quarterly data
+        quarterly_equity = []
+        seen_quarters = set()
+        
+        for entry in equity_data_list:
+            form = entry.get('form')
+            # Accept 10-Q (Quarterly) and 10-K (Annual/Q4)
+            if form in ['10-Q', '10-K', '20-F', '40-F', '6-K']:
+                fiscal_end = entry.get('end')
+                val = entry.get('val')
+                year = entry.get('fy')
+                fp = entry.get('fp') # Q1, Q2, Q3, FY/Q4
+                
+                if not year or not fp or val is None or not fiscal_end:
+                    continue
+                    
+                quarter = None
+                if fp in ['Q1', 'Q2', 'Q3']:
+                    quarter = fp
+                elif fp in ['Q4', 'FY'] and form in ['10-K', '20-F', '40-F']:
+                    # For Equity (point-in-time), FY end value IS Q4 end value
+                    quarter = 'Q4'
+                
+                if quarter:
+                    if (year, quarter) not in seen_quarters:
+                        quarterly_equity.append({
+                            'year': year,
+                            'quarter': quarter,
+                            'shareholder_equity': val,
+                            'fiscal_end': fiscal_end
+                        })
+                        seen_quarters.add((year, quarter))
+        
+        # Sort by year desc, then quarter desc
+        def quarter_sort_key(entry):
+            quarter_order = {'Q1': 1, 'Q2': 2, 'Q3': 3, 'Q4': 4}
+            return (-entry['year'], -quarter_order.get(entry['quarter'], 0))
+            
+        quarterly_equity.sort(key=quarter_sort_key)
+        
+        logger.info(f"Successfully parsed {len(quarterly_equity)} quarters of Shareholder Equity from EDGAR")
+        return quarterly_equity
 
     def parse_cash_equivalents_history(self, company_facts: Dict[str, Any]) -> List[Dict[str, Any]]:
         """
@@ -2626,6 +2789,7 @@ class EdgarFetcher:
         debt_to_equity = self.parse_debt_to_equity(company_facts)
         debt_to_equity_history = self.parse_debt_to_equity_history(company_facts)
         shareholder_equity_history = self.parse_shareholder_equity_history(company_facts)
+        shareholder_equity_quarterly = self.parse_quarterly_shareholder_equity_history(company_facts)
         cash_equivalents_history = self.parse_cash_equivalents_history(company_facts)
         cash_flow_history = self.parse_cash_flow_history(company_facts)
         
@@ -2646,6 +2810,7 @@ class EdgarFetcher:
         # Extract quarterly revenue, EPS, cash flow, and D/E from EDGAR
         revenue_quarterly = self.parse_quarterly_revenue_history(company_facts)
         eps_quarterly = self.parse_quarterly_eps_history(company_facts)
+        calculated_eps_quarterly = self.calculate_quarterly_eps_history(company_facts)
         cash_flow_quarterly = self.parse_quarterly_cash_flow_history(company_facts)
         debt_to_equity_quarterly = self.parse_quarterly_debt_to_equity_history(company_facts)
 
@@ -2656,7 +2821,7 @@ class EdgarFetcher:
         # Parse dividend history
         dividend_history = self.parse_dividend_history(company_facts)
 
-        logger.info(f"[{ticker}] EDGAR fetch complete: {len(eps_history or [])} EPS years, {len(calculated_eps_history or [])} calculated EPS years, {len(net_income_annual or [])} annual NI, {len(net_income_quarterly or [])} quarterly NI, {len(revenue_quarterly or [])} quarterly Rev, {len(eps_quarterly or [])} quarterly EPS, {len(cash_flow_quarterly or [])} quarterly CF, {len(revenue_history or [])} revenue years, {len(debt_to_equity_history or [])} D/E years, {len(debt_to_equity_quarterly)} quarterly D/E, {len(shareholder_equity_history or [])} Equity years, {len(cash_equivalents_history or [])} Cash years, {len(shares_outstanding_history or [])} shares outstanding years, {len(cash_flow_history or [])} cash flow years, {len(dividend_history or [])} dividend entries, current D/E: {debt_to_equity}")
+        logger.info(f"[{ticker}] EDGAR fetch complete: {len(eps_history or [])} EPS years, {len(calculated_eps_history or [])} calculated EPS years, {len(net_income_annual or [])} annual NI, {len(net_income_quarterly or [])} quarterly NI, {len(revenue_quarterly or [])} quarterly Rev, {len(eps_quarterly or [])} quarterly EPS, {len(calculated_eps_quarterly or [])} calculated Q-EPS, {len(cash_flow_quarterly or [])} quarterly CF, {len(revenue_history or [])} revenue years, {len(debt_to_equity_history or [])} D/E years, {len(debt_to_equity_quarterly)} quarterly D/E, {len(shareholder_equity_history or [])} Equity years, {len(shareholder_equity_quarterly)} Quarterly Equity, {len(cash_equivalents_history or [])} Cash years, {len(shares_outstanding_history or [])} shares outstanding years, {len(cash_flow_history or [])} cash flow years, {len(dividend_history or [])} dividend entries, current D/E: {debt_to_equity}")
 
         fundamentals = {
             'ticker': ticker,
@@ -2666,11 +2831,13 @@ class EdgarFetcher:
             'calculated_eps_history': calculated_eps_history,
             'net_income_annual': net_income_annual,
             'shareholder_equity_history': shareholder_equity_history,
+            'shareholder_equity_quarterly': shareholder_equity_quarterly,
             'cash_equivalents_history': cash_equivalents_history,
             'shares_outstanding_history': shares_outstanding_history,
             'net_income_quarterly': net_income_quarterly,
             'revenue_quarterly': revenue_quarterly,
             'eps_quarterly': eps_quarterly,
+            'calculated_eps_quarterly': calculated_eps_quarterly,
             'cash_flow_quarterly': cash_flow_quarterly,
             'debt_to_equity_quarterly': debt_to_equity_quarterly,
             'shares_outstanding_quarterly': shares_outstanding_quarterly,

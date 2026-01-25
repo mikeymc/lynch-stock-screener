@@ -114,7 +114,7 @@ const yearTickCallback = function (value, index, values) {
   return null
 };
 
-export default function StockCharts({ historyData, quarterlyHistoryData, loading, symbol }) {
+export default function StockCharts({ historyData, quarterlyHistoryData, loading, symbol, activeCharacter }) {
   const [activeIndex, setActiveIndex] = useState(null)
   const [analyses, setAnalyses] = useState({ growth: null, cash: null, valuation: null })
   const [narrative, setNarrative] = useState(null)
@@ -205,12 +205,31 @@ export default function StockCharts({ historyData, quarterlyHistoryData, loading
       operating_cash_flow: slice(rawActiveData.operating_cash_flow),
       free_cash_flow: slice(rawActiveData.free_cash_flow),
       capital_expenditures: slice(rawActiveData.capital_expenditures),
+      shareholder_equity: slice(rawActiveData.shareholder_equity),
+      shares_outstanding: slice(rawActiveData.shares_outstanding),
+      roe: slice(rawActiveData.roe),
+      shareholder_equity: slice(rawActiveData.shareholder_equity),
+      shares_outstanding: slice(rawActiveData.shares_outstanding),
+      roe: slice(rawActiveData.roe),
+      book_value_per_share: slice(rawActiveData.book_value_per_share),
+      debt_to_earnings: slice(rawActiveData.debt_to_earnings),
       // Add filtered weekly/granular data
       weekly_prices: filteredWp,
       weekly_dividend_yields: filteredWdy,
       weekly_pe_ratios: filteredWpe
     }
   }, [rawActiveData, timeHorizon, viewMode])
+
+  // Calculate Net Margin on the fly (Net Income / Revenue * 100)
+  // Must be before early return to satisfy Rules of Hooks
+  const netMarginData = useMemo(() => {
+    if (!activeData || !activeData.net_income || !activeData.revenue) return []
+    return activeData.net_income.map((ni, i) => {
+      const rev = activeData.revenue[i]
+      if (ni == null || rev == null || rev === 0) return null
+      return (ni / rev) * 100
+    })
+  }, [activeData])
 
   if (loading || !historyData) {
     return (
@@ -351,6 +370,21 @@ export default function StockCharts({ historyData, quarterlyHistoryData, loading
     (activeData.capital_expenditures || []).map(v => v != null ? Math.abs(v) : null),
     1e9
   )
+
+  // New Buffett Data
+  const roeData = scaleHistoryData(activeData.roe || [], 1)
+  const sharesData = scaleHistoryData(activeData.shares_outstanding || [], 1) // No scale needed, usu. in exact units or thousands? Usually raw in DB. Let's assume raw. Wait, Market Cap is scaled. Shares are usually huge. Let's check DB. If market cap is e.g. 3 Trillion, shares are e.g. 15 Billion. Let's scale to Billions for display if needed, or just formatted. Let's start with Billions.
+  // Actually, shares are usually in full units. 15B shares = 15,000,000,000.
+  // Let's scale shares to Billions.
+  const sharesDataBillion = scaleHistoryData(activeData.shares_outstanding || [], 1e9)
+
+  const bookValueData = scaleHistoryData(activeData.book_value_per_share || [], 1)
+
+  const debtToEarningsData = scaleHistoryData(activeData.debt_to_earnings || [], 1)
+
+  // activeCharacter can be a string ID or an object with an id property
+  const characterId = typeof activeCharacter === 'string' ? activeCharacter : activeCharacter?.id
+  const isBuffett = characterId === 'buffett'
 
 
   // Helper function to create chart options
@@ -611,31 +645,7 @@ export default function StockCharts({ historyData, quarterlyHistoryData, loading
                       ]} />
                     </div>
 
-                    {/* Net Income */}
-                    <div className="h-64 chart-container">
-                      <Line plugins={[zeroLinePlugin, crosshairPlugin]}
-                        data={{
-                          labels: getExtendedLabels(),
-                          datasets: [
-                            {
-                              label: 'Net Income (Billions)',
-                              data: netIncomeData,
-                              borderColor: 'rgb(153, 102, 255)',
-                              backgroundColor: 'rgba(153, 102, 255, 0.2)',
-                              pointRadius: activeIndex !== null ? 3 : 0,
-                              pointHoverRadius: 5
-                            }
-                          ]
-                        }}
-                        options={createChartOptions('Net Income', 'Billions ($)', showQuarterly)}
-                      />
-                    </div>
-                  </div>
-
-                  {/* Row 2: EPS + Dividend Yield */}
-                  <div className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,350px),1fr))] gap-4 mb-4">
-                    {/* EPS */}
-                    {/* EPS */}
+                    {/* Slot 2: EPS (Shared) */}
                     <div>
                       <div className="h-64 chart-container">
                         <Line plugins={[zeroLinePlugin, crosshairPlugin]}
@@ -680,41 +690,98 @@ export default function StockCharts({ historyData, quarterlyHistoryData, loading
                         ...(hasEstimates ? [{ label: 'Analyst Est.', color: 'rgba(20, 184, 166, 0.8)', dashed: true }] : [])
                       ]} />
                     </div>
+                  </div>
 
-                    {/* Dividend Yield - Uses weekly data for granular display */}
+                  {/* Row 2: Net Income/Margin + Dividend/ROE */}
+                  <div className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,350px),1fr))] gap-4 mb-4">
+                    {/* Slot 3: Net Income (Lynch) or Net Margin (Buffett) */}
                     <div className="h-64 chart-container">
-                      <Line plugins={[zeroLinePlugin, crosshairPlugin]}
-                        data={{
-                          labels: activeData.weekly_dividend_yields?.dates || [],
-                          datasets: [
-                            {
-                              label: 'Dividend Yield (%)',
-                              data: activeData.weekly_dividend_yields?.values || [],
-                              borderColor: 'rgb(255, 205, 86)',
-                              backgroundColor: 'rgba(255, 205, 86, 0.2)',
-                              pointRadius: 0,
-                              pointHoverRadius: 3,
-                              borderWidth: 1.5,
-                              tension: 0.1
-                            }
-                          ]
-                        }}
-                        options={{
-                          ...createChartOptions('Dividend Yield', 'Yield (%)', showQuarterly),
-                          scales: {
-                            ...createChartOptions('Dividend Yield', 'Yield (%)', showQuarterly).scales,
-                            x: {
-                              type: 'category',
-                              ticks: {
-                                callback: yearTickCallback,
-                                maxRotation: 45,
-                                minRotation: 45,
-                                autoSkip: false
+                      {isBuffett ? (
+                        <Line plugins={[zeroLinePlugin, crosshairPlugin]}
+                          data={{
+                            labels: getExtendedLabels(),
+                            datasets: [{
+                              label: 'Net Margin (%)',
+                              data: netMarginData,
+                              borderColor: 'rgb(236, 72, 153)', // Pink
+                              backgroundColor: 'rgba(236, 72, 153, 0.2)',
+                              pointRadius: activeIndex !== null ? 3 : 0,
+                              pointHoverRadius: 5
+                            }]
+                          }}
+                          options={createChartOptions('Net Profit Margin', 'Margin (%)', showQuarterly)}
+                        />
+                      ) : (
+                        <Line plugins={[zeroLinePlugin, crosshairPlugin]}
+                          data={{
+                            labels: getExtendedLabels(),
+                            datasets: [
+                              {
+                                label: 'Net Income (Billions)',
+                                data: netIncomeData,
+                                borderColor: 'rgb(153, 102, 255)',
+                                backgroundColor: 'rgba(153, 102, 255, 0.2)',
+                                pointRadius: activeIndex !== null ? 3 : 0,
+                                pointHoverRadius: 5
+                              }
+                            ]
+                          }}
+                          options={createChartOptions('Net Income', 'Billions ($)', showQuarterly)}
+                        />
+                      )}
+                    </div>
+
+                    {/* Slot 4: Dividend Yield (Lynch) or ROE (Buffett) */}
+                    <div className="h-64 chart-container">
+                      {isBuffett ? (
+                        <Line plugins={[zeroLinePlugin, crosshairPlugin]}
+                          data={{
+                            labels: getExtendedLabels(),
+                            datasets: [{
+                              label: 'ROE (%)',
+                              data: roeData,
+                              borderColor: 'rgb(245, 158, 11)', // Amber
+                              backgroundColor: 'rgba(245, 158, 11, 0.2)',
+                              pointRadius: activeIndex !== null ? 3 : 0,
+                              pointHoverRadius: 5
+                            }]
+                          }}
+                          options={createChartOptions('Return on Equity', 'ROE (%)', showQuarterly)}
+                        />
+                      ) : (
+                        <Line plugins={[zeroLinePlugin, crosshairPlugin]}
+                          data={{
+                            labels: activeData.weekly_dividend_yields?.dates || [],
+                            datasets: [
+                              {
+                                label: 'Dividend Yield (%)',
+                                data: activeData.weekly_dividend_yields?.values || [],
+                                borderColor: 'rgb(255, 205, 86)',
+                                backgroundColor: 'rgba(255, 205, 86, 0.2)',
+                                pointRadius: 0,
+                                pointHoverRadius: 3,
+                                borderWidth: 1.5,
+                                tension: 0.1
+                              }
+                            ]
+                          }}
+                          options={{
+                            ...createChartOptions('Dividend Yield', 'Yield (%)', showQuarterly),
+                            scales: {
+                              ...createChartOptions('Dividend Yield', 'Yield (%)', showQuarterly).scales,
+                              x: {
+                                type: 'category',
+                                ticks: {
+                                  callback: yearTickCallback,
+                                  maxRotation: 45,
+                                  minRotation: 45,
+                                  autoSkip: false
+                                }
                               }
                             }
-                          }
-                        }}
-                      />
+                          }}
+                        />
+                      )}
                     </div>
                   </div>
 
@@ -731,87 +798,157 @@ export default function StockCharts({ historyData, quarterlyHistoryData, loading
 
                   {/* Row 1: Operating Cash Flow + Free Cash Flow */}
                   <div className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,350px),1fr))] gap-4 mb-4">
-                    {/* Operating Cash Flow */}
+                    {/* Slot 5: Operating Cash Flow (Lynch) or Free Cash Flow (Buffett - moved from slot 6) */}
                     <div className="h-64 chart-container">
-                      <Line plugins={[zeroLinePlugin, crosshairPlugin]}
-                        data={{
-                          labels: getExtendedLabels(),
-                          datasets: [
-                            {
-                              label: 'Operating Cash Flow (Billions)',
-                              data: ocfData,
-                              borderColor: 'rgb(54, 162, 235)',
-                              backgroundColor: 'rgba(54, 162, 235, 0.2)',
-                              pointRadius: activeIndex !== null ? 3 : 0,
-                              pointHoverRadius: 5
-                            },
-                          ],
-                        }}
-                        options={createChartOptions('Operating Cash Flow', 'Billions ($)', showQuarterly)}
-                      />
+                      {isBuffett ? (
+                        <Line plugins={[zeroLinePlugin, crosshairPlugin]}
+                          data={{
+                            labels: getExtendedLabels(),
+                            datasets: [
+                              {
+                                label: 'Free Cash Flow (Billions)',
+                                data: fcfData,
+                                borderColor: 'rgb(16, 185, 129)',
+                                backgroundColor: 'rgba(16, 185, 129, 0.2)',
+                                pointRadius: activeIndex !== null ? 3 : 0,
+                                pointHoverRadius: 5
+                              },
+                            ],
+                          }}
+                          options={createChartOptions('Free Cash Flow', 'Billions ($)', showQuarterly)}
+                        />
+                      ) : (
+                        <Line plugins={[zeroLinePlugin, crosshairPlugin]}
+                          data={{
+                            labels: getExtendedLabels(),
+                            datasets: [
+                              {
+                                label: 'Operating Cash Flow (Billions)',
+                                data: ocfData,
+                                borderColor: 'rgb(54, 162, 235)',
+                                backgroundColor: 'rgba(54, 162, 235, 0.2)',
+                                pointRadius: activeIndex !== null ? 3 : 0,
+                                pointHoverRadius: 5
+                              },
+                            ],
+                          }}
+                          options={createChartOptions('Operating Cash Flow', 'Billions ($)', showQuarterly)}
+                        />
+                      )}
                     </div>
 
-                    {/* Free Cash Flow */}
+                    {/* Slot 6: Free Cash Flow (Lynch) or Debt-to-Earnings (Buffett) */}
                     <div className="h-64 chart-container">
-                      <Line plugins={[zeroLinePlugin, crosshairPlugin]}
-                        data={{
-                          labels: getExtendedLabels(),
-                          datasets: [
-                            {
-                              label: 'Free Cash Flow (Billions)',
-                              data: fcfData,
-                              borderColor: 'rgb(34, 197, 94)',
-                              backgroundColor: 'rgba(34, 197, 94, 0.2)',
+                      {isBuffett ? (
+                        <Line plugins={[zeroLinePlugin, crosshairPlugin]}
+                          data={{
+                            labels: getExtendedLabels(),
+                            datasets: [{
+                              label: 'Debt-to-Earnings (Years)',
+                              data: debtToEarningsData,
+                              borderColor: 'rgb(244, 63, 94)', // Rose
+                              backgroundColor: 'rgba(244, 63, 94, 0.2)',
                               pointRadius: activeIndex !== null ? 3 : 0,
                               pointHoverRadius: 5
-                            },
-                          ],
-                        }}
-                        options={createChartOptions('Free Cash Flow', 'Billions ($)', showQuarterly)}
-                      />
+                            }]
+                          }}
+                          options={createChartOptions('Debt-to-Earnings (Years)', 'Years', showQuarterly)}
+                        />
+                      ) : (
+                        <Line plugins={[zeroLinePlugin, crosshairPlugin]}
+                          data={{
+                            labels: getExtendedLabels(),
+                            datasets: [
+                              {
+                                label: 'Free Cash Flow (Billions)',
+                                data: fcfData,
+                                borderColor: 'rgb(16, 185, 129)',
+                                backgroundColor: 'rgba(16, 185, 129, 0.2)',
+                                pointRadius: activeIndex !== null ? 3 : 0,
+                                pointHoverRadius: 5
+                              },
+                            ],
+                          }}
+                          options={createChartOptions('Free Cash Flow', 'Billions ($)', showQuarterly)}
+                        />
+                      )}
                     </div>
                   </div>
 
                   {/* Row 2: Capital Expenditures + Debt-to-Equity */}
                   <div className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,350px),1fr))] gap-4 mb-4">
-                    {/* Capital Expenditures */}
+                    {/* Slot 7: CapEx (Lynch) or Shares Outstanding (Buffett) */}
                     <div className="h-64 chart-container">
-                      <Line plugins={[zeroLinePlugin, crosshairPlugin]}
-                        data={{
-                          labels: getExtendedLabels(),
-                          datasets: [
-                            {
-                              label: 'Capital Expenditures (Billions)',
-                              data: capExData,
-                              borderColor: 'rgb(239, 68, 68)',
-                              backgroundColor: 'rgba(239, 68, 68, 0.2)',
+                      {isBuffett ? (
+                        <Line plugins={[zeroLinePlugin, crosshairPlugin]}
+                          data={{
+                            labels: getExtendedLabels(),
+                            datasets: [{
+                              label: 'Shares Outstanding (Billions)',
+                              data: sharesDataBillion,
+                              borderColor: 'rgb(59, 130, 246)', // Blue
+                              backgroundColor: 'rgba(59, 130, 246, 0.2)',
                               pointRadius: activeIndex !== null ? 3 : 0,
                               pointHoverRadius: 5
-                            },
-                          ],
-                        }}
-                        options={createChartOptions('Capital Expenditures', 'Billions ($)', showQuarterly)}
-                      />
+                            }]
+                          }}
+                          options={createChartOptions('Shares Outstanding', 'Billions', showQuarterly)}
+                        />
+                      ) : (
+                        <Line plugins={[zeroLinePlugin, crosshairPlugin]}
+                          data={{
+                            labels: getExtendedLabels(),
+                            datasets: [
+                              {
+                                label: 'Capital Expenditures (Billions)',
+                                data: capExData,
+                                borderColor: 'rgb(239, 68, 68)',
+                                backgroundColor: 'rgba(239, 68, 68, 0.2)',
+                                pointRadius: activeIndex !== null ? 3 : 0,
+                                pointHoverRadius: 5
+                              },
+                            ],
+                          }}
+                          options={createChartOptions('Capital Expenditures', 'Billions ($)', showQuarterly)}
+                        />
+                      )}
                     </div>
 
-                    {/* Debt-to-Equity */}
+                    {/* Slot 8: Debt-to-Equity (Lynch) or Book Value (Buffett) */}
                     <div className="h-64 chart-container">
-                      <Line plugins={[zeroLinePlugin, crosshairPlugin]}
-                        data={{
-                          labels: getExtendedLabels(),
-                          datasets: [
-                            {
-                              label: 'Debt-to-Equity Ratio',
-                              data: debtToEquityData,
-                              borderColor: 'rgb(255, 99, 132)',
-                              backgroundColor: 'rgba(255, 99, 132, 0.2)',
+                      {isBuffett ? (
+                        <Line plugins={[zeroLinePlugin, crosshairPlugin]}
+                          data={{
+                            labels: getExtendedLabels(),
+                            datasets: [{
+                              label: 'Book Value Per Share ($)',
+                              data: bookValueData,
+                              borderColor: 'rgb(14, 165, 233)', // Sky Blue
+                              backgroundColor: 'rgba(14, 165, 233, 0.2)',
                               pointRadius: activeIndex !== null ? 3 : 0,
                               pointHoverRadius: 5
-                            }
-                          ]
-                        }}
-                        options={createChartOptions('Debt-to-Equity', 'D/E Ratio', showQuarterly)}
-                      />
+                            }]
+                          }}
+                          options={createChartOptions('Book Value Per Share', 'BVPS ($)', showQuarterly)}
+                        />
+                      ) : (
+                        <Line plugins={[zeroLinePlugin, crosshairPlugin]}
+                          data={{
+                            labels: getExtendedLabels(),
+                            datasets: [
+                              {
+                                label: 'Debt-to-Equity Ratio',
+                                data: debtToEquityData,
+                                borderColor: 'rgb(255, 99, 132)',
+                                backgroundColor: 'rgba(255, 99, 132, 0.2)',
+                                pointRadius: activeIndex !== null ? 3 : 0,
+                                pointHoverRadius: 5
+                              }
+                            ]
+                          }}
+                          options={createChartOptions('Debt-to-Equity', 'D/E Ratio', showQuarterly)}
+                        />
+                      )}
                     </div>
                   </div>
 

@@ -664,6 +664,23 @@ class Database:
             )
         """)
 
+        # Migration: Add new columns for Buffett/Lynch metrics if they don't exist
+        # shares_outstanding, shareholder_equity, cash_and_cash_equivalents
+        cursor.execute("""
+            DO $$
+            BEGIN
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'earnings_history' AND column_name = 'shares_outstanding') THEN
+                    ALTER TABLE earnings_history ADD COLUMN shares_outstanding REAL;
+                END IF;
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'earnings_history' AND column_name = 'shareholder_equity') THEN
+                    ALTER TABLE earnings_history ADD COLUMN shareholder_equity REAL;
+                END IF;
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'earnings_history' AND column_name = 'cash_and_cash_equivalents') THEN
+                    ALTER TABLE earnings_history ADD COLUMN cash_and_cash_equivalents REAL;
+                END IF;
+            END $$;
+        """)
+
         # Migration: Drop dividend_yield column if it exists (now computed on-the-fly)
         cursor.execute("""
             DO $$

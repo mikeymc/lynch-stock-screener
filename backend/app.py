@@ -1982,6 +1982,11 @@ def get_stock_history(symbol):
     operating_cash_flow_values = []
     capital_expenditures_values = []
     free_cash_flow_values = []
+    shareholder_equity_values = []
+    shares_outstanding_values = []
+    roe_values = []
+    book_value_values = []
+    debt_to_earnings_values = []
 
     # Get yfinance ticker for fallback
     ticker = yf.Ticker(symbol.upper())
@@ -1997,6 +2002,8 @@ def get_stock_history(symbol):
         operating_cash_flow = entry.get('operating_cash_flow')
         capital_expenditures = entry.get('capital_expenditures')
         free_cash_flow = entry.get('free_cash_flow')
+        shareholder_equity = entry.get('shareholder_equity')
+        shares_outstanding = entry.get('shares_outstanding')
         period = entry.get('period', 'annual')
 
         # Create label based on period type
@@ -2015,6 +2022,29 @@ def get_stock_history(symbol):
         operating_cash_flow_values.append(operating_cash_flow)
         capital_expenditures_values.append(capital_expenditures)
         free_cash_flow_values.append(free_cash_flow)
+        shareholder_equity_values.append(shareholder_equity)
+        shares_outstanding_values.append(shares_outstanding)
+
+        # Calculate ROE (Net Income / Shareholder Equity)
+        roe = None
+        if net_income is not None and shareholder_equity and shareholder_equity > 0:
+             roe = (net_income / shareholder_equity) * 100
+        roe_values.append(roe)
+
+        # Calculate Book Value Per Share
+        book_value = None
+        if shareholder_equity is not None and shares_outstanding and shares_outstanding > 0:
+             book_value = shareholder_equity / shares_outstanding
+        book_value_values.append(book_value)
+
+        # Calculate Debt-to-Earnings (Years to pay off debt)
+        # Total Debt = Debt/Equity * Equity
+        # Years = Total Debt / Net Income
+        dte = None
+        if debt_to_equity is not None and shareholder_equity is not None and net_income is not None and net_income > 0:
+            total_debt = debt_to_equity * shareholder_equity
+            dte = total_debt / net_income
+        debt_to_earnings_values.append(dte)
 
         price = None
 
@@ -2395,6 +2425,11 @@ def get_stock_history(symbol):
         'operating_cash_flow': operating_cash_flow_values,
         'capital_expenditures': capital_expenditures_values,
         'free_cash_flow': free_cash_flow_values,
+        'shareholder_equity': shareholder_equity_values,
+        'shares_outstanding': shares_outstanding_values,
+        'roe': roe_values,
+        'book_value_per_share': book_value_values,
+        'debt_to_earnings': debt_to_earnings_values,
         'history': earnings_history,
         'wacc': wacc_data,
         'weekly_prices': weekly_prices,
