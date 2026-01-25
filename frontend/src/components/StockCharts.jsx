@@ -219,9 +219,6 @@ export default function StockCharts({ historyData, quarterlyHistoryData, loading
       shareholder_equity: slice(rawActiveData.shareholder_equity),
       shares_outstanding: slice(rawActiveData.shares_outstanding),
       roe: slice(rawActiveData.roe),
-      shareholder_equity: slice(rawActiveData.shareholder_equity),
-      shares_outstanding: slice(rawActiveData.shares_outstanding),
-      roe: slice(rawActiveData.roe),
       book_value_per_share: slice(rawActiveData.book_value_per_share),
       debt_to_earnings: slice(rawActiveData.debt_to_earnings),
       // Add filtered weekly/granular data
