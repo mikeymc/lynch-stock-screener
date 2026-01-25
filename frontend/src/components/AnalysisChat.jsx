@@ -221,7 +221,16 @@ const ChatMessage = memo(function ChatMessage({ role, content, sources, componen
   )
 })
 
-const AnalysisChat = forwardRef(function AnalysisChat({ symbol, stockName, chatOnly = false, hideChat = false, contextType = 'brief' }, ref) {
+const AnalysisChat = forwardRef(function AnalysisChat({ symbol, stockName, chatOnly = false, hideChat = false, contextType = 'brief', activeCharacter }, ref) {
+  const [selectedCharacter, setSelectedCharacter] = useState(activeCharacter || 'lynch')
+
+  // Sync with activeCharacter if it changes from parent
+  useEffect(() => {
+    if (activeCharacter) {
+      setSelectedCharacter(activeCharacter)
+    }
+  }, [activeCharacter])
+
   // Navigation for internal links
   const navigate = useNavigate()
   // Components for finalized messages (charts render normally)
@@ -532,12 +541,12 @@ const AnalysisChat = forwardRef(function AnalysisChat({ symbol, stockName, chatO
       setIsGenerating(true)
 
       let baseUrl = forceRefresh
-        ? `${API_BASE}/stock/${symbol}/lynch-analysis/refresh`
-        : `${API_BASE}/stock/${symbol}/lynch-analysis`
+        ? `${API_BASE}/stock/${symbol}/thesis/refresh?character=${selectedCharacter}`
+        : `${API_BASE}/stock/${symbol}/thesis?character=${selectedCharacter}`
 
       // Handle simple check for cached data (no streaming)
       if (onlyCached && !forceRefresh) {
-        const url = `${baseUrl}?only_cached=true&model=${selectedModel}`
+        const url = `${baseUrl}&only_cached=true&model=${selectedModel}`
         const response = await fetch(url, { signal })
         if (!response.ok) throw new Error(response.statusText)
         const data = await response.json()
@@ -565,7 +574,7 @@ const AnalysisChat = forwardRef(function AnalysisChat({ symbol, stockName, chatO
         options.headers = { 'Content-Type': 'application/json' }
         options.body = JSON.stringify({ model: selectedModel, stream: true })
       } else {
-        url += `?model=${selectedModel}&stream=true`
+        url += `&model=${selectedModel}&stream=true`
       }
 
       const response = await fetch(url, options)
@@ -639,7 +648,7 @@ const AnalysisChat = forwardRef(function AnalysisChat({ symbol, stockName, chatO
     const controller = new AbortController()
     fetchAnalysis(false, controller.signal, true)
     return () => controller.abort()
-  }, [symbol, selectedModel, chatOnly])
+  }, [symbol, selectedModel, chatOnly, selectedCharacter])
 
   const formatDate = (isoString) => {
     if (!isoString) return ''
@@ -823,7 +832,7 @@ const AnalysisChat = forwardRef(function AnalysisChat({ symbol, stockName, chatO
               console.error('Stream error:', data.data)
               setMessages(prev => [...prev, {
                 role: 'error',
-                content: `Error: ${data.data}`
+                content: data.data
               }])
               setStreamingMessage('')
               setStreamingSources([])
@@ -838,7 +847,7 @@ const AnalysisChat = forwardRef(function AnalysisChat({ symbol, stockName, chatO
       console.error('Error sending message:', error)
       setMessages(prev => [...prev, {
         role: 'error',
-        content: 'Sorry, there was an error. Please check that the backend server is running and try again.'
+        content: 'Oops, something went wrong. Please try again in a moment.'
       }])
       setStreamingMessage('')
       setStreamingSources([])
@@ -857,6 +866,29 @@ const AnalysisChat = forwardRef(function AnalysisChat({ symbol, stockName, chatO
   // Analysis content (for left column in two-column mode)
   const analysisContent = (
     <div className="w-full h-full overflow-y-auto pr-2">
+      {/* Character Toggle - Only show when not in chatOnly mode */}
+      {!chatOnly && (
+        <div className="flex justify-end mb-4">
+          <div className="flex items-center space-x-2 bg-muted p-1 rounded-lg">
+            <Button
+              variant={selectedCharacter === 'lynch' ? "default" : "ghost"}
+              size="sm"
+              onClick={() => setSelectedCharacter('lynch')}
+              className="h-8 shadow-none"
+            >
+              Lynch
+            </Button>
+            <Button
+              variant={selectedCharacter === 'buffett' ? "default" : "ghost"}
+              size="sm"
+              onClick={() => setSelectedCharacter('buffett')}
+              className="h-8 shadow-none"
+            >
+              Buffett
+            </Button>
+          </div>
+        </div>
+      )}
       {(analysisLoading || isGenerating) && !analysis ? (
         <Card className="h-full">
           <div className="flex flex-col items-center justify-center h-[50vh] space-y-6 text-center text-muted-foreground">

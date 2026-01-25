@@ -438,6 +438,7 @@ export default function StockDetail({ watchlist, toggleWatchlist, algorithm, act
               symbol={stock.symbol}
               stockName={stock.company_name}
               hideChat={true}
+              activeCharacter={activeCharacter}
             />
           )}
 

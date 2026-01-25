@@ -694,24 +694,99 @@ class Database:
 
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS lynch_analyses (
-                symbol TEXT PRIMARY KEY,
+                user_id INTEGER,
+                symbol TEXT,
+                character_id TEXT DEFAULT 'lynch',
                 analysis_text TEXT,
                 generated_at TIMESTAMP,
                 model_version TEXT,
-                FOREIGN KEY (symbol) REFERENCES stocks(symbol)
+                PRIMARY KEY (user_id, symbol, character_id),
+                FOREIGN KEY (symbol) REFERENCES stocks(symbol),
+                FOREIGN KEY (user_id) REFERENCES users(id)
             )
+        """)
+
+        # Migration: Add character_id and user_id to lynch_analyses if they don't exist
+        # and ensure PK/Unique constraints include character_id
+        cursor.execute("""
+            DO $$
+            BEGIN
+                -- Add character_id if missing
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                               WHERE table_name = 'lynch_analyses' AND column_name = 'character_id') THEN
+                    ALTER TABLE lynch_analyses ADD COLUMN character_id TEXT DEFAULT 'lynch';
+                END IF;
+
+                -- Add user_id if missing
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                               WHERE table_name = 'lynch_analyses' AND column_name = 'user_id') THEN
+                    ALTER TABLE lynch_analyses ADD COLUMN user_id INTEGER;
+                END IF;
+
+                -- Always ensure the user_id is populated for PK if we're migrating
+                UPDATE lynch_analyses SET user_id = 999 WHERE user_id IS NULL; -- Default to dev user or most likely owner
+
+                -- Update Primary Key to include character_id if it's currently just (user_id, symbol) or something else
+                IF NOT EXISTS (
+                    SELECT 1 FROM information_schema.table_constraints tc 
+                    JOIN information_schema.key_column_usage kcu ON tc.constraint_name = kcu.constraint_name 
+                    WHERE tc.table_name = 'lynch_analyses' AND tc.constraint_type = 'PRIMARY KEY' AND kcu.column_name = 'character_id'
+                ) THEN
+                    ALTER TABLE lynch_analyses DROP CONSTRAINT IF EXISTS lynch_analyses_pkey;
+                    ALTER TABLE lynch_analyses ADD PRIMARY KEY (user_id, symbol, character_id);
+                END IF;
+
+                -- Aggressively drop legacy unique constraint if it exists
+                ALTER TABLE lynch_analyses DROP CONSTRAINT IF EXISTS lynch_analyses_user_symbol_unique;
+            END $$;
         """)
 
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS chart_analyses (
+                user_id INTEGER,
                 symbol TEXT,
                 section TEXT,
+                character_id TEXT DEFAULT 'lynch',
                 analysis_text TEXT,
                 generated_at TIMESTAMP,
                 model_version TEXT,
-                PRIMARY KEY (symbol, section),
-                FOREIGN KEY (symbol) REFERENCES stocks(symbol)
+                PRIMARY KEY (user_id, symbol, section, character_id),
+                FOREIGN KEY (symbol) REFERENCES stocks(symbol),
+                FOREIGN KEY (user_id) REFERENCES users(id)
             )
+        """)
+
+        # Migration: Update chart_analyses schema for multiple characters
+        cursor.execute("""
+            DO $$
+            BEGIN
+                -- Add character_id if missing
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                               WHERE table_name = 'chart_analyses' AND column_name = 'character_id') THEN
+                    ALTER TABLE chart_analyses ADD COLUMN character_id TEXT DEFAULT 'lynch';
+                END IF;
+
+                -- Add user_id if missing
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                               WHERE table_name = 'chart_analyses' AND column_name = 'user_id') THEN
+                    ALTER TABLE chart_analyses ADD COLUMN user_id INTEGER;
+                END IF;
+
+                UPDATE chart_analyses SET user_id = 999 WHERE user_id IS NULL;
+
+                -- Update Primary Key to include character_id
+                IF NOT EXISTS (
+                    SELECT 1 FROM information_schema.table_constraints tc 
+                    JOIN information_schema.key_column_usage kcu ON tc.constraint_name = kcu.constraint_name 
+                    WHERE tc.table_name = 'chart_analyses' AND tc.constraint_type = 'PRIMARY KEY' AND kcu.column_name = 'character_id'
+                ) THEN
+                    ALTER TABLE chart_analyses DROP CONSTRAINT IF EXISTS chart_analyses_pkey;
+                    ALTER TABLE chart_analyses ADD PRIMARY KEY (user_id, symbol, section, character_id);
+                END IF;
+
+                -- Aggressively drop legacy unique constraint
+                ALTER TABLE chart_analyses DROP CONSTRAINT IF EXISTS chart_analyses_user_symbol_section_unique;
+            END $$;
         """)
 
         cursor.execute("""
@@ -2618,32 +2693,35 @@ class Database:
         finally:
             self.return_connection(conn)
 
-    def save_lynch_analysis(self, user_id: int, symbol: str, analysis_text: str, model_version: str):
+    def save_lynch_analysis(self, user_id: int, symbol: str, analysis_text: str, model_version: str, character_id: str = 'lynch'):
         conn = self.get_connection()
         try:
             cursor = conn.cursor()
             cursor.execute("""
                 INSERT INTO lynch_analyses
-                (user_id, symbol, analysis_text, generated_at, model_version)
-                VALUES (%s, %s, %s, %s, %s)
-                ON CONFLICT (user_id, symbol) DO UPDATE SET
+                (user_id, symbol, character_id, analysis_text, generated_at, model_version)
+                VALUES (%s, %s, %s, %s, %s, %s)
+                ON CONFLICT (user_id, symbol, character_id) DO UPDATE SET
                     analysis_text = EXCLUDED.analysis_text,
                     generated_at = EXCLUDED.generated_at,
                     model_version = EXCLUDED.model_version
-            """, (user_id, symbol, analysis_text, datetime.now(), model_version))
+            """, (user_id, symbol, character_id, analysis_text, datetime.now(), model_version))
             conn.commit()
         finally:
             self.return_connection(conn)
 
-    def get_lynch_analysis(self, user_id: int, symbol: str) -> Optional[Dict[str, Any]]:
+    def get_lynch_analysis(self, user_id: int, symbol: str, character_id: Optional[str] = None) -> Optional[Dict[str, Any]]:
+        if character_id is None:
+            character_id = self.get_user_character(user_id)
+
         conn = self.get_connection()
         try:
             cursor = conn.cursor()
             cursor.execute("""
-                SELECT symbol, analysis_text, generated_at, model_version
+                SELECT symbol, analysis_text, generated_at, model_version, character_id
                 FROM lynch_analyses
-                WHERE user_id = %s AND symbol = %s
-            """, (user_id, symbol))
+                WHERE user_id = %s AND symbol = %s AND character_id = %s
+            """, (user_id, symbol, character_id))
             row = cursor.fetchone()
 
             if not row:
@@ -2653,37 +2731,41 @@ class Database:
                 'symbol': row[0],
                 'analysis_text': row[1],
                 'generated_at': row[2],
-                'model_version': row[3]
+                'model_version': row[3],
+                'character_id': row[4]
             }
         finally:
             self.return_connection(conn)
 
-    def set_chart_analysis(self, user_id: int, symbol: str, section: str, analysis_text: str, model_version: str):
+    def set_chart_analysis(self, user_id: int, symbol: str, section: str, analysis_text: str, model_version: str, character_id: str = 'lynch'):
         conn = self.get_connection()
         try:
             cursor = conn.cursor()
             cursor.execute("""
                 INSERT INTO chart_analyses
-                (user_id, symbol, section, analysis_text, generated_at, model_version)
-                VALUES (%s, %s, %s, %s, %s, %s)
-                ON CONFLICT (user_id, symbol, section) DO UPDATE SET
+                (user_id, symbol, section, character_id, analysis_text, generated_at, model_version)
+                VALUES (%s, %s, %s, %s, %s, %s, %s)
+                ON CONFLICT (user_id, symbol, section, character_id) DO UPDATE SET
                     analysis_text = EXCLUDED.analysis_text,
                     generated_at = EXCLUDED.generated_at,
                     model_version = EXCLUDED.model_version
-            """, (user_id, symbol, section, analysis_text, datetime.now(), model_version))
+            """, (user_id, symbol, section, character_id, analysis_text, datetime.now(), model_version))
             conn.commit()
         finally:
             self.return_connection(conn)
 
-    def get_chart_analysis(self, user_id: int, symbol: str, section: str) -> Optional[Dict[str, Any]]:
+    def get_chart_analysis(self, user_id: int, symbol: str, section: str, character_id: Optional[str] = None) -> Optional[Dict[str, Any]]:
+        if character_id is None:
+            character_id = self.get_user_character(user_id)
+
         conn = self.get_connection()
         try:
             cursor = conn.cursor()
             cursor.execute("""
-                SELECT symbol, section, analysis_text, generated_at, model_version
+                SELECT symbol, section, analysis_text, generated_at, model_version, character_id
                 FROM chart_analyses
-                WHERE user_id = %s AND symbol = %s AND section = %s
-            """, (user_id, symbol, section))
+                WHERE user_id = %s AND symbol = %s AND section = %s AND character_id = %s
+            """, (user_id, symbol, section, character_id))
             row = cursor.fetchone()
 
             if not row:
@@ -2694,7 +2776,8 @@ class Database:
                 'section': row[1],
                 'analysis_text': row[2],
                 'generated_at': row[3],
-                'model_version': row[4]
+                'model_version': row[4],
+                'character_id': row[5]
             }
         finally:
             self.return_connection(conn)

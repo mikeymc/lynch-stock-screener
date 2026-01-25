@@ -225,9 +225,15 @@ class StockAnalyst:
                       sections: Optional[Dict[str, Any]] = None,
                       news: Optional[List[Dict[str, Any]]] = None,
                       material_events: Optional[List[Dict[str, Any]]] = None,
-                      user_id: Optional[int] = None) -> str:
+                      user_id: Optional[int] = None,
+                      character_id: Optional[str] = None) -> str:
         """Format a prompt using the active character's template."""
-        character = self._get_active_character(user_id)
+        # If character_id provided, use it, otherwise fall back to user's setting
+        if character_id:
+            character = get_character(character_id) or self._get_active_character(user_id)
+        else:
+            character = self._get_active_character(user_id)
+
         template = self._get_prompt_template(character)
         template_vars = self._prepare_template_vars(stock_data, history, character)
 
@@ -298,12 +304,13 @@ class StockAnalyst:
                                   news: Optional[List[Dict[str, Any]]] = None,
                                   material_events: Optional[List[Dict[str, Any]]] = None,
                                   model_version: str = DEFAULT_MODEL,
-                                  user_id: Optional[int] = None):
+                                  user_id: Optional[int] = None,
+                                  character_id: Optional[str] = None):
         """Stream a new analysis using the active character's voice with retry logic."""
         if model_version not in AVAILABLE_MODELS:
             raise ValueError(f"Invalid model: {model_version}. Must be one of {AVAILABLE_MODELS}")
 
-        prompt = self.format_prompt(stock_data, history, sections, news, material_events, user_id)
+        prompt = self.format_prompt(stock_data, history, sections, news, material_events, user_id, character_id=character_id)
 
         # Retry logic with fallback to flash model
         models_to_try = [model_version, FALLBACK_MODEL] if model_version != FALLBACK_MODEL else [model_version]
@@ -363,29 +370,37 @@ class StockAnalyst:
         news: Optional[List[Dict[str, Any]]] = None,
         material_events: Optional[List[Dict[str, Any]]] = None,
         use_cache: bool = True,
-        model_version: str = DEFAULT_MODEL
+        model_version: str = DEFAULT_MODEL,
+        character_id: Optional[str] = None
     ):
         """Get cached analysis or stream a new one."""
         if model_version not in AVAILABLE_MODELS:
             raise ValueError(f"Invalid model: {model_version}. Must be one of {AVAILABLE_MODELS}")
 
-        # Check cache (note: cache is per user/symbol, not per character currently)
+        # Resolve character
+        if character_id is None:
+            character_id = self.db.get_user_character(user_id)
+        
+        # Check cache
         if use_cache:
-            cached = self.db.get_lynch_analysis(user_id, symbol)
+            cached = self.db.get_lynch_analysis(user_id, symbol, character_id=character_id)
             if cached:
                 yield cached['analysis_text']
                 return
 
         # Generate new analysis
         full_text_parts = []
-        for chunk in self.generate_analysis_stream(stock_data, history, sections, news, material_events, model_version, user_id):
+        for chunk in self.generate_analysis_stream(
+            stock_data, history, sections, news, material_events, 
+            model_version, user_id, character_id=character_id
+        ):
             full_text_parts.append(chunk)
             yield chunk
 
         # Save to cache
         final_text = "".join(full_text_parts)
         if final_text:
-            self.db.save_lynch_analysis(user_id, symbol, final_text, model_version)
+            self.db.save_lynch_analysis(user_id, symbol, final_text, model_version, character_id=character_id)
 
     def generate_unified_chart_analysis(
         self,
@@ -397,7 +412,8 @@ class StockAnalyst:
         transcripts: Optional[List[Dict[str, Any]]] = None,
         lynch_brief: Optional[str] = None,
         model_version: str = DEFAULT_MODEL,
-        user_id: Optional[int] = None
+        user_id: Optional[int] = None,
+        character_id: Optional[str] = None
     ) -> Dict[str, str]:
         """
         Generate a unified analysis for chart sections using the active character.
@@ -408,13 +424,19 @@ class StockAnalyst:
         if model_version not in AVAILABLE_MODELS:
             raise ValueError(f"Invalid model: {model_version}. Must be one of {AVAILABLE_MODELS}")
 
+        # Resolve character
+        if character_id is None and user_id is not None:
+            character_id = self.db.get_user_character(user_id)
+        
+        character = get_character(character_id or 'lynch')
+
         # Load the unified prompt template
         prompt_path = os.path.join(self.script_dir, "prompts", "analysis", "chart_analysis.md")
         with open(prompt_path, 'r') as f:
             prompt_template = f.read()
 
         # Prepare template variables (includes character_name)
-        template_vars = self._prepare_template_vars(stock_data, history, user_id=user_id)
+        template_vars = self._prepare_template_vars(stock_data, history, character=character, user_id=user_id)
 
         # Format the prompt
         final_prompt = prompt_template.format(**template_vars)

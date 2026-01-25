@@ -2855,15 +2855,16 @@ def get_material_event_summaries(symbol):
 
 
 
-@app.route('/api/stock/<symbol>/lynch-analysis', methods=['GET'])
+@app.route('/api/stock/<symbol>/thesis', methods=['GET'])
 @require_user_auth
-def get_lynch_analysis(symbol, user_id):
+def get_stock_thesis(symbol, user_id):
     """
-    Get Peter Lynch-style analysis for a stock.
-    Returns cached analysis if available, otherwise generates a new one.
+    Get character-specific analysis (thesis) for a stock.
+    Supports Lynch vs Buffett based on 'character' query param.
     """
     symbol = symbol.upper()
-
+    character_id = request.args.get('character')
+    
     # Check if stock exists
     stock_metrics = db.get_stock_metrics(symbol)
     if not stock_metrics:
@@ -2889,16 +2890,16 @@ def get_lynch_analysis(symbol, user_id):
     if not country or country.upper() in ['USA', 'UNITED STATES']:
         sections = db.get_filing_sections(symbol)
 
-    # Check if analysis exists in cache for this user
-    cached_analysis = db.get_lynch_analysis(user_id, symbol)
+    # Check cache
+    cached_analysis = db.get_lynch_analysis(user_id, symbol, character_id=character_id)
     was_cached = cached_analysis is not None
-
+    
     # Get model from query parameter and validate
     model = request.args.get('model', DEFAULT_AI_MODEL)
     if model not in AVAILABLE_AI_MODELS:
         return jsonify({'error': f'Invalid model: {model}. Must be one of {AVAILABLE_AI_MODELS}'}), 400
 
-    # If only_cached is requested, return what we have (or None)
+    # Handle 'only_cached' request
     only_cached = request.args.get('only_cached', 'false').lower() == 'true'
     should_stream = request.args.get('stream', 'false').lower() == 'true'
 
@@ -2907,7 +2908,8 @@ def get_lynch_analysis(symbol, user_id):
             return jsonify({
                 'analysis': cached_analysis['analysis_text'],
                 'cached': True,
-                'generated_at': cached_analysis['generated_at']
+                'generated_at': cached_analysis['generated_at'],
+                'character_id': cached_analysis.get('character_id', 'lynch')
             })
         else:
             return jsonify({
@@ -2933,7 +2935,7 @@ def get_lynch_analysis(symbol, user_id):
                     iterator = stock_analyst.get_or_generate_analysis(
                         user_id, symbol, stock_data, history,
                         sections=sections, news=news_articles, material_events=material_events,
-                        use_cache=True, model_version=model
+                        use_cache=True, model_version=model, character_id=character_id
                     )
                     
                     for chunk in iterator:
@@ -2947,7 +2949,6 @@ def get_lynch_analysis(symbol, user_id):
             return Response(stream_with_context(generate()), mimetype='text/event-stream')
 
         # Normal synchronous response
-        # Normal synchronous response
         analysis_generator = stock_analyst.get_or_generate_analysis(
             user_id,
             symbol,
@@ -2957,32 +2958,36 @@ def get_lynch_analysis(symbol, user_id):
             news=news_articles,
             material_events=material_events,
             use_cache=True,
-            model_version=model
+            model_version=model,
+            character_id=character_id
         )
         analysis_text = "".join(analysis_generator)
 
         # Get timestamp (fetch again if it was just generated)
         if not was_cached:
-            cached_analysis = db.get_lynch_analysis(user_id, symbol)
+            cached_analysis = db.get_lynch_analysis(user_id, symbol, character_id=character_id)
 
         return jsonify({
             'analysis': analysis_text,
             'cached': was_cached,
-            'generated_at': cached_analysis['generated_at'] if cached_analysis else datetime.now().isoformat()
+            'generated_at': cached_analysis['generated_at'] if cached_analysis else datetime.now().isoformat(),
+            'character_id': character_id
         })
     except Exception as e:
-        print(f"Error generating Lynch analysis for {symbol}: {e}")
+        print(f"Error generating thesis for {symbol}: {e}")
         return jsonify({'error': f'Failed to generate analysis: {str(e)}'}), 500
 
 
-@app.route('/api/stock/<symbol>/lynch-analysis/refresh', methods=['POST'])
+@app.route('/api/stock/<symbol>/thesis/refresh', methods=['POST'])
 @require_user_auth
-def refresh_lynch_analysis(symbol, user_id):
+def refresh_stock_thesis(symbol, user_id):
     """
-    Force regeneration of Peter Lynch-style analysis for a stock,
+    Force regeneration of character-specific analysis for a stock,
     bypassing the cache.
     """
     symbol = symbol.upper()
+    data = request.get_json() or {}
+    character_id = data.get('character') or request.args.get('character')
 
     # Check if stock exists
     stock_metrics = db.get_stock_metrics(symbol)
@@ -3010,7 +3015,6 @@ def refresh_lynch_analysis(symbol, user_id):
         sections = db.get_filing_sections(symbol)
 
     # Get model from request body and validate
-    data = request.get_json() or {}
     model = data.get('model', DEFAULT_AI_MODEL)
     should_stream = data.get('stream', False)
     
@@ -3033,7 +3037,7 @@ def refresh_lynch_analysis(symbol, user_id):
                     iterator = stock_analyst.get_or_generate_analysis(
                         user_id, symbol, stock_data, history,
                         sections=sections, news=news_articles, material_events=material_events,
-                        use_cache=False, model_version=model
+                        use_cache=False, model_version=model, character_id=character_id
                     )
                     
                     for chunk in iterator:
@@ -3055,19 +3059,21 @@ def refresh_lynch_analysis(symbol, user_id):
             news=news_articles,
             material_events=material_events,
             use_cache=False,
-            model_version=model
+            model_version=model,
+            character_id=character_id
         )
         analysis_text = "".join(analysis_generator)
 
-        cached_analysis = db.get_lynch_analysis(user_id, symbol)
+        cached_analysis = db.get_lynch_analysis(user_id, symbol, character_id=character_id)
 
         return jsonify({
             'analysis': analysis_text,
             'cached': False,
-            'generated_at': cached_analysis['generated_at'] if cached_analysis else datetime.now().isoformat()
+            'generated_at': cached_analysis['generated_at'] if cached_analysis else datetime.now().isoformat(),
+            'character_id': character_id
         })
     except Exception as e:
-        print(f"Error refreshing Lynch analysis for {symbol}: {e}")
+        print(f"Error refreshing thesis for {symbol}: {e}")
         return jsonify({'error': f'Failed to generate analysis: {str(e)}'}), 500
 
 
@@ -3075,11 +3081,13 @@ def refresh_lynch_analysis(symbol, user_id):
 @require_user_auth
 def get_unified_chart_analysis(symbol, user_id):
     """
-    Generate unified Peter Lynch-style analysis for all three chart sections.
+    Generate unified character-specific analysis for all three chart sections.
     Returns all three sections with shared context and cohesive narrative.
     """
     symbol = symbol.upper()
     data = request.get_json() or {}
+    # Check for 'character' (consistent name) or 'character_id' (legacy/specific name)
+    character_id = data.get('character') or data.get('character_id')
 
     # Check if stock exists
     stock_metrics = db.get_stock_metrics(symbol)
@@ -3092,7 +3100,7 @@ def get_unified_chart_analysis(symbol, user_id):
         return jsonify({'error': f'No historical data for {symbol}'}), 404
 
     # Prepare stock data for analysis
-    evaluation = criteria.evaluate_stock(symbol)
+    evaluation = criteria.evaluate_stock(symbol, character_id=character_id)
     stock_data = {
         **stock_metrics,
         'peg_ratio': evaluation.get('peg_ratio') if evaluation else None,
@@ -3110,19 +3118,21 @@ def get_unified_chart_analysis(symbol, user_id):
     only_cached = data.get('only_cached', False)
 
     # Check for cached unified narrative first (new format)
-    cached_narrative = db.get_chart_analysis(user_id, symbol, 'narrative')
+    cached_narrative = db.get_chart_analysis(user_id, symbol, 'narrative', character_id=character_id)
     
     if cached_narrative and not force_refresh:
         return jsonify({
             'narrative': cached_narrative['analysis_text'],
             'cached': True,
-            'generated_at': cached_narrative['generated_at']
+            'generated_at': cached_narrative['generated_at'],
+            'character_id': character_id
         })
     
     # Fallback: check for legacy 3-section format
-    cached_growth = db.get_chart_analysis(user_id, symbol, 'growth')
-    cached_cash = db.get_chart_analysis(user_id, symbol, 'cash')
-    cached_valuation = db.get_chart_analysis(user_id, symbol, 'valuation')
+    # Legacy sections are also character-specific now
+    cached_growth = db.get_chart_analysis(user_id, symbol, 'growth', character_id=character_id)
+    cached_cash = db.get_chart_analysis(user_id, symbol, 'cash', character_id=character_id)
+    cached_valuation = db.get_chart_analysis(user_id, symbol, 'valuation', character_id=character_id)
     
     all_legacy_cached = cached_growth and cached_cash and cached_valuation
     
@@ -3135,7 +3145,8 @@ def get_unified_chart_analysis(symbol, user_id):
                 'valuation': cached_valuation['analysis_text']
             },
             'cached': True,
-            'generated_at': cached_growth['generated_at']
+            'generated_at': cached_growth['generated_at'],
+            'character_id': character_id
         })
 
     # If only_cached is True and nothing is cached, return empty
@@ -3157,8 +3168,8 @@ def get_unified_chart_analysis(symbol, user_id):
         # Fetch earnings transcripts (last 2 quarters)
         transcripts = db.get_earnings_transcripts(symbol, limit=2)
         
-        # Fetch Lynch brief if it exists
-        lynch_brief = db.get_lynch_analysis(user_id, symbol)
+        # Fetch summary/thesis brief if it exists
+        lynch_brief = db.get_lynch_analysis(user_id, symbol, character_id=character_id)
         lynch_brief_text = lynch_brief['analysis_text'] if lynch_brief else None
 
         # Generate unified analysis with full context
@@ -3171,17 +3182,19 @@ def get_unified_chart_analysis(symbol, user_id):
             transcripts=transcripts,
             lynch_brief=lynch_brief_text,
             model_version=model,
-            user_id=user_id
+            user_id=user_id,
+            character_id=character_id
         )
 
         # Save unified narrative to cache (using 'narrative' as section name)
         narrative = result.get('narrative', '')
-        db.set_chart_analysis(user_id, symbol, 'narrative', narrative, model)
+        db.set_chart_analysis(user_id, symbol, 'narrative', narrative, model, character_id=character_id)
 
         return jsonify({
             'narrative': narrative,
             'cached': False,
-            'generated_at': datetime.now().isoformat()
+            'generated_at': datetime.now().isoformat(),
+            'character_id': character_id
         })
     except Exception as e:
         print(f"Error generating unified chart analysis for {symbol}: {e}")

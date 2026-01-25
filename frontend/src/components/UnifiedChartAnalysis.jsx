@@ -4,14 +4,14 @@ import { useState, useEffect } from 'react'
 import { Sparkles, RefreshCw } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 
-export default function UnifiedChartAnalysis({ symbol, onAnalysisGenerated }) {
+export default function UnifiedChartAnalysis({ symbol, character, onAnalysisGenerated }) {
     const [narrative, setNarrative] = useState(null)
     const [legacySections, setLegacySections] = useState(null)
     const [loading, setLoading] = useState(false)
     const [error, setError] = useState(null)
     const [selectedModel, setSelectedModel] = useState('gemini-3-pro-preview')
 
-    // Check for cached analyses on mount
+    // Check for cached analyses on mount or when character changes
     useEffect(() => {
         const controller = new AbortController()
 
@@ -22,7 +22,8 @@ export default function UnifiedChartAnalysis({ symbol, onAnalysisGenerated }) {
             },
             body: JSON.stringify({
                 only_cached: true,
-                model: selectedModel
+                model: selectedModel,
+                character: character
             }),
             signal: controller.signal
         })
@@ -42,6 +43,13 @@ export default function UnifiedChartAnalysis({ symbol, onAnalysisGenerated }) {
                     if (onAnalysisGenerated) {
                         onAnalysisGenerated({ sections: data.sections })
                     }
+                } else {
+                    // No cached analysis found for this character
+                    setNarrative(null)
+                    setLegacySections(null)
+                    if (onAnalysisGenerated) {
+                        onAnalysisGenerated({ narrative: null })
+                    }
                 }
             })
             .catch(err => {
@@ -51,7 +59,7 @@ export default function UnifiedChartAnalysis({ symbol, onAnalysisGenerated }) {
             })
 
         return () => controller.abort()
-    }, [symbol, selectedModel])
+    }, [symbol, selectedModel, character])
 
     const generateAnalysis = async (forceRefresh = false) => {
         setLoading(true)
@@ -64,7 +72,8 @@ export default function UnifiedChartAnalysis({ symbol, onAnalysisGenerated }) {
                 },
                 body: JSON.stringify({
                     force_refresh: forceRefresh,
-                    model: selectedModel
+                    model: selectedModel,
+                    character: character
                 })
             })
 

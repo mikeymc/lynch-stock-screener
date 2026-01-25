@@ -1,7 +1,7 @@
 // ABOUTME: Stock charts component displaying 10 financial metrics in 3 thematic sections
 // ABOUTME: Full-width layout: charts content
 
-import { useState, useCallback, useMemo } from 'react'
+import { useState, useCallback, useMemo, useEffect } from 'react'
 import { Line } from 'react-chartjs-2'
 import { Button } from "@/components/ui/button"
 import UnifiedChartAnalysis from './UnifiedChartAnalysis'
@@ -119,6 +119,17 @@ export default function StockCharts({ historyData, quarterlyHistoryData, loading
   const [analyses, setAnalyses] = useState({ growth: null, cash: null, valuation: null })
   const [narrative, setNarrative] = useState(null)
   const [viewMode, setViewMode] = useState('annual') // 'annual' or 'quarterly'
+  // Local character selection (defaults to activeCharacter prop, or 'lynch')
+  const [selectedCharacter, setSelectedCharacter] = useState(activeCharacter || 'lynch')
+
+  // Sync local character state and clear analyses when global character changes
+  useEffect(() => {
+    if (activeCharacter) {
+      setSelectedCharacter(activeCharacter)
+      setAnalyses({ growth: null, cash: null, valuation: null })
+      setNarrative(null)
+    }
+  }, [activeCharacter])
 
   const handleHover = useCallback((event, elements) => {
     if (elements && elements.length > 0) {
@@ -382,8 +393,8 @@ export default function StockCharts({ historyData, quarterlyHistoryData, loading
 
   const debtToEarningsData = scaleHistoryData(activeData.debt_to_earnings || [], 1)
 
-  // activeCharacter can be a string ID or an object with an id property
-  const characterId = typeof activeCharacter === 'string' ? activeCharacter : activeCharacter?.id
+  // selectedCharacter can be a string ID or an object with an id property
+  const characterId = typeof selectedCharacter === 'string' ? selectedCharacter : selectedCharacter?.id
   const isBuffett = characterId === 'buffett'
 
 
@@ -559,6 +570,26 @@ export default function StockCharts({ historyData, quarterlyHistoryData, loading
                 Quarterly
               </Button>
             </div>
+
+            {/* Character Selector */}
+            <div className="flex items-center space-x-2 bg-muted p-1 rounded-lg">
+              <Button
+                variant={selectedCharacter === 'lynch' ? "default" : "ghost"}
+                size="sm"
+                onClick={() => setSelectedCharacter('lynch')}
+                className="h-8 shadow-none"
+              >
+                Lynch
+              </Button>
+              <Button
+                variant={selectedCharacter === 'buffett' ? "default" : "ghost"}
+                size="sm"
+                onClick={() => setSelectedCharacter('buffett')}
+                className="h-8 shadow-none"
+              >
+                Buffett
+              </Button>
+            </div>
           </div>
         </div>
 
@@ -566,6 +597,7 @@ export default function StockCharts({ historyData, quarterlyHistoryData, loading
         <div className="stock-charts" onMouseLeave={handleMouseLeave}>
           <UnifiedChartAnalysis
             symbol={symbol}
+            character={selectedCharacter}
             onAnalysisGenerated={(result) => {
               if (result.narrative) {
                 setNarrative(result.narrative)
