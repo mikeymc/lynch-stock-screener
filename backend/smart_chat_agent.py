@@ -448,5 +448,5 @@ class SmartChatAgent:
             
             break
         
-        yield {"type": "error", "data": "Max iterations reached"}
+        yield {"type": "error", "data": "Max LLM iterations reached. Please try your request again or ask it in a different way."}
         yield {"type": "done", "data": {"tool_calls": tool_calls_log, "iterations": iterations}}
