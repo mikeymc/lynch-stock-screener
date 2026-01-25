@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react'
 import { Sparkles, RefreshCw } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 
-export default function UnifiedChartAnalysis({ symbol, character, onAnalysisGenerated }) {
+export default function UnifiedChartAnalysis({ symbol, character, onAnalysisGenerated, onButtonStateChange }) {
     const [narrative, setNarrative] = useState(null)
     const [legacySections, setLegacySections] = useState(null)
     const [loading, setLoading] = useState(false)
@@ -105,29 +105,43 @@ export default function UnifiedChartAnalysis({ symbol, character, onAnalysisGene
 
     const hasAnyAnalysis = narrative || (legacySections && (legacySections.growth || legacySections.cash || legacySections.valuation))
 
+    // Notify parent of button state changes via useEffect
+    useEffect(() => {
+        if (onButtonStateChange) {
+            onButtonStateChange({
+                loading,
+                hasAnyAnalysis,
+                onAnalyze: () => generateAnalysis(hasAnyAnalysis)
+            })
+        }
+    }, [loading, hasAnyAnalysis, onButtonStateChange])
+
     return (
         <div className="mb-8">
-            <div className="flex justify-start items-center gap-4 mb-4">
-                {!loading && (
-                    <Button
-                        onClick={() => generateAnalysis(hasAnyAnalysis)}
-                        className="gap-2"
-                        size="sm"
-                    >
-                        {hasAnyAnalysis ? (
-                            <>
-                                <RefreshCw className="h-4 w-4" />
-                                Re-Analyze
-                            </>
-                        ) : (
-                            <>
-                                <Sparkles className="h-4 w-4" />
-                                Analyze
-                            </>
-                        )}
-                    </Button>
-                )}
-            </div>
+            {/* Only render button inline if parent doesn't want to control placement */}
+            {!onButtonStateChange && (
+                <div className="flex justify-start items-center gap-4 mb-4">
+                    {!loading && (
+                        <Button
+                            onClick={() => generateAnalysis(hasAnyAnalysis)}
+                            className="gap-2"
+                            size="sm"
+                        >
+                            {hasAnyAnalysis ? (
+                                <>
+                                    <RefreshCw className="h-4 w-4" />
+                                    Re-Analyze
+                                </>
+                            ) : (
+                                <>
+                                    <Sparkles className="h-4 w-4" />
+                                    Analyze
+                                </>
+                            )}
+                        </Button>
+                    )}
+                </div>
+            )}
 
             {loading && (
                 <div className="p-8 bg-muted rounded-lg border border-border text-muted-foreground italic text-center animate-pulse">

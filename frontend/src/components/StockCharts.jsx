@@ -4,6 +4,7 @@
 import { useState, useCallback, useMemo, useEffect } from 'react'
 import { Line } from 'react-chartjs-2'
 import { Button } from "@/components/ui/button"
+import { Sparkles, RefreshCw } from 'lucide-react'
 import UnifiedChartAnalysis from './UnifiedChartAnalysis'
 import ChartNarrativeRenderer from './ChartNarrativeRenderer'
 import ReactMarkdown from 'react-markdown'
@@ -121,6 +122,8 @@ export default function StockCharts({ historyData, quarterlyHistoryData, loading
   const [viewMode, setViewMode] = useState('annual') // 'annual' or 'quarterly'
   // Local character selection (defaults to activeCharacter prop, or 'lynch')
   const [selectedCharacter, setSelectedCharacter] = useState(activeCharacter || 'lynch')
+  // State to hold the analyze button state from child component
+  const [analyzeButtonState, setAnalyzeButtonState] = useState({ loading: false, hasAnyAnalysis: false, onAnalyze: null })
 
   // Sync local character state and clear analyses when global character changes
   useEffect(() => {
@@ -141,6 +144,11 @@ export default function StockCharts({ historyData, quarterlyHistoryData, loading
   const handleMouseLeave = useCallback(() => {
     setActiveIndex(null);
   }, []);
+
+  // Callback to receive button state from UnifiedChartAnalysis
+  const handleButtonStateChange = useCallback((state) => {
+    setAnalyzeButtonState(state)
+  }, [])
 
   // Time Horizon State
   const [timeHorizon, setTimeHorizon] = useState('5y') // '3y', '5y', '10y', 'all'
@@ -527,6 +535,27 @@ export default function StockCharts({ historyData, quarterlyHistoryData, loading
           </div>
 
           <div className="flex flex-wrap items-center gap-4">
+            {/* Analyze Button - positioned first (leftmost) */}
+            {!analyzeButtonState.loading && analyzeButtonState.onAnalyze && (
+              <Button
+                onClick={analyzeButtonState.onAnalyze}
+                className="gap-2"
+                size="sm"
+              >
+                {analyzeButtonState.hasAnyAnalysis ? (
+                  <>
+                    <RefreshCw className="h-4 w-4" />
+                    Re-Analyze
+                  </>
+                ) : (
+                  <>
+                    <Sparkles className="h-4 w-4" />
+                    Analyze
+                  </>
+                )}
+              </Button>
+            )}
+
             {/* Time Horizon Selector */}
             <div className="flex items-center space-x-1 bg-muted p-1 rounded-lg">
               {[
@@ -604,6 +633,7 @@ export default function StockCharts({ historyData, quarterlyHistoryData, loading
                 setNarrative(null)
               }
             }}
+            onButtonStateChange={handleButtonStateChange}
           />
 
           {/* Narrative mode: render ChartNarrativeRenderer */}
