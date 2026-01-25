@@ -77,7 +77,7 @@ export default function StockDetail({ watchlist, toggleWatchlist, algorithm, act
   const handleRefresh = async () => {
     setRefreshing(true)
     try {
-      const response = await fetch(`${API_BASE}/stock/${symbol.toUpperCase()}?algorithm=${algorithm}&force_refresh=true`)
+      const response = await fetch(`${API_BASE}/stock/${symbol.toUpperCase()}?algorithm=${algorithm}&force_refresh=true&character=${activeCharacter}`)
       if (response.ok) {
         const data = await response.json()
         if (data.evaluation) {
@@ -101,7 +101,7 @@ export default function StockDetail({ watchlist, toggleWatchlist, algorithm, act
       setLoading(true)
       try {
         // Fetch stock with selected algorithm
-        const response = await fetch(`${API_BASE}/stock/${symbol.toUpperCase()}?algorithm=${algorithm}`, { signal })
+        const response = await fetch(`${API_BASE}/stock/${symbol.toUpperCase()}?algorithm=${algorithm}&character=${activeCharacter}`, { signal })
         if (response.ok) {
           const data = await response.json()
           if (data.evaluation) {

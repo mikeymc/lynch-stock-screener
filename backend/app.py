@@ -840,14 +840,15 @@ def get_stock(symbol):
     if not stock_data:
         return jsonify({'error': f'Stock {symbol} not found'}), 404
 
-    # Get active character to load appropriate config
-    active_character = db.get_setting('active_character') or 'lynch'
+    # Get active character: prefer query param, then fallback to setting, then default
+    active_character = request.args.get('character') or db.get_setting('active_character') or 'lynch'
 
-    # Load fresh character-specific config from DB (same as screen/v2) to ensure consistency
-    configs = db.get_algorithm_configs()
-    # Filter by character
-    char_configs = [c for c in configs if c.get('character') == active_character]
-    db_config = char_configs[0] if char_configs else (configs[0] if configs else None)
+    # Load fresh character-specific config using robust helper
+    # Use session.get('user_id') if available, otherwise None for system defaults
+    user_id = session.get('user_id')
+    
+    # helper method already handles fallback to system default if user-specific config not found
+    db_config = db.get_user_algorithm_config(user_id, active_character)
 
     overrides = None
     if db_config:
@@ -886,7 +887,7 @@ def get_stock(symbol):
                 'gross_margin_fair': db_config.get('gross_margin_fair'),
             }
 
-    evaluation = criteria.evaluate_stock(symbol.upper(), algorithm=algorithm, overrides=overrides)
+    evaluation = criteria.evaluate_stock(symbol.upper(), algorithm=algorithm, overrides=overrides, character_id=active_character)
 
     return jsonify({
         'stock_data': clean_nan_values(stock_data),
