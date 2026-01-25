@@ -58,9 +58,40 @@ class SmartChatAgent:
                 self._client = genai.Client()
         return self._client
     
-    def _build_system_prompt(self, primary_symbol: str, user_id: Optional[int] = None) -> str:
+    def _detect_character_mention(self, message: str) -> Optional[str]:
+        """Detect if a message contains a character mention (e.g. @buffett)."""
+        if not message or '@' not in message:
+            return None
+            
+        # We want to match @name at the start or distinct words
+        # Simple heuristic: look for @name in component words
+        # but spec says "direct question at that character", usually implies starts with or addressed to.
+        # Let's support "@buffett message" or "message @buffett"
+        
+        try:
+            from characters import list_characters
+            available_ids = {c.id for c in list_characters()}
+            
+            words = message.lower().split()
+            for word in words:
+                if word.startswith('@'):
+                    potential_id = word[1:]
+                    # Handle punctuation like "@buffett,"
+                    potential_id = potential_id.strip('.,?!:;')
+                    
+                    if potential_id in available_ids:
+                        return potential_id
+        except Exception as e:
+            logger.error(f"Error detecting character mention: {e}")
+            
+        return None
+
+    def _build_system_prompt(self, primary_symbol: str, user_id: Optional[int] = None, override_character_id: Optional[str] = None) -> str:
         """Build the system prompt for the agent."""
         current_date_str = datetime.now().strftime('%Y-%m-%d')
+        
+        current_date_str = datetime.now().strftime('%Y-%m-%d')
+
 
         # Determine paths
         import os
@@ -71,11 +102,19 @@ class SmartChatAgent:
         persona_content = "You are a pragmatic, data-driven investment analyst."
         try:
             from characters import get_character
-            if user_id is not None:
+            
+            character_id = None
+            
+            # Check for override first
+            if override_character_id:
+                character_id = override_character_id
+            elif user_id is not None:
                 character_id = self.db.get_user_character(user_id)
             else:
                 # Fallback to global setting for backwards compatibility
                 character_id = self.db.get_setting('active_character', 'lynch')
+
+                
             character = get_character(character_id)
             if character:
                 persona_path = os.path.join(prompts_dir, character.persona_prompt)
@@ -85,6 +124,8 @@ class SmartChatAgent:
             if os.path.exists(persona_path):
                 with open(persona_path, 'r') as f:
                     persona_content = f.read()
+            else:
+                logger.error(f"Persona file not found at: {persona_path}")
         except Exception as e:
             logger.error(f"Failed to load agent persona: {e}")
 
@@ -149,14 +190,19 @@ class SmartChatAgent:
         """
         primary_symbol = primary_symbol.upper()
 
+        # Check for character mention override (e.g. @buffett)
+        override_character_id = self._detect_character_mention(user_message)
+
         # Build initial contents
-        system_prompt = self._build_system_prompt(primary_symbol, user_id)
+        system_prompt = self._build_system_prompt(primary_symbol, user_id, override_character_id)
+
         
         # Start with system instruction and user message
         contents = []
         
         # Add conversation history if provided
         if conversation_history:
+
             for msg in conversation_history:
                 role = "user" if msg["role"] == "user" else "model"
                 contents.append(Content(role=role, parts=[Part(text=msg["content"])]))
@@ -316,7 +362,10 @@ class SmartChatAgent:
         """
         primary_symbol = primary_symbol.upper()
 
-        system_prompt = self._build_system_prompt(primary_symbol, user_id)
+        # Check for character mention override (e.g. @buffett)
+        override_character_id = self._detect_character_mention(user_message)
+
+        system_prompt = self._build_system_prompt(primary_symbol, user_id, override_character_id)
         
         contents = []
         if conversation_history:

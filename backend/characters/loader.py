@@ -10,6 +10,7 @@ logger = logging.getLogger(__name__)
 
 # Character registry - populated by importing character modules
 _characters: Dict[str, CharacterConfig] = {}
+_loaded = False
 
 
 def register_character(config: CharacterConfig) -> None:
@@ -60,12 +61,15 @@ def get_default_character() -> CharacterConfig:
 
 def _ensure_characters_loaded() -> None:
     """Ensure character modules are imported and registered."""
-    if _characters:
+    global _loaded
+    if _loaded:
         return
 
     # Import character modules to trigger registration
     from . import lynch  # noqa: F401
     from . import buffett  # noqa: F401
+    
+    _loaded = True
 
 
 class CharacterLoader:
