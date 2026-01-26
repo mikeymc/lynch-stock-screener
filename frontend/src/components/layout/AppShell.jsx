@@ -632,6 +632,7 @@ function AppShellContent({
                                             symbol={chatSymbol}
                                             chatOnly={true}
                                             contextType={chatContext}
+                                            activeCharacter={activeCharacter}
                                         />
                                     </div>
                                 </SheetContent>
@@ -665,6 +666,7 @@ function AppShellContent({
                                             symbol={chatSymbol}
                                             chatOnly={true}
                                             contextType={chatContext}
+                                            activeCharacter={activeCharacter}
                                         />
                                     </div>
                                 </aside>

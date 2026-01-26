@@ -72,15 +72,15 @@ class SmartChatAgent:
             from characters import list_characters
             available_ids = {c.id for c in list_characters()}
             
-            words = message.lower().split()
-            for word in words:
-                if word.startswith('@'):
-                    potential_id = word[1:]
-                    # Handle punctuation like "@buffett,"
-                    potential_id = potential_id.strip('.,?!:;')
-                    
-                    if potential_id in available_ids:
-                        return potential_id
+            import re
+            # Regex to find @mentions, robust to markdown (e.g. **@buffett**) and punctuation
+            # Matches @ followed by word characters (alphanumeric + underscore)
+            matches = re.findall(r'@([a-zA-Z0-9_]+)', message.lower())
+            
+            for potential_id in matches:
+                if potential_id in available_ids:
+                    return potential_id
+
         except Exception as e:
             logger.error(f"Error detecting character mention: {e}")
             
@@ -349,21 +349,133 @@ class SmartChatAgent:
         primary_symbol: str,
         user_message: str,
         conversation_history: Optional[List[Dict[str, str]]] = None,
-        user_id: Optional[int] = None
+        user_id: Optional[int] = None,
+        initial_character_id: Optional[str] = None
     ) -> Generator[Dict[str, Any], None, None]:
         """
         Stream a chat response with real-time token yield.
+        Supports multi-turn conversations (e.g. Lynch -> Buffett) in a single stream.
+        """
+        
+        # Max turns for multi-character dialogue
+        MAX_TURNS = 5
+        current_turn = 0
+        
+        # Track state across turns
+        current_message = user_message
+        current_history = conversation_history or []
+        accumulated_tool_calls_log = []
+        accumulated_iterations = 0
+        
+        # Explicitly track who should speak next if determined by a previous turn
+        forced_next_character = None
+        
+        while current_turn < MAX_TURNS:
+            current_turn += 1
+            
+            # Detect character override for this turn
+            # Priority: 
+            # 1. Forced handoff from previous turn (Tool call)
+            # 2. User mention in current_message (only valid if current_turn == 1)
+            # 3. Initial character selection (only valid if current_turn == 1)
+            
+            override_character_id = None
+            if forced_next_character:
+                override_character_id = forced_next_character
+            else:
+                # Only check text for the first turn (User message). 
+                # For subsequent turns (Model messages), we rely STRICTLY on tools to avoid accidental handoffs.
+                if current_turn == 1:
+                    # Check for text tag overwrite first
+                    text_override = self._detect_character_mention(current_message)
+                    if text_override:
+                        override_character_id = text_override
+                    elif initial_character_id:
+                        # Fallback to UI selection
+                        override_character_id = initial_character_id
+            
+            # Temporary storage for this turn's response to check for next mention
+            turn_response_text = ""
+            
+            # Emit active character event for this turn so frontend can update avatar immediately
+            if override_character_id:
+                 yield {"type": "active_character", "data": {"character": override_character_id}}
+            
+            # Track if a handoff tool was called in this turn
+            handoff_target = None
+            
+            # Stream this turn
+            for event in self._chat_stream_single_turn(
+                primary_symbol, 
+                current_message, 
+                current_history, 
+                user_id,
+                override_character_id
+            ):
+                if event['type'] == 'done':
+                    # Accumulate stats but DON'T yield done yet
+                    data = event['data']
+                    if 'tool_calls' in data:
+                        accumulated_tool_calls_log.extend(data['tool_calls'])
+                    if 'iterations' in data:
+                        accumulated_iterations += data['iterations']
+                    continue
+                
+                if event['type'] == 'token':
+                    turn_response_text += event['data']
+                    
+                # Intercept handoff tool call
+                if event['type'] == 'tool_call' and event['data']['tool'] == 'handoff_to_character':
+                    args = event['data']['args']
+                    handoff_target = args.get('target_character')
+                    # We continue yielding seeing the tool call, but we note the handoff
+                    
+                yield event
+            
+            # Check for next turn trigger
+            # STRICTLY use the tool call result. Ignore text mentions in model output.
+            next_character_id = handoff_target
+            
+            # If no handoff tool called, we are done
+            if not next_character_id:
+                break
+                
+            # If we found a handoff, prepare for next turn
+            # 1. Add the user message and the model response to history
+            current_history.append({"role": "user", "content": current_message})
+            current_history.append({"role": "model", "content": turn_response_text})
+            
+            # 2. Valid handoff
+            yield {"type": "next_turn", "data": {"character": next_character_id}}
+            
+            # 3. Setup state for next loop
+            current_message = turn_response_text # Next prompt is previous answer
+            forced_next_character = next_character_id # Force the speaker for next turn
+            
+        # Yield final done event
+        yield {
+            "type": "done",
+            "data": {
+                "tool_calls": accumulated_tool_calls_log,
+                "iterations": accumulated_iterations
+            }
+        }
 
-        Yields dicts with 'type' and 'data':
-        - {'type': 'thinking', 'data': 'Calling get_peers...'}
-        - {'type': 'token', 'data': 'NVDA...'}
-        - {'type': 'tool_call', 'data': {'tool': 'get_peers', 'args': {...}}}
-        - {'type': 'done', 'data': {'tool_calls': [...], 'iterations': N}}
+    def _chat_stream_single_turn(
+        self,
+        primary_symbol: str,
+        user_message: str,
+        conversation_history: List[Dict[str, str]],
+        user_id: Optional[int],
+        override_character_id: Optional[str] = None
+    ) -> Generator[Dict[str, Any], None, None]:
+        """
+        Internal method for a single turn of chat.
         """
         primary_symbol = primary_symbol.upper()
 
-        # Check for character mention override (e.g. @buffett)
-        override_character_id = self._detect_character_mention(user_message)
+        if not override_character_id:
+             override_character_id = self._detect_character_mention(user_message)
 
         system_prompt = self._build_system_prompt(primary_symbol, user_id, override_character_id)
         
@@ -466,6 +578,11 @@ class SmartChatAgent:
                             name=tool_name,
                             response={"result": json.dumps(result, default=str)}
                         ))
+
+                        # If this was a handoff, we should STOP here and let the next turn logic handle it
+                        if tool_name == "handoff_to_character":
+                             yield {"type": "done", "data": {"tool_calls": tool_calls_log, "iterations": iterations}}
+                             return
                     
                     contents.append(response.candidates[0].content)
                     contents.append(Content(role="user", parts=function_responses))

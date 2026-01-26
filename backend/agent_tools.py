@@ -532,6 +532,31 @@ sell_stock_decl = FunctionDeclaration(
 
 
 # =============================================================================
+# Handoff Tools
+# =============================================================================
+
+handoff_to_character_decl = FunctionDeclaration(
+    name="handoff_to_character",
+    description="Hand off the conversation to another investment legend. Use this tool when you want to specifically ask another character for their opinion or when the topic is better suited for their expertise. Calling this tool will switch the active speaker to the target character.",
+    parameters=Schema(
+        type=Type.OBJECT,
+        properties={
+            "target_character": Schema(
+                type=Type.STRING, 
+                description="The character to hand off to.",
+                enum=["lynch", "buffett"]
+            ),
+            "reason": Schema(
+                type=Type.STRING, 
+                description="Short reason for the handoff (e.g., 'Analyst estimates are needed', 'Moat analysis required')."
+            ),
+        },
+        required=["target_character"],
+    ),
+)
+
+
+# =============================================================================
 # FRED Macroeconomic Data Tools
 # =============================================================================
 
@@ -638,6 +663,7 @@ TOOL_DECLARATIONS = [
     get_portfolio_status_decl,
     buy_stock_decl,
     sell_stock_decl,
+    handoff_to_character_decl,
 ]
 
 # Create the Tool object for Gemini API
@@ -715,6 +741,7 @@ class ToolExecutor:
             "get_portfolio_status": self._get_portfolio_status,
             "buy_stock": self._buy_stock,
             "sell_stock": self._sell_stock,
+            "handoff_to_character": self._handoff_to_character,
         }
         
         executor = executor_map.get(tool_name)
@@ -725,7 +752,17 @@ class ToolExecutor:
             return executor(**args)
         except Exception as e:
             return {"error": str(e)}
-    
+    def _handoff_to_character(self, target_character: str, reason: str = None) -> Dict[str, Any]:
+        """
+        Placeholder for handoff tool. 
+        The actual switching logic is handled by the SmartChatAgent stream loop intercepting this tool call.
+        """
+        return {
+            "status": "handoff_initiated", 
+            "target_character": target_character, 
+            "message": f"Handing off to {target_character}..."
+        }
+
     def _get_stock_metrics(self, ticker: str) -> Dict[str, Any]:
         """Get all available stock metrics including calculated growth rates."""
         ticker = ticker.upper()

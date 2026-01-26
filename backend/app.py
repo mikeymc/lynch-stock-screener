@@ -3532,13 +3532,14 @@ def agent_chat(symbol, user_id):
 
         user_message = data['message']
         conversation_history = data.get('history', [])
+        character_id = data.get('character')  # Read selected character from frontend
 
         agent = get_smart_chat_agent()
 
         def generate():
             """Generate Server-Sent Events for agent response."""
             try:
-                for event in agent.chat_stream(symbol.upper(), user_message, conversation_history, user_id):
+                for event in agent.chat_stream(symbol.upper(), user_message, conversation_history, user_id, initial_character_id=character_id):
                     yield f"data: {json.dumps(event)}\n\n"
             except Exception as e:
                 logger.error(f"Agent chat stream error: {e}")
