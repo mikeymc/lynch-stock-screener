@@ -53,7 +53,17 @@ const TOOL_DESCRIPTIONS = {
   manage_alerts: "Managing user alerts",
   // FRED macroeconomic tools
   get_fred_series: "Fetching economic data",
-  get_economic_indicators: "Checking economic indicators"
+  get_economic_indicators: "Checking economic indicators",
+  // Buffett-style analysis tools
+  get_average_pe_ratio: "Calculating historical P/E ratios",
+  get_cash_position: "Analyzing cash holdings",
+  get_debt_to_earnings_ratio: "Calculating debt payoff timeline",
+  get_earnings_consistency: "Analyzing earnings consistency",
+  get_gross_margin: "Analyzing gross margin",
+  get_owner_earnings: "Calculating owner earnings",
+  get_price_to_book_ratio: "Calculating price-to-book ratio",
+  get_roe_metrics: "Analyzing return on equity",
+  get_share_buyback_activity: "Analyzing share buyback activity"
 }
 
 function SourceCitation({ sources }) {
