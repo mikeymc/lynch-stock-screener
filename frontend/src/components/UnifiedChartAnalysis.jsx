@@ -9,7 +9,7 @@ export default function UnifiedChartAnalysis({ symbol, character, onAnalysisGene
     const [legacySections, setLegacySections] = useState(null)
     const [loading, setLoading] = useState(false)
     const [error, setError] = useState(null)
-    const [selectedModel, setSelectedModel] = useState('gemini-3-pro-preview')
+    const [selectedModel, setSelectedModel] = useState('gemini-3-flash-preview')
 
     // Check for cached analyses on mount or when character changes
     useEffect(() => {

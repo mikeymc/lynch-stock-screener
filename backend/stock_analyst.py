@@ -18,8 +18,8 @@ from characters.config import CharacterConfig
 
 # Available AI models for analysis generation
 AVAILABLE_MODELS = ["gemini-2.5-flash", "gemini-3-flash-preview", "gemini-3-pro-preview"]
-DEFAULT_MODEL = "gemini-3-pro-preview"
-FALLBACK_MODEL = "gemini-3-flash-preview"
+DEFAULT_MODEL = "gemini-3-flash-preview"
+FALLBACK_MODEL = "gemini-2.5-flash"
 
 class StockAnalyst:
     """Character-aware stock analyst that generates analyses using AI.
