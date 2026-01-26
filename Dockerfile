@@ -28,6 +28,7 @@ WORKDIR /app
 # Also install dependencies for Playwright/Chromium
 RUN apt-get update && apt-get install -y \
     git \
+    tzdata \
     # Playwright/Chromium dependencies
     libnss3 \
     libnspr4 \

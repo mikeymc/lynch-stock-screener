@@ -192,10 +192,13 @@ def execute_trade(
         - error: str (if failed)
     """
     # Check market hours
+    # Check market hours
     if not is_market_open():
+        # Diagnostic info for production issues
+        now_et = datetime.now(ET_TIMEZONE)
         return {
             'success': False,
-            'error': 'Market is closed. Extended hours: 4 AM - 8 PM ET, weekdays only.'
+            'error': f'Market is closed. Extended hours: 4 AM - 8 PM ET, weekdays only. (Server Time: {now_et.strftime("%Y-%m-%d %H:%M:%S %Z")}, Weekday: {now_et.strftime("%A")})'
         }
 
     # Fetch price
