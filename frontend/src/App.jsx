@@ -235,7 +235,7 @@ function StockListView({
         if (response.ok) {
           const settings = await response.json()
           if (settings.advanced_filters && settings.advanced_filters.value) {
-            setAdvancedFilters(settings.advanced_filters.value)
+            setAdvancedFilters(prev => ({ ...prev, ...settings.advanced_filters.value }))
           }
           // Load us_stocks_only setting
           if (settings.us_stocks_only && settings.us_stocks_only.value !== undefined) {
@@ -752,143 +752,7 @@ function StockListView({
     }
   }
 
-  const filteredStocks = useMemo(() => {
-    const filtered = stocks.filter(stock => {
-      // Apply watchlist filter
-      if (filter === 'watchlist' && !watchlist.has(stock.symbol)) {
-        return false
-      }
 
-      // Status filter is now handled by backend (except for watchlist)
-      // if (filter !== 'all' && filter !== 'watchlist' && stock.overall_status !== filter) {
-      //   return false
-      // }
-
-      // Search is now handled by backend API - no frontend filter needed
-      // EXCEPT for watchlist mode which is client-side
-      if (filter === 'watchlist' && searchQuery) {
-        const query = searchQuery.toLowerCase()
-        const symbol = stock.symbol || ''
-        const name = stock.company_name || stock.company || ''
-        const matchesSymbol = symbol.toLowerCase().includes(query)
-        const matchesName = name.toLowerCase().includes(query)
-        if (!matchesSymbol && !matchesName) {
-          return false
-        }
-      }
-
-      // Apply advanced filters
-      // Region/Country filter
-      if (advancedFilters.regions.length > 0 || advancedFilters.countries.length > 0) {
-        const stockCountry = stock.country || ''
-        let matchesRegion = false
-
-        // Check if stock matches any selected region (using 2-letter country codes)
-        const REGION_COUNTRIES = {
-          'USA': ['US'],
-          'Canada': ['CA'],
-          'Central/South America': ['MX', 'BR', 'AR', 'CL', 'PE', 'CO', 'VE', 'EC', 'BO', 'PY', 'UY', 'CR', 'PA', 'GT', 'HN', 'SV', 'NI'],
-          'Europe': ['GB', 'DE', 'FR', 'IT', 'ES', 'NL', 'CH', 'IE', 'BE', 'SE', 'NO', 'DK', 'FI', 'AT', 'PL', 'PT', 'GR', 'CZ', 'HU', 'RO', 'LU', 'IS'],
-          'Asia': ['CN', 'JP', 'KR', 'IN', 'SG', 'HK', 'TW', 'TH', 'MY', 'ID', 'PH', 'VN', 'IL'],
-          'Other': []
-        }
-
-        for (const region of advancedFilters.regions) {
-          const countriesInRegion = REGION_COUNTRIES[region] || []
-          if (countriesInRegion.includes(stockCountry)) {
-            matchesRegion = true
-            break
-          }
-        }
-
-        // Check if stock matches any selected country
-        const matchesCountry = advancedFilters.countries.includes(stockCountry)
-
-        if (!matchesRegion && !matchesCountry) {
-          return false
-        }
-      }
-
-      // Institutional ownership filter
-      if (advancedFilters.institutionalOwnership?.max !== null) {
-        const instOwn = stock.institutional_ownership
-        if (instOwn === null || instOwn === undefined || instOwn > advancedFilters.institutionalOwnership.max / 100) {
-          return false
-        }
-      }
-
-      // Revenue growth filter
-      if (advancedFilters.revenueGrowth.min !== null) {
-        const revGrowth = stock.revenue_cagr
-        if (revGrowth === null || revGrowth === undefined || revGrowth < advancedFilters.revenueGrowth.min) {
-          return false
-        }
-      }
-
-      // Income growth filter
-      if (advancedFilters.incomeGrowth.min !== null) {
-        const incGrowth = stock.earnings_cagr
-        if (incGrowth === null || incGrowth === undefined || incGrowth < advancedFilters.incomeGrowth.min) {
-          return false
-        }
-      }
-
-      // Debt to equity filter
-      if (advancedFilters.debtToEquity.max !== null) {
-        const de = stock.debt_to_equity
-        if (de === null || de === undefined || de > advancedFilters.debtToEquity.max) {
-          return false
-        }
-      }
-
-      // Market cap filter
-      if (advancedFilters.marketCap?.max !== null && advancedFilters.marketCap?.max !== undefined) {
-        const mc = stock.market_cap
-        if (mc === null || mc === undefined || mc / 1e9 > advancedFilters.marketCap.max) {
-          return false
-        }
-      }
-
-      return true
-    })
-
-    const sorted = [...filtered].sort((a, b) => {
-      let aVal = a[sortBy]
-      let bVal = b[sortBy]
-
-      // Handle null/undefined values
-      if (aVal == null && bVal == null) return 0
-      if (aVal == null) return 1
-      if (bVal == null) return -1
-
-      // Special handling for status columns - use rank instead of alphabetical
-      if (sortBy.endsWith('_status') || sortBy === 'overall_status') {
-        const ranks = {
-          'STRONG_BUY': 1,
-          'BUY': 2,
-          'HOLD': 3,
-          'CAUTION': 4,
-          'AVOID': 5,
-          'SELL': 6,
-          'PASS': 1,
-          'CLOSE': 2,
-          'FAIL': 3
-        }
-        aVal = ranks[aVal] || 999
-        bVal = ranks[bVal] || 999
-      } else if (typeof aVal === 'string') {
-        aVal = aVal.toLowerCase()
-        bVal = (bVal || '').toLowerCase()
-      }
-
-      if (sortDir === 'asc') {
-        return aVal < bVal ? -1 : aVal > bVal ? 1 : 0
-      } else {
-        return aVal > bVal ? -1 : aVal < bVal ? 1 : 0
-      }
-    })
-    return filtered  // No frontend sorting - backend handles it
-  }, [stocks, filter, watchlist, advancedFilters])
 
   // Use backend pagination - stocks already come paginated and sorted
   // Note: totalPages comes from the API response and is set in fetchStocks
@@ -940,27 +804,27 @@ function StockListView({
       })
     }
     // Institutional ownership
-    if (advancedFilters.institutionalOwnership?.max !== null) {
+    if (advancedFilters.institutionalOwnership?.max !== null && advancedFilters.institutionalOwnership?.max !== undefined) {
       result = result.filter(s => s.institutional_ownership <= advancedFilters.institutionalOwnership.max / 100)
     }
     // Revenue Growth
-    if (advancedFilters.revenueGrowth.min !== null) {
+    if (advancedFilters.revenueGrowth?.min !== null && advancedFilters.revenueGrowth?.min !== undefined) {
       result = result.filter(s => s.revenue_cagr >= advancedFilters.revenueGrowth.min)
     }
     // Income Growth
-    if (advancedFilters.incomeGrowth.min !== null) {
+    if (advancedFilters.incomeGrowth?.min !== null && advancedFilters.incomeGrowth?.min !== undefined) {
       result = result.filter(s => s.earnings_cagr >= advancedFilters.incomeGrowth.min)
     }
     // Debt/Equity
-    if (advancedFilters.debtToEquity.max !== null) {
+    if (advancedFilters.debtToEquity?.max !== null && advancedFilters.debtToEquity?.max !== undefined) {
       result = result.filter(s => s.debt_to_equity <= advancedFilters.debtToEquity.max)
     }
     // Market Cap
-    if (advancedFilters.marketCap?.max !== null) {
+    if (advancedFilters.marketCap?.max !== null && advancedFilters.marketCap?.max !== undefined) {
       result = result.filter(s => (s.market_cap / 1e9) <= advancedFilters.marketCap.max)
     }
     // P/E Ratio
-    if (advancedFilters.peRatio?.max !== null) {
+    if (advancedFilters.peRatio?.max !== null && advancedFilters.peRatio?.max !== undefined) {
       result = result.filter(s => s.pe_ratio <= advancedFilters.peRatio.max)
     }
 
@@ -1021,9 +885,9 @@ function StockListView({
     if (advancedFilters.regions.length > 0) count++
     if (advancedFilters.countries.length > 0) count++
     if (advancedFilters.institutionalOwnership?.max !== null) count++
-    if (advancedFilters.revenueGrowth.min !== null) count++
-    if (advancedFilters.incomeGrowth.min !== null) count++
-    if (advancedFilters.debtToEquity.max !== null) count++
+    if (advancedFilters.revenueGrowth?.min !== null) count++
+    if (advancedFilters.incomeGrowth?.min !== null) count++
+    if (advancedFilters.debtToEquity?.max !== null) count++
     if (advancedFilters.marketCap?.max !== null) count++
     return count
   }
