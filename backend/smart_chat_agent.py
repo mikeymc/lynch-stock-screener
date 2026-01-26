@@ -14,7 +14,7 @@ from stock_context import StockContext
 logger = logging.getLogger(__name__)
 
 # Maximum number of reasoning steps before forcing a final answer
-MAX_ITERATIONS = 25
+MAX_ITERATIONS = 50
 
 
 class SmartChatAgent:
