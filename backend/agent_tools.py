@@ -431,6 +431,24 @@ manage_alerts_decl = FunctionDeclaration(
             ),
             "alert_id": Schema(type=Type.INTEGER, description="ID of the alert to delete (required for 'delete')"),
             "user_id": Schema(type=Type.INTEGER, description="Internal User ID (automatically injected by system, do not prompt for this)"),
+            # Automated Trading Parameters
+            "action_type": Schema(
+                type=Type.STRING,
+                description="Optional: Automated trading action to take when alert triggers. Use 'market_buy' to buy shares or 'market_sell' to sell shares.",
+                enum=["market_buy", "market_sell"]
+            ),
+            "action_quantity": Schema(
+                type=Type.INTEGER,
+                description="Optional: Number of shares to buy or sell if action_type is specified."
+            ),
+            "portfolio_name": Schema(
+                type=Type.STRING,
+                description="Optional: Name of the paper trading portfolio to execute the trade in (e.g., 'Tech Growth'). Required if action_type is specified."
+            ),
+            "action_note": Schema(
+                type=Type.STRING,
+                description="Optional: Note to attach to the automated trade."
+            ),
         },
         required=["action"],
     ),
@@ -2839,7 +2857,9 @@ class ToolExecutor:
 
     def _manage_alerts(self, action: str, ticker: str = None, condition_description: str = None,
                       condition_type: str = None, threshold: float = None, operator: str = None, 
-                      alert_id: int = None, user_id: int = None) -> Dict[str, Any]:
+                      alert_id: int = None, user_id: int = None,
+                      action_type: str = None, action_quantity: int = None,
+                      portfolio_name: str = None, action_note: str = None) -> Dict[str, Any]:
         """
         Manage user alerts: create, list, or delete.
         
@@ -2864,6 +2884,23 @@ class ToolExecutor:
             if not ticker:
                 return {"error": "Missing required parameter 'ticker' for creating an alert."}
             
+            # Helper: Resolve portfolio if trading action requested
+            portfolio_id = None
+            action_payload = None
+            
+            if action_type:
+                if not action_quantity or action_quantity <= 0:
+                    return {"error": "Trading action requires a positive 'action_quantity'."}
+                if not portfolio_name:
+                    return {"error": "Trading action requires 'portfolio_name'."}
+                
+                portfolio = self.db.get_portfolio_by_name(user_id, portfolio_name)
+                if not portfolio:
+                    return {"error": f"Portfolio '{portfolio_name}' not found."}
+                
+                portfolio_id = portfolio['id']
+                action_payload = {"quantity": action_quantity}
+            
             ticker = ticker.upper()
             
             # Prefer condition_description (flexible LLM-based alerts)
@@ -2875,7 +2912,11 @@ class ToolExecutor:
                         symbol=ticker,
                         condition_type='custom',  # Mark as LLM-evaluated
                         condition_params={},  # Empty params for custom alerts
-                        condition_description=condition_description
+                        condition_description=condition_description,
+                        action_type=action_type,
+                        action_payload=action_payload,
+                        portfolio_id=portfolio_id,
+                        action_note=action_note
                     )
                     return {
                         "message": f"Successfully created alert for {ticker}.",

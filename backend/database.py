@@ -1029,6 +1029,36 @@ class Database:
                 END IF;
             END $$;
         """)
+
+        # Migration: Add automated trading columns to alerts
+        cursor.execute("""
+            DO $$
+            BEGIN
+                -- action_type (market_buy, market_sell, etc.)
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                               WHERE table_name = 'alerts' AND column_name = 'action_type') THEN
+                    ALTER TABLE alerts ADD COLUMN action_type TEXT;
+                END IF;
+
+                -- action_payload (JSON details like quantity)
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                               WHERE table_name = 'alerts' AND column_name = 'action_payload') THEN
+                    ALTER TABLE alerts ADD COLUMN action_payload JSONB;
+                END IF;
+
+                -- portfolio_id (target portfolio for the trade)
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                               WHERE table_name = 'alerts' AND column_name = 'portfolio_id') THEN
+                    ALTER TABLE alerts ADD COLUMN portfolio_id INTEGER REFERENCES portfolios(id);
+                END IF;
+                
+                -- action_note
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                               WHERE table_name = 'alerts' AND column_name = 'action_note') THEN
+                    ALTER TABLE alerts ADD COLUMN action_note TEXT;
+                END IF;
+            END $$;
+        """)
         
         # Initialize remaining schema (misplaced code wrapper)
         self._init_rest_of_schema(conn)
@@ -1036,17 +1066,25 @@ class Database:
     def create_alert(self, user_id: int, symbol: str, condition_type: str = 'custom', 
                      condition_params: Optional[Dict[str, Any]] = None, 
                      frequency: str = 'daily', 
-                     condition_description: Optional[str] = None) -> int:
+                     condition_description: Optional[str] = None,
+                     action_type: Optional[str] = None,
+                     action_payload: Optional[Dict[str, Any]] = None,
+                     portfolio_id: Optional[int] = None,
+                     action_note: Optional[str] = None) -> int:
         """
         Create a new user alert.
         
         Args:
             user_id: User ID creating the alert
             symbol: Stock symbol for the alert
-            condition_type: Legacy alert type ('price', 'pe_ratio', or 'custom' for LLM-based)
-            condition_params: Legacy condition parameters (dict with threshold/operator)
-            frequency: How often to check (not currently used, but kept for future)
-            condition_description: Natural language description of the alert condition (for LLM evaluation)
+            condition_type: Legacy alert type
+            condition_params: Legacy condition parameters
+            frequency: How often to check
+            condition_description: Natural language description of the alert condition
+            action_type: Optional automated trading action (e.g., 'market_buy')
+            action_payload: Parameters for the action (e.g., {'quantity': 10})
+            portfolio_id: Target portfolio for the trade
+            action_note: Note to attach to the trade
         
         Returns:
             Alert ID
@@ -1059,11 +1097,20 @@ class Database:
             if condition_params is None:
                 condition_params = {}
             
+            if action_payload is None:
+                action_payload = {}
+            
             cursor.execute("""
-                INSERT INTO alerts (user_id, symbol, condition_type, condition_params, frequency, status, condition_description)
-                VALUES (%s, %s, %s, %s, %s, 'active', %s)
+                INSERT INTO alerts (
+                    user_id, symbol, condition_type, condition_params, frequency, status, condition_description,
+                    action_type, action_payload, portfolio_id, action_note
+                )
+                VALUES (%s, %s, %s, %s, %s, 'active', %s, %s, %s, %s, %s)
                 RETURNING id
-            """, (user_id, symbol, condition_type, json.dumps(condition_params), frequency, condition_description))
+            """, (
+                user_id, symbol, condition_type, json.dumps(condition_params), frequency, condition_description,
+                action_type, json.dumps(action_payload) if action_payload else None, portfolio_id, action_note
+            ))
             alert_id = cursor.fetchone()[0]
             conn.commit()
             return alert_id
@@ -1172,7 +1219,8 @@ class Database:
         try:
             cursor = conn.cursor()
             cursor.execute("""
-                SELECT id, user_id, symbol, condition_type, condition_params, frequency, status, last_checked, condition_description
+                SELECT id, user_id, symbol, condition_type, condition_params, frequency, status, last_checked, condition_description,
+                       action_type, action_payload, portfolio_id, action_note
                 FROM alerts 
                 WHERE status = 'active'
             """)
@@ -1182,6 +1230,8 @@ class Database:
                 alert = dict(zip(columns, row))
                 if isinstance(alert['condition_params'], str):
                     alert['condition_params'] = json.loads(alert['condition_params'])
+                if alert.get('action_payload') and isinstance(alert['action_payload'], str):
+                    alert['action_payload'] = json.loads(alert['action_payload'])
                 results.append(alert)
             return results
         finally:
@@ -3557,7 +3607,27 @@ class Database:
                            ELSE 0 
                        END) > 0
             """, (portfolio_id,))
-            return {row[0]: row[1] for row in cursor.fetchall()}
+            columns = [desc[0] for desc in cursor.description]
+            return [dict(zip(columns, row)) for row in cursor.fetchall()]
+        finally:
+            self.return_connection(conn)
+
+    def get_portfolio_by_name(self, user_id: int, name: str) -> Optional[Dict[str, Any]]:
+        """Find a portfolio by name for a specific user (case-insensitive)."""
+        conn = self.get_connection()
+        try:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT id, user_id, name, initial_cash, created_at, dividend_preference
+                FROM portfolios
+                WHERE user_id = %s AND LOWER(name) = LOWER(%s)
+                LIMIT 1
+            """, (user_id, name))
+            row = cursor.fetchone()
+            if row:
+                columns = [desc[0] for desc in cursor.description]
+                return dict(zip(columns, row))
+            return None
         finally:
             self.return_connection(conn)
 

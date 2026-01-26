@@ -53,6 +53,7 @@ from sec_data_fetcher import SECDataFetcher
 from news_fetcher import NewsFetcher
 from material_events_fetcher import MaterialEventsFetcher
 from dividend_manager import DividendManager
+import portfolio_service  # Import portfolio service for automated trading
 
 # Import global rate limiter for SEC API (shared across all threads)
 from sec_rate_limiter import SEC_RATE_LIMITER, configure_edgartools_rate_limit
@@ -295,6 +296,16 @@ class BackgroundWorker:
                     condition_type = alert['condition_type']
                     condition_params = alert['condition_params']
                     
+                    # ALERT LOGIC REFINEMENT:
+                    # If this is an automated trading alert, we MUST wait for market open.
+                    # If we evaluate it now and it triggers, the trade will fail (or be skipped),
+                    # and the alert will be consumed/marked 'triggered'. 
+                    # By skipping evaluation here, we effectively "hold off" until market open.
+                    if alert.get('action_type') and not portfolio_service.is_market_open():
+                        # Optional: Log periodically or just debug to avoid spamming logs every 5s
+                        # logger.debug(f"Skipping trading alert {alert['id']} - Market Closed")
+                        continue
+
                     # Fetch latest stock data
                     metrics = self.db.get_stock_metrics(symbol)
                     if not metrics:
@@ -314,11 +325,52 @@ class BackgroundWorker:
                     
                     if is_triggered:
                         logger.info(f"Alert {alert['id']} triggered: {trigger_message}")
+                        
+                        # Execute automated trade if configured
+                        action_type = alert.get('action_type')
+                        trade_result_msg = ""
+                        
+                        if action_type and alert.get('portfolio_id'):
+                            try:
+                                logger.info(f"Executing automated trade for alert {alert['id']}")
+                                action_payload = alert.get('action_payload') or {}
+                                portfolio_id = alert['portfolio_id']
+                                quantity = action_payload.get('quantity', 0)
+                                action_note = alert.get('action_note') or "Automated trade via Alert"
+                                
+                                # Map action_type to transaction_type
+                                transaction_type = None
+                                if action_type == 'market_buy':
+                                    transaction_type = 'BUY'
+                                elif action_type == 'market_sell':
+                                    transaction_type = 'SELL'
+                                
+                                if transaction_type and quantity > 0:
+                                    trade_result = portfolio_service.execute_trade(
+                                        db=self.db,
+                                        portfolio_id=portfolio_id,
+                                        symbol=symbol,
+                                        transaction_type=transaction_type,
+                                        quantity=quantity,
+                                        note=f"{action_note} (Triggered by Alert {alert['id']})"
+                                    )
+                                    
+                                    if trade_result['success']:
+                                        trade_result_msg = f" [Auto-Trade: Executed {transaction_type} {quantity} shares @ ${trade_result['price_per_share']:.2f}]"
+                                    else:
+                                        trade_result_msg = f" [Auto-Trade Failed: {trade_result.get('error')}]"
+                                else:
+                                    trade_result_msg = " [Auto-Trade Skipped: Invalid configuration]"
+                                    
+                            except Exception as e:
+                                logger.error(f"Failed to execute automated trade for alert {alert['id']}: {e}")
+                                trade_result_msg = f" [Auto-Trade Error: {str(e)}]"
+                        
                         self.db.update_alert_status(
                             alert['id'], 
                             status='triggered', 
                             triggered_at=datetime.now(), 
-                            message=trigger_message
+                            message=trigger_message + trade_result_msg
                         )
                         triggered_count += 1
                     else:
