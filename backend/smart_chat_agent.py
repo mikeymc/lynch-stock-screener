@@ -365,6 +365,10 @@ class SmartChatAgent:
         # Check for character mention override (e.g. @buffett)
         override_character_id = self._detect_character_mention(user_message)
 
+        # Notify frontend of character switch
+        if override_character_id:
+            yield {"type": "active_character", "data": {"character": override_character_id}}
+
         system_prompt = self._build_system_prompt(primary_symbol, user_id, override_character_id)
         
         contents = []

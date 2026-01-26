@@ -180,7 +180,8 @@ const MarkdownComponents = ({ navigate, isStreaming = false }) => useMemo(() => 
 }), [navigate, isStreaming])
 
 // Memoized ChatMessage component - only re-renders when content changes
-const ChatMessage = memo(function ChatMessage({ role, content, sources, components }) {
+// Memoized ChatMessage component - only re-renders when content changes
+const ChatMessage = memo(function ChatMessage({ role, content, sources, components, character }) {
   const { user } = useAuth()
   const isUser = role === 'user'
   const isError = role === 'error'
@@ -201,13 +202,29 @@ const ChatMessage = memo(function ChatMessage({ role, content, sources, componen
             )}
           </div>
         ) : (
-          <div className="h-8 w-8 flex items-center justify-center rounded-lg border border-border bg-background shadow-sm">
-            {isError ? (
-              <div className="text-destructive font-bold">!</div>
+          <>
+            {/* Character Initials Avatars */}
+            {!isError && character && (character === 'buffett' ? (
+              <div className="h-8 w-8 flex items-center justify-center rounded-lg border border-emerald-200 bg-emerald-100 text-emerald-700 shadow-sm font-bold text-xs dark:bg-emerald-900/50 dark:text-emerald-100 dark:border-emerald-800">
+                WB
+              </div>
             ) : (
-              <Bot className="h-5 w-5 text-primary" />
+              <div className="h-8 w-8 flex items-center justify-center rounded-lg border border-blue-200 bg-blue-100 text-blue-700 shadow-sm font-bold text-xs dark:bg-blue-900/50 dark:text-blue-100 dark:border-blue-800">
+                PL
+              </div>
+            ))}
+
+            {/* Fallback/Error Bot Icon */}
+            {(isError || !character) && (
+              <div className="h-8 w-8 flex items-center justify-center rounded-lg border border-border bg-background shadow-sm">
+                {isError ? (
+                  <div className="text-destructive font-bold">!</div>
+                ) : (
+                  <Bot className="h-5 w-5 text-primary" />
+                )}
+              </div>
             )}
-          </div>
+          </>
         )}
       </div>
 
@@ -231,6 +248,22 @@ const ChatMessage = memo(function ChatMessage({ role, content, sources, componen
   )
 })
 
+const parseMessage = (msg) => {
+  if (!msg || !msg.content || typeof msg.content !== 'string') return msg
+
+  // check for character prefix :::name:::
+  const match = msg.content.match(/^:::(\w+):::([\s\S]*)/)
+  if (match) {
+    return {
+      ...msg,
+      character: match[1],
+      content: match[2]
+    }
+  }
+  return msg
+}
+
+// AnalysisChat Component
 const AnalysisChat = forwardRef(function AnalysisChat({ symbol, stockName, chatOnly = false, hideChat = false, contextType = 'brief', activeCharacter }, ref) {
   const [selectedCharacter, setSelectedCharacter] = useState(activeCharacter || 'lynch')
 
@@ -282,6 +315,7 @@ const AnalysisChat = forwardRef(function AnalysisChat({ symbol, stockName, chatO
   const [agentThinking, setAgentThinking] = useState('')
   const [showScrollDown, setShowScrollDown] = useState(false)
   const [isNearBottom, setIsNearBottom] = useState(true)
+  const [streamingCharacter, setStreamingCharacter] = useState(null)
 
   // Start a new chat session - creates a new conversation on the backend
   const startNewChat = useCallback(async () => {
@@ -344,7 +378,7 @@ const AnalysisChat = forwardRef(function AnalysisChat({ symbol, stockName, chatO
 
       // Update local state
       setConversationId(targetConversationId)
-      setMessages(data.messages || [])
+      setMessages((data.messages || []).map(parseMessage))
       setStreamingMessage('')
       setStreamingSources([])
       setAgentThinking('')
@@ -352,7 +386,7 @@ const AnalysisChat = forwardRef(function AnalysisChat({ symbol, stockName, chatO
       // Update context state
       setActiveConversationId(targetConversationId)
 
-      // Scroll to bottom after messages load
+      // Scroll to bottom after messages loads
       setTimeout(() => {
         const container = messagesContainerRef.current
         if (container) {
@@ -480,7 +514,7 @@ const AnalysisChat = forwardRef(function AnalysisChat({ symbol, stockName, chatO
           const msgResponse = await fetch(`${API_BASE}/agent/conversation/${conv.id}/messages`, { credentials: 'include' })
           if (msgResponse.ok) {
             const msgData = await msgResponse.json()
-            setMessages(msgData.messages || [])
+            setMessages((msgData.messages || []).map(parseMessage))
             // Scroll to bottom after messages load
             setTimeout(() => {
               const container = messagesContainerRef.current
@@ -681,17 +715,20 @@ const AnalysisChat = forwardRef(function AnalysisChat({ symbol, stockName, chatO
   }
 
   // Helper to save messages to database
-  const saveMessage = async (role, content, toolCalls = null) => {
+  const saveMessage = async (role, content, toolCalls = null, character = null) => {
     if (!conversationId) {
       return
     }
 
     try {
+      // Prepend character metadata if present
+      const contentToSave = character ? `:::${character}:::${content}` : content
+
       const response = await fetch(`${API_BASE}/agent/conversation/${conversationId}/messages`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
-        body: JSON.stringify({ role, content, tool_calls: toolCalls })
+        body: JSON.stringify({ role, content: contentToSave, tool_calls: toolCalls })
       })
 
       if (!response.ok) {
@@ -725,9 +762,17 @@ const AnalysisChat = forwardRef(function AnalysisChat({ symbol, stockName, chatO
     setStreamingSources([])
     setAgentThinking('')
 
+    // Initial streaming character
+    let activeChar = selectedCharacter || 'lynch'
+    setStreamingCharacter(activeChar)
+
     try {
       const endpoint = `${API_BASE}/chat/${symbol}/agent`
-      const body = { message: userMessage, history: messages.map(m => ({ role: m.role, content: m.content })) }
+      const body = {
+        message: userMessage,
+        history: messages.map(m => ({ role: m.role, content: m.content })),
+        character: selectedCharacter
+      }
 
       const response = await fetch(endpoint, {
         method: 'POST',
@@ -763,7 +808,8 @@ const AnalysisChat = forwardRef(function AnalysisChat({ symbol, stockName, chatO
                       content: fullMessage,
                       sources: sources,
                       toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
-                      message_id: data.data?.message_id
+                      message_id: data.data?.message_id,
+                      character: activeChar
                     }])
                     // Save assistant message to database (agent mode only)
                     saveMessage('assistant', fullMessage, toolCalls.length > 0 ? toolCalls : null)
@@ -784,7 +830,8 @@ const AnalysisChat = forwardRef(function AnalysisChat({ symbol, stockName, chatO
               role: 'assistant',
               content: fullMessage,
               sources: sources,
-              toolCalls: toolCalls.length > 0 ? toolCalls : undefined
+              toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
+              character: activeChar
             }])
             // Save assistant message to database (agent mode only)
             saveMessage('assistant', fullMessage, toolCalls.length > 0 ? toolCalls : null)
@@ -806,6 +853,10 @@ const AnalysisChat = forwardRef(function AnalysisChat({ symbol, stockName, chatO
 
             if (data.type === 'conversation_id') {
               setConversationId(data.data)
+            } else if (data.type === 'active_character') {
+              // Immediate character update from backend (for overrides)
+              activeChar = data.data.character
+              setStreamingCharacter(activeChar)
             } else if (data.type === 'sources') {
               sources = data.data
               setStreamingSources(data.data)
@@ -824,16 +875,49 @@ const AnalysisChat = forwardRef(function AnalysisChat({ symbol, stockName, chatO
               toolCalls.push(data.data)
               const friendlyName = TOOL_DESCRIPTIONS[data.data.tool] || `Calling ${data.data.tool}`
               setAgentThinking(`${friendlyName}...`)
+            } else if (data.type === 'next_turn') {
+              // FINALIZE CURRENT MESSAGE BUBBLE
+              if (fullMessage) {
+                const completedMessage = fullMessage
+                const currentSources = sources
+                const currentTools = toolCalls.length > 0 ? toolCalls : undefined
+                const currentCharacter = activeChar
+
+                setMessages(prev => [...prev, {
+                  role: 'assistant',
+                  content: completedMessage,
+                  sources: currentSources,
+                  toolCalls: currentTools,
+                  character: currentCharacter
+                }])
+
+                // Save intermediate message
+                saveMessage('assistant', completedMessage, currentTools, currentCharacter)
+              }
+
+              // RESET FOR NEXT TURN
+              fullMessage = ''
+              sources = []
+              toolCalls = []
+              setStreamingMessage('')
+              setStreamingSources([])
+
+              // UPDATE CHARACTER
+              if (data.data && data.data.character) {
+                activeChar = data.data.character
+                setStreamingCharacter(activeChar)
+              }
             } else if (data.type === 'done') {
               setMessages(prev => [...prev, {
                 role: 'assistant',
                 content: fullMessage,
                 sources: sources,
                 toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
-                message_id: data.data?.message_id
+                message_id: data.data?.message_id,
+                character: activeChar
               }])
               // Save assistant message to database (agent mode only)
-              saveMessage('assistant', fullMessage, toolCalls.length > 0 ? toolCalls : null)
+              saveMessage('assistant', fullMessage, toolCalls.length > 0 ? toolCalls : null, activeChar)
               setStreamingMessage('')
               setStreamingSources([])
               setAgentThinking('')
@@ -986,6 +1070,7 @@ const AnalysisChat = forwardRef(function AnalysisChat({ symbol, stockName, chatO
               content={msg.content}
               sources={msg.sources}
               components={components}
+              character={msg.character || selectedCharacter || 'lynch'}
             />
           ))}
 
@@ -993,7 +1078,13 @@ const AnalysisChat = forwardRef(function AnalysisChat({ symbol, stockName, chatO
           {chatLoading && (
             <div className="flex flex-col gap-1 mb-4 items-start">
               <div className="flex items-center gap-1.5 text-xs text-muted-foreground px-2">
-                <Bot className="h-3.5 w-3.5" />
+                {streamingCharacter === 'buffett' ? (
+                  <span className="h-3.5 w-3.5 flex items-center justify-center bg-emerald-100 text-emerald-700 font-bold rounded text-[10px] dark:bg-emerald-900/50 dark:text-emerald-100">WB</span>
+                ) : streamingCharacter === 'lynch' ? (
+                  <span className="h-3.5 w-3.5 flex items-center justify-center bg-blue-100 text-blue-700 font-bold rounded text-[10px] dark:bg-blue-900/50 dark:text-blue-100">PL</span>
+                ) : (
+                  <Bot className="h-3.5 w-3.5" />
+                )}
                 <span>{agentThinking || 'Thinking...'}</span>
               </div>
               <div className="rounded-lg px-4 py-3 max-w-[85%] bg-muted">
