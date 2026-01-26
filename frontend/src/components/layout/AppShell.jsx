@@ -643,7 +643,7 @@ function AppShellContent({
 
                 {/* Page content - with resizable panels on large screens */}
                 <ResizablePanelGroup id="app-shell-layout-v8" direction="horizontal" className="flex-1 overflow-hidden">
-                    <ResizablePanel id="main-content-panel" defaultSize={70} order={1}>
+                    <ResizablePanel id="main-content-panel" defaultSize={60} order={1}>
                         {/* Main content */}
                         <main className="h-full overflow-auto p-4 min-w-0 scrollbar-hide">
                             <div className="max-w-screen-lg mx-auto">
@@ -655,7 +655,7 @@ function AppShellContent({
                     {isLargeScreen && (
                         <>
                             <ResizableHandle />
-                            <ResizablePanel id="chat-sidebar-panel" defaultSize={30} order={2}>
+                            <ResizablePanel id="chat-sidebar-panel" defaultSize={40} order={2}>
                                 <aside className="h-full border-l bg-background flex flex-col">
                                     <div className="px-4 py-3 border-b flex items-center justify-between shrink-0">
                                         <h2 className="font-semibold">{chatTitle}</h2>

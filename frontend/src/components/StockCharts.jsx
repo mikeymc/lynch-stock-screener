@@ -526,36 +526,32 @@ export default function StockCharts({ historyData, quarterlyHistoryData, loading
 
   return (
     <div className="w-full">
-      <div className="flex flex-col space-y-8">
+      <div className="flex flex-col">
         {/* Header with Toggle */}
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-          <div>
-            <h2 className="text-2xl font-bold tracking-tight">Financial Performance</h2>
-            <p className="text-muted-foreground text-sm">Historical revenue, earnings, and cash flow</p>
-          </div>
+          {/* Analyze Button - positioned on the left */}
+          {!analyzeButtonState.loading && analyzeButtonState.onAnalyze && (
+            <Button
+              onClick={analyzeButtonState.onAnalyze}
+              className="gap-2"
+              size="sm"
+            >
+              {analyzeButtonState.hasAnyAnalysis ? (
+                <>
+                  <RefreshCw className="h-4 w-4" />
+                  Re-Analyze
+                </>
+              ) : (
+                <>
+                  <Sparkles className="h-4 w-4" />
+                  Analyze
+                </>
+              )}
+            </Button>
+          )}
 
+          {/* Toggle Controls - positioned on the right */}
           <div className="flex flex-wrap items-center gap-4">
-            {/* Analyze Button - positioned first (leftmost) */}
-            {!analyzeButtonState.loading && analyzeButtonState.onAnalyze && (
-              <Button
-                onClick={analyzeButtonState.onAnalyze}
-                className="gap-2"
-                size="sm"
-              >
-                {analyzeButtonState.hasAnyAnalysis ? (
-                  <>
-                    <RefreshCw className="h-4 w-4" />
-                    Re-Analyze
-                  </>
-                ) : (
-                  <>
-                    <Sparkles className="h-4 w-4" />
-                    Analyze
-                  </>
-                )}
-              </Button>
-            )}
-
             {/* Time Horizon Selector */}
             <div className="flex items-center space-x-1 bg-muted p-1 rounded-lg">
               {[
