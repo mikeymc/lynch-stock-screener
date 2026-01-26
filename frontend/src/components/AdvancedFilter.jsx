@@ -100,7 +100,8 @@ export default function AdvancedFilter({ filters, onFiltersChange, isOpen, onTog
             revenueGrowth: { min: null },
             incomeGrowth: { min: null },
             debtToEquity: { max: null },
-            marketCap: { max: null }
+            marketCap: { max: null },
+            peRatio: { max: null }
         }
         setLocalFilters(emptyFilters)
         onFiltersChange(emptyFilters)
@@ -118,6 +119,7 @@ export default function AdvancedFilter({ filters, onFiltersChange, isOpen, onTog
         if (localFilters.incomeGrowth.min !== null) count++
         if (localFilters.debtToEquity.max !== null) count++
         if (localFilters.marketCap?.max !== null) count++
+        if (localFilters.peRatio?.max !== null) count++
         return count
     }
 
@@ -125,7 +127,7 @@ export default function AdvancedFilter({ filters, onFiltersChange, isOpen, onTog
 
     return (
         <div className="bg-card rounded-lg border p-6 mb-4">
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-3">
                 {/* Region/Country Filters - Only show if not US-only mode */}
                 {!usStocksOnly && (
                     <div className="flex flex-col gap-2">
@@ -148,7 +150,7 @@ export default function AdvancedFilter({ filters, onFiltersChange, isOpen, onTog
                 {/* Institutional Ownership */}
                 <div className="flex flex-col gap-2">
                     <Label htmlFor="inst-ownership" className="text-sm font-medium">
-                        Institutional Ownership
+                        Inst. Own %
                     </Label>
                     <div className="flex items-center gap-2">
                         <span className="text-sm text-muted-foreground whitespace-nowrap">Max</span>
@@ -161,16 +163,15 @@ export default function AdvancedFilter({ filters, onFiltersChange, isOpen, onTog
                             step="1"
                             value={localFilters.institutionalOwnership?.max ?? ''}
                             onChange={(e) => handleInstOwnershipChange(e.target.value)}
-                            className="w-24"
+                            className="w-16"
                         />
-                        <span className="text-sm text-muted-foreground">%</span>
                     </div>
                 </div>
 
                 {/* Revenue Growth */}
                 <div className="flex flex-col gap-2">
                     <Label htmlFor="revenue-growth" className="text-sm font-medium">
-                        Revenue Growth
+                        Rev Growth %
                     </Label>
                     <div className="flex items-center gap-2">
                         <span className="text-sm text-muted-foreground whitespace-nowrap">Min</span>
@@ -181,16 +182,15 @@ export default function AdvancedFilter({ filters, onFiltersChange, isOpen, onTog
                             step="0.1"
                             value={localFilters.revenueGrowth.min ?? ''}
                             onChange={(e) => handleRevenueGrowthChange(e.target.value)}
-                            className="w-24"
+                            className="w-16"
                         />
-                        <span className="text-sm text-muted-foreground">%</span>
                     </div>
                 </div>
 
                 {/* Income Growth */}
                 <div className="flex flex-col gap-2">
                     <Label htmlFor="income-growth" className="text-sm font-medium">
-                        Income Growth
+                        Inc Growth %
                     </Label>
                     <div className="flex items-center gap-2">
                         <span className="text-sm text-muted-foreground whitespace-nowrap">Min</span>
@@ -201,9 +201,8 @@ export default function AdvancedFilter({ filters, onFiltersChange, isOpen, onTog
                             step="0.1"
                             value={localFilters.incomeGrowth.min ?? ''}
                             onChange={(e) => handleIncomeGrowthChange(e.target.value)}
-                            className="w-24"
+                            className="w-16"
                         />
-                        <span className="text-sm text-muted-foreground">%</span>
                     </div>
                 </div>
 
@@ -221,7 +220,7 @@ export default function AdvancedFilter({ filters, onFiltersChange, isOpen, onTog
                             step="0.1"
                             value={localFilters.debtToEquity.max ?? ''}
                             onChange={(e) => handleDebtToEquityChange(e.target.value)}
-                            className="w-24"
+                            className="w-16"
                         />
                     </div>
                 </div>
@@ -229,7 +228,7 @@ export default function AdvancedFilter({ filters, onFiltersChange, isOpen, onTog
                 {/* Market Cap */}
                 <div className="flex flex-col gap-2">
                     <Label htmlFor="market-cap" className="text-sm font-medium">
-                        Market Cap
+                        Market Cap ($B)
                     </Label>
                     <div className="flex items-center gap-2">
                         <span className="text-sm text-muted-foreground whitespace-nowrap">Max</span>
@@ -240,9 +239,36 @@ export default function AdvancedFilter({ filters, onFiltersChange, isOpen, onTog
                             step="0.1"
                             value={localFilters.marketCap?.max ?? ''}
                             onChange={(e) => handleMarketCapChange(e.target.value)}
-                            className="w-24"
+                            className="w-16"
                         />
-                        <span className="text-sm text-muted-foreground">$B</span>
+                    </div>
+                </div>
+
+                {/* P/E Ratio */}
+                <div className="flex flex-col gap-2">
+                    <Label htmlFor="pe-ratio" className="text-sm font-medium">
+                        P/E Ratio
+                    </Label>
+                    <div className="flex items-center gap-2">
+                        <span className="text-sm text-muted-foreground whitespace-nowrap">Max</span>
+                        <Input
+                            id="pe-ratio"
+                            type="number"
+                            placeholder="25"
+                            step="0.1"
+                            value={localFilters.peRatio?.max ?? ''}
+                            onChange={(e) => {
+                                const value = e.target.value
+                                const numValue = value === '' ? null : parseFloat(value)
+                                const updatedFilters = {
+                                    ...localFilters,
+                                    peRatio: { max: numValue }
+                                }
+                                setLocalFilters(updatedFilters)
+                                onFiltersChange(updatedFilters)
+                            }}
+                            className="w-16"
+                        />
                     </div>
                 </div>
             </div>

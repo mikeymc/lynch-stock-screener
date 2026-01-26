@@ -140,7 +140,8 @@ function StockListView({
     revenueGrowth: { min: null },
     incomeGrowth: { min: null },
     debtToEquity: { max: null },
-    marketCap: { max: null }
+    marketCap: { max: null },
+    peRatio: { max: null }
   })
 
   // Debounced search state
@@ -957,6 +958,10 @@ function StockListView({
     // Market Cap
     if (advancedFilters.marketCap?.max !== null) {
       result = result.filter(s => (s.market_cap / 1e9) <= advancedFilters.marketCap.max)
+    }
+    // P/E Ratio
+    if (advancedFilters.peRatio?.max !== null) {
+      result = result.filter(s => s.pe_ratio <= advancedFilters.peRatio.max)
     }
 
 
