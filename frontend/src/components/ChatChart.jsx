@@ -14,6 +14,8 @@ import {
     Legend,
     ResponsiveContainer,
 } from 'recharts'
+import ReactMarkdown from 'react-markdown'
+import { useNavigate } from 'react-router-dom'
 
 // Color palette for multiple series
 const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899']
@@ -44,6 +46,30 @@ const CustomTooltip = ({ active, payload, label }) => {
         )
     }
     return null
+}
+
+// Link component to handle internal routing
+const ChatChartLink = ({ href, children, ...props }) => {
+    const navigate = useNavigate()
+    const handleClick = (e) => {
+        if (href && (href.startsWith('/') || href.startsWith(window.location.origin))) {
+            e.preventDefault()
+            const path = href.startsWith(window.location.origin)
+                ? href.substring(window.location.origin.length)
+                : href
+            navigate(path)
+        }
+    }
+    return (
+        <a
+            href={href}
+            onClick={handleClick}
+            {...props}
+            className="font-medium text-primary underline underline-offset-4 hover:text-primary/80 cursor-pointer"
+        >
+            {children}
+        </a>
+    )
 }
 
 /**
@@ -102,7 +128,22 @@ export default function ChatChart({ chartJson }) {
         return null
     }
 
-    const { type = 'bar', title, data, series, xKey = 'name', yLabel } = chartData
+    const { type = 'bar', title, data, series, yLabel } = chartData
+
+    // Smart xKey detection
+    let { xKey } = chartData
+    if (!xKey) {
+        if (data && data.length > 0) {
+            const keys = Object.keys(data[0])
+            if (keys.includes('name')) xKey = 'name'
+            else if (keys.includes('year')) xKey = 'year'
+            else if (keys.includes('date')) xKey = 'date'
+            else if (keys.includes('time')) xKey = 'time'
+            else xKey = keys[0] // Fallback
+        } else {
+            xKey = 'name'
+        }
+    }
 
     if (!data || !Array.isArray(data) || data.length === 0) {
         return (
@@ -112,14 +153,20 @@ export default function ChatChart({ chartJson }) {
         )
     }
 
-    // Auto-detect series if not provided
-    const detectedSeries = series || Object.keys(data[0]).filter(k => k !== xKey)
+    // Auto-detect series if not provided, OR filter provided series to exclude xKey
+    // This prevents common LLM error of including the x-axis key in the series list
+    const rawSeries = series || (data && data.length > 0 ? Object.keys(data[0]) : [])
+    const detectedSeries = rawSeries.filter(k => k !== xKey)
 
     // Format large numbers for Y-axis
     const formatYAxis = (value) => {
-        if (value >= 1e9) return `$${(value / 1e9).toFixed(0)}B`
-        if (value >= 1e6) return `$${(value / 1e6).toFixed(0)}M`
-        if (value >= 1e3) return `$${(value / 1e3).toFixed(0)}K`
+        // Only use currency format if Y-axis label explicitly mentions it
+        const isCurrency = yLabel && (yLabel.includes('$') || yLabel.toLowerCase().includes('usd'))
+        const prefix = isCurrency ? '$' : ''
+
+        if (value >= 1e9) return `${prefix}${(value / 1e9).toFixed(0)}B`
+        if (value >= 1e6) return `${prefix}${(value / 1e6).toFixed(0)}M`
+        if (value >= 1e3) return `${prefix}${(value / 1e3).toFixed(0)}K`
         return value.toLocaleString()
     }
 
@@ -187,7 +234,18 @@ export default function ChatChart({ chartJson }) {
 
     return (
         <div className="w-full min-w-0 whitespace-normal max-w-full">
-            {title && <h4 className="text-sm font-semibold mb-2 text-center text-muted-foreground">{title}</h4>}
+            {title && (
+                <div className="text-sm font-semibold mb-2 text-center text-muted-foreground">
+                    <ReactMarkdown
+                        components={{
+                            p: ({ children }) => <span className="m-0 p-0">{children}</span>,
+                            a: ChatChartLink
+                        }}
+                    >
+                        {title}
+                    </ReactMarkdown>
+                </div>
+            )}
             {/* Wrapper div with explicit width essential for ResponsiveContainer in flex layouts */}
             <div className="w-full h-[300px]">
                 <ResponsiveContainer width="100%" height="100%">
