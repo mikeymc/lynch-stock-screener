@@ -362,7 +362,7 @@ screen_stocks_decl = FunctionDeclaration(
             "has_transcript": Schema(type=Type.BOOLEAN, description="If true, only return stocks that have an earnings call transcript available"),
             "has_fcf": Schema(type=Type.BOOLEAN, description="If true, only return stocks that have Free Cash Flow data available (useful for dividend coverage analysis)"),
             "has_recent_insider_activity": Schema(type=Type.BOOLEAN, description="If true, only return stocks with insider BUY transactions in the last 90 days"),
-            "sort_by": Schema(type=Type.STRING, description="Sort results by: 'pe', 'dividend_yield', 'market_cap', 'revenue_growth', 'eps_growth', 'peg', 'debt_to_equity', 'target_upside' (default: 'market_cap')"),
+            "sort_by": Schema(type=Type.STRING, description="Sort results by: 'pe', 'dividend_yield', 'market_cap', 'revenue_growth', 'eps_growth', 'peg', 'debt_to_equity', 'gross_margin', 'target_upside' (default: 'market_cap')"),
             "sort_order": Schema(type=Type.STRING, description="Sort order: 'asc' or 'desc' (default: 'desc')"),
             "top_n_by_market_cap": Schema(type=Type.INTEGER, description="UNIVERSE FILTER: Only consider the top N companies by market cap (within sector if specified). Use this when asked for 'top 50 by market cap' or similar. Apply this BEFORE other sorts like 'lowest P/E'."),
             "limit": Schema(type=Type.INTEGER, description="Maximum number of results to return (default: 20, max: 50)"),
@@ -2689,6 +2689,7 @@ class ToolExecutor:
             "revenue_growth": "g.revenue_growth",
             "eps_growth": "g.eps_growth",
             "target_upside": "((m.price_target_mean - m.price) / m.price)",
+            "gross_margin": "m.gross_margin",
         }
         order_column = sort_columns.get(sort_by, "m.market_cap")
         order_dir = "DESC" if sort_order.lower() == "desc" else "ASC"
@@ -2736,7 +2737,7 @@ class ToolExecutor:
                     SELECT s.symbol, s.company_name, s.sector,
                            m.market_cap, m.pe_ratio, m.forward_peg_ratio,
                            m.dividend_yield, m.debt_to_equity,
-                           m.price, m.price_target_mean,
+                           m.price, m.price_target_mean, m.gross_margin,
                            {'g.revenue_growth, g.eps_growth' if needs_growth_cte else 'NULL as revenue_growth, NULL as eps_growth'}
                     FROM stocks s
                     JOIN stock_metrics m ON s.symbol = m.symbol
@@ -2757,7 +2758,7 @@ class ToolExecutor:
                     SELECT s.symbol, s.company_name, s.sector,
                            m.market_cap, m.pe_ratio, m.forward_peg_ratio,
                            m.dividend_yield, m.debt_to_equity,
-                           m.price, m.price_target_mean,
+                           m.price, m.price_target_mean, m.gross_margin,
                            g.revenue_growth, g.eps_growth
                     FROM stocks s
                     JOIN stock_metrics m ON s.symbol = m.symbol
@@ -2772,7 +2773,7 @@ class ToolExecutor:
                     SELECT s.symbol, s.company_name, s.sector,
                            m.market_cap, m.pe_ratio, m.forward_peg_ratio,
                            m.dividend_yield, m.debt_to_equity,
-                           m.price, m.price_target_mean,
+                           m.price, m.price_target_mean, m.gross_margin,
                            NULL as revenue_growth, NULL as eps_growth
                     FROM stocks s
                     JOIN stock_metrics m ON s.symbol = m.symbol
@@ -2810,8 +2811,9 @@ class ToolExecutor:
                     "peg_ratio": safe_round(row[5], 2),
                     "dividend_yield": safe_round(row[6], 2),
                     "debt_to_equity": safe_round(row[7], 2),
-                    "revenue_growth": safe_round(row[10], 1),
-                    "eps_growth": safe_round(row[11], 1),
+                    "gross_margin": safe_round(row[10], 1),
+                    "revenue_growth": safe_round(row[11], 1),
+                    "eps_growth": safe_round(row[12], 1),
                     "target_upside": safe_round((row[9] - row[8]) / row[8] * 100, 1) if row[8] and row[8] > 0 and row[9] else None,
                     "current_price": safe_round(row[8], 2),
                     "target_mean": safe_round(row[9], 2),
