@@ -63,7 +63,13 @@ const TOOL_DESCRIPTIONS = {
   get_owner_earnings: "Calculating owner earnings",
   get_price_to_book_ratio: "Calculating price-to-book ratio",
   get_roe_metrics: "Analyzing return on equity",
-  get_share_buyback_activity: "Analyzing share buyback activity"
+  get_share_buyback_activity: "Analyzing share buyback activity",
+  // Portfolio management tools
+  create_portfolio: "Creating new portfolio",
+  get_my_portfolios: "Loading your portfolios",
+  get_portfolio_status: "Analyzing portfolio performance",
+  buy_stock: "Buying shares",
+  sell_stock: "Selling shares"
 }
 
 function SourceCitation({ sources }) {
