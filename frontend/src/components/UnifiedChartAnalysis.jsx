@@ -117,7 +117,7 @@ export default function UnifiedChartAnalysis({ symbol, character, onAnalysisGene
     }, [loading, hasAnyAnalysis, onButtonStateChange, character, selectedModel])
 
     return (
-        <div className="mb-8">
+        <div>
             {/* Only render button inline if parent doesn't want to control placement */}
             {!onButtonStateChange && (
                 <div className="flex justify-start items-center gap-4 mb-4">
@@ -144,13 +144,13 @@ export default function UnifiedChartAnalysis({ symbol, character, onAnalysisGene
             )}
 
             {loading && (
-                <div className="p-8 bg-muted rounded-lg border border-border text-muted-foreground italic text-center animate-pulse">
+                <div className="p-8 bg-muted rounded-lg border border-border text-muted-foreground italic text-center animate-pulse mb-6">
                     Generating analysis. Please wait. This could take up to a minute...
                 </div>
             )}
 
             {error && (
-                <div className="p-4 bg-destructive/10 rounded-lg border border-destructive/20 text-destructive">
+                <div className="p-4 bg-destructive/10 rounded-lg border border-destructive/20 text-destructive mb-6">
                     Error: {error}
                 </div>
             )}

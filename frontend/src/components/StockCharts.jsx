@@ -627,7 +627,7 @@ export default function StockCharts({ historyData, quarterlyHistoryData, loading
         </div>
 
         {/* Profitability & Growth */}
-        <div className="stock-charts" onMouseLeave={handleMouseLeave}>
+        <div className="stock-charts mt-6" onMouseLeave={handleMouseLeave}>
           <UnifiedChartAnalysis
             symbol={symbol}
             character={selectedCharacter}
