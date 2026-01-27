@@ -290,6 +290,7 @@ def news(
     job_id: int = typer.Argument(None, help="Job ID (required for stop)"),
     prod: bool = typer.Option(False, "--prod", help="Trigger production API instead of local"),
     limit: int = typer.Option(None, "--limit", "-l", help="Limit number of stocks"),
+    symbols: str = typer.Option(None, "--symbols", "-s", help="Comma-separated symbols to process (for testing)"),
 ):
     """Cache news articles (Finnhub)"""
     if action == "start":
@@ -297,10 +298,14 @@ def news(
         params = {}
         if limit:
             params["limit"] = limit
-        
+        if symbols:
+            # Convert comma-separated string to list
+            params["symbols"] = [s.strip().upper() for s in symbols.split(",")]
+            console.print(f"[dim]Processing specific symbols: {params['symbols']}[/dim]")
+
         # Determine API URL
         api_url = API_URL if prod else "http://localhost:5001"
-        
+
         # Get token if prod
         # Get token (always required)
         token = get_api_token()
@@ -308,9 +313,9 @@ def news(
             "Content-Type": "application/json",
             "Authorization": f"Bearer {token}"
         }
-        
+
         console.print(f"[bold blue]🚀 Starting news cache...[/bold blue]")
-        
+
         payload = {
             "type": "news_cache",
             "params": params

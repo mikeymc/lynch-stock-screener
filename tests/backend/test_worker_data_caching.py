@@ -214,6 +214,19 @@ class TestNewsCacheJob:
         assert 'tv_regions' in source, \
             "News cache should calculate tv_regions from region param"
 
+    def test_news_cache_supports_symbols_param(self):
+        """Verify _run_news_cache supports symbols parameter like other cache methods"""
+        import worker
+        import inspect
+
+        source = inspect.getsource(worker.BackgroundWorker._run_news_cache)
+
+        # Check symbols parameter support (consistent with 10k, outlook, transcripts, forward_metrics)
+        assert "params.get('symbols')" in source, \
+            "News cache should support symbols parameter for testing specific stocks"
+        assert 'specific_symbols' in source or 'symbols_list' in source, \
+            "News cache should extract symbols from params"
+
 
 class TestDatabaseOrderByScore:
     """Tests for the new get_stocks_ordered_by_score database method"""
