@@ -13,6 +13,7 @@ import DCFAnalysis from '../components/DCFAnalysis'
 import StockNews from '../components/StockNews'
 import MaterialEvents from '../components/MaterialEvents'
 import WallStreetSentiment from '../components/WallStreetSentiment'
+import InsiderTrading from '../components/InsiderTrading'
 import BusinessHealth from '../components/BusinessHealth'
 import TranscriptViewer from '../components/TranscriptViewer'
 import WordOnTheStreet from '../components/WordOnTheStreet'
@@ -445,6 +446,10 @@ export default function StockDetail({ watchlist, toggleWatchlist, algorithm, act
 
           {activeTab === 'sentiment' && (
             <WallStreetSentiment symbol={stock.symbol} />
+          )}
+
+          {activeTab === 'insider' && (
+            <InsiderTrading symbol={stock.symbol} />
           )}
 
           {activeTab === 'health' && (

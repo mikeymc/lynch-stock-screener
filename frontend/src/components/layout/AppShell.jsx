@@ -457,13 +457,25 @@ function AppShellContent({
                                                 <SidebarMenuItem>
                                                     <SidebarMenuButton
                                                         onClick={() => {
+                                                            navigate(`/stock/${symbol}?tab=insider`)
+                                                            onNavClick()
+                                                        }}
+                                                        isActive={location.search.includes('tab=insider')}
+                                                        className="pl-6 font-normal text-muted-foreground data-[active=true]:font-medium data-[active=true]:text-sidebar-primary"
+                                                    >
+                                                        <span>Insider Trades</span>
+                                                    </SidebarMenuButton>
+                                                </SidebarMenuItem>
+                                                <SidebarMenuItem>
+                                                    <SidebarMenuButton
+                                                        onClick={() => {
                                                             navigate(`/stock/${symbol}?tab=health`)
                                                             onNavClick()
                                                         }}
                                                         isActive={location.search.includes('tab=health')}
                                                         className="pl-6 font-normal text-muted-foreground data-[active=true]:font-medium data-[active=true]:text-sidebar-primary"
                                                     >
-                                                        <span>Business Health Indicators</span>
+                                                        <span>Business Health</span>
                                                     </SidebarMenuButton>
                                                 </SidebarMenuItem>
                                                 <SidebarMenuItem>
