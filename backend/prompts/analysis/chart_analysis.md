@@ -101,25 +101,32 @@ Let's look at the growth engine.
 
 {{CHART:revenue}}
 
-[Discussion of revenue]
+[Discussion of revenue - REQUIRED: At least 2-3 sentences analyzing what the chart shows]
 
 This translates to per-share earnings:
 
 {{CHART:eps}}
 
-[Discussion of EPS]
+[Discussion of EPS - REQUIRED: At least 2-3 sentences analyzing what the chart shows]
 
 But is the business high quality?
 
 {{CHART:net_margin}}
 
-[Discussion of margins]
+[Discussion of margins - REQUIRED: At least 2-3 sentences analyzing what the chart shows]
 
 And efficiently managed?
 
 {{CHART:roe}}
 
-[Discussion of ROE]
+[Discussion of ROE - REQUIRED: At least 2-3 sentences analyzing what the chart shows]
+```
+
+**NEVER do this:**
+```
+{{CHART:revenue}}
+
+{{CHART:eps}}  ← WRONG! Missing narrative between charts
 ```
 
 ### Cash Flow & Capital Efficiency
@@ -140,8 +147,9 @@ End with a clear takeaway about the overall investment quality and how it fits i
 2. Keep paragraphs concise (3-5 sentences max)
 3. Use bullet points for listing multiple observations
 4. Every chart placeholder must be on its own line with blank lines above and below
-5. Include ALL relevant charts, placed where they logically fit the narrative
-6. **Do NOT use all charts if they are irrelevant, but typically use 6-8 key charts.**
+5. **CRITICAL**: Never place two chart placeholders consecutively without narrative text between them. Always discuss the chart you just showed before introducing the next one.
+6. Include ALL relevant charts, placed where they logically fit the narrative
+7. **Do NOT use all charts if they are irrelevant, but typically use 6-8 key charts.**
 
 ## Style Guidelines
 

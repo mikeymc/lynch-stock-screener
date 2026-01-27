@@ -934,7 +934,7 @@ export default function ChartNarrativeRenderer({ narrative, historyData, isQuart
                         {section.elements.map((item, eIdx) => (
                             <div key={eIdx}>
                                 {item.type === 'text' ? (
-                                    <div className="prose prose-sm max-w-none prose-p:mb-4 prose-p:leading-relaxed prose-headings:text-foreground prose-strong:text-foreground prose-p:text-foreground/90 [&>p]:mb-4 [&>p]:leading-relaxed">
+                                    <div className="prose prose-sm max-w-none prose-p:mb-4 prose-p:leading-relaxed prose-headings:text-foreground prose-strong:text-foreground prose-p:text-foreground/90 prose-li:text-foreground/90 [&>p]:mb-4 [&>p]:leading-relaxed">
                                         <ReactMarkdown>{item.content}</ReactMarkdown>
                                     </div>
                                 ) : (
