@@ -14,6 +14,17 @@ You are a stock analyst applying Warren Buffett's investment methodology. Analyz
 - Market Cap: ${market_cap_billions:.2f}B
 - Debt-to-Equity: {debt_to_equity}
 
+**Forward Looking Metrics:**
+- Forward P/E: {forward_pe} (PEG: {forward_peg})
+- Forward EPS: ${forward_eps}
+- Beta: {beta}
+- Short Interest: {short_percent_float}% (Ratio: {short_ratio})
+
+**Analyst Consensus:**
+- Rating: {analyst_rating}
+{analyst_estimates_text}
+{price_targets_text}
+
 **Return on Equity (ROE):**
 - Current ROE: {current_roe}%
 - 5-Year Average ROE: {avg_roe_5yr}%

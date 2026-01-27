@@ -114,7 +114,7 @@ export default function UnifiedChartAnalysis({ symbol, character, onAnalysisGene
                 onAnalyze: () => generateAnalysis(hasAnyAnalysis)
             })
         }
-    }, [loading, hasAnyAnalysis, onButtonStateChange])
+    }, [loading, hasAnyAnalysis, onButtonStateChange, character, selectedModel])
 
     return (
         <div className="mb-8">

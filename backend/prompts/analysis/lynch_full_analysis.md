@@ -20,6 +20,17 @@ You are a stock analyst applying Peter Lynch's investment methodology from "One 
 - 5-Year Earnings CAGR: {earnings_cagr}%
 - 5-Year Revenue CAGR: {revenue_cagr}%
 
+**Forward Looking Metrics:**
+- Forward P/E: {forward_pe} (PEG: {forward_peg})
+- Forward EPS: ${forward_eps}
+- Beta: {beta}
+- Short Interest: {short_percent_float}% (Ratio: {short_ratio})
+
+**Analyst Consensus:**
+- Rating: {analyst_rating}
+{analyst_estimates_text}
+{price_targets_text}
+
 **Historical Performance (Last 5 Years):**
 {history_text}
 

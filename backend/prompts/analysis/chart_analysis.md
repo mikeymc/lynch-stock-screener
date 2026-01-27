@@ -29,6 +29,9 @@ Here is the 5-year historical data:
 - **Revenue CAGR (5y)**: {revenue_cagr}
 - **Debt-to-Equity**: {debt_to_equity}
 - **Institutional Ownership**: {institutional_ownership:.1f}%
+- **Forward P/E**: {forward_pe} (PEG: {forward_peg})
+- **Beta**: {beta}
+- **Short Interest**: {short_percent_float}%
 
 **Analyst Estimates (Forward-Looking):**
 {analyst_estimates_text}

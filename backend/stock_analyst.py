@@ -116,6 +116,7 @@ class StockAnalyst:
             book_value = h.get('book_value_per_share')
             equity = h.get('total_equity')
             total_debt = h.get('total_debt')
+            cash = h.get('cash_and_cash_equivalents')
             
             # Calculations
             net_margin_str = f"{net_income/revenue*100:.1f}%" if (net_income and revenue) else "N/A"
@@ -129,15 +130,19 @@ class StockAnalyst:
             fcf_str = f"${fcf/1e9:.2f}B" if fcf is not None else "N/A"
             shares_str = f"{shares/1e9:.2f}B" if shares is not None else "N/A"
             book_value_str = f"${book_value:.2f}" if book_value is not None else "N/A"
+            cash_str = f"${cash/1e9:.2f}B" if cash is not None else "N/A"
 
             history_lines.append(f"  {h['year']}: Revenue={revenue_str}, Net Income={net_income_str} (Margin={net_margin_str}), ROE={roe_str}, "
                                  f"OCF={ocf_str}, FCF={fcf_str}, Debt/Earnings={debt_to_earnings_str}, "
-                                 f"Shares={shares_str}, BVPS={book_value_str}")
+                                 f"Shares={shares_str}, BVPS={book_value_str}, Cash={cash_str}")
         history_text = "\n".join(history_lines)
 
         price = stock_data.get('price') or 0
         institutional_ownership = stock_data.get('institutional_ownership') or 0
         market_cap = stock_data.get('market_cap') or 0
+        beta = stock_data.get('beta', 'N/A')
+        short_percent_float = stock_data.get('short_percent_float')
+
 
         # Format analyst estimates
         analyst_estimates = stock_data.get('analyst_estimates', {})
@@ -190,6 +195,18 @@ class StockAnalyst:
             'history_text': history_text,
             'analyst_estimates_text': analyst_estimates_text,
             'price_targets_text': price_targets_text,
+            # Enriched Metrics
+            'forward_pe': stock_data.get('forward_pe', 'N/A'),
+            'forward_peg': stock_data.get('forward_peg_ratio', 'N/A'),
+            'forward_eps': stock_data.get('forward_eps', 'N/A'),
+            'beta': beta,
+            'short_ratio': stock_data.get('short_ratio', 'N/A'),
+            'short_percent_float': f"{short_percent_float * 100:.2f}" if short_percent_float is not None else 'N/A',
+            'interest_expense': stock_data.get('interest_expense', 'N/A'),
+            'effective_tax_rate': f"{stock_data['effective_tax_rate']*100:.1f}%" if stock_data.get('effective_tax_rate') else 'N/A',
+            'gross_margin': f"{stock_data['gross_margin']:.1f}%" if stock_data.get('gross_margin') else 'N/A',
+            'insider_net_buying': f"${stock_data.get('insider_net_buying_6m', 0)/1e6:.1f}M" if stock_data.get('insider_net_buying_6m') is not None else 'N/A',
+            'analyst_rating': stock_data.get('analyst_rating', 'N/A'),
         }
 
         # Add Buffett-specific vars if needed
@@ -225,6 +242,8 @@ class StockAnalyst:
                       sections: Optional[Dict[str, Any]] = None,
                       news: Optional[List[Dict[str, Any]]] = None,
                       material_events: Optional[List[Dict[str, Any]]] = None,
+                      transcripts: Optional[List[Dict[str, Any]]] = None,
+                      lynch_brief: Optional[str] = None,
                       user_id: Optional[int] = None,
                       character_id: Optional[str] = None) -> str:
         """Format a prompt using the active character's template."""
@@ -269,6 +288,31 @@ class StockAnalyst:
                 events_text += "---\n\n"
             formatted_prompt += events_text
 
+        # Append earnings transcripts if available
+        if transcripts and len(transcripts) > 0:
+            transcript_text = "\n\n---\n\n## Recent Earnings Call Transcripts\n\n"
+            for transcript in transcripts[:2]:
+                quarter = transcript.get('quarter', 'Q?')
+                fiscal_year = transcript.get('fiscal_year', 'N/A')
+                earnings_date = transcript.get('earnings_date', 'Unknown date')
+                summary = transcript.get('summary')
+                if summary:
+                    content = summary
+                else:
+                    full_text = transcript.get('transcript_text', '')
+                    content = full_text[:5000] + "..." if len(full_text) > 5000 else full_text
+                transcript_text += f"### {quarter} {fiscal_year} Earnings Call ({earnings_date})\n\n"
+                transcript_text += f"{content}\n\n"
+            formatted_prompt += transcript_text
+            
+        # Append prior analysis brief if available
+        if lynch_brief:
+            char_name = template_vars.get('character_name', 'Peter Lynch')
+            brief_text = f"\n\n---\n\n## Prior Investment Analysis\n\n"
+            brief_text += f"This is a previously generated {char_name}-style analysis for this company.\n\n"
+            brief_text += f"{lynch_brief}\n\n"
+            formatted_prompt += brief_text
+
         # Append news if available
         if news and len(news) > 0:
             news_text = "\n\n---\n\n## Recent News Articles\n\n"
@@ -306,11 +350,28 @@ class StockAnalyst:
                                   model_version: str = DEFAULT_MODEL,
                                   user_id: Optional[int] = None,
                                   character_id: Optional[str] = None):
+        """Legacy stream wrapper"""
+        return self.generate_analysis_stream_enriched(
+            stock_data, history, sections, news, material_events, 
+            None, None, model_version, user_id, character_id
+        )
+
+    def generate_analysis_stream_enriched(self, stock_data: Dict[str, Any], history: List[Dict[str, Any]],
+                                  sections: Optional[Dict[str, Any]] = None,
+                                  news: Optional[List[Dict[str, Any]]] = None,
+                                  material_events: Optional[List[Dict[str, Any]]] = None,
+                                  transcripts: Optional[List[Dict[str, Any]]] = None,
+                                  lynch_brief: Optional[str] = None,
+                                  model_version: str = DEFAULT_MODEL,
+                                  user_id: Optional[int] = None,
+                                  character_id: Optional[str] = None):
         """Stream a new analysis using the active character's voice with retry logic."""
         if model_version not in AVAILABLE_MODELS:
             raise ValueError(f"Invalid model: {model_version}. Must be one of {AVAILABLE_MODELS}")
 
-        prompt = self.format_prompt(stock_data, history, sections, news, material_events, user_id, character_id=character_id)
+        prompt = self.format_prompt(stock_data, history, sections, news, material_events, 
+                                    transcripts=transcripts, lynch_brief=lynch_brief,
+                                    user_id=user_id, character_id=character_id)
 
         # Retry logic with fallback to flash model
         models_to_try = [model_version, FALLBACK_MODEL] if model_version != FALLBACK_MODEL else [model_version]
@@ -369,6 +430,8 @@ class StockAnalyst:
         sections: Optional[Dict[str, Any]] = None,
         news: Optional[List[Dict[str, Any]]] = None,
         material_events: Optional[List[Dict[str, Any]]] = None,
+        transcripts: Optional[List[Dict[str, Any]]] = None,
+        lynch_brief: Optional[str] = None,
         use_cache: bool = True,
         model_version: str = DEFAULT_MODEL,
         character_id: Optional[str] = None
@@ -390,9 +453,9 @@ class StockAnalyst:
 
         # Generate new analysis
         full_text_parts = []
-        for chunk in self.generate_analysis_stream(
-            stock_data, history, sections, news, material_events, 
-            model_version, user_id, character_id=character_id
+        for chunk in self.generate_analysis_stream_enriched(
+            stock_data, history, sections, news, material_events, transcripts, lynch_brief,
+            model_version, user_id, character_id
         ):
             full_text_parts.append(chunk)
             yield chunk
@@ -440,6 +503,13 @@ class StockAnalyst:
 
         # Format the prompt
         final_prompt = prompt_template.format(**template_vars)
+        
+        # Append investment checklist (Reference)
+        checklist_path = os.path.join(self.script_dir, "prompts", character.checklist_prompt)
+        with open(checklist_path, 'r') as f:
+            checklist_content = f.read()
+            
+        final_prompt += f"\n\n---\n\n## Reference: {character.name}'s Investment Checklist\n\n{checklist_content}"
 
         # Append material events if available
         if material_events and len(material_events) > 0:

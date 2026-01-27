@@ -344,6 +344,8 @@ class DataFetcher:
                 'forward_pe': info.get('forwardPE'),
                 'forward_peg_ratio': info.get('pegRatio') if info.get('pegRatio') else info.get('trailingPegRatio'), # Prefer 5yr exepcted, fallback to trailing
                 'forward_eps': info.get('forwardEps'),
+                'short_ratio': info.get('shortRatio'),
+                'short_percent_float': info.get('shortPercentOfFloat'),
                 # insider_net_buying_6m removed - calculated by worker from Form 4 data only
             }
 

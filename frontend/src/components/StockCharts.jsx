@@ -125,14 +125,18 @@ export default function StockCharts({ historyData, quarterlyHistoryData, loading
   // State to hold the analyze button state from child component
   const [analyzeButtonState, setAnalyzeButtonState] = useState({ loading: false, hasAnyAnalysis: false, onAnalyze: null })
 
-  // Sync local character state and clear analyses when global character changes
+  // Sync local character state when global character changes
   useEffect(() => {
     if (activeCharacter) {
       setSelectedCharacter(activeCharacter)
-      setAnalyses({ growth: null, cash: null, valuation: null })
-      setNarrative(null)
     }
   }, [activeCharacter])
+
+  // Clear analyses when selected character changes (either from prop or local toggle)
+  useEffect(() => {
+    setAnalyses({ growth: null, cash: null, valuation: null })
+    setNarrative(null)
+  }, [selectedCharacter])
 
   const handleHover = useCallback((event, elements) => {
     if (elements && elements.length > 0) {
@@ -530,13 +534,20 @@ export default function StockCharts({ historyData, quarterlyHistoryData, loading
         {/* Header with Toggle */}
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
           {/* Analyze Button - positioned on the left */}
-          {!analyzeButtonState.loading && analyzeButtonState.onAnalyze && (
+          {analyzeButtonState.onAnalyze && (
             <Button
               onClick={analyzeButtonState.onAnalyze}
               className="gap-2"
               size="sm"
+              disabled={analyzeButtonState.loading}
+              variant={analyzeButtonState.loading ? "secondary" : "default"}
             >
-              {analyzeButtonState.hasAnyAnalysis ? (
+              {analyzeButtonState.loading ? (
+                <>
+                  <RefreshCw className="h-4 w-4 animate-spin" />
+                  Generating
+                </>
+              ) : analyzeButtonState.hasAnyAnalysis ? (
                 <>
                   <RefreshCw className="h-4 w-4" />
                   Re-Analyze
@@ -627,6 +638,10 @@ export default function StockCharts({ historyData, quarterlyHistoryData, loading
               } else if (result.sections) {
                 setAnalyses(result.sections)
                 setNarrative(null)
+              } else {
+                // No analysis found for this character - clear both to show regular charts
+                setNarrative(null)
+                setAnalyses({ growth: null, cash: null, valuation: null })
               }
             }}
             onButtonStateChange={handleButtonStateChange}
