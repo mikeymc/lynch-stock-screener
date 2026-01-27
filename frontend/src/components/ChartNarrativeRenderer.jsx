@@ -272,7 +272,7 @@ export default function ChartNarrativeRenderer({ narrative, historyData, isQuart
                     }
                 },
                 grid: {
-                    color: 'rgba(100, 116, 139, 0.1)'
+                    color: 'rgba(100, 116, 139, 0.3)'
                 }
             },
             y: {
@@ -289,7 +289,7 @@ export default function ChartNarrativeRenderer({ narrative, historyData, isQuart
                         if (Math.abs(context.tick.value) < 0.00001) {
                             return 'transparent';
                         }
-                        return 'rgba(100, 116, 139, 0.1)';
+                        return 'rgba(100, 116, 139, 0.3)';
                     }
                 }
             }
