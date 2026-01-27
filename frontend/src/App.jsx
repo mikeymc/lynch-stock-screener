@@ -347,29 +347,6 @@ function StockListView({
     return () => controller.abort()
   }, [user, activeCharacter])
 
-  // Listen for character changes from Settings page
-  useEffect(() => {
-    const handleStorageChange = (e) => {
-      if (e.key === 'activeCharacter' && e.newValue !== activeCharacter) {
-        setActiveCharacter(e.newValue)
-      }
-    }
-
-    // Listen for storage events from other tabs/windows
-    window.addEventListener('storage', handleStorageChange)
-
-    // Also listen for custom event from same tab (Settings page)
-    const handleCustomCharacterChange = (e) => {
-      setActiveCharacter(e.detail.character)
-    }
-    window.addEventListener('characterChanged', handleCustomCharacterChange)
-
-    return () => {
-      window.removeEventListener('storage', handleStorageChange)
-      window.removeEventListener('characterChanged', handleCustomCharacterChange)
-    }
-  }, [activeCharacter])
-
   // State for backend pagination
   const [totalPages, setTotalPages] = useState(1)
   const [totalCount, setTotalCount] = useState(0)
@@ -1061,6 +1038,29 @@ function App() {
   // Persist activeCharacter
   useEffect(() => {
     localStorage.setItem('activeCharacter', activeCharacter)
+  }, [activeCharacter])
+
+  // Listen for character changes from Settings page
+  useEffect(() => {
+    const handleStorageChange = (e) => {
+      if (e.key === 'activeCharacter' && e.newValue !== activeCharacter) {
+        setActiveCharacter(e.newValue)
+      }
+    }
+
+    // Listen for storage events from other tabs/windows
+    window.addEventListener('storage', handleStorageChange)
+
+    // Also listen for custom event from same tab (Settings page)
+    const handleCustomCharacterChange = (e) => {
+      setActiveCharacter(e.detail.character)
+    }
+    window.addEventListener('characterChanged', handleCustomCharacterChange)
+
+    return () => {
+      window.removeEventListener('storage', handleStorageChange)
+      window.removeEventListener('characterChanged', handleCustomCharacterChange)
+    }
   }, [activeCharacter])
 
   // Check for first visit and redirect to help

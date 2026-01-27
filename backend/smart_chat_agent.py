@@ -121,10 +121,10 @@ class SmartChatAgent:
             
         return None
 
-    def _build_system_prompt(self, primary_symbol: str, user_id: Optional[int] = None, override_character_id: Optional[str] = None) -> str:
+    def _build_system_prompt(self, primary_symbol: str, user_id: Optional[int] = None, override_character_id: Optional[str] = None, request_character_id: Optional[str] = None) -> str:
         """Build the system prompt for the agent."""
         current_date_str = datetime.now().strftime('%Y-%m-%d')
-        
+
         current_date_str = datetime.now().strftime('%Y-%m-%d')
 
 
@@ -137,12 +137,16 @@ class SmartChatAgent:
         persona_content = "You are a pragmatic, data-driven investment analyst."
         try:
             from characters import get_character
-            
+
             character_id = None
-            
-            # Check for override first
+
+            # Check for override first (e.g. @buffett in message)
             if override_character_id:
                 character_id = override_character_id
+            # Then check character from request (sent by frontend after character switch)
+            elif request_character_id:
+                character_id = request_character_id
+            # Then check database
             elif user_id is not None:
                 character_id = self.db.get_user_character(user_id)
             else:
@@ -214,7 +218,8 @@ class SmartChatAgent:
         primary_symbol: str,
         user_message: str,
         conversation_history: Optional[List[Dict[str, str]]] = None,
-        user_id: Optional[int] = None
+        user_id: Optional[int] = None,
+        character_id: Optional[str] = None
     ) -> Dict[str, Any]:
         """
         Process a user message and return an agent response.
@@ -224,6 +229,7 @@ class SmartChatAgent:
             user_message: The user's question
             conversation_history: Optional list of previous messages
             user_id: Optional user ID for personalized character
+            character_id: Optional character ID from request
 
         Returns:
             Dict with 'response', 'tool_calls', and 'iterations'
@@ -234,7 +240,7 @@ class SmartChatAgent:
         override_character_id = self._detect_character_mention(user_message)
 
         # Build initial contents
-        system_prompt = self._build_system_prompt(primary_symbol, user_id, override_character_id)
+        system_prompt = self._build_system_prompt(primary_symbol, user_id, override_character_id, character_id)
 
         
         # Start with system instruction and user message
@@ -389,7 +395,8 @@ class SmartChatAgent:
         primary_symbol: str,
         user_message: str,
         conversation_history: Optional[List[Dict[str, str]]] = None,
-        user_id: Optional[int] = None
+        user_id: Optional[int] = None,
+        character_id: Optional[str] = None
     ) -> Generator[Dict[str, Any], None, None]:
         """
         Stream a chat response with real-time token yield.
@@ -409,7 +416,7 @@ class SmartChatAgent:
         if override_character_id:
             yield {"type": "active_character", "data": {"character": override_character_id}}
 
-        system_prompt = self._build_system_prompt(primary_symbol, user_id, override_character_id)
+        system_prompt = self._build_system_prompt(primary_symbol, user_id, override_character_id, character_id)
         
         contents = []
         if conversation_history:
