@@ -346,13 +346,20 @@ screen_stocks_decl = FunctionDeclaration(
     parameters=Schema(
         type=Type.OBJECT,
         properties={
-            "pe_max": Schema(type=Type.NUMBER, description="Maximum P/E ratio (e.g., 15 for value stocks)"),
+            "pe_max": Schema(type=Type.NUMBER, description="Maximum P/E ratio (e.g., 15 for value stocks). For Forward P/E search, use forward_pe_max instead."),
             "pe_min": Schema(type=Type.NUMBER, description="Minimum P/E ratio (e.g., 5 to exclude distressed stocks)"),
+            "forward_pe_max": Schema(type=Type.NUMBER, description="Maximum Forward P/E ratio (e.g., 15). Use this for 'cheapest by forward P/E'."),
+            "forward_pe_min": Schema(type=Type.NUMBER, description="Minimum Forward P/E ratio."),
             "dividend_yield_min": Schema(type=Type.NUMBER, description="Minimum dividend yield percentage (e.g., 3.0 for income stocks)"),
             "market_cap_min": Schema(type=Type.NUMBER, description="Minimum market cap in billions (e.g., 10 for large caps)"),
             "market_cap_max": Schema(type=Type.NUMBER, description="Maximum market cap in billions (e.g., 2 for small caps)"),
             "revenue_growth_min": Schema(type=Type.NUMBER, description="Minimum annual revenue growth percentage (e.g., 10 for 10% YoY growth)"),
             "eps_growth_min": Schema(type=Type.NUMBER, description="Minimum annual EPS/earnings growth percentage (e.g., 15 for 15% YoY growth)"),
+            "short_interest_min": Schema(type=Type.NUMBER, description="Minimum Short Interest as % of Float (e.g., 10 for highly shorted stocks). Use with sort_by='short_percent_float'."),
+            "analyst_rating_min": Schema(type=Type.NUMBER, description="Minimum Analyst Rating Score (1.0=Strong Buy, 5.0=Sell). Note: Higher score is WORSE. Use sort_by='analyst_rating_score' asc for best rated. Filter: rating <= X to get better stocks (e.g. <= 2.0)."),
+            "analyst_upside_min": Schema(type=Type.NUMBER, description="Minimum Analyst Target Upside % (e.g. 20 for 20% upside)."),
+            "revisions_up_min": Schema(type=Type.INTEGER, description="Minimum number of Upward EPS revisions in the last 30 days."),
+            "revisions_down_min": Schema(type=Type.INTEGER, description="Minimum number of Downward EPS revisions in the last 30 days."),
             "sector": Schema(type=Type.STRING, description="Filter by sector. Valid values: 'Technology', 'Healthcare', 'Finance' (banks like JPM/BAC/GS), 'Financial Services' (fintech), 'Consumer Cyclical', 'Consumer Defensive', 'Energy', 'Industrials', 'Basic Materials', 'Real Estate', 'Utilities', 'Communication Services'"),
             "peg_max": Schema(type=Type.NUMBER, description="Maximum PEG ratio (P/E divided by growth rate)"),
             "peg_min": Schema(type=Type.NUMBER, description="Minimum PEG ratio (e.g., 2.0 to find potentially overvalued stocks)"),
@@ -362,7 +369,7 @@ screen_stocks_decl = FunctionDeclaration(
             "has_transcript": Schema(type=Type.BOOLEAN, description="If true, only return stocks that have an earnings call transcript available"),
             "has_fcf": Schema(type=Type.BOOLEAN, description="If true, only return stocks that have Free Cash Flow data available (useful for dividend coverage analysis)"),
             "has_recent_insider_activity": Schema(type=Type.BOOLEAN, description="If true, only return stocks with insider BUY transactions in the last 90 days"),
-            "sort_by": Schema(type=Type.STRING, description="Sort results by: 'pe', 'dividend_yield', 'market_cap', 'revenue_growth', 'eps_growth', 'peg', 'debt_to_equity', 'gross_margin', 'target_upside' (default: 'market_cap')"),
+            "sort_by": Schema(type=Type.STRING, description="Sort results by: 'pe', 'forward_pe', 'dividend_yield', 'market_cap', 'revenue_growth', 'eps_growth', 'peg', 'debt_to_equity', 'gross_margin', 'target_upside', 'short_percent_float', 'analyst_rating_score', 'revisions_up', 'revisions_down' (default: 'market_cap')"),
             "sort_order": Schema(type=Type.STRING, description="Sort order: 'asc' or 'desc' (default: 'desc')"),
             "top_n_by_market_cap": Schema(type=Type.INTEGER, description="UNIVERSE FILTER: Only consider the top N companies by market cap (within sector if specified). Use this when asked for 'top 50 by market cap' or similar. Apply this BEFORE other sorts like 'lowest P/E'."),
             "limit": Schema(type=Type.INTEGER, description="Maximum number of results to return (default: 20, max: 50)"),
@@ -2511,11 +2518,18 @@ class ToolExecutor:
         self,
         pe_max: float = None,
         pe_min: float = None,
+        forward_pe_max: float = None,
+        forward_pe_min: float = None,
         dividend_yield_min: float = None,
         market_cap_min: float = None,
         market_cap_max: float = None,
         revenue_growth_min: float = None,
         eps_growth_min: float = None,
+        short_interest_min: float = None,
+        analyst_rating_min: float = None,
+        analyst_upside_min: float = None,
+        revisions_up_min: int = None,
+        revisions_down_min: int = None,
         sector: str = None,
         peg_max: float = None,
         peg_min: float = None,
@@ -2551,9 +2565,12 @@ class ToolExecutor:
         conditions = []
         params = []
 
-        # Track if we need growth CTE
+        # Track if we need growth CTE or Revisions Join
         needs_growth_cte = (revenue_growth_min is not None or eps_growth_min is not None or
                            sort_by in ('revenue_growth', 'eps_growth'))
+        
+        needs_revisions_join = (revisions_up_min is not None or revisions_down_min is not None or
+                               sort_by in ('revisions_up', 'revisions_down'))
 
         # Exclude tickers
         if exclude_tickers:
@@ -2570,6 +2587,14 @@ class ToolExecutor:
         if pe_min is not None:
             conditions.append("m.pe_ratio >= %s")
             params.append(pe_min)
+
+        # Forward P/E filters
+        if forward_pe_max is not None:
+            conditions.append("m.forward_pe <= %s")
+            params.append(forward_pe_max)
+        if forward_pe_min is not None:
+            conditions.append("m.forward_pe >= %s")
+            params.append(forward_pe_min)
 
         # Dividend yield filter
         if dividend_yield_min is not None:
@@ -2592,6 +2617,38 @@ class ToolExecutor:
             conditions.append("g.eps_growth >= %s")
             params.append(eps_growth_min)
 
+        # Short Interest Filter (m.short_percent_float is e.g. 0.15 for 15%)
+        # Tool input is expected as percentage (e.g. 15 for 15%)
+        if short_interest_min is not None:
+            conditions.append("m.short_percent_float >= %s")
+            params.append(short_interest_min / 100.0)
+
+        # Analyst Rating (1.0 = Strong Buy, 5.0 = Sell)
+        # "Better" rating means LOWER score.
+        # If user asks for "rating < 2.0" (better than Buy), we use the input directly.
+        if analyst_rating_min is not None:
+            conditions.append("m.analyst_rating_score <= %s")
+            params.append(analyst_rating_min)
+
+        # Analyst Upside (Using target_mean_price vs current price)
+        # Implementation: (price_target_mean - price) / price
+        if analyst_upside_min is not None or target_upside_min is not None:
+             # Merge the two params if both provided (prefer analyst_upside_min)
+             min_upside = analyst_upside_min if analyst_upside_min is not None else target_upside_min
+             conditions.append("""
+                 (m.price_target_mean > 0 AND m.price > 0 AND 
+                  ((m.price_target_mean - m.price) / m.price) * 100 >= %s)
+             """)
+             params.append(min_upside)
+
+        # Revision Filters
+        if revisions_up_min is not None:
+            conditions.append("r.up_30d >= %s")
+            params.append(revisions_up_min)
+        if revisions_down_min is not None:
+            conditions.append("r.down_30d >= %s")
+            params.append(revisions_down_min)
+        
         # Sector filter with aliasing for common synonyms
         if sector:
             sector_lower = sector.lower().strip()
@@ -2613,6 +2670,11 @@ class ToolExecutor:
         if debt_to_equity_max is not None:
             conditions.append("m.debt_to_equity <= %s")
             params.append(debt_to_equity_max)
+        
+        # Profit margin filter
+        if profit_margin_min is not None:
+            conditions.append("m.profit_margin >= %s")
+            params.append(profit_margin_min)
 
         # Transcript filter
         if has_transcript:
@@ -2677,147 +2739,145 @@ class ToolExecutor:
             AND eh.net_income IS NOT NULL
         )""")
 
-        where_clause = " AND ".join(conditions) if conditions else "1=1"
+        query_conditions = " AND ".join(conditions) if conditions else "1=1"
 
         # Build ORDER BY clause
         sort_columns = {
             "pe": "m.pe_ratio",
+            "forward_pe": "m.forward_pe",
             "dividend_yield": "m.dividend_yield",
             "market_cap": "m.market_cap",
-            "debt_to_equity": "m.debt_to_equity",
-            "peg": "m.forward_peg_ratio",
             "revenue_growth": "g.revenue_growth",
             "eps_growth": "g.eps_growth",
+            "peg": "m.forward_peg_ratio",
+            "debt_to_equity": "m.debt_to_equity",
             "target_upside": "((m.price_target_mean - m.price) / m.price)",
-            "gross_margin": "m.gross_margin",
+            "short_percent_float": "m.short_percent_float",
+            "analyst_rating_score": "m.analyst_rating_score",
+            "revisions_up": "r.up_30d",
+            "revisions_down": "r.down_30d"
         }
-        order_column = sort_columns.get(sort_by, "m.market_cap")
+        order_col = sort_columns.get(sort_by, "m.market_cap")
+        
+        # Determine sort order
         order_dir = "DESC" if sort_order.lower() == "desc" else "ASC"
         null_handling = "NULLS LAST" if order_dir == "DESC" else "NULLS FIRST"
-
-        # Growth CTE calculates 5-year linear growth rates from earnings_history
-        # Formula: ((end - start) / |start|) / years * 100
-        # Uses last 5 years of data to match screener behavior
-        growth_cte = """
-            ranked_earnings AS (
-                SELECT symbol, year, net_income, revenue,
-                       ROW_NUMBER() OVER (PARTITION BY symbol ORDER BY year DESC) as rn,
-                       COUNT(*) OVER (PARTITION BY symbol) as total_years
-                FROM earnings_history
-                WHERE period = 'annual'
-                  AND net_income IS NOT NULL AND revenue IS NOT NULL
-            ),
-            growth_rates AS (
-                SELECT
-                    r1.symbol,
-                    CASE
-                        WHEN r5.revenue IS NOT NULL AND r5.revenue != 0 AND r1.revenue IS NOT NULL
-                        THEN ((r1.revenue - r5.revenue) / ABS(r5.revenue)) / LEAST(4, r5.rn - 1) * 100
-                        ELSE NULL
-                    END as revenue_growth,
-                    CASE
-                        WHEN r5.net_income IS NOT NULL AND r5.net_income != 0 AND r1.net_income IS NOT NULL
-                        THEN ((r1.net_income - r5.net_income) / ABS(r5.net_income)) / LEAST(4, r5.rn - 1) * 100
-                        ELSE NULL
-                    END as eps_growth
-                FROM ranked_earnings r1
-                JOIN ranked_earnings r5 ON r1.symbol = r5.symbol AND r5.rn = LEAST(5, r5.total_years)
-                WHERE r1.rn = 1 AND r5.rn >= 3
-            )
-        """
-
-        # Build join clause for growth if needed
-        growth_join = "LEFT JOIN growth_rates g ON s.symbol = g.symbol" if needs_growth_cte else ""
-
-        # Build query using stocks + stock_metrics + optional growth
-        if top_n_by_market_cap:
-            query = f"""
-                WITH {growth_cte if needs_growth_cte else ''}
-                {',' if needs_growth_cte else 'WITH'} universe AS (
-                    SELECT s.symbol, s.company_name, s.sector,
-                           m.market_cap, m.pe_ratio, m.forward_peg_ratio,
-                           m.dividend_yield, m.debt_to_equity,
-                           m.price, m.price_target_mean, m.gross_margin,
-                           {'g.revenue_growth, g.eps_growth' if needs_growth_cte else 'NULL as revenue_growth, NULL as eps_growth'}
-                    FROM stocks s
-                    JOIN stock_metrics m ON s.symbol = m.symbol
-                    {growth_join}
-                    {join_clause}
-                    WHERE {where_clause}
-                    ORDER BY m.market_cap DESC NULLS LAST
-                    LIMIT {top_n_by_market_cap}
-                )
-                SELECT * FROM universe
-                ORDER BY {order_column.replace('m.', '').replace('g.', '')} {order_dir} {null_handling}
-                LIMIT %s
-            """
-        else:
-            if needs_growth_cte:
-                query = f"""
-                    WITH {growth_cte}
-                    SELECT s.symbol, s.company_name, s.sector,
-                           m.market_cap, m.pe_ratio, m.forward_peg_ratio,
-                           m.dividend_yield, m.debt_to_equity,
-                           m.price, m.price_target_mean, m.gross_margin,
-                           g.revenue_growth, g.eps_growth
-                    FROM stocks s
-                    JOIN stock_metrics m ON s.symbol = m.symbol
-                    {growth_join}
-                    {join_clause}
-                    WHERE {where_clause}
-                    ORDER BY {order_column} {order_dir} {null_handling}
-                    LIMIT %s
-                """
-            else:
-                query = f"""
-                    SELECT s.symbol, s.company_name, s.sector,
-                           m.market_cap, m.pe_ratio, m.forward_peg_ratio,
-                           m.dividend_yield, m.debt_to_equity,
-                           m.price, m.price_target_mean, m.gross_margin,
-                           NULL as revenue_growth, NULL as eps_growth
-                    FROM stocks s
-                    JOIN stock_metrics m ON s.symbol = m.symbol
-                    {join_clause}
-                    WHERE {where_clause}
-                    ORDER BY {order_column} {order_dir} {null_handling}
-                    LIMIT %s
-                """
-        params.append(limit)
-
+        
         conn = self.db.get_connection()
         try:
             cursor = conn.cursor()
+
+            # Base tables
+            tables_clause = "stocks s JOIN stock_metrics m ON s.symbol = m.SYMBOL"
+            
+            # Add joins if needed
+            if needs_revisions_join:
+                # Revisions table is keyed by symbol and period='0q' (current quarter) usually
+                # We'll Left Join explicitly
+                tables_clause += " LEFT JOIN eps_revisions r ON s.symbol = r.symbol AND r.period = '0q'"
+
+            # Construct Query
+            # Note: We select many fields for context
+            select_fields = """
+                s.symbol, s.company_name, s.sector,
+                m.price, m.market_cap, m.pe_ratio, m.forward_pe, m.dividend_yield,
+                m.forward_peg_ratio, m.debt_to_equity,
+                m.analyst_rating_score, m.price_target_mean, m.short_percent_float
+            """
+            
+            # Add revision fields if joined
+            if needs_revisions_join:
+                select_fields += ", r.up_30d, r.down_30d"
+            else:
+                select_fields += ", NULL as up_30d, NULL as down_30d"
+
+            if needs_growth_cte:
+                # CTE to calculate CAGR from earnings history
+                # (This is expensive, so only do it if requested)
+                query = f"""
+                    WITH growth_metrics AS (
+                        SELECT 
+                            h.symbol,
+                            (POWER(MAX(h.revenue) / NULLIF(MIN(h.revenue), 0), 1.0/NULLIF(COUNT(*)-1, 0)) - 1) * 100 as revenue_growth,
+                            (POWER(MAX(h.eps) / NULLIF(MIN(h.eps), 0), 1.0/NULLIF(COUNT(*)-1, 0)) - 1) * 100 as eps_growth
+                        FROM earnings_history h
+                        WHERE h.period_type = 'annual' 
+                        AND h.year >= (EXTRACT(YEAR FROM CURRENT_DATE) - 5)
+                        GROUP BY h.symbol
+                        HAVING COUNT(*) >= 4
+                    )
+                    SELECT {select_fields}, g.revenue_growth, g.eps_growth
+                    FROM {tables_clause}
+                    LEFT JOIN growth_metrics g ON s.symbol = g.symbol
+                    WHERE {query_conditions}
+                    ORDER BY {order_col} {order_dir} {null_handling}
+                    LIMIT %s
+                """
+            else:
+                # No growth CTE needed
+                query = f"""
+                    SELECT {select_fields}, NULL as revenue_growth, NULL as eps_growth
+                    FROM {tables_clause}
+                    WHERE {query_conditions}
+                    ORDER BY {order_col} {order_dir} {null_handling}
+                    LIMIT %s
+                """
+
+            params.append(limit)
+            
+            # Execute
             cursor.execute(query, tuple(params))
+            rows = cursor.fetchall()
 
             results = []
-            for row in cursor.fetchall():
-                market_cap = row[3]
-                if market_cap:
-                    if market_cap >= 1_000_000_000_000:
-                        market_cap_str = f"${market_cap / 1_000_000_000_000:.1f}T"
-                    elif market_cap >= 1_000_000_000:
-                        market_cap_str = f"${market_cap / 1_000_000_000:.1f}B"
-                    else:
-                        market_cap_str = f"${market_cap / 1_000_000:.0f}M"
-                else:
-                    market_cap_str = "N/A"
+            for row in rows:
+                # Unpack row
+                (symbol, name, sector, price, mcap, pe, fwd_pe, div_yield,
+                 peg, de, rating_score, target_mean,
+                 short_float, up_30d, down_30d, rev_growth, eps_growth) = row
 
-                results.append({
-                    "ticker": row[0],
-                    "company_name": row[1],
-                    "sector": row[2],
-                    "market_cap": market_cap_str,
-                    "pe_ratio": safe_round(row[4], 1),
-                    "peg_ratio": safe_round(row[5], 2),
-                    "dividend_yield": safe_round(row[6], 2),
-                    "debt_to_equity": safe_round(row[7], 2),
-                    "gross_margin": safe_round(row[10], 1),
-                    "revenue_growth": safe_round(row[11], 1),
-                    "eps_growth": safe_round(row[12], 1),
-                    "target_upside": safe_round((row[9] - row[8]) / row[8] * 100, 1) if row[8] and row[8] > 0 and row[9] else None,
-                    "current_price": safe_round(row[8], 2),
-                    "target_mean": safe_round(row[9], 2),
-                })
+                # Calculate specific return fields
+                upside = None
+                if target_mean and price:
+                    upside = ((target_mean - price) / price) * 100
+
+                # Format market cap
+                if mcap:
+                    if mcap >= 1_000_000_000_000:
+                        mcap_str = f"${mcap / 1_000_000_000_000:.1f}T"
+                    elif mcap >= 1_000_000_000:
+                        mcap_str = f"${mcap / 1_000_000_000:.1f}B"
+                    else:
+                        mcap_str = f"${mcap / 1_000_000:.0f}M"
+                else:
+                    mcap_str = "N/A"
+
+                entry = {
+                    "symbol": symbol,
+                    "company_name": name,
+                    "sector": sector,
+                    "market_cap": mcap_str,
+                    "price": safe_round(price),
+                    "pe_ratio": safe_round(pe),
+                    "forward_pe": safe_round(fwd_pe),
+                    "dividend_yield": safe_round(div_yield),
+                    "peg_ratio": safe_round(peg),
+                    "debt_to_equity": safe_round(de),
+                    "gross_margin": None,
+                    "short_interest_pct": safe_round(short_float * 100) if short_float else None,
+                    "analyst_rating": safe_round(rating_score, 1) if rating_score is not None else None,
+                    "target_upside": safe_round(upside, 1),
+                    "revisions_up_30d": up_30d,
+                    "revisions_down_30d": down_30d
+                }
+                
+                # Add conditional fields
+                if rev_growth is not None:
+                    entry["revenue_growth"] = safe_round(rev_growth, 1)
+                if eps_growth is not None:
+                    entry["eps_growth"] = safe_round(eps_growth, 1)
+
+                results.append(entry)
 
             # Build filter summary
             filters_applied = []
@@ -2825,6 +2885,10 @@ class ToolExecutor:
                 filters_applied.append(f"P/E <= {pe_max}")
             if pe_min is not None:
                 filters_applied.append(f"P/E >= {pe_min}")
+            if forward_pe_max is not None:
+                filters_applied.append(f"Fwd P/E <= {forward_pe_max}")
+            if forward_pe_min is not None:
+                filters_applied.append(f"Fwd P/E >= {forward_pe_min}")
             if dividend_yield_min is not None:
                 filters_applied.append(f"Div Yield >= {dividend_yield_min}%")
             if market_cap_min is not None:
@@ -2835,6 +2899,16 @@ class ToolExecutor:
                 filters_applied.append(f"Revenue Growth >= {revenue_growth_min}%")
             if eps_growth_min is not None:
                 filters_applied.append(f"EPS Growth >= {eps_growth_min}%")
+            if short_interest_min is not None:
+                filters_applied.append(f"Short Interest >= {short_interest_min}%")
+            if analyst_rating_min is not None:
+                filters_applied.append(f"Rating <= {analyst_rating_min}")
+            if analyst_upside_min is not None:
+                filters_applied.append(f"Upside >= {analyst_upside_min}%")
+            if revisions_up_min is not None:
+                filters_applied.append(f"Up Revisions >= {revisions_up_min}")
+            if revisions_down_min is not None:
+                filters_applied.append(f"Down Revisions >= {revisions_down_min}")
             if sector:
                 filters_applied.append(f"Sector: {sector}")
             if peg_max is not None:
@@ -2856,6 +2930,7 @@ class ToolExecutor:
             }
         finally:
             self.db.return_connection(conn)
+
 
     def _manage_alerts(self, action: str, ticker: str = None, condition_description: str = None,
                       condition_type: str = None, threshold: float = None, operator: str = None, 
