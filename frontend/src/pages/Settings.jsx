@@ -264,6 +264,30 @@ export default function Settings() {
                                                     </div>
                                                 </div>
                                             ))}
+
+                                            {/* Coming Soon Characters */}
+                                            {[
+                                                { id: 'munger', name: 'Charlie Munger', description: 'Multidisciplinary thinking and focusing on high-quality businesses with strong moats.' },
+                                                { id: 'graham', name: 'Benjamin Graham', description: 'Deep value investing, margin of safety, and net-net analysis.' },
+                                                { id: 'dalio', name: 'Ray Dalio', description: 'Principles-based macro analysis and radical transparency.' }
+                                            ].map((char) => (
+                                                <div key={char.id} className="flex items-start gap-3 space-x-0 opacity-60">
+                                                    <RadioGroupItem
+                                                        value={char.id}
+                                                        id={char.id}
+                                                        className="mt-1"
+                                                        disabled={true}
+                                                    />
+                                                    <div className="flex flex-col">
+                                                        <Label htmlFor={char.id} className="font-medium">
+                                                            {char.name} <span className="text-xs font-normal">(Coming Soon)</span>
+                                                        </Label>
+                                                        <span className="text-sm text-muted-foreground">
+                                                            {char.description}
+                                                        </span>
+                                                    </div>
+                                                </div>
+                                            ))}
                                         </RadioGroup>
                                     )}
                                 </CardContent>
