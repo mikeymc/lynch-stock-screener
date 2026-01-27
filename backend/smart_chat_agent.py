@@ -2,6 +2,8 @@
 # ABOUTME: Orchestrates multi-step reasoning with tool calls to answer complex questions
 
 import logging
+import os
+import re
 from datetime import datetime
 from typing import Dict, Any, List, Optional, Generator
 import time
@@ -57,7 +59,40 @@ class SmartChatAgent:
             else:
                 self._client = genai.Client()
         return self._client
-    
+
+    def _get_expertise_guidance(self, user_id: Optional[int] = None) -> str:
+        """Load the appropriate expertise level guidance for the user.
+
+        Returns the guidance section from expertise_levels.md that matches the user's
+        expertise level (learning, practicing, or expert).
+        """
+        # Get user's expertise level
+        if user_id is not None:
+            expertise_level = self.db.get_user_expertise_level(user_id)
+        else:
+            expertise_level = 'practicing'  # Default for non-authenticated requests
+
+        # Load the full expertise levels file
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        expertise_path = os.path.join(script_dir, "prompts", "shared", "expertise_levels.md")
+
+        try:
+            with open(expertise_path, 'r') as f:
+                content = f.read()
+
+            # Extract the section for this expertise level
+            pattern = f"# EXPERTISE_LEVEL: {expertise_level}\\s*\n\n(.*?)(?=\n\n---\n\n# EXPERTISE_LEVEL:|$)"
+            match = re.search(pattern, content, re.DOTALL)
+
+            if match:
+                return match.group(1).strip()
+            else:
+                logger.warning(f"Expertise guidance not found for level: {expertise_level}")
+                return ""
+        except Exception as e:
+            logger.error(f"Failed to load expertise guidance: {e}")
+            return ""
+
     def _detect_character_mention(self, message: str) -> Optional[str]:
         """Detect if a message contains a character mention (e.g. @buffett)."""
         if not message or '@' not in message:
@@ -124,6 +159,11 @@ class SmartChatAgent:
             if os.path.exists(persona_path):
                 with open(persona_path, 'r') as f:
                     persona_content = f.read()
+
+                # Prepend expertise guidance based on user's level
+                expertise_guidance = self._get_expertise_guidance(user_id)
+                if expertise_guidance:
+                    persona_content = f"{expertise_guidance}\n\n---\n\n{persona_content}"
             else:
                 logger.error(f"Persona file not found at: {persona_path}")
         except Exception as e:

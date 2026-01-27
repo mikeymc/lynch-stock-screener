@@ -795,6 +795,49 @@ def set_active_character(user_id):
         return jsonify({'error': str(e)}), 500
 
 
+@app.route('/api/settings/expertise-level', methods=['GET'])
+@require_user_auth
+def get_expertise_level(user_id):
+    """Get the user's expertise level."""
+    try:
+        expertise_level = db.get_user_expertise_level(user_id)
+        return jsonify({
+            'expertise_level': expertise_level
+        })
+    except Exception as e:
+        logger.error(f"Error getting expertise level: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/settings/expertise-level', methods=['PUT'])
+@require_user_auth
+def set_expertise_level(user_id):
+    """Set the user's expertise level."""
+    try:
+        data = request.get_json()
+        if not data or 'expertise_level' not in data:
+            return jsonify({'error': 'expertise_level is required'}), 400
+
+        expertise_level = data['expertise_level']
+
+        # Validate expertise level
+        valid_levels = ['learning', 'practicing', 'expert']
+        if expertise_level not in valid_levels:
+            return jsonify({'error': f'Invalid expertise_level. Must be one of: {", ".join(valid_levels)}'}), 400
+
+        # Save to user's settings
+        db.set_user_expertise_level(user_id, expertise_level)
+        db.flush()  # Ensure write is committed
+
+        return jsonify({
+            'success': True,
+            'expertise_level': expertise_level
+        })
+    except Exception as e:
+        logger.error(f"Error setting expertise level: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
 @app.route('/api/settings/theme', methods=['GET'])
 @require_user_auth
 def get_user_theme_endpoint(user_id):

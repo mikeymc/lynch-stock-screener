@@ -18,19 +18,26 @@ export default function Settings() {
     const [activeCharacter, setActiveCharacter] = useState("lynch")
     const [characterLoading, setCharacterLoading] = useState(true)
     const [switchingCharacter, setSwitchingCharacter] = useState(false)
+    const [expertiseLevel, setExpertiseLevel] = useState("practicing")
+    const [expertiseLoading, setExpertiseLoading] = useState(true)
+    const [switchingExpertise, setSwitchingExpertise] = useState(false)
 
     useEffect(() => {
         // Fetch available characters and current setting
         Promise.all([
             fetch("/api/characters").then(res => res.json()),
-            fetch("/api/settings/character", { credentials: 'include' }).then(res => res.json())
-        ]).then(([charsData, settingData]) => {
+            fetch("/api/settings/character", { credentials: 'include' }).then(res => res.json()),
+            fetch("/api/settings/expertise-level", { credentials: 'include' }).then(res => res.json())
+        ]).then(([charsData, settingData, expertiseData]) => {
             setCharacters(charsData.characters || [])
             setActiveCharacter(settingData.active_character || "lynch")
             setCharacterLoading(false)
+            setExpertiseLevel(expertiseData.expertise_level || "practicing")
+            setExpertiseLoading(false)
         }).catch(err => {
-            console.error("Failed to load characters:", err)
+            console.error("Failed to load settings:", err)
             setCharacterLoading(false)
+            setExpertiseLoading(false)
         })
     }, [])
 
@@ -87,6 +94,33 @@ export default function Settings() {
         }
     }
 
+    const handleExpertiseLevelChange = async (level) => {
+        if (switchingExpertise) return // Prevent double-clicks
+
+        setSwitchingExpertise(true)
+        try {
+            const response = await fetch("/api/settings/expertise-level", {
+                method: "PUT",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ expertise_level: level }),
+                credentials: 'include'
+            })
+
+            if (!response.ok) {
+                throw new Error('Failed to update expertise level')
+            }
+
+            // Update local state
+            setExpertiseLevel(level)
+
+        } catch (err) {
+            console.error("Failed to update expertise level:", err)
+            alert('Failed to update expertise level. Please try again.')
+        } finally {
+            setSwitchingExpertise(false)
+        }
+    }
+
     const sidebarItems = [
         {
             id: "appearance",
@@ -95,6 +129,10 @@ export default function Settings() {
         {
             id: "character",
             title: "Investment Style",
+        },
+        {
+            id: "expertise",
+            title: "Expertise Level",
         },
         {
             id: "item2",
@@ -226,6 +264,95 @@ export default function Settings() {
                                                     </div>
                                                 </div>
                                             ))}
+                                        </RadioGroup>
+                                    )}
+                                </CardContent>
+                            </Card>
+                        </div>
+                    )}
+
+                    {activeTab === "expertise" && (
+                        <div className="space-y-6">
+                            <div>
+                                <h3 className="text-lg font-medium">Expertise Level</h3>
+                                <p className="text-sm text-muted-foreground">
+                                    Choose your investing expertise level. This adjusts how analyses and conversations are communicated to match your knowledge.
+                                </p>
+                            </div>
+                            <div className="border-t" />
+                            <Card>
+                                <CardHeader>
+                                    <CardTitle>Communication Style</CardTitle>
+                                    <CardDescription>
+                                        Select how technical and detailed you want the analysis to be.
+                                    </CardDescription>
+                                </CardHeader>
+                                <CardContent className="relative">
+                                    {switchingExpertise && (
+                                        <div className="absolute inset-0 bg-background/80 backdrop-blur-sm flex items-center justify-center z-10 rounded-lg">
+                                            <div className="flex flex-col items-center gap-2">
+                                                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+                                                <p className="text-sm text-muted-foreground">Updating expertise level...</p>
+                                            </div>
+                                        </div>
+                                    )}
+                                    {expertiseLoading ? (
+                                        <div className="text-muted-foreground">Loading...</div>
+                                    ) : (
+                                        <RadioGroup
+                                            value={expertiseLevel}
+                                            onValueChange={handleExpertiseLevelChange}
+                                            className="gap-4"
+                                            disabled={switchingExpertise}
+                                        >
+                                            <div className="flex items-start gap-3 space-x-0">
+                                                <RadioGroupItem
+                                                    value="learning"
+                                                    id="learning"
+                                                    className="mt-1"
+                                                    disabled={switchingExpertise}
+                                                />
+                                                <div className="flex flex-col">
+                                                    <Label htmlFor="learning" className="font-medium cursor-pointer">
+                                                        Learning
+                                                    </Label>
+                                                    <span className="text-sm text-muted-foreground">
+                                                        I'm learning to invest. Help educate me and use simpler terms with clear explanations.
+                                                    </span>
+                                                </div>
+                                            </div>
+                                            <div className="flex items-start gap-3 space-x-0">
+                                                <RadioGroupItem
+                                                    value="practicing"
+                                                    id="practicing"
+                                                    className="mt-1"
+                                                    disabled={switchingExpertise}
+                                                />
+                                                <div className="flex flex-col">
+                                                    <Label htmlFor="practicing" className="font-medium cursor-pointer">
+                                                        Practicing
+                                                    </Label>
+                                                    <span className="text-sm text-muted-foreground">
+                                                        I understand the basics and want to deepen my knowledge with more nuanced analysis.
+                                                    </span>
+                                                </div>
+                                            </div>
+                                            <div className="flex items-start gap-3 space-x-0">
+                                                <RadioGroupItem
+                                                    value="expert"
+                                                    id="expert"
+                                                    className="mt-1"
+                                                    disabled={switchingExpertise}
+                                                />
+                                                <div className="flex flex-col">
+                                                    <Label htmlFor="expert" className="font-medium cursor-pointer">
+                                                        Expert
+                                                    </Label>
+                                                    <span className="text-sm text-muted-foreground">
+                                                        I'm a seasoned investor. Use technical language and focus on unique insights.
+                                                    </span>
+                                                </div>
+                                            </div>
                                         </RadioGroup>
                                     )}
                                 </CardContent>

@@ -75,6 +75,35 @@ class StockAnalyst:
             character = get_character('lynch')
         return character
 
+    def _get_expertise_guidance(self, user_id: Optional[int] = None) -> str:
+        """Load the appropriate expertise level guidance for the user.
+
+        Returns the guidance section from expertise_levels.md that matches the user's
+        expertise level (learning, practicing, or expert).
+        """
+        # Get user's expertise level
+        if user_id is not None:
+            expertise_level = self.db.get_user_expertise_level(user_id)
+        else:
+            expertise_level = 'practicing'  # Default for non-authenticated requests
+
+        # Load the full expertise levels file
+        expertise_path = os.path.join(self.script_dir, "prompts", "shared", "expertise_levels.md")
+        with open(expertise_path, 'r') as f:
+            content = f.read()
+
+        # Extract the section for this expertise level
+        # Format: # EXPERTISE_LEVEL: learning\n\n[content]\n\n---\n\n# EXPERTISE_LEVEL: practicing...
+        pattern = f"# EXPERTISE_LEVEL: {expertise_level}\\s*\n\n(.*?)(?=\n\n---\n\n# EXPERTISE_LEVEL:|$)"
+        match = re.search(pattern, content, re.DOTALL)
+
+        if match:
+            return match.group(1).strip()
+        else:
+            # Fallback to empty string if section not found
+            logger.warning(f"Expertise guidance not found for level: {expertise_level}")
+            return ""
+
     def _get_prompt_template(self, character: CharacterConfig) -> str:
         """Get the prompt template for a character, with caching."""
         if character.id in self._prompt_cache:
@@ -254,6 +283,12 @@ class StockAnalyst:
             character = self._get_active_character(user_id)
 
         template = self._get_prompt_template(character)
+
+        # Prepend expertise guidance based on user's level
+        expertise_guidance = self._get_expertise_guidance(user_id)
+        if expertise_guidance:
+            template = f"{expertise_guidance}\n\n---\n\n{template}"
+
         template_vars = self._prepare_template_vars(stock_data, history, character)
 
         try:
@@ -497,6 +532,11 @@ class StockAnalyst:
         prompt_path = os.path.join(self.script_dir, "prompts", "analysis", "chart_analysis.md")
         with open(prompt_path, 'r') as f:
             prompt_template = f.read()
+
+        # Prepend expertise guidance based on user's level
+        expertise_guidance = self._get_expertise_guidance(user_id)
+        if expertise_guidance:
+            prompt_template = f"{expertise_guidance}\n\n---\n\n{prompt_template}"
 
         # Prepare template variables (includes character_name)
         template_vars = self._prepare_template_vars(stock_data, history, character=character, user_id=user_id)

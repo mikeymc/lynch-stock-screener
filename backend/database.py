@@ -879,6 +879,17 @@ class Database:
             END $$;
         """)
 
+        # Migration: Add expertise_level column to users table
+        cursor.execute("""
+            DO $$
+            BEGIN
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                               WHERE table_name = 'users' AND column_name = 'expertise_level') THEN
+                    ALTER TABLE users ADD COLUMN expertise_level TEXT DEFAULT 'practicing';
+                END IF;
+            END $$;
+        """)
+
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS app_feedback (
                 id SERIAL PRIMARY KEY,
@@ -3405,6 +3416,23 @@ class Database:
         """Set user's active investment character"""
         sql = "UPDATE users SET active_character = %s WHERE id = %s"
         args = (character_id, user_id)
+        self.write_queue.put((sql, args))
+
+    def get_user_expertise_level(self, user_id: int) -> str:
+        """Get user's expertise level"""
+        conn = self.get_connection()
+        try:
+            cursor = conn.cursor()
+            cursor.execute("SELECT expertise_level FROM users WHERE id = %s", (user_id,))
+            row = cursor.fetchone()
+            return row[0] if row and row[0] else 'practicing'
+        finally:
+            self.return_connection(conn)
+
+    def set_user_expertise_level(self, user_id: int, expertise_level: str):
+        """Set user's expertise level"""
+        sql = "UPDATE users SET expertise_level = %s WHERE id = %s"
+        args = (expertise_level, user_id)
         self.write_queue.put((sql, args))
 
     def get_user_theme(self, user_id: int) -> str:
