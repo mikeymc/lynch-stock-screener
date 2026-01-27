@@ -57,6 +57,11 @@ export default function Help() {
             section: "Getting Started"
         },
         {
+            id: "expertise-level",
+            title: "Expertise Level",
+            section: "Getting Started"
+        },
+        {
             id: "overview",
             title: "Overview Tab",
             section: "Stock Analysis"
@@ -95,6 +100,36 @@ export default function Help() {
             id: "investment-styles",
             title: "Investment Styles",
             section: "Chat Assistant"
+        },
+        {
+            id: "multiple-characters",
+            title: "Multiple Characters",
+            section: "Chat Assistant"
+        },
+        {
+            id: "portfolios",
+            title: "Portfolios",
+            section: "Portfolio Management"
+        },
+        {
+            id: "manual-trading",
+            title: "Manual Trading",
+            section: "Portfolio Management"
+        },
+        {
+            id: "automated-trading",
+            title: "Automated Trading",
+            section: "Portfolio Management"
+        },
+        {
+            id: "setting-alerts",
+            title: "Setting Alerts via Chat",
+            section: "Alerts & Automation"
+        },
+        {
+            id: "automated-trade-actions",
+            title: "Automated Trade Actions",
+            section: "Alerts & Automation"
         },
         {
             id: "tuning",
@@ -445,23 +480,50 @@ export default function Help() {
 
                             <Card>
                                 <CardHeader>
-                                    <CardTitle>Advanced Filters</CardTitle>
+                                    <CardTitle>Advanced Metric-Based Filters</CardTitle>
+                                    <CardDescription>Filter by financial metrics and fundamental characteristics</CardDescription>
                                 </CardHeader>
-                                <CardContent className="space-y-3">
+                                <CardContent className="space-y-4">
                                     <p className="text-sm text-muted-foreground">
-                                        Click the filter icon in the top-right to access advanced filtering options including:
+                                        Click the filter icon (sliders icon) in the top toolbar to open the advanced filters panel. These filters let you refine the scored stock list by specific financial metrics and characteristics.
                                     </p>
-                                    <ul className="text-sm text-muted-foreground space-y-1 list-disc list-inside ml-2">
-                                        <li>Geographic region (USA, Canada, Europe, Asia, etc.)</li>
-                                        <li>Market cap range</li>
-                                        <li>Institutional ownership</li>
-                                        <li>Revenue and earnings growth thresholds</li>
-                                        <li>Debt-to-equity limits</li>
-                                    </ul>
+                                    <div>
+                                        <h4 className="font-medium text-sm mb-2">Geographic Filters</h4>
+                                        <ul className="text-sm text-muted-foreground space-y-1 list-disc list-inside ml-2">
+                                            <li><strong>Region</strong> - Filter by geographic region (USA, Canada, Europe, Asia, Central/South America, Other)</li>
+                                            <li><strong>Country</strong> - Filter by specific country codes (e.g., US, CA, GB, DE)</li>
+                                        </ul>
+                                    </div>
+                                    <div>
+                                        <h4 className="font-medium text-sm mb-2">Financial Metric Filters</h4>
+                                        <ul className="text-sm text-muted-foreground space-y-1 list-disc list-inside ml-2">
+                                            <li><strong>Institutional Ownership %</strong> - Maximum percentage owned by institutions (e.g., ≤ 75%)</li>
+                                            <li><strong>Revenue Growth %</strong> - Minimum 5-year compound annual growth rate (e.g., ≥ 15%)</li>
+                                            <li><strong>Income Growth %</strong> - Minimum 5-year earnings growth rate (e.g., ≥ 15%)</li>
+                                            <li><strong>Debt to Equity</strong> - Maximum debt-to-equity ratio (e.g., ≤ 0.6)</li>
+                                            <li><strong>Market Cap ($B)</strong> - Maximum market capitalization in billions (e.g., ≤ 10)</li>
+                                            <li><strong>P/E Ratio</strong> - Maximum price-to-earnings ratio (e.g., ≤ 25)</li>
+                                        </ul>
+                                    </div>
+                                    <div className="border-t pt-3">
+                                        <h4 className="font-medium text-sm mb-2">How Advanced Filters Work</h4>
+                                        <p className="text-sm text-muted-foreground mb-2">
+                                            Advanced filters use <strong>AND logic</strong>—all active filters must pass for a stock to appear in results. This is different from sidebar filters which are based on overall recommendation status.
+                                        </p>
+                                        <p className="text-sm text-muted-foreground">
+                                            <strong>Key difference:</strong> Sidebar filters judge quality of recommendation; advanced filters judge quality of underlying financials.
+                                        </p>
+                                    </div>
+                                    <div className="border-t pt-3">
+                                        <h4 className="font-medium text-sm mb-2">Filter Persistence</h4>
+                                        <p className="text-sm text-muted-foreground">
+                                            Your advanced filter settings are automatically saved and synced across sessions. They remain active until you change or clear them.
+                                        </p>
+                                    </div>
                                     <img
-                                        src="/help/filter-by-quality.png"
-                                        alt="Advanced Filter Panel"
-                                        className="rounded-lg border-2 border-muted-foreground/30 w-full"
+                                        src="/help/advanced-filters-panel.png"
+                                        alt="Advanced Filters Panel"
+                                        className="rounded-lg border-2 border-muted-foreground/30 w-full mt-3"
                                     />
                                 </CardContent>
                             </Card>
@@ -520,6 +582,125 @@ export default function Help() {
                                 <CardContent className="space-y-3">
                                     <p className="text-sm text-muted-foreground">
                                         Remove items from your watchlist by clicking the filled star icon again. Your watchlist is automatically saved.
+                                    </p>
+                                </CardContent>
+                            </Card>
+                        </div>
+                    )}
+
+                    {activeTab === "expertise-level" && (
+                        <div className="space-y-6">
+                            <div>
+                                <h3 className="text-lg font-medium">Expertise Level</h3>
+                                <p className="text-sm text-muted-foreground">
+                                    Customize how analyses and conversations are communicated based on your investing knowledge.
+                                </p>
+                            </div>
+                            <div className="border-t" />
+
+                            <Card>
+                                <CardHeader>
+                                    <CardTitle>What is Expertise Level?</CardTitle>
+                                </CardHeader>
+                                <CardContent className="space-y-3">
+                                    <p className="text-sm text-muted-foreground">
+                                        Expertise level adjusts the communication style of all AI-generated content including thesis analyses, chart commentary, and chat responses. This ensures you get explanations that match your current knowledge level—whether you're learning the basics or want advanced technical insights.
+                                    </p>
+                                    <p className="text-sm text-muted-foreground">
+                                        Your expertise setting is applied consistently across all features, creating a tailored experience that grows with your investing journey.
+                                    </p>
+                                </CardContent>
+                            </Card>
+
+                            <Card>
+                                <CardHeader>
+                                    <CardTitle>The Three Levels</CardTitle>
+                                    <CardDescription>Choose the level that matches your current knowledge</CardDescription>
+                                </CardHeader>
+                                <CardContent className="space-y-4">
+                                    <div>
+                                        <h4 className="font-medium text-sm mb-2">Learning</h4>
+                                        <p className="text-sm text-muted-foreground mb-2">
+                                            <strong>Best for:</strong> Those new to investing or still building foundational knowledge.
+                                        </p>
+                                        <p className="text-sm text-muted-foreground mb-2">
+                                            <strong>Communication style:</strong> Uses simpler terms, avoids jargon, and provides clear explanations for concepts. Educational tone that helps you understand not just what the data shows, but why it matters and how to interpret it.
+                                        </p>
+                                        <ul className="text-sm text-muted-foreground space-y-1 list-disc list-inside ml-2">
+                                            <li>Defines financial terms when first introduced</li>
+                                            <li>Explains the reasoning behind investment concepts</li>
+                                            <li>Uses analogies and examples to clarify complex ideas</li>
+                                            <li>Focuses on building intuition and understanding</li>
+                                        </ul>
+                                    </div>
+                                    <div className="border-t pt-3">
+                                        <h4 className="font-medium text-sm mb-2">Practicing (Default)</h4>
+                                        <p className="text-sm text-muted-foreground mb-2">
+                                            <strong>Best for:</strong> Those who understand the basics and want to deepen their analytical skills.
+                                        </p>
+                                        <p className="text-sm text-muted-foreground mb-2">
+                                            <strong>Communication style:</strong> Balances accessibility with depth. Assumes familiarity with common metrics (P/E, ROE, debt-to-equity) while providing nuanced analysis and context. More detailed evaluation of trade-offs and considerations.
+                                        </p>
+                                        <ul className="text-sm text-muted-foreground space-y-1 list-disc list-inside ml-2">
+                                            <li>Uses standard financial terminology without over-explanation</li>
+                                            <li>Explores multiple perspectives and considerations</li>
+                                            <li>Discusses both quantitative metrics and qualitative factors</li>
+                                            <li>Highlights nuances and edge cases in analysis</li>
+                                        </ul>
+                                    </div>
+                                    <div className="border-t pt-3">
+                                        <h4 className="font-medium text-sm mb-2">Expert</h4>
+                                        <p className="text-sm text-muted-foreground mb-2">
+                                            <strong>Best for:</strong> Seasoned investors comfortable with technical language and advanced concepts.
+                                        </p>
+                                        <p className="text-sm text-muted-foreground mb-2">
+                                            <strong>Communication style:</strong> Concise, technical, and focused on unique insights. Assumes deep understanding of financial analysis and skips basic explanations. Emphasizes non-obvious observations and sophisticated analytical points.
+                                        </p>
+                                        <ul className="text-sm text-muted-foreground space-y-1 list-disc list-inside ml-2">
+                                            <li>Uses precise financial terminology and industry jargon</li>
+                                            <li>Focuses on edge cases, subtleties, and counter-arguments</li>
+                                            <li>Highlights uncommon insights and second-order effects</li>
+                                            <li>Dense, efficient communication without redundancy</li>
+                                        </ul>
+                                    </div>
+                                    <img
+                                        src="/help/expertise-levels.png"
+                                        alt="Expertise Level Settings"
+                                        className="rounded-lg border-2 border-muted-foreground/30 w-full mt-3"
+                                    />
+                                </CardContent>
+                            </Card>
+
+                            <Card>
+                                <CardHeader>
+                                    <CardTitle>What Changes with Expertise Level</CardTitle>
+                                </CardHeader>
+                                <CardContent className="space-y-3">
+                                    <p className="text-sm text-muted-foreground mb-2">
+                                        Your expertise setting affects:
+                                    </p>
+                                    <ul className="text-sm text-muted-foreground space-y-2 list-disc list-inside ml-2">
+                                        <li><strong>Thesis & Analysis</strong> - The investment narrative adjusts its explanatory depth and terminology</li>
+                                        <li><strong>Chart Commentary</strong> - Financial chart analysis matches your analytical sophistication</li>
+                                        <li><strong>Chat Responses</strong> - The AI agent tailors explanations to your knowledge level</li>
+                                        <li><strong>Technical Language</strong> - Balance between accessibility and precision shifts appropriately</li>
+                                    </ul>
+                                    <p className="text-sm text-muted-foreground mt-3">
+                                        Note: Your expertise level is independent of your character selection (Lynch vs Buffett). Both settings work together—character determines the investment philosophy, expertise determines how it's communicated.
+                                    </p>
+                                </CardContent>
+                            </Card>
+
+                            <Card>
+                                <CardHeader>
+                                    <CardTitle>Changing Your Expertise Level</CardTitle>
+                                </CardHeader>
+                                <CardContent className="space-y-3">
+                                    <p className="text-sm text-muted-foreground">
+                                        Go to Settings → Expertise Level to change your setting. Your new level applies immediately to all future analyses and conversations.
+                                    </p>
+                                    <p className="text-sm text-muted-foreground">
+                                        Feel free to adjust this as your knowledge grows or if you want to explore concepts from a different depth. There's no wrong choice—pick what helps you learn and make decisions most effectively.
                                     </p>
                                 </CardContent>
                             </Card>
@@ -628,6 +809,7 @@ export default function Help() {
                             <Card>
                                 <CardHeader>
                                     <CardTitle>Company Thesis</CardTitle>
+                                    <CardDescription>Analysis tailored to your selected character</CardDescription>
                                 </CardHeader>
                                 <CardContent className="space-y-3">
                                     <p className="text-sm text-muted-foreground">
@@ -638,6 +820,54 @@ export default function Help() {
                                         alt="Company Thesis with Character Analysis"
                                         className="rounded-lg border-2 border-muted-foreground/30 w-full"
                                     />
+                                </CardContent>
+                            </Card>
+
+                            <Card>
+                                <CardHeader>
+                                    <CardTitle>Character-Specific Perspectives</CardTitle>
+                                </CardHeader>
+                                <CardContent className="space-y-4">
+                                    <div>
+                                        <h4 className="font-medium text-sm mb-2">Peter Lynch's Focus</h4>
+                                        <p className="text-sm text-muted-foreground">
+                                            When viewing a thesis in Lynch mode, the analysis emphasizes:
+                                        </p>
+                                        <ul className="text-sm text-muted-foreground space-y-1 list-disc list-inside ml-2">
+                                            <li>Growth prospects and earnings acceleration</li>
+                                            <li>PEG ratio and valuation relative to growth</li>
+                                            <li>Whether the company is undiscovered by institutions</li>
+                                            <li>Debt management and financial conservatism</li>
+                                            <li>Story behind the business and growth drivers</li>
+                                        </ul>
+                                    </div>
+                                    <div className="border-t pt-3">
+                                        <h4 className="font-medium text-sm mb-2">Warren Buffett's Focus</h4>
+                                        <p className="text-sm text-muted-foreground">
+                                            When viewing a thesis in Buffett mode, the analysis emphasizes:
+                                        </p>
+                                        <ul className="text-sm text-muted-foreground space-y-1 list-disc list-inside ml-2">
+                                            <li>Durable competitive advantages and economic moats</li>
+                                            <li>Return on equity and capital efficiency</li>
+                                            <li>Predictability and consistency of earnings</li>
+                                            <li>Management quality and capital allocation</li>
+                                            <li>Owner earnings and intrinsic value growth</li>
+                                        </ul>
+                                    </div>
+                                </CardContent>
+                            </Card>
+
+                            <Card>
+                                <CardHeader>
+                                    <CardTitle>Cached Per Character</CardTitle>
+                                </CardHeader>
+                                <CardContent className="space-y-3">
+                                    <p className="text-sm text-muted-foreground">
+                                        Each thesis is generated and cached separately for each character. This means you can switch between Lynch and Buffett to see how the same company looks through different investment lenses.
+                                    </p>
+                                    <p className="text-sm text-muted-foreground">
+                                        Use the refresh button to regenerate the thesis if you want an updated analysis incorporating new information, or if you've switched characters and want to see that character's perspective.
+                                    </p>
                                 </CardContent>
                             </Card>
                         </div>
@@ -655,7 +885,8 @@ export default function Help() {
 
                             <Card>
                                 <CardHeader>
-                                    <CardTitle>Financial Charts & Editorial</CardTitle>
+                                    <CardTitle>Financial Charts & Character Commentary</CardTitle>
+                                    <CardDescription>Data visualization with tailored editorial perspective</CardDescription>
                                 </CardHeader>
                                 <CardContent className="space-y-3">
                                     <p className="text-sm text-muted-foreground">
@@ -666,9 +897,46 @@ export default function Help() {
                                     </p>
                                     <img
                                         src="/help/financials.png"
-                                        alt="Financial Charts and Editorial"
+                                        alt="Financial Charts with Character Editorial"
                                         className="rounded-lg border-2 border-muted-foreground/30 w-full"
                                     />
+                                </CardContent>
+                            </Card>
+
+                            <Card>
+                                <CardHeader>
+                                    <CardTitle>Character-Specific Chart Analysis</CardTitle>
+                                </CardHeader>
+                                <CardContent className="space-y-4">
+                                    <p className="text-sm text-muted-foreground mb-2">
+                                        The chart commentary changes based on your selected character, emphasizing different aspects of the financial data:
+                                    </p>
+                                    <div>
+                                        <h4 className="font-medium text-sm mb-2">Peter Lynch's Analysis</h4>
+                                        <p className="text-sm text-muted-foreground">
+                                            Lynch-mode chart commentary focuses on growth trends, earnings acceleration, PEG ratio trends, and whether the company is maintaining reasonable valuations as it grows.
+                                        </p>
+                                    </div>
+                                    <div className="border-t pt-3">
+                                        <h4 className="font-medium text-sm mb-2">Warren Buffett's Analysis</h4>
+                                        <p className="text-sm text-muted-foreground">
+                                            Buffett-mode chart commentary emphasizes return on equity trends, margin stability, earnings consistency, and signs of sustainable competitive advantages in the financial data.
+                                        </p>
+                                    </div>
+                                </CardContent>
+                            </Card>
+
+                            <Card>
+                                <CardHeader>
+                                    <CardTitle>Unified Narrative Across Sections</CardTitle>
+                                </CardHeader>
+                                <CardContent className="space-y-3">
+                                    <p className="text-sm text-muted-foreground">
+                                        The chart analysis is organized into sections (growth, cash flow, valuation), but maintains a cohesive narrative throughout. All sections share the same underlying data context—material events, earnings transcripts, news articles—ensuring consistent character-specific interpretation.
+                                    </p>
+                                    <p className="text-sm text-muted-foreground">
+                                        Your selected character's voice and priorities remain consistent across all sections, helping you develop a complete picture through that investment philosophy's lens.
+                                    </p>
                                 </CardContent>
                             </Card>
                         </div>
@@ -799,7 +1067,10 @@ export default function Help() {
                                 </CardHeader>
                                 <CardContent className="space-y-4">
                                     <p className="text-sm text-muted-foreground">
-                                        The AI agent has access to powerful tools and can autonomously fetch data, perform analysis, generate charts, create alerts, and more. You can ask simple questions or complex multi-step requests on both the main page and individual stock detail pages.
+                                        The AI agent has access to powerful tools and can autonomously fetch data, perform analysis, generate charts, create alerts, execute trades, and more. All responses reflect your selected character's investment philosophy (Peter Lynch or Warren Buffett).
+                                    </p>
+                                    <p className="text-sm text-muted-foreground">
+                                        You can ask simple questions or complex multi-step requests on both the main page and individual stock detail pages. Use <code className="bg-muted px-1 py-0.5 rounded text-xs">@lynch</code> or <code className="bg-muted px-1 py-0.5 rounded text-xs">@buffett</code> to switch perspectives mid-conversation.
                                     </p>
 
                                     <div>
@@ -960,26 +1231,33 @@ export default function Help() {
                             <div>
                                 <h3 className="text-lg font-medium">Investment Styles</h3>
                                 <p className="text-sm text-muted-foreground">
-                                    Switch between different legendary investor perspectives.
+                                    Switch between different legendary investor perspectives to analyze stocks.
                                 </p>
                             </div>
                             <div className="border-t" />
 
                             <Card>
                                 <CardHeader>
-                                    <CardTitle>Available Characters</CardTitle>
+                                    <CardTitle>Active Characters</CardTitle>
+                                    <CardDescription>Both Peter Lynch and Warren Buffett are now available</CardDescription>
                                 </CardHeader>
                                 <CardContent className="space-y-4">
                                     <div>
-                                        <h4 className="font-medium text-sm mb-1">Peter Lynch (Default)</h4>
+                                        <h4 className="font-medium text-sm mb-1 flex items-center gap-2">
+                                            <span className="bg-blue-500 text-white px-2 py-0.5 rounded text-xs font-bold">PL</span>
+                                            Peter Lynch (Default)
+                                        </h4>
                                         <p className="text-sm text-muted-foreground">
-                                            Growth at a reasonable price (GARP). Looks for companies with strong earnings growth at reasonable valuations, low institutional ownership, and manageable debt.
+                                            Growth at a reasonable price (GARP). Looks for companies with strong earnings growth at reasonable valuations, low institutional ownership, and manageable debt. His signature metric is the PEG ratio.
                                         </p>
                                     </div>
                                     <div>
-                                        <h4 className="font-medium text-sm mb-1">Warren Buffett</h4>
+                                        <h4 className="font-medium text-sm mb-1 flex items-center gap-2">
+                                            <span className="bg-green-600 text-white px-2 py-0.5 rounded text-xs font-bold">WB</span>
+                                            Warren Buffett
+                                        </h4>
                                         <p className="text-sm text-muted-foreground">
-                                            Quality-focused. Seeks excellent businesses with durable competitive advantages (wide moats), high returns on equity, strong margins, and the ability to reinvest earnings profitably.
+                                            Quality-focused. Seeks excellent businesses with durable competitive advantages (wide moats), high returns on equity, strong margins, and the ability to reinvest earnings profitably. Emphasizes ROE and owner earnings.
                                         </p>
                                     </div>
                                     <div className="opacity-60">
@@ -993,17 +1271,760 @@ export default function Help() {
 
                             <Card>
                                 <CardHeader>
-                                    <CardTitle>Switching Styles</CardTitle>
+                                    <CardTitle>How Characters Affect Analysis</CardTitle>
                                 </CardHeader>
                                 <CardContent className="space-y-3">
                                     <p className="text-sm text-muted-foreground">
-                                        Change your investment style in Settings → Investment Style. This affects how stocks are scored and how the AI discusses them.
+                                        Each character uses different scoring weights and emphasizes different metrics:
                                     </p>
+                                    <ul className="text-sm text-muted-foreground space-y-2 list-disc list-inside ml-2">
+                                        <li><strong>Lynch</strong> - Heavily weights PEG ratio (50%), earnings consistency (25%), and debt-to-equity (15%)</li>
+                                        <li><strong>Buffett</strong> - Heavily weights ROE (40%), earnings consistency (30%), and debt-to-earnings (20%)</li>
+                                    </ul>
+                                    <p className="text-sm text-muted-foreground mt-3">
+                                        The same stock can receive different scores depending on which character you select. This helps you see opportunities through different lenses.
+                                    </p>
+                                </CardContent>
+                            </Card>
+
+                            <Card>
+                                <CardHeader>
+                                    <CardTitle>Switching Between Characters</CardTitle>
+                                </CardHeader>
+                                <CardContent className="space-y-3">
+                                    <p className="text-sm text-muted-foreground mb-2">
+                                        There are two ways to switch characters:
+                                    </p>
+                                    <div>
+                                        <h4 className="font-medium text-sm mb-1">1. Character Toggle Buttons</h4>
+                                        <p className="text-sm text-muted-foreground mb-2">
+                                            Use the PL/WB toggle buttons in the chat panel to switch your default character. This affects all future analysis, scoring, and chat responses.
+                                        </p>
+                                    </div>
+                                    <div>
+                                        <h4 className="font-medium text-sm mb-1">2. @ Mentions in Chat</h4>
+                                        <p className="text-sm text-muted-foreground">
+                                            Type <code className="bg-muted px-1 py-0.5 rounded text-xs">@lynch</code> or <code className="bg-muted px-1 py-0.5 rounded text-xs">@buffett</code> in any message to temporarily switch perspectives for that conversation.
+                                        </p>
+                                    </div>
                                     <img
                                         src="/help/investment-character.png"
-                                        alt="Investment Style Settings"
-                                        className="rounded-lg border-2 border-muted-foreground/30 w-full"
+                                        alt="Character Selection in Chat"
+                                        className="rounded-lg border-2 border-muted-foreground/30 w-full mt-3"
                                     />
+                                </CardContent>
+                            </Card>
+                        </div>
+                    )}
+
+                    {activeTab === "multiple-characters" && (
+                        <div className="space-y-6">
+                            <div>
+                                <h3 className="text-lg font-medium">Multiple Investment Characters</h3>
+                                <p className="text-sm text-muted-foreground">
+                                    Switch between legendary investor perspectives to analyze stocks through different philosophies.
+                                </p>
+                            </div>
+                            <div className="border-t" />
+
+                            <Card>
+                                <CardHeader>
+                                    <CardTitle>Peter Lynch vs Warren Buffett</CardTitle>
+                                    <CardDescription>Two distinct investment philosophies</CardDescription>
+                                </CardHeader>
+                                <CardContent className="space-y-4">
+                                    <div>
+                                        <h4 className="font-medium text-sm mb-2 flex items-center gap-2">
+                                            <span className="bg-blue-500 text-white px-2 py-0.5 rounded text-xs font-bold">PL</span>
+                                            Peter Lynch - Growth at Reasonable Price (GARP)
+                                        </h4>
+                                        <p className="text-sm text-muted-foreground mb-2">
+                                            Peter Lynch's approach focuses on finding growing companies at reasonable valuations. He looks for hidden gems before institutions discover them.
+                                        </p>
+                                        <p className="text-sm text-muted-foreground mb-2"><strong>Key focus areas:</strong></p>
+                                        <ul className="text-sm text-muted-foreground space-y-1 list-disc list-inside ml-2">
+                                            <li><strong>PEG Ratio</strong> - His signature metric. Below 1.0 means growth at a bargain</li>
+                                            <li><strong>Earnings Consistency</strong> - Reliable, predictable growth patterns</li>
+                                            <li><strong>Debt-to-Equity</strong> - Prefers companies with manageable debt loads</li>
+                                            <li><strong>Institutional Ownership</strong> - Lower ownership can indicate undiscovered opportunities</li>
+                                        </ul>
+                                    </div>
+                                    <div className="border-t pt-3">
+                                        <h4 className="font-medium text-sm mb-2 flex items-center gap-2">
+                                            <span className="bg-green-600 text-white px-2 py-0.5 rounded text-xs font-bold">WB</span>
+                                            Warren Buffett - Quality & Durable Advantages
+                                        </h4>
+                                        <p className="text-sm text-muted-foreground mb-2">
+                                            Warren Buffett seeks exceptional businesses with durable competitive advantages (moats) that can compound value over decades.
+                                        </p>
+                                        <p className="text-sm text-muted-foreground mb-2"><strong>Key focus areas:</strong></p>
+                                        <ul className="text-sm text-muted-foreground space-y-1 list-disc list-inside ml-2">
+                                            <li><strong>Return on Equity (ROE)</strong> - His primary quality indicator. Above 20% is excellent</li>
+                                            <li><strong>Earnings Consistency</strong> - Steady, predictable earnings power</li>
+                                            <li><strong>Debt-to-Earnings</strong> - Conservative debt levels relative to earnings</li>
+                                            <li><strong>Gross Margin</strong> - Wide margins indicate pricing power and moats</li>
+                                        </ul>
+                                    </div>
+                                </CardContent>
+                            </Card>
+
+                            <Card>
+                                <CardHeader>
+                                    <CardTitle>Switching Characters</CardTitle>
+                                    <CardDescription>Change perspective anytime during your analysis</CardDescription>
+                                </CardHeader>
+                                <CardContent className="space-y-4">
+                                    <div>
+                                        <h4 className="font-medium text-sm mb-2">Character Selection Buttons</h4>
+                                        <p className="text-sm text-muted-foreground mb-3">
+                                            Use the character toggle buttons in the chat panel to switch between Peter Lynch (PL) and Warren Buffett (WB). Your selection affects all analysis going forward.
+                                        </p>
+                                        <img
+                                            src="/help/character-selection.png"
+                                            alt="Character Selection Toggle"
+                                            className="rounded-lg border-2 border-muted-foreground/30 w-full"
+                                        />
+                                    </div>
+                                    <div>
+                                        <h4 className="font-medium text-sm mb-2">@ Mentions for Quick Switching</h4>
+                                        <p className="text-sm text-muted-foreground mb-2">
+                                            Type <code className="bg-muted px-1 py-0.5 rounded text-xs">@lynch</code> or <code className="bg-muted px-1 py-0.5 rounded text-xs">@buffett</code> in your chat messages to quickly switch perspectives mid-conversation.
+                                        </p>
+                                        <p className="text-sm text-muted-foreground mb-3">
+                                            Examples:
+                                        </p>
+                                        <ul className="text-sm text-muted-foreground space-y-1 list-disc list-inside ml-2">
+                                            <li>"<code className="bg-muted px-1 py-0.5 rounded text-xs">@buffett</code> What's the ROE for this company?"</li>
+                                            <li>"How does this look from a <code className="bg-muted px-1 py-0.5 rounded text-xs">@lynch</code> perspective?"</li>
+                                            <li>"<code className="bg-muted px-1 py-0.5 rounded text-xs">@buffett</code> analyze the competitive moat"</li>
+                                        </ul>
+                                        <img
+                                            src="/help/at-mention-chat.png"
+                                            alt="Using @ Mentions in Chat"
+                                            className="rounded-lg border-2 border-muted-foreground/30 w-full mt-3"
+                                        />
+                                    </div>
+                                </CardContent>
+                            </Card>
+
+                            <Card>
+                                <CardHeader>
+                                    <CardTitle>What Changes with Character Selection</CardTitle>
+                                </CardHeader>
+                                <CardContent className="space-y-3">
+                                    <p className="text-sm text-muted-foreground">
+                                        Your selected character affects multiple aspects of the analysis:
+                                    </p>
+                                    <ul className="text-sm text-muted-foreground space-y-2 list-disc list-inside ml-2">
+                                        <li><strong>Stock Scores</strong> - Scoring weights and thresholds change to reflect each character's priorities</li>
+                                        <li><strong>Thesis & Analysis</strong> - AI-generated thesis reflects the character's investment philosophy and concerns</li>
+                                        <li><strong>Chart Analysis</strong> - Financial chart commentary emphasizes different metrics per character</li>
+                                        <li><strong>Chat Responses</strong> - The AI agent answers questions from that character's perspective</li>
+                                        <li><strong>Metric Visibility</strong> - Stock detail pages highlight metrics relevant to the selected character</li>
+                                    </ul>
+                                    <div className="mt-4 pt-3 border-t">
+                                        <h4 className="font-medium text-sm mb-2">Visual Indicators</h4>
+                                        <p className="text-sm text-muted-foreground mb-3">
+                                            Chat messages show character avatars (PL for Lynch, WB for Buffett) so you always know which perspective you're viewing.
+                                        </p>
+                                        <img
+                                            src="/help/character-avatar.png"
+                                            alt="Character Avatar in Messages"
+                                            className="rounded-lg border-2 border-muted-foreground/30 w-full"
+                                        />
+                                    </div>
+                                </CardContent>
+                            </Card>
+
+                            <Card>
+                                <CardHeader>
+                                    <CardTitle>Default Character Preference</CardTitle>
+                                </CardHeader>
+                                <CardContent className="space-y-3">
+                                    <p className="text-sm text-muted-foreground">
+                                        Your character selection is saved as your default preference. When you return to the app, it will remember your last selected character.
+                                    </p>
+                                    <p className="text-sm text-muted-foreground">
+                                        You can change this anytime using the character toggle buttons or @ mentions.
+                                    </p>
+                                </CardContent>
+                            </Card>
+                        </div>
+                    )}
+
+                    {activeTab === "portfolios" && (
+                        <div className="space-y-6">
+                            <div>
+                                <h3 className="text-lg font-medium">Portfolios</h3>
+                                <p className="text-sm text-muted-foreground">
+                                    Create and manage paper trading portfolios to test your investment strategies.
+                                </p>
+                            </div>
+                            <div className="border-t" />
+
+                            <Card>
+                                <CardHeader>
+                                    <CardTitle>What are Portfolios?</CardTitle>
+                                </CardHeader>
+                                <CardContent className="space-y-3">
+                                    <p className="text-sm text-muted-foreground">
+                                        Portfolios are paper trading accounts that let you test investment strategies without risking real money. Track your trades, monitor performance, and learn from your decisions in a risk-free environment.
+                                    </p>
+                                    <p className="text-sm text-muted-foreground">
+                                        Each portfolio starts with virtual cash (default $100,000) and maintains a complete history of all trades and performance over time.
+                                    </p>
+                                </CardContent>
+                            </Card>
+
+                            <Card>
+                                <CardHeader>
+                                    <CardTitle>Creating a Portfolio</CardTitle>
+                                </CardHeader>
+                                <CardContent className="space-y-3">
+                                    <p className="text-sm text-muted-foreground mb-2">
+                                        To create a new portfolio:
+                                    </p>
+                                    <ol className="text-sm text-muted-foreground space-y-1 list-decimal list-inside ml-2">
+                                        <li>Navigate to the Portfolios page from the left sidebar</li>
+                                        <li>Click "Create Portfolio"</li>
+                                        <li>Enter a descriptive name</li>
+                                        <li>Optionally set initial cash (defaults to $100,000)</li>
+                                        <li>Click "Create" to start trading</li>
+                                    </ol>
+                                    <img
+                                        src="/help/portfolio-create-dialog.png"
+                                        alt="Create Portfolio Dialog"
+                                        className="rounded-lg border-2 border-muted-foreground/30 w-full mt-3"
+                                    />
+                                </CardContent>
+                            </Card>
+
+                            <Card>
+                                <CardHeader>
+                                    <CardTitle>Portfolio Overview</CardTitle>
+                                </CardHeader>
+                                <CardContent className="space-y-3">
+                                    <p className="text-sm text-muted-foreground">
+                                        The portfolio list shows all your portfolios with key metrics at a glance:
+                                    </p>
+                                    <ul className="text-sm text-muted-foreground space-y-1 list-disc list-inside ml-2">
+                                        <li><strong>Total Value</strong> - Current cash + holdings value</li>
+                                        <li><strong>Gain/Loss %</strong> - Performance relative to initial cash</li>
+                                        <li><strong>Holdings Count</strong> - Number of different positions</li>
+                                    </ul>
+                                    <img
+                                        src="/help/portfolio-list.png"
+                                        alt="Portfolio List View"
+                                        className="rounded-lg border-2 border-muted-foreground/30 w-full mt-3"
+                                    />
+                                </CardContent>
+                            </Card>
+
+                            <Card>
+                                <CardHeader>
+                                    <CardTitle>Portfolio Detail View</CardTitle>
+                                    <CardDescription>Four tabs for complete portfolio management</CardDescription>
+                                </CardHeader>
+                                <CardContent className="space-y-4">
+                                    <div>
+                                        <h4 className="font-medium text-sm mb-2">Holdings Tab</h4>
+                                        <p className="text-sm text-muted-foreground mb-2">
+                                            View all your current positions with detailed information:
+                                        </p>
+                                        <ul className="text-sm text-muted-foreground space-y-1 list-disc list-inside ml-2">
+                                            <li>Symbol and company name</li>
+                                            <li>Number of shares held</li>
+                                            <li>Average purchase price</li>
+                                            <li>Current market price</li>
+                                            <li>Total cost basis</li>
+                                            <li>Current value</li>
+                                            <li>Gain/loss amount and percentage</li>
+                                        </ul>
+                                        <img
+                                            src="/help/portfolio-detail-holdings.png"
+                                            alt="Holdings Tab"
+                                            className="rounded-lg border-2 border-muted-foreground/30 w-full mt-3"
+                                        />
+                                    </div>
+                                    <div className="border-t pt-3">
+                                        <h4 className="font-medium text-sm mb-2">Trade Tab</h4>
+                                        <p className="text-sm text-muted-foreground">
+                                            Execute buy and sell orders directly from this tab. See the Manual Trading section for details.
+                                        </p>
+                                    </div>
+                                    <div className="border-t pt-3">
+                                        <h4 className="font-medium text-sm mb-2">Transactions Tab</h4>
+                                        <p className="text-sm text-muted-foreground">
+                                            Complete history of all trades including symbol, type (BUY/SELL), quantity, price, total value, timestamp, and optional notes.
+                                        </p>
+                                    </div>
+                                    <div className="border-t pt-3">
+                                        <h4 className="font-medium text-sm mb-2">Performance Tab</h4>
+                                        <p className="text-sm text-muted-foreground">
+                                            Track your portfolio value over time with a mini-chart showing historical snapshots. See how your strategy performs across different market conditions.
+                                        </p>
+                                    </div>
+                                </CardContent>
+                            </Card>
+
+                            <Card>
+                                <CardHeader>
+                                    <CardTitle>Managing Portfolios</CardTitle>
+                                </CardHeader>
+                                <CardContent className="space-y-3">
+                                    <p className="text-sm text-muted-foreground">
+                                        You can create multiple portfolios to test different strategies simultaneously. Each portfolio operates independently with its own cash balance, holdings, and transaction history.
+                                    </p>
+                                    <p className="text-sm text-muted-foreground">
+                                        To delete a portfolio, use the delete option from the portfolio detail page. This action is permanent and removes all associated transactions and history.
+                                    </p>
+                                </CardContent>
+                            </Card>
+                        </div>
+                    )}
+
+                    {activeTab === "manual-trading" && (
+                        <div className="space-y-6">
+                            <div>
+                                <h3 className="text-lg font-medium">Manual Trading</h3>
+                                <p className="text-sm text-muted-foreground">
+                                    Execute buy and sell orders through the portfolio interface.
+                                </p>
+                            </div>
+                            <div className="border-t" />
+
+                            <Card>
+                                <CardHeader>
+                                    <CardTitle>How to Execute Trades</CardTitle>
+                                </CardHeader>
+                                <CardContent className="space-y-3">
+                                    <p className="text-sm text-muted-foreground mb-2">
+                                        From any portfolio's Trade tab:
+                                    </p>
+                                    <ol className="text-sm text-muted-foreground space-y-1 list-decimal list-inside ml-2">
+                                        <li>Enter the stock symbol (e.g., AAPL, MSFT)</li>
+                                        <li>Enter the quantity (number of shares)</li>
+                                        <li>Select BUY or SELL</li>
+                                        <li>Optionally add a note for your records</li>
+                                        <li>Click "Execute Trade"</li>
+                                    </ol>
+                                    <img
+                                        src="/help/portfolio-trade-tab.png"
+                                        alt="Trade Tab Form"
+                                        className="rounded-lg border-2 border-muted-foreground/30 w-full mt-3"
+                                    />
+                                </CardContent>
+                            </Card>
+
+                            <Card>
+                                <CardHeader>
+                                    <CardTitle>Market Hours & Price Execution</CardTitle>
+                                </CardHeader>
+                                <CardContent className="space-y-3">
+                                    <div>
+                                        <h4 className="font-medium text-sm mb-2">Extended Trading Hours</h4>
+                                        <p className="text-sm text-muted-foreground">
+                                            Trades can be executed during extended market hours: <strong>4 AM - 8 PM ET, weekdays only</strong>. This includes pre-market, regular market, and after-hours sessions.
+                                        </p>
+                                        <p className="text-sm text-muted-foreground mt-2">
+                                            Attempting to trade outside these hours will result in an error message.
+                                        </p>
+                                    </div>
+                                    <div className="border-t pt-3">
+                                        <h4 className="font-medium text-sm mb-2">Live Price Execution</h4>
+                                        <p className="text-sm text-muted-foreground">
+                                            All trades execute at the current market price at the time of order. The system fetches live prices from market data providers with a database fallback if live data is unavailable.
+                                        </p>
+                                        <p className="text-sm text-muted-foreground mt-2">
+                                            The execution price is shown in the transaction confirmation and recorded in your transaction history.
+                                        </p>
+                                    </div>
+                                </CardContent>
+                            </Card>
+
+                            <Card>
+                                <CardHeader>
+                                    <CardTitle>Trade Validation</CardTitle>
+                                </CardHeader>
+                                <CardContent className="space-y-3">
+                                    <p className="text-sm text-muted-foreground">
+                                        The system validates all trades before execution:
+                                    </p>
+                                    <ul className="text-sm text-muted-foreground space-y-2 list-disc list-inside ml-2">
+                                        <li><strong>Buy Orders</strong> - Checks that you have sufficient cash to complete the purchase</li>
+                                        <li><strong>Sell Orders</strong> - Verifies you own enough shares of the stock to sell</li>
+                                        <li><strong>Market Hours</strong> - Ensures trading occurs during valid market hours</li>
+                                        <li><strong>Price Availability</strong> - Confirms current price data is available</li>
+                                    </ul>
+                                    <p className="text-sm text-muted-foreground mt-3">
+                                        If validation fails, you'll receive a clear error message explaining the issue.
+                                    </p>
+                                </CardContent>
+                            </Card>
+
+                            <Card>
+                                <CardHeader>
+                                    <CardTitle>Transaction History & Notes</CardTitle>
+                                </CardHeader>
+                                <CardContent className="space-y-3">
+                                    <p className="text-sm text-muted-foreground">
+                                        Every trade is recorded in the Transactions tab with complete details including timestamp, symbol, type, quantity, execution price, and total value.
+                                    </p>
+                                    <p className="text-sm text-muted-foreground">
+                                        Use the optional note field to document your reasoning for each trade. This helps you review your decision-making process later and learn from both successful and unsuccessful trades.
+                                    </p>
+                                    <img
+                                        src="/help/portfolio-transactions.png"
+                                        alt="Transaction History"
+                                        className="rounded-lg border-2 border-muted-foreground/30 w-full mt-3"
+                                    />
+                                </CardContent>
+                            </Card>
+                        </div>
+                    )}
+
+                    {activeTab === "automated-trading" && (
+                        <div className="space-y-6">
+                            <div>
+                                <h3 className="text-lg font-medium">Automated Trading</h3>
+                                <p className="text-sm text-muted-foreground">
+                                    Execute trades through the AI agent or automated alert triggers.
+                                </p>
+                            </div>
+                            <div className="border-t" />
+
+                            <Card>
+                                <CardHeader>
+                                    <CardTitle>Two Paths to Automated Trading</CardTitle>
+                                </CardHeader>
+                                <CardContent className="space-y-4">
+                                    <div>
+                                        <h4 className="font-medium text-sm mb-2">1. Direct Agent Trades</h4>
+                                        <p className="text-sm text-muted-foreground mb-2">
+                                            Command the AI agent to execute trades immediately via chat. The agent can buy or sell stocks in your portfolios during market hours.
+                                        </p>
+                                        <p className="text-sm text-muted-foreground mb-2"><strong>Example commands:</strong></p>
+                                        <ul className="text-sm text-muted-foreground space-y-1 list-disc list-inside ml-2">
+                                            <li>"Buy 10 shares of AAPL in my Tech Portfolio"</li>
+                                            <li>"Sell 5 shares of MSFT from my Growth Portfolio"</li>
+                                            <li>"Purchase 20 shares of NVDA in my main portfolio"</li>
+                                        </ul>
+                                    </div>
+                                    <div className="border-t pt-3">
+                                        <h4 className="font-medium text-sm mb-2">2. Alert-Triggered Trades</h4>
+                                        <p className="text-sm text-muted-foreground">
+                                            Set up conditional trades that execute automatically when specific market conditions are met. See the Alerts & Automation section for details.
+                                        </p>
+                                    </div>
+                                </CardContent>
+                            </Card>
+
+                            <Card>
+                                <CardHeader>
+                                    <CardTitle>Agent Portfolio Management</CardTitle>
+                                </CardHeader>
+                                <CardContent className="space-y-3">
+                                    <p className="text-sm text-muted-foreground mb-2">
+                                        The AI agent can help manage your portfolios through natural language:
+                                    </p>
+                                    <ul className="text-sm text-muted-foreground space-y-1 list-disc list-inside ml-2">
+                                        <li><strong>Create portfolios:</strong> "Create a new portfolio called Growth Strategy with $50,000"</li>
+                                        <li><strong>Check status:</strong> "What's the current value of my Tech Portfolio?"</li>
+                                        <li><strong>View holdings:</strong> "Show me what stocks are in my Conservative Portfolio"</li>
+                                        <li><strong>Review performance:</strong> "How is my Dividend Portfolio performing?"</li>
+                                    </ul>
+                                    <img
+                                        src="/help/agent-trade-chat.png"
+                                        alt="Agent Trade Execution via Chat"
+                                        className="rounded-lg border-2 border-muted-foreground/30 w-full mt-3"
+                                    />
+                                </CardContent>
+                            </Card>
+
+                            <Card>
+                                <CardHeader>
+                                    <CardTitle>Trade Execution & Confirmation</CardTitle>
+                                </CardHeader>
+                                <CardContent className="space-y-3">
+                                    <p className="text-sm text-muted-foreground">
+                                        When the agent executes a trade:
+                                    </p>
+                                    <ol className="text-sm text-muted-foreground space-y-1 list-decimal list-inside ml-2">
+                                        <li>It checks that the portfolio exists and you own it</li>
+                                        <li>Verifies market hours (4 AM - 8 PM ET, weekdays)</li>
+                                        <li>Fetches the current market price</li>
+                                        <li>Validates sufficient cash (buy) or shares (sell)</li>
+                                        <li>Records the transaction with execution details</li>
+                                        <li>Confirms the trade in chat with price and total value</li>
+                                    </ol>
+                                    <p className="text-sm text-muted-foreground mt-3">
+                                        All agent trades appear in your transaction history with automatically generated notes identifying them as agent-initiated.
+                                    </p>
+                                    <img
+                                        src="/help/agent-trade-confirmation.png"
+                                        alt="Portfolio with Agent Trade Notes"
+                                        className="rounded-lg border-2 border-muted-foreground/30 w-full mt-3"
+                                    />
+                                </CardContent>
+                            </Card>
+
+                            <Card>
+                                <CardHeader>
+                                    <CardTitle>Important Notes</CardTitle>
+                                </CardHeader>
+                                <CardContent className="space-y-3">
+                                    <ul className="text-sm text-muted-foreground space-y-2 list-disc list-inside ml-2">
+                                        <li>Agent trades execute immediately at market prices—there's no "undo" button</li>
+                                        <li>All validation rules apply just like manual trades (market hours, sufficient funds, etc.)</li>
+                                        <li>Be specific about portfolio names to avoid confusion if you have multiple portfolios</li>
+                                        <li>Trade notes are automatically generated but you can view and understand them in transaction history</li>
+                                    </ul>
+                                </CardContent>
+                            </Card>
+                        </div>
+                    )}
+
+                    {activeTab === "setting-alerts" && (
+                        <div className="space-y-6">
+                            <div>
+                                <h3 className="text-lg font-medium">Setting Alerts via Chat</h3>
+                                <p className="text-sm text-muted-foreground">
+                                    Create custom alerts using natural language to monitor stocks and market conditions.
+                                </p>
+                            </div>
+                            <div className="border-t" />
+
+                            <Card>
+                                <CardHeader>
+                                    <CardTitle>How Alerts Work</CardTitle>
+                                </CardHeader>
+                                <CardContent className="space-y-3">
+                                    <p className="text-sm text-muted-foreground">
+                                        Alerts let you monitor specific conditions and get notified when they occur. Simply describe what you want to watch in natural language, and the AI agent will create an alert that continuously monitors the condition.
+                                    </p>
+                                    <p className="text-sm text-muted-foreground">
+                                        A background worker periodically checks your alert conditions. When a condition is met, the alert triggers and you're notified.
+                                    </p>
+                                </CardContent>
+                            </Card>
+
+                            <Card>
+                                <CardHeader>
+                                    <CardTitle>Creating Alerts</CardTitle>
+                                    <CardDescription>Use natural language to describe conditions</CardDescription>
+                                </CardHeader>
+                                <CardContent className="space-y-4">
+                                    <p className="text-sm text-muted-foreground mb-2">
+                                        To create an alert, simply tell the AI agent what you want to monitor:
+                                    </p>
+                                    <div>
+                                        <h4 className="font-medium text-sm mb-2">Price-Based Alerts</h4>
+                                        <ul className="text-sm text-muted-foreground space-y-1 list-disc list-inside ml-2">
+                                            <li>"Alert me when AAPL price drops below $145"</li>
+                                            <li>"Notify me if Google's stock goes above $180"</li>
+                                            <li>"Tell me when Tesla reaches $250"</li>
+                                        </ul>
+                                    </div>
+                                    <div>
+                                        <h4 className="font-medium text-sm mb-2">Metric-Based Alerts</h4>
+                                        <ul className="text-sm text-muted-foreground space-y-1 list-disc list-inside ml-2">
+                                            <li>"Alert me when MSFT's P/E ratio falls below 20"</li>
+                                            <li>"Notify me if institutional ownership goes above 80%"</li>
+                                            <li>"Tell me when the PEG ratio drops under 1.0"</li>
+                                        </ul>
+                                    </div>
+                                    <div>
+                                        <h4 className="font-medium text-sm mb-2">Technical Indicator Alerts</h4>
+                                        <ul className="text-sm text-muted-foreground space-y-1 list-disc list-inside ml-2">
+                                            <li>"Alert me if NVDA's RSI goes above 70"</li>
+                                            <li>"Notify me when the 50-day MA crosses the 200-day MA"</li>
+                                        </ul>
+                                    </div>
+                                    <img
+                                        src="/help/alert-creation-chat.png"
+                                        alt="Creating Alert via Chat"
+                                        className="rounded-lg border-2 border-muted-foreground/30 w-full mt-3"
+                                    />
+                                </CardContent>
+                            </Card>
+
+                            <Card>
+                                <CardHeader>
+                                    <CardTitle>How the AI Interprets Conditions</CardTitle>
+                                </CardHeader>
+                                <CardContent className="space-y-3">
+                                    <p className="text-sm text-muted-foreground">
+                                        The agent parses your natural language description and stores it as a custom condition. The system uses LLM evaluation to understand complex conditions beyond simple thresholds.
+                                    </p>
+                                    <p className="text-sm text-muted-foreground">
+                                        This means you can describe sophisticated conditions like "when earnings growth accelerates" or "if the company announces a dividend increase" and the system will interpret and monitor them intelligently.
+                                    </p>
+                                </CardContent>
+                            </Card>
+
+                            <Card>
+                                <CardHeader>
+                                    <CardTitle>Managing Your Alerts</CardTitle>
+                                </CardHeader>
+                                <CardContent className="space-y-3">
+                                    <p className="text-sm text-muted-foreground mb-2">
+                                        You can manage alerts through chat commands:
+                                    </p>
+                                    <ul className="text-sm text-muted-foreground space-y-1 list-disc list-inside ml-2">
+                                        <li>"What alerts do I have configured?"</li>
+                                        <li>"Show me my active alerts"</li>
+                                        <li>"Delete my alert for NVDA"</li>
+                                        <li>"Remove the P/E alert for Apple"</li>
+                                    </ul>
+                                    <p className="text-sm text-muted-foreground mt-3">
+                                        When an alert triggers, you'll see a notification and the alert's status changes to 'triggered' in your alert list.
+                                    </p>
+                                </CardContent>
+                            </Card>
+
+                            <Card>
+                                <CardHeader>
+                                    <CardTitle>Alert Monitoring</CardTitle>
+                                </CardHeader>
+                                <CardContent className="space-y-3">
+                                    <p className="text-sm text-muted-foreground">
+                                        A background worker continuously checks your alert conditions at regular intervals. This ensures you don't miss important market movements even when you're not actively using the app.
+                                    </p>
+                                    <p className="text-sm text-muted-foreground">
+                                        Alerts remain active until they trigger or you manually delete them. Once triggered, an alert won't trigger again unless you recreate it.
+                                    </p>
+                                </CardContent>
+                            </Card>
+                        </div>
+                    )}
+
+                    {activeTab === "automated-trade-actions" && (
+                        <div className="space-y-6">
+                            <div>
+                                <h3 className="text-lg font-medium">Automated Trade Actions</h3>
+                                <p className="text-sm text-muted-foreground">
+                                    Combine alerts with trading actions to execute conditional trades automatically.
+                                </p>
+                            </div>
+                            <div className="border-t" />
+
+                            <Card>
+                                <CardHeader>
+                                    <CardTitle>Alerts + Trading Actions</CardTitle>
+                                    <CardDescription>Execute trades when conditions are met</CardDescription>
+                                </CardHeader>
+                                <CardContent className="space-y-3">
+                                    <p className="text-sm text-muted-foreground">
+                                        You can create alerts that automatically execute trades when triggered. This lets you implement conditional trading strategies like "buy the dip" or "take profits at target price" without manual intervention.
+                                    </p>
+                                    <p className="text-sm text-muted-foreground">
+                                        The alert continuously monitors the condition, and when it's met, the system automatically executes your specified trade in the designated portfolio.
+                                    </p>
+                                </CardContent>
+                            </Card>
+
+                            <Card>
+                                <CardHeader>
+                                    <CardTitle>Creating Alert-Triggered Trades</CardTitle>
+                                </CardHeader>
+                                <CardContent className="space-y-4">
+                                    <p className="text-sm text-muted-foreground mb-2">
+                                        To create an alert with a trading action, specify both the condition and the action in your chat message:
+                                    </p>
+                                    <div>
+                                        <h4 className="font-medium text-sm mb-2">Buy Actions</h4>
+                                        <ul className="text-sm text-muted-foreground space-y-1 list-disc list-inside ml-2">
+                                            <li>"Buy 5 shares of MSFT in my Tech Portfolio when price drops to $380"</li>
+                                            <li>"Purchase 10 shares of AAPL in my Growth Portfolio if it falls below $140"</li>
+                                            <li>"Add 20 shares of NVDA to my portfolio when RSI drops under 30"</li>
+                                        </ul>
+                                    </div>
+                                    <div>
+                                        <h4 className="font-medium text-sm mb-2">Sell Actions</h4>
+                                        <ul className="text-sm text-muted-foreground space-y-1 list-disc list-inside ml-2">
+                                            <li>"Sell 10 shares of TSLA when price reaches $300"</li>
+                                            <li>"Sell all my Google shares if P/E ratio exceeds 35"</li>
+                                            <li>"Take profits on AMD when it hits $180"</li>
+                                        </ul>
+                                    </div>
+                                    <img
+                                        src="/help/alert-with-trade-action.png"
+                                        alt="Alert with Trade Action"
+                                        className="rounded-lg border-2 border-muted-foreground/30 w-full mt-3"
+                                    />
+                                </CardContent>
+                            </Card>
+
+                            <Card>
+                                <CardHeader>
+                                    <CardTitle>How It Works</CardTitle>
+                                </CardHeader>
+                                <CardContent className="space-y-3">
+                                    <ol className="text-sm text-muted-foreground space-y-2 list-decimal list-inside ml-2">
+                                        <li>The AI agent parses your message to extract the condition, action type (buy/sell), quantity, and portfolio</li>
+                                        <li>The system creates an alert with the trading action stored as metadata</li>
+                                        <li>A background worker continuously monitors the alert condition</li>
+                                        <li>When the condition triggers, the worker validates the trade (market hours, sufficient cash/shares)</li>
+                                        <li>If validation passes, the trade executes automatically at current market price</li>
+                                        <li>The transaction is recorded with a special note: "[Action] (Triggered by Alert ID)"</li>
+                                    </ol>
+                                </CardContent>
+                            </Card>
+
+                            <Card>
+                                <CardHeader>
+                                    <CardTitle>Trade Validation & Safety</CardTitle>
+                                </CardHeader>
+                                <CardContent className="space-y-3">
+                                    <p className="text-sm text-muted-foreground mb-2">
+                                        Even automated trades go through the same validation as manual trades:
+                                    </p>
+                                    <ul className="text-sm text-muted-foreground space-y-2 list-disc list-inside ml-2">
+                                        <li><strong>Market Hours</strong> - Trades only execute during extended market hours (4 AM - 8 PM ET, weekdays)</li>
+                                        <li><strong>Sufficient Funds</strong> - Buy orders require available cash in the portfolio</li>
+                                        <li><strong>Sufficient Shares</strong> - Sell orders require owning enough shares</li>
+                                        <li><strong>Price Availability</strong> - Current market price must be available</li>
+                                    </ul>
+                                    <p className="text-sm text-muted-foreground mt-3">
+                                        If validation fails (e.g., insufficient funds or outside market hours), the trade won't execute and you'll receive an error message. The alert remains active and will retry on the next check if conditions still match.
+                                    </p>
+                                </CardContent>
+                            </Card>
+
+                            <Card>
+                                <CardHeader>
+                                    <CardTitle>Transaction History</CardTitle>
+                                </CardHeader>
+                                <CardContent className="space-y-3">
+                                    <p className="text-sm text-muted-foreground">
+                                        Alert-triggered trades appear in your portfolio's transaction history with a special note format that identifies them as automated:
+                                    </p>
+                                    <p className="text-sm text-muted-foreground">
+                                        <code className="bg-muted px-2 py-1 rounded text-xs">"[Your action note] (Triggered by Alert 123)"</code>
+                                    </p>
+                                    <p className="text-sm text-muted-foreground mt-3">
+                                        This lets you track which trades were automated versus manual, and review the performance of your conditional strategies.
+                                    </p>
+                                    <img
+                                        src="/help/alert-triggered-transaction.png"
+                                        alt="Transaction from Triggered Alert"
+                                        className="rounded-lg border-2 border-muted-foreground/30 w-full mt-3"
+                                    />
+                                </CardContent>
+                            </Card>
+
+                            <Card>
+                                <CardHeader>
+                                    <CardTitle>Important Considerations</CardTitle>
+                                </CardHeader>
+                                <CardContent className="space-y-3">
+                                    <ul className="text-sm text-muted-foreground space-y-2 list-disc list-inside ml-2">
+                                        <li>Alert-triggered trades execute automatically—make sure you have sufficient funds/shares before setting them up</li>
+                                        <li>Alerts trigger once and then become inactive. If you want recurring conditional trades, you'll need to recreate the alert after it triggers</li>
+                                        <li>Be specific about portfolio names to avoid trades executing in the wrong portfolio</li>
+                                        <li>Monitor your portfolios regularly to ensure automated trades align with your strategy</li>
+                                        <li>You can delete an alert before it triggers to cancel the pending automated trade</li>
+                                    </ul>
                                 </CardContent>
                             </Card>
                         </div>
