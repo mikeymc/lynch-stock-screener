@@ -30,6 +30,7 @@ import Economy from './pages/Economy'
 import Portfolios from './pages/Portfolios'
 import { screeningCache } from './utils/cache'
 import Help from './pages/Help'
+import { OnboardingWizard } from './components/OnboardingWizard'
 // import './App.css' // Disabled for shadcn migration
 
 ChartJS.register(
@@ -1022,6 +1023,7 @@ function App() {
   const [algorithms, setAlgorithms] = useState({})
   const [showAdvancedFilters, setShowAdvancedFilters] = useState(false)
   const [activeCharacter, setActiveCharacter] = useState(() => localStorage.getItem('activeCharacter') || 'lynch')
+  const [showOnboarding, setShowOnboarding] = useState(false)
 
   // Sync activeCharacter from localStorage on navigation (e.g., coming back from Settings)
   useEffect(() => {
@@ -1063,14 +1065,14 @@ function App() {
     }
   }, [activeCharacter])
 
-  // Check for first visit and redirect to help
+  // Check for first visit and show onboarding wizard
   useEffect(() => {
     if (!user || loading) return
 
-    if (!user.has_completed_onboarding && location.pathname === '/') {
-      navigate('/help')
+    if (!user.has_completed_onboarding) {
+      setShowOnboarding(true)
     }
-  }, [user, loading, navigate, location.pathname])
+  }, [user, loading])
 
   // Fetch algorithm metadata
   useEffect(() => {
@@ -1159,9 +1161,16 @@ function App() {
   }
 
   return (
-    <Routes>
+    <>
+      <OnboardingWizard
+        open={showOnboarding}
+        onComplete={() => setShowOnboarding(false)}
+        onSkip={() => setShowOnboarding(false)}
+      />
 
-      <Route element={
+      <Routes>
+
+        <Route element={
         <AppShell
           filter={filter}
           setFilter={setFilter}
@@ -1223,7 +1232,8 @@ function App() {
         <Route path="/help" element={<Help />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
-    </Routes>
+      </Routes>
+    </>
   )
 }
 
