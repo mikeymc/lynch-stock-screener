@@ -27,17 +27,17 @@ const EXPERTISE_LEVELS = [
     {
         id: 'learning',
         name: 'Learning',
-        description: 'New to investing or building foundational knowledge. Uses simpler terms, avoids jargon, and provides clear explanations.',
+        description: 'I am new to investing and want to build a solid foundation in fundamental analysis.',
     },
     {
         id: 'practicing',
         name: 'Practicing',
-        description: 'Understand the basics and want to deepen analytical skills. Balances accessibility with depth.',
+        description: 'I have a working knowledge of investing concepts and want to deepen my analysis skill.',
     },
     {
         id: 'expert',
         name: 'Expert',
-        description: 'Seasoned investor comfortable with technical language. Concise, focused on unique insights.',
+        description: 'I am a seasoned investor who is comfortable with complex finance concepts and investing terminology.',
     },
 ]
 
@@ -45,12 +45,12 @@ const THEME_OPTIONS = [
     {
         id: 'light',
         name: 'Light',
-        description: 'Clean, bright interface for daytime use',
+        description: 'Clean, bright interface',
     },
     {
         id: 'dark',
         name: 'Dark',
-        description: 'Easy on the eyes for low-light environments',
+        description: 'Good for low-light environments',
     },
     {
         id: 'system',
@@ -206,20 +206,19 @@ export function OnboardingWizard({ open, onComplete, onSkip }) {
     }
 
     return (
-        <Dialog open={open} onOpenChange={() => {}}>
+        <Dialog open={open} onOpenChange={() => { }}>
             <DialogContent className="sm:max-w-[600px]" hideClose>
                 {/* Progress dots */}
                 <div className="flex justify-center gap-2 mb-4">
                     {[1, 2, 3, 4].map((step) => (
                         <div
                             key={step}
-                            className={`h-2 w-2 rounded-full transition-colors ${
-                                step === currentStep
-                                    ? 'bg-primary'
-                                    : step < currentStep
+                            className={`h-2 w-2 rounded-full transition-colors ${step === currentStep
+                                ? 'bg-primary'
+                                : step < currentStep
                                     ? 'bg-primary/50'
                                     : 'bg-muted'
-                            }`}
+                                }`}
                         />
                     ))}
                 </div>
@@ -230,8 +229,7 @@ export function OnboardingWizard({ open, onComplete, onSkip }) {
                         <DialogHeader>
                             <DialogTitle>What is your expertise level?</DialogTitle>
                             <DialogDescription>
-                                This adjusts the communication style of all AI-generated content
-                                including thesis analyses, chart commentary, and chat responses.
+                                This helps us tailor the interaction style of written analyses and chat responses.
                             </DialogDescription>
                         </DialogHeader>
 
@@ -259,13 +257,15 @@ export function OnboardingWizard({ open, onComplete, onSkip }) {
                             ))}
                         </RadioGroup>
 
-                        <div className="flex justify-between mt-6">
-                            <Button variant="ghost" onClick={handleSkip} disabled={loading}>
-                                Skip for now
-                            </Button>
-                            <Button onClick={handleNext} disabled={loading}>
-                                Next
-                            </Button>
+                        <div className="flex justify-end mt-6">
+                            <div className="flex gap-2">
+                                <Button variant="ghost" onClick={handleSkip} disabled={loading}>
+                                    Skip for now
+                                </Button>
+                                <Button onClick={handleNext} disabled={loading}>
+                                    Next
+                                </Button>
+                            </div>
                         </div>
                     </>
                 )}
@@ -274,11 +274,9 @@ export function OnboardingWizard({ open, onComplete, onSkip }) {
                 {currentStep === STEPS.CHARACTER && (
                     <>
                         <DialogHeader>
-                            <DialogTitle>Choose your investment mentor</DialogTitle>
+                            <DialogTitle>Choose your investment philosophy</DialogTitle>
                             <DialogDescription>
-                                Your mentor shapes how you see opportunities. Their preferred metrics
-                                influence stock scores, and their investment philosophy guides the
-                                thesis, charts, and chat analysis you'll receive.
+                                This shapes the scoring algorithm, investment thesis, chart analysis, and chat responses.
                             </DialogDescription>
                         </DialogHeader>
 
@@ -313,17 +311,17 @@ export function OnboardingWizard({ open, onComplete, onSkip }) {
                         )}
 
                         <div className="flex justify-between mt-6">
+                            <Button variant="outline" onClick={handleBack} disabled={loading}>
+                                Back
+                            </Button>
                             <div className="flex gap-2">
-                                <Button variant="outline" onClick={handleBack} disabled={loading}>
-                                    Back
-                                </Button>
                                 <Button variant="ghost" onClick={handleSkip} disabled={loading}>
                                     Skip for now
                                 </Button>
+                                <Button onClick={handleNext} disabled={loading || charactersLoading}>
+                                    Next
+                                </Button>
                             </div>
-                            <Button onClick={handleNext} disabled={loading || charactersLoading}>
-                                Next
-                            </Button>
                         </div>
                     </>
                 )}
@@ -334,7 +332,7 @@ export function OnboardingWizard({ open, onComplete, onSkip }) {
                         <DialogHeader>
                             <DialogTitle>Choose your theme</DialogTitle>
                             <DialogDescription>
-                                Select your preferred color scheme. You can change this anytime in settings.
+                                Select your preferred theme.
                             </DialogDescription>
                         </DialogHeader>
 
@@ -363,17 +361,17 @@ export function OnboardingWizard({ open, onComplete, onSkip }) {
                         </RadioGroup>
 
                         <div className="flex justify-between mt-6">
+                            <Button variant="outline" onClick={handleBack} disabled={loading}>
+                                Back
+                            </Button>
                             <div className="flex gap-2">
-                                <Button variant="outline" onClick={handleBack} disabled={loading}>
-                                    Back
-                                </Button>
                                 <Button variant="ghost" onClick={handleSkip} disabled={loading}>
                                     Skip for now
                                 </Button>
+                                <Button onClick={handleNext} disabled={loading}>
+                                    Next
+                                </Button>
                             </div>
-                            <Button onClick={handleNext} disabled={loading}>
-                                Next
-                            </Button>
                         </div>
                     </>
                 )}
@@ -382,29 +380,26 @@ export function OnboardingWizard({ open, onComplete, onSkip }) {
                 {currentStep === STEPS.CONFIRMATION && (
                     <>
                         <DialogHeader>
-                            <DialogTitle>You're all set!</DialogTitle>
-                            <DialogDescription>
-                                Ready to discover great investment opportunities?
-                            </DialogDescription>
+                            <DialogTitle>Settings</DialogTitle>
                         </DialogHeader>
 
                         <div className="mt-4 p-4 bg-muted rounded-lg space-y-2">
-                            <p className="text-sm font-medium">Your preferences:</p>
                             <ul className="text-sm text-muted-foreground space-y-1">
                                 <li>
-                                    <span className="font-medium">Expertise:</span> {getExpertiseName(selections.expertise)}
+                                    <span className="font-medium">Expertise Level:</span> {getExpertiseName(selections.expertise)}
                                 </li>
                                 <li>
-                                    <span className="font-medium">Investment Mentor:</span> {getCharacterName(selections.character)}
+                                    <span className="font-medium">Investment Philosophy:</span> {getCharacterName(selections.character)}
                                 </li>
                                 <li>
                                     <span className="font-medium">Theme:</span> {getThemeName(selections.theme)}
                                 </li>
                             </ul>
-                            <p className="text-xs text-muted-foreground mt-3">
-                                You can change these anytime in Settings.
-                            </p>
                         </div>
+                        <p className="text-sm text-muted-foreground mt-3">
+                            Check out the quickstart guide to get started!
+                        </p>
+
 
                         <div className="flex justify-between mt-6">
                             <Button variant="outline" onClick={handleBack} disabled={loading}>
