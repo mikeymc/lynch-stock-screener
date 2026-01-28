@@ -27,17 +27,17 @@ const EXPERTISE_LEVELS = [
     {
         id: 'learning',
         name: 'Learning',
-        description: 'I am new to investing and want to build a solid foundation in fundamental analysis.',
+        description: 'I am new to investing and want to build a solid foundation.',
     },
     {
         id: 'practicing',
         name: 'Practicing',
-        description: 'I have a working knowledge of investing concepts and want to deepen my analysis skill.',
+        description: 'I have a working knowledge of investing and want to deepen my understanding.',
     },
     {
         id: 'expert',
         name: 'Expert',
-        description: 'I am a seasoned investor who is comfortable with complex finance concepts and investing terminology.',
+        description: 'I am comfortable with complex finance concepts and investing terminology.',
     },
 ]
 
