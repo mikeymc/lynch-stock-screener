@@ -2993,6 +2993,9 @@ def get_stock_thesis(symbol, user_id):
                 try:
                     # Send metadata first
                     gen_at = cached_analysis['generated_at'] if was_cached else datetime.now().isoformat()
+                    if hasattr(gen_at, 'isoformat'):
+                        gen_at = gen_at.isoformat()
+                    
                     yield f"data: {json.dumps({'type': 'metadata', 'cached': was_cached, 'generated_at': gen_at})}\n\n"
 
                     # Get iterator

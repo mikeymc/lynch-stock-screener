@@ -8,6 +8,7 @@ import time
 import logging
 from typing import Dict, Any, List, Optional
 from datetime import datetime
+import httpx
 from google import genai
 from google.genai.types import GenerateContentConfig, ToolConfig, FunctionCallingConfig, FunctionCallingConfigMode
 
@@ -50,8 +51,10 @@ class StockAnalyst:
     def client(self):
         """Lazy initialization of Gemini client."""
         if self._client is None:
-            # Set explicit timeout to prevent indefinite hangs (30s)
-            http_options = {'timeout': 30}
+            # Set explicit granular timeout via client_args to bypass HttpOptions.timeout validation
+            # connect=10s (for handshake), read=60s (for long streams), write=10s, pool=10s
+            timeout_config = httpx.Timeout(60.0, connect=10.0, read=60.0, write=10.0, pool=10.0)
+            http_options = {'client_args': {'timeout': timeout_config}}
             
             if self._api_key:
                 self._client = genai.Client(api_key=self._api_key, http_options=http_options)
