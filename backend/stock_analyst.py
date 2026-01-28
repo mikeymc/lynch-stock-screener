@@ -9,7 +9,7 @@ import logging
 from typing import Dict, Any, List, Optional
 from datetime import datetime
 from google import genai
-from google.genai.types import GenerateContentConfig
+from google.genai.types import GenerateContentConfig, ToolConfig, FunctionCallingConfig, FunctionCallingConfigMode
 
 logger = logging.getLogger(__name__)
 
@@ -50,10 +50,13 @@ class StockAnalyst:
     def client(self):
         """Lazy initialization of Gemini client."""
         if self._client is None:
+            # Set explicit timeout to prevent indefinite hangs (30s)
+            http_options = {'timeout': 30}
+            
             if self._api_key:
-                self._client = genai.Client(api_key=self._api_key)
+                self._client = genai.Client(api_key=self._api_key, http_options=http_options)
             else:
-                self._client = genai.Client()
+                self._client = genai.Client(http_options=http_options)
         return self._client
 
     @property
@@ -415,9 +418,14 @@ class StockAnalyst:
         if model_version not in AVAILABLE_MODELS:
             raise ValueError(f"Invalid model: {model_version}. Must be one of {AVAILABLE_MODELS}")
 
+        t0 = time.time()
+        logger.info(f"[Analysis] Constructing prompt for {stock_data.get('symbol')} (Character: {character_id})")
         prompt = self.format_prompt(stock_data, history, sections, news, material_events, 
                                     transcripts=transcripts, lynch_brief=lynch_brief,
                                     user_id=user_id, character_id=character_id)
+        t_prompt = (time.time() - t0) * 1000
+        prompt_size_bytes = len(prompt.encode('utf-8'))
+        logger.info(f"[Analysis][{stock_data.get('symbol')}] Prompt constructed in {t_prompt:.2f}ms. Size: {len(prompt)} chars ({prompt_size_bytes/1024:.2f} KB)")
 
         # Retry logic with fallback to flash model
         models_to_try = [model_version, FALLBACK_MODEL] if model_version != FALLBACK_MODEL else [model_version]
@@ -431,11 +439,34 @@ class StockAnalyst:
 
             while retry_count <= max_retries:
                 try:
+                    logger.info(f"[Analysis] Sending streaming request to {model}...")
                     response = self.client.models.generate_content_stream(
                         model=model,
-                        contents=prompt
+                        contents=prompt,
+                        config=GenerateContentConfig(
+                            temperature=0.7,
+                            top_p=0.95,
+                            top_k=40,
+                            max_output_tokens=8192,
+                            # Explicitly disable function calling to prevent AFC hangs
+                            tool_config=ToolConfig(
+                                function_calling_config=FunctionCallingConfig(
+                                    mode=FunctionCallingConfigMode.NONE
+                                )
+                            )
+                        )
                     )
+                    logger.info(f"[Analysis] Stream initialized. Waiting for first chunk from {model}...")
                     model_success = True
+                    
+                    # Yield from response, logging first chunk
+                    first_chunk_received = False
+                    for chunk in response:
+                        if chunk.text:
+                            if not first_chunk_received:
+                                logger.info(f"[Analysis] Received first chunk from {model}")
+                                first_chunk_received = True
+                            yield chunk.text
                     break
                 except Exception as e:
                     is_overloaded = "503" in str(e) or "overloaded" in str(e).lower()
@@ -667,7 +698,19 @@ class StockAnalyst:
                 try:
                     response = self.client.models.generate_content(
                         model=model,
-                        contents=final_prompt
+                        contents=final_prompt,
+                        config=GenerateContentConfig(
+                            temperature=0.7,
+                            top_p=0.95,
+                            top_k=40,
+                            max_output_tokens=8192,
+                            # Explicitly disable function calling to prevent AFC hangs
+                            tool_config=ToolConfig(
+                                function_calling_config=FunctionCallingConfig(
+                                    mode=FunctionCallingConfigMode.NONE
+                                )
+                            )
+                        )
                     )
                     model_success = True
                     break

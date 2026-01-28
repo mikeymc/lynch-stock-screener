@@ -2909,9 +2909,13 @@ def get_stock_thesis(symbol, user_id):
     character_id = request.args.get('character')
     
     # Check if stock exists
+    t0 = time.time()
     stock_metrics = db.get_stock_metrics(symbol)
+    t_metrics = (time.time() - t0) * 1000
     if not stock_metrics:
+        logger.warning(f"[Thesis][{symbol}] Stock not found (metrics fetch took {t_metrics:.2f}ms)")
         return jsonify({'error': f'Stock {symbol} not found'}), 404
+    logger.info(f"[Thesis][{symbol}] Fetched stock metrics in {t_metrics:.2f}ms")
 
     # Get historical data
     history = db.get_earnings_history(symbol)
@@ -2931,7 +2935,14 @@ def get_stock_thesis(symbol, user_id):
     sections = None
     country = stock_metrics.get('country', '')
     if not country or country.upper() in ['USA', 'UNITED STATES']:
+        t0 = time.time()
         sections = db.get_filing_sections(symbol)
+        t_sections = (time.time() - t0) * 1000
+        section_size_mb = 0
+        if sections:
+            # Rough estimation of size
+            section_size_mb = sum(len(s.get('content', '')) for s in sections.values()) / 1024 / 1024
+        logger.info(f"[Thesis][{symbol}] Fetched SEC sections in {t_sections:.2f}ms (Size: {section_size_mb:.2f} MB)")
 
     # Check cache
     cached_analysis = db.get_lynch_analysis(user_id, symbol, character_id=character_id)
@@ -2963,9 +2974,19 @@ def get_stock_thesis(symbol, user_id):
 
     # Get or generate analysis
     try:
+        t_start = time.time()
+        logger.info(f"[Thesis][{symbol}] Starting thesis generation request")
+        
         # Fetch material events and news articles for context
+        t0 = time.time()
         material_events = db.get_material_events(symbol, limit=10)
+        t_events = (time.time() - t0) * 1000
+        logger.info(f"[Thesis][{symbol}] Fetched material events in {t_events:.2f}ms")
+        
+        t0 = time.time()
         news_articles = db.get_news_articles(symbol, limit=20)
+        t_news = (time.time() - t0) * 1000
+        logger.info(f"[Thesis][{symbol}] Fetched news articles in {t_news:.2f}ms")
 
         if should_stream:
             def generate():
