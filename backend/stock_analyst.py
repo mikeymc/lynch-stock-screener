@@ -370,10 +370,21 @@ class StockAnalyst:
         # Append SEC sections if available
         if sections:
             sections_text = "\n\n---\n\n## Additional Context from SEC Filings\n\n"
+            # Limit each section to ~30k chars to prevent massive payloads (Fly.io OOM / API timeouts)
+            SECTION_CHAR_LIMIT = 30000
+            
             for key in ['business', 'risk_factors', 'mda', 'market_risk']:
                 if key in sections:
-                    sections_text += f"### {key.replace('_', ' ').title()}\n"
-                    sections_text += f"{sections[key].get('content', 'Not available')}\n\n"
+                    title = key.replace('_', ' ').title()
+                    content = sections[key].get('content', 'Not available')
+                    
+                    # Truncate if necessary
+                    if content and len(content) > SECTION_CHAR_LIMIT:
+                        logger.info(f"Truncating {key} section from {len(content)} to {SECTION_CHAR_LIMIT} chars")
+                        content = content[:SECTION_CHAR_LIMIT] + "... [TRUNCATED]"
+                        
+                    sections_text += f"### {title}\n"
+                    sections_text += f"{content}\n\n"
             formatted_prompt += sections_text
 
         return formatted_prompt
@@ -599,12 +610,22 @@ class StockAnalyst:
         # Append SEC filing sections if available
         if sections:
             sections_text = "\n\n---\n\n## Additional Context from SEC Filings\n\n"
+            # Limit each section to ~30k chars to prevent massive payloads (Fly.io OOM / API timeouts)
+            SECTION_CHAR_LIMIT = 30000
+
             for key, title in [('business', 'Business Description'), ('risk_factors', 'Risk Factors'),
                                ('mda', "Management's Discussion & Analysis"), ('market_risk', 'Market Risk')]:
                 if key in sections:
+                    content = sections[key].get('content', 'Not available')
+                    
+                    # Truncate if necessary
+                    if content and len(content) > SECTION_CHAR_LIMIT:
+                        logger.info(f"Truncating {key} section in chart analysis from {len(content)} to {SECTION_CHAR_LIMIT} chars")
+                        content = content[:SECTION_CHAR_LIMIT] + "... [TRUNCATED]"
+
                     sections_text += f"### {title}\n"
                     sections_text += f"Filed: {sections[key].get('filing_date', 'N/A')}\n"
-                    sections_text += f"{sections[key].get('content', 'Not available')}\n\n"
+                    sections_text += f"{content}\n\n"
             final_prompt += sections_text
 
         # Append earnings transcripts if available
