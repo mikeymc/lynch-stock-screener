@@ -4,7 +4,8 @@
 import logging
 import os
 import re
-from datetime import datetime
+from datetime import datetime, timezone
+from zoneinfo import ZoneInfo
 from typing import Dict, Any, List, Optional, Generator
 import time
 from google import genai
@@ -123,9 +124,8 @@ class SmartChatAgent:
 
     def _build_system_prompt(self, primary_symbol: str, user_id: Optional[int] = None, override_character_id: Optional[str] = None, request_character_id: Optional[str] = None) -> str:
         """Build the system prompt for the agent."""
-        current_date_str = datetime.now().strftime('%Y-%m-%d')
-
-        current_date_str = datetime.now().strftime('%Y-%m-%d')
+        now_est = datetime.now(timezone.utc).astimezone(ZoneInfo('America/New_York'))
+        current_date_str = now_est.strftime('%Y-%m-%d')
 
 
         # Determine paths

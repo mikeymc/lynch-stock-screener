@@ -7,7 +7,8 @@ import re
 import time
 import logging
 from typing import Dict, Any, List, Optional
-from datetime import datetime
+from datetime import datetime, timezone
+from zoneinfo import ZoneInfo
 import httpx
 from google import genai
 from google.genai.types import GenerateContentConfig, ToolConfig, FunctionCallingConfig, FunctionCallingConfigMode
@@ -211,9 +212,10 @@ class StockAnalyst:
                 price_targets_text = "\n".join(pt_lines)
 
         # Base template vars
+        now_est = datetime.now(timezone.utc).astimezone(ZoneInfo('America/New_York'))
         template_vars = {
-            'current_date': datetime.now().strftime('%B %d, %Y'),
-            'current_year': datetime.now().year,
+            'current_date': now_est.strftime('%B %d, %Y'),
+            'current_year': now_est.year,
             'character_name': character.name,
             'company_name': stock_data.get('company_name', 'N/A'),
             'symbol': stock_data.get('symbol', 'N/A'),
@@ -861,11 +863,12 @@ class StockAnalyst:
         price = stock_data.get('price') or 0
         market_cap = stock_data.get('market_cap') or 0
 
+        now_est = datetime.now(timezone.utc).astimezone(ZoneInfo('America/New_York'))
         template_vars = {
             'symbol': stock_data.get('symbol', 'N/A'),
             'company_name': stock_data.get('company_name', 'N/A'),
             'sector': stock_data.get('sector', 'N/A'),
-            'current_date': datetime.now().strftime('%B %d, %Y'),
+            'current_date': now_est.strftime('%B %d, %Y'),
             'price': price,
             'market_cap_billions': market_cap / 1e9,
             'pe_ratio': stock_data.get('pe_ratio', 'N/A'),
