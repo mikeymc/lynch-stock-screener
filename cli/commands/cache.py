@@ -389,6 +389,7 @@ def ten_k(
     region: str = typer.Option("us", "--region", "-r",
                                help="Region to cache: us, north-america, south-america, europe, asia, all"),
     force: bool = typer.Option(False, "--force", "-f", help="Force refresh cache"),
+    use_rss: bool = typer.Option(True, "--use-rss/--no-rss", help="Use RSS feed to pre-filter stocks with new filings"),
 ):
     """Cache 10-K/10-Q filings (SEC EDGAR)"""
     if action == "start":
@@ -398,9 +399,9 @@ def ten_k(
             console.print(f"[bold red]✗ Invalid region: {region}[/bold red]")
             console.print(f"[yellow]Valid regions: {', '.join(valid_regions)}[/yellow]")
             raise typer.Exit(1)
-        
+
         # Build params
-        params = {"region": region}
+        params = {"region": region, "use_rss": use_rss}
         if limit:
             params["limit"] = limit
         if symbols:
@@ -495,6 +496,7 @@ def eight_k(
     region: str = typer.Option("us", "--region", "-r",
                                help="Region to cache: us, north-america, south-america, europe, asia, all"),
     force: bool = typer.Option(False, "--force", "-f", help="Force refresh cache"),
+    use_rss: bool = typer.Option(True, "--use-rss/--no-rss", help="Use RSS feed to pre-filter stocks with new filings"),
 ):
     """Cache 8-K material events (SEC EDGAR)"""
     if action == "start":
@@ -504,9 +506,9 @@ def eight_k(
             console.print(f"[bold red]✗ Invalid region: {region}[/bold red]")
             console.print(f"[yellow]Valid regions: {', '.join(valid_regions)}[/yellow]")
             raise typer.Exit(1)
-        
+
         # Build params
-        params = {"region": region}
+        params = {"region": region, "use_rss": use_rss}
         if limit:
             params["limit"] = limit
         if force:
@@ -702,6 +704,7 @@ def form4(
     region: str = typer.Option("us", "--region", "-r",
                                help="Region to cache: us, north-america, south-america, europe, asia, all"),
     force: bool = typer.Option(False, "--force", "-f", help="Force refresh (bypass cache check)"),
+    use_rss: bool = typer.Option(True, "--use-rss/--no-rss", help="Use RSS feed to pre-filter stocks with new filings"),
 ):
     """Cache SEC Form 4 filings (Insider Transactions)"""
     if action == "start":
@@ -711,9 +714,9 @@ def form4(
             console.print(f"[bold red]✗ Invalid region: {region}[/bold red]")
             console.print(f"[yellow]Valid regions: {', '.join(valid_regions)}[/yellow]")
             raise typer.Exit(1)
-        
+
         # Build params
-        params = {"region": region}
+        params = {"region": region, "use_rss": use_rss}
         if limit:
             params["limit"] = limit
         if force:

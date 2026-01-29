@@ -11,12 +11,26 @@ on:
     - cron: '*/15 * * * *'
     # Full screening at 10:00 PM ET (3:00 AM UTC) daily
     - cron: '0 3 * * *'
-    # News cache at 10:10 PM ET (3:10 AM UTC) daily
-    - cron: '10 3 * * *'
+    # News cache every 2 hours from 6am-8pm ET on weekdays
+    - cron: '0 11 * * 1-5'  # 6am ET
+    - cron: '0 13 * * 1-5'  # 8am ET
+    - cron: '0 15 * * 1-5'  # 10am ET
+    - cron: '0 17 * * 1-5'  # 12pm ET
+    - cron: '0 19 * * 1-5'  # 2pm ET
+    - cron: '0 21 * * 1-5'  # 4pm ET
+    - cron: '0 23 * * 1-5'  # 6pm ET
+    - cron: '0 1 * * 2-6'   # 8pm ET (1am UTC next day = Tue-Sat in UTC)
+    # 8-K cache every 2 hours from 6am-8pm ET on weekdays (with RSS filtering)
+    - cron: '10 11 * * 1-5'  # 6:10am ET
+    - cron: '10 13 * * 1-5'  # 8:10am ET
+    - cron: '10 15 * * 1-5'  # 10:10am ET
+    - cron: '10 17 * * 1-5'  # 12:10pm ET
+    - cron: '10 19 * * 1-5'  # 2:10pm ET
+    - cron: '10 21 * * 1-5'  # 4:10pm ET
+    - cron: '10 23 * * 1-5'  # 6:10pm ET
+    - cron: '10 1 * * 2-6'   # 8:10pm ET (1:10am UTC next day = Tue-Sat in UTC)
     # 10K cache at 10:20 PM ET (3:20 AM UTC) daily
     - cron: '20 3 * * *'
-    # 8K cache at 10:30 PM ET (3:30 AM UTC) daily
-    - cron: '30 3 * * *'
     # Form 4 cache at 10:40 PM ET (3:40 AM UTC) daily
     - cron: '40 3 * * *'
     # Price history cache at 11:00 PM ET (4:00 AM UTC) daily
@@ -65,9 +79,23 @@ jobs:
               "*/15 * * * *") echo "type=price_update" >> $GITHUB_OUTPUT ;;
               "0 * * * *")   echo "type=check_alerts" >> $GITHUB_OUTPUT ;;
               "0 3 * * *")   echo "type=full_screening" >> $GITHUB_OUTPUT ;;
-              "10 3 * * *")  echo "type=news_cache" >> $GITHUB_OUTPUT ;;
+              "0 11 * * 1-5") echo "type=news_cache" >> $GITHUB_OUTPUT ;;
+              "0 13 * * 1-5") echo "type=news_cache" >> $GITHUB_OUTPUT ;;
+              "0 15 * * 1-5") echo "type=news_cache" >> $GITHUB_OUTPUT ;;
+              "0 17 * * 1-5") echo "type=news_cache" >> $GITHUB_OUTPUT ;;
+              "0 19 * * 1-5") echo "type=news_cache" >> $GITHUB_OUTPUT ;;
+              "0 21 * * 1-5") echo "type=news_cache" >> $GITHUB_OUTPUT ;;
+              "0 23 * * 1-5") echo "type=news_cache" >> $GITHUB_OUTPUT ;;
+              "0 1 * * 2-6")  echo "type=news_cache" >> $GITHUB_OUTPUT ;;
+              "10 11 * * 1-5") echo "type=8k_cache" >> $GITHUB_OUTPUT ;;
+              "10 13 * * 1-5") echo "type=8k_cache" >> $GITHUB_OUTPUT ;;
+              "10 15 * * 1-5") echo "type=8k_cache" >> $GITHUB_OUTPUT ;;
+              "10 17 * * 1-5") echo "type=8k_cache" >> $GITHUB_OUTPUT ;;
+              "10 19 * * 1-5") echo "type=8k_cache" >> $GITHUB_OUTPUT ;;
+              "10 21 * * 1-5") echo "type=8k_cache" >> $GITHUB_OUTPUT ;;
+              "10 23 * * 1-5") echo "type=8k_cache" >> $GITHUB_OUTPUT ;;
+              "10 1 * * 2-6")  echo "type=8k_cache" >> $GITHUB_OUTPUT ;;
               "20 3 * * *")  echo "type=10k_cache" >> $GITHUB_OUTPUT ;;
-              "30 3 * * *")  echo "type=8k_cache" >> $GITHUB_OUTPUT ;;
               "40 3 * * *")  echo "type=form4_cache" >> $GITHUB_OUTPUT ;;
               "0 4 * * *")   echo "type=price_history_cache" >> $GITHUB_OUTPUT ;;
               "0 5 * * *")   echo "type=outlook_cache" >> $GITHUB_OUTPUT ;;
@@ -83,8 +111,14 @@ jobs:
           echo "Triggering job: $JOB_TYPE"
 
           # Set params based on job type (all default to US region)
-          if [ "$JOB_TYPE" = "outlook_cache" ] || [ "$JOB_TYPE" = "form4_cache" ]; then
+          if [ "$JOB_TYPE" = "outlook_cache" ]; then
             PARAMS='{"region": "us"}'
+          elif [ "$JOB_TYPE" = "form4_cache" ]; then
+            PARAMS='{"region": "us", "use_rss": true}'
+          elif [ "$JOB_TYPE" = "8k_cache" ]; then
+            PARAMS='{"use_rss": true}'
+          elif [ "$JOB_TYPE" = "10k_cache" ]; then
+            PARAMS='{"use_rss": true}'
           elif [ "$JOB_TYPE" = "price_update" ]; then
              # Default to US for speed, can be expanded if needed
              PARAMS='{"regions": ["us"]}'

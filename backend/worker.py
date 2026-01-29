@@ -1317,10 +1317,10 @@ Return JSON only:
             sec_user_agent = os.environ.get('SEC_USER_AGENT', 'Lynch Stock Screener mikey@example.com')
             rss_client = SECRSSClient(sec_user_agent)
             
-            # Get tickers with new 10-K OR 10-Q filings from RSS
+            # Get tickers with new 10-K OR 10-Q filings from RSS (with pagination)
             known_tickers = set(all_symbols)
-            tickers_10k = rss_client.get_tickers_with_new_filings('10-K', known_tickers=known_tickers)
-            tickers_10q = rss_client.get_tickers_with_new_filings('10-Q', known_tickers=known_tickers)
+            tickers_10k = rss_client.get_tickers_with_new_filings_paginated('10-K', known_tickers=known_tickers, db=self.db)
+            tickers_10q = rss_client.get_tickers_with_new_filings_paginated('10-Q', known_tickers=known_tickers, db=self.db)
             tickers_with_filings = tickers_10k | tickers_10q
             
             if tickers_with_filings:
@@ -1482,9 +1482,9 @@ Return JSON only:
             sec_user_agent = os.environ.get('SEC_USER_AGENT', 'Lynch Stock Screener mikey@example.com')
             rss_client = SECRSSClient(sec_user_agent)
             
-            # Get tickers with new 8-K filings from RSS
+            # Get tickers with new 8-K filings from RSS (with pagination)
             known_tickers = set(all_symbols)
-            tickers_with_filings = rss_client.get_tickers_with_new_filings('8-K', known_tickers=known_tickers)
+            tickers_with_filings = rss_client.get_tickers_with_new_filings_paginated('8-K', known_tickers=known_tickers, db=self.db)
             
             if tickers_with_filings:
                 # Filter to only stocks with new filings, preserving order
@@ -1647,9 +1647,9 @@ Return JSON only:
             sec_user_agent = os.environ.get('SEC_USER_AGENT', 'Lynch Stock Screener mikey@example.com')
             rss_client = SECRSSClient(sec_user_agent)
             
-            # Get tickers with new Form 4 filings from RSS
+            # Get tickers with new Form 4 filings from RSS (with pagination)
             known_tickers = set(all_symbols)
-            tickers_with_filings = rss_client.get_tickers_with_new_filings('FORM4', known_tickers=known_tickers)
+            tickers_with_filings = rss_client.get_tickers_with_new_filings_paginated('FORM4', known_tickers=known_tickers, db=self.db)
             
             if tickers_with_filings:
                 # Filter to only stocks with new filings, preserving order

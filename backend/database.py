@@ -4560,6 +4560,71 @@ class Database:
             return row[0].strftime('%Y-%m-%d')
         return str(row[0])
 
+    def filing_exists(self, accession_number: str, form_type: str, ticker: str = None) -> bool:
+        """
+        Check if a filing with given accession number already exists in database.
+
+        Used by RSS pagination to determine when to stop fetching (hit known filing).
+
+        Args:
+            accession_number: SEC accession number (e.g., '0001628280-26-003909')
+            form_type: Filing type ('8-K', '10-K', '10-Q', 'FORM4')
+            ticker: Optional ticker for Form 4 fallback check (since accession_number may be NULL in old data)
+
+        Returns:
+            True if filing exists, False otherwise
+        """
+        conn = self.get_connection()
+        cursor = conn.cursor()
+
+        # Map form type to table and column
+        if form_type == '8-K':
+            table = 'material_events'
+            column = 'sec_accession_number'
+        elif form_type in ['10-K', '10-Q']:
+            table = 'sec_filings'
+            column = 'accession_number'
+        elif form_type == 'FORM4':
+            # For Form 4, check accession_number first, but fall back to checking if
+            # we have ANY insider trades for this stock (since old data has NULL accession_number)
+            cursor.execute("""
+                SELECT EXISTS(
+                    SELECT 1 FROM insider_trades
+                    WHERE accession_number = %s
+                )
+            """, (accession_number,))
+
+            result = cursor.fetchone()[0]
+
+            # If not found by accession number and we have a ticker, check if we have ANY
+            # insider trades for this stock (indicates we've processed it before)
+            if not result and ticker:
+                cursor.execute("""
+                    SELECT EXISTS(
+                        SELECT 1 FROM insider_trades
+                        WHERE symbol = %s
+                        LIMIT 1
+                    )
+                """, (ticker,))
+                result = cursor.fetchone()[0]
+
+            self.return_connection(conn)
+            return result
+        else:
+            self.return_connection(conn)
+            return False
+
+        cursor.execute(f"""
+            SELECT EXISTS(
+                SELECT 1 FROM {table}
+                WHERE {column} = %s
+            )
+        """, (accession_number,))
+
+        result = cursor.fetchone()[0]
+        self.return_connection(conn)
+        return result
+
     def save_material_event_summary(self, event_id: int, summary: str, model_version: str = None):
         """
         Save an AI-generated summary for a material event.
