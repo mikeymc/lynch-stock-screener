@@ -2277,15 +2277,52 @@ Return JSON only:
         # This keeps all synchronous DB work outside the async function
         skip_set = set()
         if not force_refresh:
-            logger.info("Pre-computing skip list for existing transcripts...")
-            for symbol in all_symbols:
-                try:
-                    existing = self.db.get_latest_earnings_transcript(symbol)
-                    if existing and existing.get('transcript_text'):
+            logger.info("Pre-computing skip list based on earnings dates...")
+            try:
+                from datetime import datetime, timedelta, date
+                today = datetime.now().date()
+                refresh_metadata = self.db.get_earnings_refresh_metadata()
+                
+                for symbol in all_symbols:
+                    meta = refresh_metadata.get(symbol, {})
+                    next_date = meta.get('next_earnings_date')
+                    last_date = meta.get('last_transcript_date')
+                    
+                    # Default target: if no data, assume we want a recent one
+                    target_date = None
+                    
+                    if next_date:
+                        if next_date <= today:
+                            # Event passed or is today -> we want this transcript
+                            target_date = next_date
+                        else:
+                            # next_date is future -> we likely want the PREVIOUS quarter
+                            # Assume previous quarter was ~91 days ago
+                            target_date = next_date - timedelta(days=91)
+                    
+                    # Check if we have it
+                    should_skip = False
+                    if last_date and target_date:
+                        # Allow 10 days buffer (e.g. if transcript is dated slightly before official earnings date)
+                        if last_date >= (target_date - timedelta(days=10)):
+                            should_skip = True
+                    elif last_date and not target_date:
+                        # If we have a transcript but no next date info, rely on age
+                        # Skip if less than 75 days old
+                        if (today - last_date).days < 75:
+                            should_skip = True
+                    
+                    if should_skip:
                         skip_set.add(symbol)
-                except Exception as e:
-                    logger.debug(f"[{symbol}] Skip check error: {e}")
-            logger.info(f"Will skip {len(skip_set)} stocks with existing transcripts")
+                    
+                    # Logging for debug (only for first few or specific)
+                    if symbol == 'MSFT' or symbol == 'NVDA':
+                        logger.info(f"[{symbol}] Smart Fetch Check: Next={next_date}, Last={last_date}, Target={target_date} -> {'SKIP' if should_skip else 'FETCH'}")
+
+            except Exception as e:
+                logger.error(f"Error pre-computing skip list: {e}")
+            
+            logger.info(f"Will skip {len(skip_set)} stocks based on earnings dates")
         
         async def run_transcript_caching():
             nonlocal processed, cached, skipped, errors

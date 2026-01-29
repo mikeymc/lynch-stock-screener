@@ -2601,6 +2601,40 @@ class Database:
         finally:
             self.return_connection(conn)
 
+    def get_earnings_refresh_metadata(self) -> Dict[str, Dict[str, Any]]:
+        """
+        Get metadata for determining if transcripts need refresh.
+        Returns: {
+            symbol: {
+                'next_earnings_date': date,
+                'last_transcript_date': date
+            }
+        }
+        """
+        conn = self.get_connection()
+        try:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT 
+                    m.symbol,
+                    m.next_earnings_date,
+                    MAX(t.earnings_date) as last_transcript_date
+                FROM stock_metrics m
+                LEFT JOIN earnings_transcripts t ON m.symbol = t.symbol
+                GROUP BY m.symbol, m.next_earnings_date
+            """)
+            
+            result = {}
+            for row in cursor.fetchall():
+                symbol = row[0]
+                result[symbol] = {
+                    'next_earnings_date': row[1],
+                    'last_transcript_date': row[2]
+                }
+            return result
+        finally:
+            self.return_connection(conn)
+
 
     def save_weekly_prices(self, symbol: str, weekly_data: Dict[str, Any]):
         """
