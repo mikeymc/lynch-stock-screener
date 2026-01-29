@@ -153,6 +153,55 @@ export default function ChatChart({ chartJson }) {
         )
     }
 
+    // ROBUST DATA CLEANING
+    // The LLM often returns strings like "$10.5B" or "50%" instead of raw numbers.
+    // We must clean this data before passing it to Recharts.
+    const cleanData = (rawData) => {
+        return rawData.map(item => {
+            const newItem = { ...item }
+            Object.keys(newItem).forEach(key => {
+                // Skip the x-axis key (usually a label)
+                if (key === xKey) return
+
+                const value = newItem[key]
+                if (typeof value === 'string') {
+                    // Remove currency symbols, commas, and whitespace
+                    let cleanStr = value.replace(/[$,\s]/g, '')
+
+                    // Check for suffixes and multiply
+                    let multiplier = 1
+                    if (cleanStr.toUpperCase().endsWith('T')) {
+                        multiplier = 1e12
+                        cleanStr = cleanStr.slice(0, -1)
+                    } else if (cleanStr.toUpperCase().endsWith('B')) {
+                        multiplier = 1e9
+                        cleanStr = cleanStr.slice(0, -1)
+                    } else if (cleanStr.toUpperCase().endsWith('M')) {
+                        multiplier = 1e6
+                        cleanStr = cleanStr.slice(0, -1)
+                    } else if (cleanStr.toUpperCase().endsWith('K')) {
+                        multiplier = 1e3
+                        cleanStr = cleanStr.slice(0, -1)
+                    } else if (cleanStr.endsWith('%')) {
+                        // Keep percentages as is or convert to decimal? 
+                        // Usually charts handle 50 as 50 on y-axis, but if it's 0.5 that's different.
+                        // Let's assume the LLM sends "50%" for 50.
+                        cleanStr = cleanStr.slice(0, -1)
+                    }
+
+                    // Try to parse as float
+                    const num = parseFloat(cleanStr)
+                    if (!isNaN(num)) {
+                        newItem[key] = num * multiplier
+                    }
+                }
+            })
+            return newItem
+        })
+    }
+
+    const processedData = cleanData(data)
+
     // Auto-detect series if not provided, OR filter provided series to exclude xKey
     // This prevents common LLM error of including the x-axis key in the series list
     const rawSeries = series || (data && data.length > 0 ? Object.keys(data[0]) : [])
@@ -173,7 +222,7 @@ export default function ChatChart({ chartJson }) {
     const renderChart = () => {
         if (type === 'line') {
             return (
-                <LineChart data={data}>
+                <LineChart data={processedData}>
                     <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
                     <XAxis
                         dataKey={xKey}
@@ -205,7 +254,7 @@ export default function ChatChart({ chartJson }) {
 
         // Default: Bar chart
         return (
-            <BarChart data={data}>
+            <BarChart data={processedData}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
                 <XAxis
                     dataKey={xKey}

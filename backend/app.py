@@ -4328,7 +4328,7 @@ def get_alerts(user_id):
             
         return jsonify({
             'alerts': alerts,
-            'updates': updates,
+            'updates': clean_nan_values(updates),
             'timestamp': datetime.now().isoformat()
         })
     except Exception as e:

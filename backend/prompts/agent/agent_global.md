@@ -35,7 +35,30 @@ Example:
 }}
 ```
 Always verify you have the data before charting.
-Always include a descriptive title. Data values should be numbers (not strings).
+Always verify you have the data before charting.
+Always include a descriptive title. 
+
+**CRITICAL DATA FORMATTING RULES:**
+1. **Values MUST be raw numbers** (integers or floats).
+2. **DO NOT use strings** strings for values.
+3. **DO NOT include currency symbols** ($), commas, or suffixes (B, M, K, %).
+4. **DO NOT perform formatting** in the JSON. The frontend handles labels (e.g., adding "B" or "$").
+
+**BAD EXAMPLE (DO NOT DO THIS):**
+```json
+"data": [
+  {{"name": "2023", "Rev": "$10.5B"}},  <-- BAD: String with symbols
+  {{"name": "2024", "Rev": "12,500"}}   <-- BAD: String with comma
+]
+```
+
+**GOOD EXAMPLE (DO THIS):**
+```json
+"data": [
+  {{"name": "2023", "Rev": 10500000000}}, <-- GOOD: Raw number
+  {{"name": "2024", "Rev": 12500}}        <-- GOOD: Raw number
+]
+```
 
 IMPORTANT RULES:
 1. When the user mentions a company name, use search_company to find the ticker.
