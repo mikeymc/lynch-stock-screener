@@ -860,7 +860,7 @@ Return JSON only:
                 with conn.cursor() as cursor:
                     cursor.execute("SELECT symbol FROM stocks")
                     existing_symbols = {row[0] for row in cursor.fetchall()}
-            
+
             logger.info(f"Loaded {len(existing_symbols)} existing symbols from DB for validation")
             
             updated_count = 0
@@ -880,8 +880,6 @@ Return JSON only:
                     continue
                     
                 # TradingViewFetcher returns normalized dict. We only need specific fields for price update.
-                    
-                # TradingViewFetcher returns normalized dict. We only need specific fields for price update.
                 metrics = {
                     'price': data.get('price'),
                     'pe_ratio': data.get('pe_ratio'),
@@ -889,14 +887,29 @@ Return JSON only:
                     'volume': data.get('volume'),
                     'dividend_yield': data.get('dividend_yield'),
                     'beta': data.get('beta'),
-                    # We can update these too since we have them
-                    'total_revenue': data.get('total_revenue'), 
+                    'total_revenue': data.get('total_revenue'),
                     'total_debt': data.get('total_debt'),
                 }
-                
+
                 # Check if we have valid price (essential)
                 if metrics.get('price') is None:
                     continue
+
+                # Use TradingView's official daily change data (from previous market close)
+                price = metrics['price']
+                price_change = data.get('price_change')
+                price_change_pct = data.get('price_change_pct')
+
+                if price_change is not None and price_change_pct is not None:
+                    # Calculate prev_close from current price and change
+                    metrics['prev_close'] = price - price_change
+                    metrics['price_change'] = price_change
+                    metrics['price_change_pct'] = price_change_pct
+                else:
+                    # No change data available (market closed, new listing, etc.)
+                    metrics['prev_close'] = None
+                    metrics['price_change'] = None
+                    metrics['price_change_pct'] = None
                     
                 self.db.save_stock_metrics(symbol, metrics)
                 updated_count += 1

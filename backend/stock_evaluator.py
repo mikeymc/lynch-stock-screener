@@ -85,6 +85,7 @@ class StockEvaluator:
             'sector': metrics.get('sector'),
             'market_cap': metrics.get('market_cap'),
             'price': metrics.get('price'),
+            'price_change_pct': metrics.get('price_change_pct'),
             'pe_ratio': metrics.get('pe_ratio'),
             'peg_ratio': metrics.get('peg_ratio'),
             'debt_to_equity': metrics.get('debt_to_equity'),

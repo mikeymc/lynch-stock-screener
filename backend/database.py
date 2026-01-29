@@ -441,6 +441,9 @@ class Database:
                 short_ratio REAL,
                 short_percent_float REAL,
                 next_earnings_date DATE,
+                prev_close REAL,
+                price_change REAL,
+                price_change_pct REAL,
                 FOREIGN KEY (symbol) REFERENCES stocks(symbol)
             )
         """)
@@ -531,6 +534,24 @@ class Database:
                 IF NOT EXISTS (SELECT 1 FROM information_schema.columns
                                WHERE table_name = 'stock_metrics' AND column_name = 'gross_margin') THEN
                     ALTER TABLE stock_metrics ADD COLUMN gross_margin REAL;
+                END IF;
+
+                -- prev_close (for daily change calculation)
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                               WHERE table_name = 'stock_metrics' AND column_name = 'prev_close') THEN
+                    ALTER TABLE stock_metrics ADD COLUMN prev_close REAL;
+                END IF;
+
+                -- price_change (dollar amount change from previous close)
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                               WHERE table_name = 'stock_metrics' AND column_name = 'price_change') THEN
+                    ALTER TABLE stock_metrics ADD COLUMN price_change REAL;
+                END IF;
+
+                -- price_change_pct (percentage change from previous close)
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                               WHERE table_name = 'stock_metrics' AND column_name = 'price_change_pct') THEN
+                    ALTER TABLE stock_metrics ADD COLUMN price_change_pct REAL;
                 END IF;
             END $$;
         """)
@@ -693,6 +714,18 @@ class Database:
         """)
 
         cursor.execute("""
+            CREATE TABLE IF NOT EXISTS users (
+                id SERIAL PRIMARY KEY,
+                google_id TEXT UNIQUE NOT NULL,
+                email TEXT UNIQUE NOT NULL,
+                name TEXT,
+                picture TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                last_login TIMESTAMP
+            )
+        """)
+
+        cursor.execute("""
             CREATE TABLE IF NOT EXISTS lynch_analyses (
                 user_id INTEGER,
                 symbol TEXT,
@@ -787,18 +820,6 @@ class Database:
                 -- Aggressively drop legacy unique constraint
                 ALTER TABLE chart_analyses DROP CONSTRAINT IF EXISTS chart_analyses_user_symbol_section_unique;
             END $$;
-        """)
-
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS users (
-                id SERIAL PRIMARY KEY,
-                google_id TEXT UNIQUE NOT NULL,
-                email TEXT UNIQUE NOT NULL,
-                name TEXT,
-                picture TEXT,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                last_login TIMESTAMP
-            )
         """)
 
         # Migration: Add active_character column to users table
@@ -2105,15 +2126,16 @@ class Database:
         
         # Valid columns map to ensure we only try to update valid fields
         valid_columns = {
-            'price', 'pe_ratio', 'market_cap', 'debt_to_equity', 
-            'institutional_ownership', 'revenue', 'dividend_yield', 
+            'price', 'pe_ratio', 'market_cap', 'debt_to_equity',
+            'institutional_ownership', 'revenue', 'dividend_yield',
             'beta', 'total_debt', 'interest_expense', 'effective_tax_rate',
             'gross_margin',  # For Buffett scoring
             'forward_pe', 'forward_peg_ratio', 'forward_eps',
             'insider_net_buying_6m', 'last_updated', 'last_price_updated',
             'analyst_rating', 'analyst_rating_score', 'analyst_count',
             'price_target_high', 'price_target_low', 'price_target_mean',
-            'short_ratio', 'short_percent_float', 'next_earnings_date'
+            'short_ratio', 'short_percent_float', 'next_earnings_date',
+            'prev_close', 'price_change', 'price_change_pct'
         }
         
         # Filter metrics to only valid columns

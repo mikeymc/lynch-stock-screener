@@ -165,7 +165,14 @@ export default function StockListCard({ stock: initialStock, toggleWatchlist, wa
                     <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 pb-2 border-b">
                         <div>
                             <div className="text-xs text-muted-foreground">Price</div>
-                            <div className={`font-semibold text-base px-1 rounded transition-colors ${flash.price || ''}`}>${stock.price?.toFixed(2) ?? 'N/A'}</div>
+                            <div className={`font-semibold text-base px-1 rounded transition-colors ${flash.price || ''}`}>
+                                ${stock.price?.toFixed(2) ?? 'N/A'}
+                                {stock.price_change_pct != null && (
+                                    <span className={`ml-2 text-sm ${stock.price_change_pct >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                                        {stock.price_change_pct >= 0 ? '+' : ''}{stock.price_change_pct.toFixed(2)}%
+                                    </span>
+                                )}
+                            </div>
                         </div>
                         <div>
                             <div className="text-xs text-muted-foreground">Market Cap</div>

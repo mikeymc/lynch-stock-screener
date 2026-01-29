@@ -121,6 +121,7 @@ class DataFetcher:
                     'symbol': symbol,
                     'currentPrice': cached_data.get('price'),
                     'regularMarketPrice': cached_data.get('price'),
+                    'regularMarketChangePercent': cached_data.get('price_change_pct'),
                     'marketCap': cached_data.get('market_cap'),
                     'trailingPE': cached_data.get('pe_ratio'),
                     'dividendYield': cached_data.get('dividend_yield'),
@@ -329,6 +330,7 @@ class DataFetcher:
 
             metrics = {
                 'price': info.get('currentPrice'),
+                'price_change_pct': info.get('regularMarketChangePercent'),
                 'pe_ratio': info.get('trailingPE'),
                 'market_cap': info.get('marketCap'),
                 'debt_to_equity': debt_to_equity,

@@ -42,6 +42,11 @@ export default function StockHeader({ stock, toggleWatchlist, watchlist, classNa
                         <div className="text-sm font-medium text-muted-foreground">Price</div>
                         <div className={`font-bold text-lg leading-none rounded px-1 transition-colors duration-500 ${flash.price || ''}`}>
                             ${stock.price?.toFixed(2) ?? 'N/A'}
+                            {stock.price_change_pct != null && (
+                                <span className={`ml-2 text-sm font-normal ${stock.price_change_pct >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                                    {stock.price_change_pct >= 0 ? '+' : ''}{stock.price_change_pct.toFixed(2)}%
+                                </span>
+                            )}
                         </div>
                     </div>
 

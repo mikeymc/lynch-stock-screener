@@ -191,6 +191,8 @@ class TradingViewFetcher:
                              'name',                          # Ticker symbol
                              'description',                   # Company Name
                              'close',                         # Current price
+                             'change',                        # % change from previous close
+                             'change_abs',                    # $ change from previous close
                              'volume',                        # Volume
                              'market_cap_basic',              # Market cap
                              'price_earnings_ttm',            # P/E ratio (TTM)
@@ -274,6 +276,8 @@ class TradingViewFetcher:
             'symbol': row.get('name'),
             'company_name': row.get('description'),
             'price': row.get('close'),
+            'price_change': row.get('change_abs'),
+            'price_change_pct': row.get('change'),
             'market_cap': row.get('market_cap_basic'),
             'pe_ratio': row.get('price_earnings_ttm'),
             'dividend_yield': row.get('dividend_yield_recent'),

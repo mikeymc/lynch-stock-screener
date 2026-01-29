@@ -130,7 +130,7 @@ class StockVectors:
         try:
             # Build query with optional country filter
             query = """
-                SELECT 
+                SELECT
                     sm.symbol,
                     sm.price,
                     sm.market_cap,
@@ -140,6 +140,7 @@ class StockVectors:
                     sm.institutional_ownership,
                     sm.total_debt,
                     sm.gross_margin,
+                    sm.price_change_pct,
                     s.sector,
                     s.company_name,
                     s.country,

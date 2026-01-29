@@ -287,6 +287,7 @@ class LynchCriteria:
             'sector': metrics.get('sector'),
             'ipo_year': metrics.get('ipo_year'),
             'price': metrics.get('price'),
+            'price_change_pct': metrics.get('price_change_pct'),
             'pe_ratio': pe_ratio,
             'peg_ratio': peg_ratio,
             'debt_to_equity': debt_to_equity,
@@ -918,9 +919,9 @@ class LynchCriteria:
         # Build result DataFrame with all display fields
         # Include Buffett columns if available
         cols = ['symbol', 'company_name', 'country', 'sector', 'ipo_year',
-                'price', 'market_cap', 'pe_ratio', 'peg_ratio', 
+                'price', 'price_change_pct', 'market_cap', 'pe_ratio', 'peg_ratio',
                 'debt_to_equity', 'institutional_ownership', 'dividend_yield',
-                'earnings_cagr', 'revenue_cagr', 
+                'earnings_cagr', 'revenue_cagr',
                 'income_consistency_score', 'revenue_consistency_score',
                 'pe_52_week_min', 'pe_52_week_max', 'pe_52_week_position']
         
