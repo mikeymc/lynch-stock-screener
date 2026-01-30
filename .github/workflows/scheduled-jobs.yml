@@ -7,8 +7,8 @@ on:
   schedule:
     # Alerts check - every hour on the hour
     - cron: '0 * * * *'
-    # Price Update - every 15 minutes (fast TradingView fetch)
-    - cron: '*/15 * * * *'
+    # Price Update - every 5 minutes (fast TradingView fetch)
+    - cron: '*/5 * * * *'
     # Full screening at 10:00 PM ET (3:00 AM UTC) daily
     - cron: '0 3 * * *'
     # News cache every 2 hours from 6am-8pm ET on weekdays
@@ -29,16 +29,35 @@ on:
     - cron: '10 21 * * 1-5'  # 4:10pm ET
     - cron: '10 23 * * 1-5'  # 6:10pm ET
     - cron: '10 1 * * 2-6'   # 8:10pm ET (1:10am UTC next day = Tue-Sat in UTC)
-    # 10K cache at 10:20 PM ET (3:20 AM UTC) daily
-    - cron: '20 3 * * *'
-    # Form 4 cache at 10:40 PM ET (3:40 AM UTC) daily
-    - cron: '40 3 * * *'
+    # 10K cache - every 2 hours (:20) to interleave with 8-K
+    - cron: '20 11 * * 1-5'  # 6:20am ET
+    - cron: '20 13 * * 1-5'  # 8:20am ET
+    - cron: '20 15 * * 1-5'  # 10:20am ET
+    - cron: '20 17 * * 1-5'  # 12:20pm ET
+    - cron: '20 19 * * 1-5'  # 2:20pm ET
+    - cron: '20 21 * * 1-5'  # 4:20pm ET
+    - cron: '20 23 * * 1-5'  # 6:20pm ET
+    - cron: '20 1 * * 2-6'   # 8:20pm ET
+    # Form 4 cache - every 2 hours (:30) to interleave with 8-K
+    - cron: '30 11 * * 1-5'  # 6:30am ET
+    - cron: '30 13 * * 1-5'  # 8:30am ET
+    - cron: '30 15 * * 1-5'  # 10:30am ET
+    - cron: '30 17 * * 1-5'  # 12:30pm ET
+    - cron: '30 19 * * 1-5'  # 2:30pm ET
+    - cron: '30 21 * * 1-5'  # 4:30pm ET
+    - cron: '30 23 * * 1-5'  # 6:30pm ET
+    - cron: '30 1 * * 2-6'   # 8:30pm ET
     # Price history cache at 11:00 PM ET (4:00 AM UTC) daily
     - cron: '0 4 * * *'
     # Outlook cache at 12:00 AM ET (5:00 AM UTC) daily
     - cron: '0 5 * * *'
     # Transcript cache at 12:30 AM ET (5:30 AM UTC) daily - runs last
-    - cron: '30 5 * * *'
+    # Run 4x daily to catch new publications promptly
+    - cron: '30 5 * * *'  # 12:30 AM ET
+    - cron: '30 11 * * *' # 6:30 AM ET
+    - cron: '30 17 * * *' # 12:30 PM ET 
+    - cron: '30 23 * * *' # 6:30 PM ET
+
     # Forward metrics cache at 1:00 AM ET (6:00 AM UTC) daily
     - cron: '0 6 * * *'
   workflow_dispatch:
@@ -76,7 +95,7 @@ jobs:
             SCHEDULE="${{ github.event.schedule }}"
 
             case "$SCHEDULE" in
-              "*/15 * * * *") echo "type=price_update" >> $GITHUB_OUTPUT ;;
+              "*/5 * * * *") echo "type=price_update" >> $GITHUB_OUTPUT ;;
               "0 * * * *")   echo "type=check_alerts" >> $GITHUB_OUTPUT ;;
               "0 3 * * *")   echo "type=full_screening" >> $GITHUB_OUTPUT ;;
               "0 11 * * 1-5") echo "type=news_cache" >> $GITHUB_OUTPUT ;;
@@ -95,11 +114,28 @@ jobs:
               "10 21 * * 1-5") echo "type=8k_cache" >> $GITHUB_OUTPUT ;;
               "10 23 * * 1-5") echo "type=8k_cache" >> $GITHUB_OUTPUT ;;
               "10 1 * * 2-6")  echo "type=8k_cache" >> $GITHUB_OUTPUT ;;
-              "20 3 * * *")  echo "type=10k_cache" >> $GITHUB_OUTPUT ;;
-              "40 3 * * *")  echo "type=form4_cache" >> $GITHUB_OUTPUT ;;
+              "20 11 * * 1-5") echo "type=10k_cache" >> $GITHUB_OUTPUT ;;
+              "20 13 * * 1-5") echo "type=10k_cache" >> $GITHUB_OUTPUT ;;
+              "20 15 * * 1-5") echo "type=10k_cache" >> $GITHUB_OUTPUT ;;
+              "20 17 * * 1-5") echo "type=10k_cache" >> $GITHUB_OUTPUT ;;
+              "20 19 * * 1-5") echo "type=10k_cache" >> $GITHUB_OUTPUT ;;
+              "20 21 * * 1-5") echo "type=10k_cache" >> $GITHUB_OUTPUT ;;
+              "20 23 * * 1-5") echo "type=10k_cache" >> $GITHUB_OUTPUT ;;
+              "20 1 * * 2-6")  echo "type=10k_cache" >> $GITHUB_OUTPUT ;;
+              "30 11 * * 1-5") echo "type=form4_cache" >> $GITHUB_OUTPUT ;;
+              "30 13 * * 1-5") echo "type=form4_cache" >> $GITHUB_OUTPUT ;;
+              "30 15 * * 1-5") echo "type=form4_cache" >> $GITHUB_OUTPUT ;;
+              "30 17 * * 1-5") echo "type=form4_cache" >> $GITHUB_OUTPUT ;;
+              "30 19 * * 1-5") echo "type=form4_cache" >> $GITHUB_OUTPUT ;;
+              "30 21 * * 1-5") echo "type=form4_cache" >> $GITHUB_OUTPUT ;;
+              "30 23 * * 1-5") echo "type=form4_cache" >> $GITHUB_OUTPUT ;;
+              "30 1 * * 2-6")  echo "type=form4_cache" >> $GITHUB_OUTPUT ;;
               "0 4 * * *")   echo "type=price_history_cache" >> $GITHUB_OUTPUT ;;
               "0 5 * * *")   echo "type=outlook_cache" >> $GITHUB_OUTPUT ;;
               "30 5 * * *")  echo "type=transcript_cache" >> $GITHUB_OUTPUT ;;
+              "30 11 * * *") echo "type=transcript_cache" >> $GITHUB_OUTPUT ;;
+              "30 17 * * *") echo "type=transcript_cache" >> $GITHUB_OUTPUT ;;
+              "30 23 * * *") echo "type=transcript_cache" >> $GITHUB_OUTPUT ;;
               "0 6 * * *")   echo "type=forward_metrics_cache" >> $GITHUB_OUTPUT ;;
               *)             echo "Unknown schedule: $SCHEDULE" && exit 1 ;;
             esac

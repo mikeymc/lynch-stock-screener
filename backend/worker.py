@@ -2289,6 +2289,7 @@ Return JSON only:
         # Pre-compute skip list BEFORE entering async context to avoid blocking DB calls
         # This keeps all synchronous DB work outside the async function
         skip_set = set()
+        
         if not force_refresh:
             logger.info("Pre-computing skip list based on earnings dates...")
             try:
@@ -2323,6 +2324,12 @@ Return JSON only:
                         # If we have a transcript but no next date info, rely on age
                         # Skip if less than 75 days old
                         if (today - last_date).days < 75:
+                            should_skip = True
+                    
+                    # Expiration policy: Give up if target date was more than 7 days ago
+                    # This prevents infinite retries for stocks that don't publish transcripts
+                    if not should_skip and target_date:
+                        if (today - target_date).days > 7:
                             should_skip = True
                     
                     if should_skip:
