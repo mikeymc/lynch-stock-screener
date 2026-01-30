@@ -66,6 +66,97 @@ SUPPORTED_SERIES = {
         'frequency': 'weekly',
         'units': 'Number',
         'description': 'Initial Claims for Unemployment Insurance'
+    },
+    'HOUST': {
+        'name': 'Housing Starts',
+        'category': 'housing',
+        'frequency': 'monthly',
+        'units': 'Thousands of Units (SAAR)',
+        'description': 'New privately owned housing units started'
+    },
+    'RSXFS': {
+        'name': 'Advance Retail Sales',
+        'category': 'consumer',
+        'frequency': 'monthly',
+        'units': 'Millions of Dollars',
+        'description': 'Advance Retail Sales: Retail and Food Services'
+    },
+    'TOTALSA': {
+        'name': 'Total Vehicle Sales',
+        'category': 'consumer',
+        'frequency': 'monthly',
+        'units': 'Millions of Units (SAAR)',
+        'description': 'Total Vehicle Sales'
+    },
+    'UMCSENT': {
+        'name': 'Consumer Sentiment',
+        'category': 'consumer',
+        'frequency': 'monthly',
+        'units': 'Index 1966=100',
+        'description': 'University of Michigan: Consumer Sentiment'
+    },
+    'PSAVERT': {
+        'name': 'Personal Saving Rate',
+        'category': 'consumer',
+        'frequency': 'monthly',
+        'units': 'Percent',
+        'description': 'Personal saving as a percentage of disposable personal income'
+    },
+    'DRCCLACBS': {
+        'name': 'Credit Card Delinquency',
+        'category': 'consumer',
+        'frequency': 'quarterly',
+        'units': 'Percent',
+        'description': 'Delinquency Rate on Credit Card Loans, All Commercial Banks'
+    },
+    'RETAILIRSA': {
+        'name': 'Retail Inventory/Sales Ratio',
+        'category': 'consumer',
+        'frequency': 'monthly',
+        'units': 'Ratio',
+        'description': 'Retailers: Inventories to Sales Ratio'
+    },
+    'GDP': {
+        'name': 'Nominal GDP',
+        'category': 'output',
+        'frequency': 'quarterly',
+        'units': 'Billions of Dollars',
+        'description': 'Gross Domestic Product'
+    },
+    'CP': {
+        'name': 'Corporate Profits',
+        'category': 'corporate',
+        'frequency': 'quarterly',
+        'units': 'Billions of Dollars',
+        'description': 'Corporate Profits After Tax (without IVA and CCAdj)'
+    },
+    'TSIFRGHT': {
+        'name': 'Freight Index',
+        'category': 'output',
+        'frequency': 'monthly',
+        'units': 'Index 2000=100',
+        'description': 'Freight Transportation Services Index'
+    },
+    'BAA10Y': {
+        'name': 'Corporate Bond Spread',
+        'category': 'interest_rates',
+        'frequency': 'daily',
+        'units': 'Percent',
+        'description': "Moody's Seasoned Baa Corporate Bond Yield Relative to 10-Year Treasury"
+    },
+    'M2SL': {
+        'name': 'M2 Money Supply',
+        'category': 'inflation',
+        'frequency': 'monthly',
+        'units': 'Billions of Dollars',
+        'description': 'M2 Money Stock'
+    },
+    'PPIACO': {
+        'name': 'PPI All Commodities',
+        'category': 'inflation',
+        'frequency': 'monthly',
+        'units': 'Index 1982=100',
+        'description': 'Producer Price Index by Commodity: All Commodities'
     }
 }
 
@@ -75,7 +166,10 @@ CATEGORIES = {
     'employment': 'Employment',
     'inflation': 'Inflation',
     'interest_rates': 'Interest Rates',
-    'volatility': 'Market Volatility'
+    'volatility': 'Market Volatility',
+    'consumer': 'Consumer Health',
+    'housing': 'Housing Market',
+    'corporate': 'Corporate Health'
 }
 
 
