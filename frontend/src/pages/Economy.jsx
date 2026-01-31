@@ -39,15 +39,36 @@ const CATEGORY_CONFIG = {
   employment: { label: 'Employment', color: 'rgb(34, 197, 94)' },
   inflation: { label: 'Inflation', color: 'rgb(249, 115, 22)' },
   interest_rates: { label: 'Interest Rates', color: 'rgb(168, 85, 247)' },
-  volatility: { label: 'Market Volatility', color: 'rgb(239, 68, 68)' }
+  volatility: { label: 'Market Volatility', color: 'rgb(239, 68, 68)' },
+  consumer: { label: 'Consumer Health', color: 'rgb(236, 72, 153)' },    // Pink
+  housing: { label: 'Housing Market', color: 'rgb(20, 184, 166)' },     // Teal
+  corporate: { label: 'Corporate Health', color: 'rgb(139, 92, 246)' }  // Purple
 }
 
 function formatValue(value, units, seriesId) {
   if (value === null || value === undefined) return 'N/A'
 
   // Format based on series type
-  if (seriesId === 'GDPC1') {
+  if (seriesId === 'GDPC1' || seriesId === 'GDP') {
     return `$${(value / 1000).toFixed(1)}T`
+  }
+  if (seriesId === 'RSXFS' || seriesId === 'CP' || seriesId === 'M2SL') {
+    // These are in Millions or Billions, show as Billions/Trillions appropriate to scale
+    // RSXFS, CP are in Millions -> /1000 = Billions
+    // M2SL is in Billions -> show as is (or Trillions if > 1000)
+
+    if (seriesId === 'M2SL') {
+      return `$${(value / 1000).toFixed(1)}T`
+    }
+    return `$${(value / 1000).toFixed(1)}B`
+  }
+  if (seriesId === 'TOTALSA' || seriesId === 'HOUST') {
+    // TotalSA is in Millions (16.5) -> Show as 16.5M
+    // Houst is in Thousands (1400) -> Show as 1.4M
+    if (seriesId === 'HOUST') {
+      return `${(value / 1000).toFixed(2)}M`
+    }
+    return `${value.toFixed(1)}M`
   }
   if (seriesId === 'ICSA') {
     return `${(value / 1000).toFixed(0)}K`
