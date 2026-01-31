@@ -39,7 +39,7 @@ const DASHBOARD_SECTIONS = [
     title: 'Consumer',
     description: '',
     color: 'rgb(236, 72, 153)', // Pink
-    series: ['RSXFS', 'TOTALSA', 'UMCSENT', 'HOUST', 'PSAVERT', 'DRCCLACBS', 'ICSA']
+    series: ['RSXFS', 'TOTALSA', 'UMCSENT', 'HOUST', 'PSAVERT', 'DRCCLACBS', 'DRSFRMACBS', 'DRCLACBS', 'ICSA']
   },
   {
     id: 'corporate',

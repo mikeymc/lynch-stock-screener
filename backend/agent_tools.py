@@ -550,7 +550,7 @@ get_fred_series_decl = FunctionDeclaration(
         properties={
             "series_id": Schema(
                 type=Type.STRING,
-                description="FRED series ID. Key Series: GDPC1/GDP (GDP), UNRATE (Unemployment), CPIAUCSL/PPIACO (Inflation), FEDFUNDS/DGS10/T10Y2Y (Rates/Yields), VIXCLS (Volatility), ICSA (Claims), HOUST (Housing Starts), RSXFS/TOTALSA (Retail/Auto Sales), UMCSENT (Sentiment), CP (Corp Profits), M2SL (Money Supply)"
+                description="FRED series ID. Key Series: GDPC1/GDP (GDP), UNRATE (Unemployment), CPIAUCSL/PPIACO (Inflation), FEDFUNDS/DGS10/T10Y2Y (Rates/Yields), VIXCLS (Volatility), ICSA (Claims), HOUST (Housing Starts), RSXFS/TOTALSA (Retail/Auto Sales), UMCSENT (Sentiment), CP (Corp Profits), M2SL (Money Supply), DRSFRMACBS (Mortgage Delinq), DRCLACBS (Consumer Loan Delinq)"
             ),
             "start_date": Schema(type=Type.STRING, description="Start date in YYYY-MM-DD format (optional, defaults to 2 years ago)"),
             "end_date": Schema(type=Type.STRING, description="End date in YYYY-MM-DD format (optional, defaults to today)"),

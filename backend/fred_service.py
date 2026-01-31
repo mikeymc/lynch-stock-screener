@@ -109,6 +109,20 @@ SUPPORTED_SERIES = {
         'units': 'Percent',
         'description': 'Delinquency Rate on Credit Card Loans, All Commercial Banks'
     },
+    'DRSFRMACBS': {
+        'name': 'Mortgage Delinquency',
+        'category': 'consumer',
+        'frequency': 'quarterly',
+        'units': 'Percent',
+        'description': 'Delinquency Rate on Single-Family Residential Mortgages'
+    },
+    'DRCLACBS': {
+        'name': 'Consumer Loan Delinquency',
+        'category': 'consumer',
+        'frequency': 'quarterly',
+        'units': 'Percent',
+        'description': 'Delinquency Rate on Consumer Loans'
+    },
     'RETAILIRSA': {
         'name': 'Retail Inventory/Sales Ratio',
         'category': 'consumer',
