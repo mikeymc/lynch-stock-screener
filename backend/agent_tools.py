@@ -550,7 +550,7 @@ get_fred_series_decl = FunctionDeclaration(
         properties={
             "series_id": Schema(
                 type=Type.STRING,
-                description="FRED series ID. Common series: GDPC1 (Real GDP), UNRATE (Unemployment), CPIAUCSL (CPI), FEDFUNDS (Fed Funds Rate), DGS10 (10-Year Treasury), T10Y2Y (Yield Curve), VIXCLS (VIX), ICSA (Jobless Claims)"
+                description="FRED series ID. Key Series: GDPC1/GDP (GDP), UNRATE (Unemployment), CPIAUCSL/PPIACO (Inflation), FEDFUNDS/DGS10/T10Y2Y (Rates/Yields), VIXCLS (Volatility), ICSA (Claims), HOUST (Housing Starts), RSXFS/TOTALSA (Retail/Auto Sales), UMCSENT (Sentiment), CP (Corp Profits), M2SL (Money Supply)"
             ),
             "start_date": Schema(type=Type.STRING, description="Start date in YYYY-MM-DD format (optional, defaults to 2 years ago)"),
             "end_date": Schema(type=Type.STRING, description="End date in YYYY-MM-DD format (optional, defaults to today)"),
@@ -561,7 +561,7 @@ get_fred_series_decl = FunctionDeclaration(
 
 get_economic_indicators_decl = FunctionDeclaration(
     name="get_economic_indicators",
-    description="Get current values of key macroeconomic indicators including GDP, unemployment rate, inflation (CPI), Fed funds rate, 10-year Treasury yield, yield curve spread, VIX volatility index, and initial jobless claims. Use this for a quick economic overview.",
+    description="Get current values of key macroeconomic indicators including GDP, unemployment, inflation (CPI/PPI), rates (Fed Funds/10Y), VIX, jobless claims, housing starts, retail sales, auto sales, consumer sentiment, and corporate profits. Use this for a comprehensive economic overview.",
     parameters=Schema(
         type=Type.OBJECT,
         properties={},

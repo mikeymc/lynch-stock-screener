@@ -1,8 +1,7 @@
 // ABOUTME: Economy dashboard page displaying FRED macroeconomic indicators
-// ABOUTME: Shows 8 key indicators with current values, changes, and mini charts
+// ABOUTME: Shows detailed trend charts organized by economic theme
 
 import { useState, useEffect } from 'react'
-import { useSearchParams } from 'react-router-dom'
 import { Line } from 'react-chartjs-2'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -33,17 +32,30 @@ ChartJS.register(
 
 const API_BASE = '/api'
 
-// Category display order and colors
-const CATEGORY_CONFIG = {
-  output: { label: 'Economic Output', color: 'rgb(59, 130, 246)' },
-  employment: { label: 'Employment', color: 'rgb(34, 197, 94)' },
-  inflation: { label: 'Inflation', color: 'rgb(249, 115, 22)' },
-  interest_rates: { label: 'Interest Rates', color: 'rgb(168, 85, 247)' },
-  volatility: { label: 'Market Volatility', color: 'rgb(239, 68, 68)' },
-  consumer: { label: 'Consumer Health', color: 'rgb(236, 72, 153)' },    // Pink
-  housing: { label: 'Housing Market', color: 'rgb(20, 184, 166)' },     // Teal
-  corporate: { label: 'Corporate Health', color: 'rgb(139, 92, 246)' }  // Purple
-}
+// Configuration for the 3 distinct sections
+const DASHBOARD_SECTIONS = [
+  {
+    id: 'consumer',
+    title: 'Consumer Engine',
+    description: 'The heartbeat of the economy (Lynch Focus)',
+    color: 'rgb(236, 72, 153)', // Pink
+    series: ['RSXFS', 'TOTALSA', 'UMCSENT', 'HOUST', 'PSAVERT', 'DRCCLACBS', 'ICSA']
+  },
+  {
+    id: 'corporate',
+    title: 'Corporate & Output',
+    description: 'Production, profits, and liquidity (Buffett Focus)',
+    color: 'rgb(139, 92, 246)', // Purple
+    series: ['GDP', 'CP', 'TSIFRGHT', 'RETAILIRSA', 'M2SL', 'UNRATE']
+  },
+  {
+    id: 'rates',
+    title: 'Rates & Inflation',
+    description: 'The cost of capital and currency purchasing power',
+    color: 'rgb(20, 184, 166)', // Teal
+    series: ['FEDFUNDS', 'DGS10', 'BAA10Y', 'CPIAUCSL', 'PPIACO', 'T10Y2Y', 'VIXCLS']
+  }
+]
 
 function formatValue(value, units, seriesId) {
   if (value === null || value === undefined) return 'N/A'
@@ -53,18 +65,12 @@ function formatValue(value, units, seriesId) {
     return `$${(value / 1000).toFixed(1)}T`
   }
   if (seriesId === 'RSXFS' || seriesId === 'CP' || seriesId === 'M2SL') {
-    // These are in Millions or Billions, show as Billions/Trillions appropriate to scale
-    // RSXFS, CP are in Millions -> /1000 = Billions
-    // M2SL is in Billions -> show as is (or Trillions if > 1000)
-
     if (seriesId === 'M2SL') {
       return `$${(value / 1000).toFixed(1)}T`
     }
     return `$${(value / 1000).toFixed(1)}B`
   }
   if (seriesId === 'TOTALSA' || seriesId === 'HOUST') {
-    // TotalSA is in Millions (16.5) -> Show as 16.5M
-    // Houst is in Thousands (1400) -> Show as 1.4M
     if (seriesId === 'HOUST') {
       return `${(value / 1000).toFixed(2)}M`
     }
@@ -73,9 +79,12 @@ function formatValue(value, units, seriesId) {
   if (seriesId === 'ICSA') {
     return `${(value / 1000).toFixed(0)}K`
   }
-  if (units === 'Percent' || units === 'Index') {
+
+  // Percentages and Indices
+  if (units === 'Percent' || units === 'Index' || units.includes('Index')) {
     return value.toFixed(2)
   }
+
   return value.toLocaleString(undefined, { maximumFractionDigits: 2 })
 }
 
@@ -85,8 +94,8 @@ function formatChange(change, changePercent, seriesId) {
   const isPositive = change > 0
   const arrow = isPositive ? '↑' : '↓'
 
-  // For percentage-based metrics, show absolute change
-  if (seriesId === 'UNRATE' || seriesId === 'FEDFUNDS' || seriesId === 'DGS10' || seriesId === 'T10Y2Y') {
+  // For percentage-based metrics (rates, unrate), show absolute change in pp
+  if (['UNRATE', 'FEDFUNDS', 'DGS10', 'T10Y2Y', 'BAA10Y', 'PSAVERT'].includes(seriesId)) {
     return { text: `${arrow} ${Math.abs(change).toFixed(2)}pp`, isPositive }
   }
 
@@ -98,142 +107,136 @@ function formatChange(change, changePercent, seriesId) {
   return { text: `${arrow} ${Math.abs(change).toFixed(2)}`, isPositive }
 }
 
-function IndicatorCard({ indicator, onClick, isSelected }) {
-  const categoryConfig = CATEGORY_CONFIG[indicator.category] || { color: 'rgb(107, 114, 128)' }
-  const change = formatChange(indicator.change, indicator.change_percent, indicator.series_id)
 
-  // Mini chart data
-  const chartData = {
-    labels: indicator.observations?.map(o => o.date) || [],
-    datasets: [{
-      data: indicator.observations?.map(o => o.value) || [],
-      borderColor: categoryConfig.color,
-      backgroundColor: `${categoryConfig.color}33`,
-      fill: true,
-      tension: 0.3,
-      pointRadius: 0,
-      borderWidth: 2,
-    }]
-  }
-
-  const chartOptions = {
-    responsive: true,
-    maintainAspectRatio: false,
-    plugins: {
-      legend: { display: false },
-      tooltip: { enabled: false }
-    },
-    scales: {
-      x: { display: false },
-      y: { display: false }
-    },
-    interaction: { enabled: false }
-  }
-
-  return (
-    <Card
-      className={`cursor-pointer transition-all hover:shadow-lg ${isSelected ? 'ring-2 ring-primary' : ''}`}
-      onClick={() => onClick(indicator)}
-    >
-      <CardHeader className="pb-2">
-        <div className="flex items-center justify-between">
-          <CardTitle className="text-sm font-medium text-muted-foreground">
-            {indicator.name}
-          </CardTitle>
-          <Badge variant="outline" className="text-xs">
-            {indicator.frequency}
-          </Badge>
-        </div>
-      </CardHeader>
-      <CardContent>
-        <div className="flex items-end justify-between mb-2">
-          <div>
-            <div className="text-2xl font-bold">
-              {formatValue(indicator.current_value, indicator.units, indicator.series_id)}
-            </div>
-            {change && (
-              <div className={`text-sm ${change.isPositive ? 'text-green-500' : 'text-red-500'}`}>
-                {change.text}
-              </div>
-            )}
-          </div>
-          <div className="text-xs text-muted-foreground">
-            {indicator.current_date}
-          </div>
-        </div>
-        <div className="h-16">
-          <Line data={chartData} options={chartOptions} />
-        </div>
-      </CardContent>
-    </Card>
-  )
-}
-
-function DetailChart({ indicator }) {
+function TrendChart({ indicator, sectionColor }) {
   if (!indicator) return null
 
-  const categoryConfig = CATEGORY_CONFIG[indicator.category] || { color: 'rgb(107, 114, 128)' }
+  // Prepare data
+  const observations = indicator.observations || []
+  const labels = observations.map(o => o.date)
+  const dataPoints = observations.map(o => o.value)
+
+  // Calculate display values
+  const currentValue = formatValue(indicator.current_value, indicator.units, indicator.series_id)
+  const change = formatChange(indicator.change, indicator.change_percent, indicator.series_id)
+
+  // Helper to get RGBA with opacity from RGB string
+  // Input: "rgb(236, 72, 153)" -> Output: "rgba(236, 72, 153, 0.2)"
+  const getTransparentColor = (rgbString, opacity = 0.2) => {
+    return rgbString.replace('rgb', 'rgba').replace(')', `, ${opacity})`)
+  }
 
   const chartData = {
-    labels: indicator.observations?.map(o => {
-      const date = new Date(o.date)
-      return date.toLocaleDateString('en-US', { month: 'short', year: '2-digit' })
-    }) || [],
+    labels,
     datasets: [{
       label: indicator.name,
-      data: indicator.observations?.map(o => o.value) || [],
-      borderColor: categoryConfig.color,
-      backgroundColor: `${categoryConfig.color}33`,
-      fill: true,
-      tension: 0.3,
-      pointRadius: 2,
-      pointHoverRadius: 6,
+      data: dataPoints,
+      borderColor: sectionColor,
+      backgroundColor: (context) => {
+        const ctx = context.chart.ctx;
+        const gradient = ctx.createLinearGradient(0, 0, 0, 200);
+        gradient.addColorStop(0, getTransparentColor(sectionColor, 0.4));
+        gradient.addColorStop(1, getTransparentColor(sectionColor, 0.05));
+        return gradient;
+      },
       borderWidth: 2,
+      pointRadius: 0,
+      pointHoverRadius: 4,
+      fill: true,
+      tension: 0.2
     }]
   }
 
-  const chartOptions = {
+  const options = {
     responsive: true,
     maintainAspectRatio: false,
+    interaction: {
+      mode: 'index',
+      intersect: false,
+    },
     plugins: {
       legend: { display: false },
       tooltip: {
+        backgroundColor: 'rgba(15, 23, 42, 0.9)', // slate-900
+        padding: 12,
+        titleColor: '#e2e8f0', // slate-200
+        bodyColor: '#e2e8f0',
+        borderColor: 'rgba(148, 163, 184, 0.1)',
+        borderWidth: 1,
+        displayColors: false,
         callbacks: {
-          label: (context) => {
-            return `${formatValue(context.raw, indicator.units, indicator.series_id)} ${indicator.units}`
-          }
+          label: (ctx) => `${formatValue(ctx.raw, indicator.units, indicator.series_id)}`
         }
       }
     },
     scales: {
       x: {
-        grid: { color: 'rgba(255, 255, 255, 0.1)' },
-        ticks: { color: 'rgba(255, 255, 255, 0.7)' }
+        display: true,
+        grid: {
+          display: true,
+          color: 'rgba(148, 163, 184, 0.1)'
+        },
+        ticks: {
+          maxRotation: 0,
+          autoSkip: true,
+          maxTicksLimit: 8, // Increased slightly to allow more density if space permits
+          color: '#94a3b8', // slate-400
+          font: { size: 10 },
+          callback: function (val, index) {
+            const label = this.getLabelForValue(val)
+            const date = new Date(label)
+            // Format as "Jan '24" for compactness
+            return date.toLocaleDateString('en-US', { month: 'short', year: '2-digit' })
+          }
+        }
       },
       y: {
-        grid: { color: 'rgba(255, 255, 255, 0.1)' },
+        display: true,
+        position: 'right', // Put axis on right for financial look
+        grid: {
+          color: 'rgba(148, 163, 184, 0.1)'
+        },
         ticks: {
-          color: 'rgba(255, 255, 255, 0.7)',
-          callback: (value) => formatValue(value, indicator.units, indicator.series_id)
+          color: '#94a3b8',
+          font: { size: 10 },
+          callback: (val) => {
+            // Simplify large numbers for axis
+            if (val >= 1000 && (indicator.series_id === 'GDP' || indicator.series_id === 'M2SL')) return `$${val / 1000}T`
+            if (val >= 1000) return `${val / 1000}k`
+            return val
+          }
         }
       }
     }
   }
 
   return (
-    <Card>
-      <CardHeader>
-        <div className="flex items-center justify-between">
+    <Card className="flex flex-col h-full overflow-hidden hover:shadow-md transition-shadow">
+      <CardHeader className="pb-2 pt-4 px-4 space-y-0">
+        <div className="flex justify-between items-start">
           <div>
-            <CardTitle>{indicator.name}</CardTitle>
-            <p className="text-sm text-muted-foreground mt-1">{indicator.description}</p>
+            <CardTitle className="text-sm font-medium text-muted-foreground mr-2 leading-tight">
+              {indicator.name}
+            </CardTitle>
+            <div className="flex items-baseline gap-2 mt-1">
+              <span className="text-xl font-bold text-foreground">
+                {currentValue}
+              </span>
+              {change && (
+                <span className={`text-xs font-medium ${change.isPositive ? 'text-green-500' : 'text-red-500'}`}>
+                  {change.text}
+                </span>
+              )}
+            </div>
           </div>
-          <Badge>{indicator.series_id}</Badge>
+          <Badge variant="secondary" className="text-[10px] h-5 px-1.5 font-normal opacity-70">
+            {indicator.frequency === 'monthly' ? 'Monthly' : indicator.frequency === 'quarterly' ? 'Quarterly' : 'Daily'}
+          </Badge>
         </div>
       </CardHeader>
-      <CardContent>
-        <div className="h-80">
-          <Line data={chartData} options={chartOptions} />
+      <CardContent className="flex-1 min-h-0 pt-0 pb-4 px-0">
+        <div className="h-48 w-full">
+          <Line data={chartData} options={options} />
         </div>
       </CardContent>
     </Card>
@@ -241,14 +244,9 @@ function DetailChart({ indicator }) {
 }
 
 export default function Economy() {
-  const [searchParams, setSearchParams] = useSearchParams()
   const [dashboardData, setDashboardData] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
-  const [selectedIndicator, setSelectedIndicator] = useState(null)
-
-  // Get selected category from URL
-  const selectedCategory = searchParams.get('category') || null
 
   useEffect(() => {
     const fetchDashboard = async () => {
@@ -259,17 +257,11 @@ export default function Economy() {
         })
 
         if (!response.ok) {
-          const data = await response.json()
-          throw new Error(data.error || 'Failed to fetch economic data')
+          throw new Error('Failed to fetch economic data')
         }
 
         const data = await response.json()
         setDashboardData(data)
-
-        // Select first indicator by default
-        if (data.indicators?.length > 0 && !selectedIndicator) {
-          setSelectedIndicator(data.indicators[0])
-        }
       } catch (err) {
         setError(err.message)
       } finally {
@@ -280,42 +272,28 @@ export default function Economy() {
     fetchDashboard()
   }, [])
 
-  const handleIndicatorClick = (indicator) => {
-    setSelectedIndicator(indicator)
-  }
-
-  const handleCategoryClick = (category) => {
-    if (category === selectedCategory) {
-      setSearchParams({})
-    } else {
-      setSearchParams({ category })
-    }
-  }
-
-  // Filter indicators by category if selected
-  const filteredIndicators = selectedCategory
-    ? dashboardData?.indicators?.filter(i => i.category === selectedCategory) || []
-    : dashboardData?.indicators || []
-
   if (loading) {
     return (
-      <div className="flex flex-col w-full min-h-full p-6 space-y-6">
-        <div className="flex items-center justify-between">
-          <Skeleton className="h-8 w-48" />
-          <Skeleton className="h-4 w-32" />
+      <div className="flex flex-col w-full min-h-full p-6 space-y-8 max-w-[1600px] mx-auto">
+        <div className="space-y-2">
+          <Skeleton className="h-8 w-64" />
+          <Skeleton className="h-4 w-96" />
         </div>
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-          {[...Array(8)].map((_, i) => (
-            <Skeleton key={i} className="h-48" />
-          ))}
-        </div>
+        {[1, 2, 3].map(i => (
+          <div key={i} className="space-y-4">
+            <Skeleton className="h-6 w-48" />
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              {[1, 2, 3].map(j => <Skeleton key={j} className="h-64" />)}
+            </div>
+          </div>
+        ))}
       </div>
     )
   }
 
   if (error) {
     return (
-      <div className="flex flex-col w-full min-h-full p-6">
+      <div className="p-6">
         <Alert variant="destructive">
           <AlertTitle>Error</AlertTitle>
           <AlertDescription>{error}</AlertDescription>
@@ -324,53 +302,47 @@ export default function Economy() {
     )
   }
 
+  // Helper to find indicator data by ID
+  const getIndicator = (id) => dashboardData?.indicators?.find(i => i.series_id === id)
+
   return (
-    <div className="flex flex-col w-full min-h-full p-6 space-y-6">
+    <div className="flex flex-col w-full min-h-full p-6 space-y-12 max-w-[1600px] mx-auto pb-20">
+
       {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold">Economic Indicators</h1>
-          <p className="text-muted-foreground">
-            Federal Reserve Economic Data (FRED)
-          </p>
-        </div>
-        {dashboardData?.fetched_at && (
-          <div className="text-sm text-muted-foreground">
-            Updated: {new Date(dashboardData.fetched_at).toLocaleString()}
+      <div>
+        <h1 className="text-3xl font-bold tracking-tight">Economic Indicators</h1>
+        <p className="text-muted-foreground mt-2 text-lg">
+          Macroeconomic driver dashboard • {dashboardData?.fetched_at ? new Date(dashboardData.fetched_at).toLocaleDateString() : ''}
+        </p>
+      </div>
+
+      {DASHBOARD_SECTIONS.map(section => (
+        <section key={section.id} className="space-y-6">
+          <div className="border-b pb-2">
+            <h2 className="text-xl font-semibold flex items-center gap-2" style={{ color: section.color }}>
+              {section.title}
+            </h2>
+            <p className="text-sm text-muted-foreground mt-1">
+              {section.description}
+            </p>
           </div>
-        )}
-      </div>
 
-      {/* Category filters */}
-      <div className="flex flex-wrap gap-2">
-        {Object.entries(CATEGORY_CONFIG).map(([key, config]) => (
-          <Badge
-            key={key}
-            variant={selectedCategory === key ? 'default' : 'outline'}
-            className="cursor-pointer"
-            onClick={() => handleCategoryClick(key)}
-          >
-            {config.label}
-          </Badge>
-        ))}
-      </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            {section.series.map(seriesId => {
+              const indicator = getIndicator(seriesId)
+              if (!indicator) return null
+              return (
+                <TrendChart
+                  key={seriesId}
+                  indicator={indicator}
+                  sectionColor={section.color}
+                />
+              )
+            })}
+          </div>
+        </section>
+      ))}
 
-      {/* Indicator grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-        {filteredIndicators.map((indicator) => (
-          <IndicatorCard
-            key={indicator.series_id}
-            indicator={indicator}
-            onClick={handleIndicatorClick}
-            isSelected={selectedIndicator?.series_id === indicator.series_id}
-          />
-        ))}
-      </div>
-
-      {/* Detail chart */}
-      {selectedIndicator && (
-        <DetailChart indicator={selectedIndicator} />
-      )}
     </div>
   )
 }
