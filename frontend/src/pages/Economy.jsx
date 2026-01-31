@@ -36,22 +36,22 @@ const API_BASE = '/api'
 const DASHBOARD_SECTIONS = [
   {
     id: 'consumer',
-    title: 'Consumer Engine',
-    description: 'The heartbeat of the economy (Lynch Focus)',
+    title: 'Consumer',
+    description: '',
     color: 'rgb(236, 72, 153)', // Pink
     series: ['RSXFS', 'TOTALSA', 'UMCSENT', 'HOUST', 'PSAVERT', 'DRCCLACBS', 'ICSA']
   },
   {
     id: 'corporate',
     title: 'Corporate & Output',
-    description: 'Production, profits, and liquidity (Buffett Focus)',
+    description: '',
     color: 'rgb(139, 92, 246)', // Purple
     series: ['GDP', 'CP', 'TSIFRGHT', 'RETAILIRSA', 'M2SL', 'UNRATE']
   },
   {
     id: 'rates',
     title: 'Rates & Inflation',
-    description: 'The cost of capital and currency purchasing power',
+    description: '',
     color: 'rgb(20, 184, 166)', // Teal
     series: ['FEDFUNDS', 'DGS10', 'BAA10Y', 'CPIAUCSL', 'PPIACO', 'T10Y2Y', 'VIXCLS']
   }
@@ -176,23 +176,55 @@ function TrendChart({ indicator, sectionColor }) {
           display: true,
           color: 'rgba(148, 163, 184, 0.1)'
         },
+        // Force ticks to snap to Annual Start only (Jan)
+        afterBuildTicks: (axis) => {
+          const ticks = []
+          const labels = axis.chart.data.labels
+          const seenYears = new Set()
+
+          if (labels) {
+            labels.forEach((label, index) => {
+              if (typeof label === 'string' && label.includes('-')) {
+                const year = label.split('-')[0]
+                // Only add tick if it's the FIRST time we see this year (Jan or earliest data)
+                if (!seenYears.has(year)) {
+                  ticks.push({ value: index })
+                  seenYears.add(year)
+                }
+              }
+            })
+          }
+          // Overwrite Chart.js auto-ticks with our manual annual list
+          if (ticks.length > 0) {
+            console.log('DEBUG: Manual ticks set:', ticks)
+            axis.ticks = ticks
+          }
+        },
         ticks: {
           maxRotation: 0,
-          autoSkip: true,
-          maxTicksLimit: 8, // Increased slightly to allow more density if space permits
+          autoSkip: false, // Must be false to respect our manual list
           color: '#94a3b8', // slate-400
           font: { size: 10 },
           callback: function (val, index) {
-            const label = this.getLabelForValue(val)
-            const date = new Date(label)
-            // Format as "Jan '24" for compactness
-            return date.toLocaleDateString('en-US', { month: 'short', year: '2-digit' })
+            const labels = this.chart.data.labels;
+            const rawLabel = labels[val];
+
+            if (typeof rawLabel === 'string' && rawLabel.includes('-')) {
+              return `'${rawLabel.split('-')[0].substring(2)}`
+            }
+            return '';
           }
         }
       },
       y: {
         display: true,
         position: 'right', // Put axis on right for financial look
+        title: {
+          display: true,
+          text: indicator.units,
+          color: '#64748b', // slate-500
+          font: { size: 9 }
+        },
         grid: {
           color: 'rgba(148, 163, 184, 0.1)'
         },
@@ -203,7 +235,15 @@ function TrendChart({ indicator, sectionColor }) {
             // Simplify large numbers for axis
             if (val >= 1000 && (indicator.series_id === 'GDP' || indicator.series_id === 'M2SL')) return `$${val / 1000}T`
             if (val >= 1000) return `${val / 1000}k`
-            return val
+
+            // Format decimals for small numbers (rates, percentages)
+            let formatted = val;
+            if (Math.abs(val) < 100 && val % 1 !== 0) formatted = val.toFixed(1)
+
+            // Append % if units indicate it
+            if (indicator.units && indicator.units.includes('Percent')) return `${formatted}%`
+
+            return formatted
           }
         }
       }
@@ -312,7 +352,7 @@ export default function Economy() {
       <div>
         <h1 className="text-3xl font-bold tracking-tight">Economic Indicators</h1>
         <p className="text-muted-foreground mt-2 text-lg">
-          Macroeconomic driver dashboard • {dashboardData?.fetched_at ? new Date(dashboardData.fetched_at).toLocaleDateString() : ''}
+          {dashboardData?.fetched_at ? new Date(dashboardData.fetched_at).toLocaleDateString() : ''}
         </p>
       </div>
 

@@ -273,9 +273,9 @@ class FredService:
         if not self.fred:
             return {'error': 'FRED API key not configured'}
 
-        # Fetch last 2 years of data for charts
+        # Fetch last 10 years of data for charts (covers full business cycles)
         end_date = datetime.now()
-        start_date = end_date - timedelta(days=730)
+        start_date = end_date - timedelta(days=3650)
         start_str = start_date.strftime('%Y-%m-%d')
 
         indicators = []
