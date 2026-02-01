@@ -230,6 +230,8 @@ class BackgroundWorker:
             self._run_price_update(job_id, params)
         elif job_type == 'process_dividends':
             self._run_process_dividends(job_id, params)
+        elif job_type == 'strategy_execution':
+            self._run_strategy_execution(job_id, params)
         else:
             raise ValueError(f"Unknown job type: {job_type}")
 
@@ -2688,24 +2690,129 @@ Return JSON only:
     def _run_process_dividends(self, job_id: int, params: Dict[str, Any]):
         """Execute dividend processing for all portfolios"""
         logger.info(f"Running process_dividends job {job_id}")
-        
+
         try:
             target_date_str = params.get('target_date')
             target_date = None
             if target_date_str:
                 target_date = datetime.strptime(target_date_str, '%Y-%m-%d').date()
-            
+
             self.db.update_job_progress(job_id, progress_pct=10, progress_message='Checking dividends for all portfolio holdings...')
-            
+
             # This is a bit of a wrapper around the manager logic
             # to provide progress updates if possible, but manager handles the bulk.
             self.dividend_manager.process_all_portfolios(target_date=target_date)
-            
+
             self.db.complete_job(job_id, result={'status': 'completed'})
             logger.info("Dividend processing complete")
-            
+
         except Exception as e:
             logger.error(f"Dividend processing job failed: {e}")
+            self.db.fail_job(job_id, str(e))
+
+    def _run_strategy_execution(self, job_id: int, params: Dict[str, Any]):
+        """Execute autonomous investment strategies.
+
+        Params:
+            strategy_ids: Optional list of specific strategy IDs to run.
+                         If not provided, runs all enabled strategies.
+        """
+        logger.info(f"Running strategy_execution job {job_id}")
+
+        try:
+            from strategy_executor import StrategyExecutor
+
+            # Get strategies to execute
+            strategy_ids = params.get('strategy_ids')
+            if strategy_ids:
+                strategies = [self.db.get_strategy(sid) for sid in strategy_ids]
+                strategies = [s for s in strategies if s]  # Filter None
+            else:
+                strategies = self.db.get_enabled_strategies()
+
+            if not strategies:
+                logger.info("No enabled strategies to execute")
+                self.db.complete_job(job_id, result={'status': 'no_strategies'})
+                return
+
+            total = len(strategies)
+            logger.info(f"Executing {total} strategies")
+
+            self.db.update_job_progress(
+                job_id,
+                progress_pct=5,
+                progress_message=f'Starting execution of {total} strategies',
+                total_count=total
+            )
+
+            executor = StrategyExecutor(self.db)
+            results = []
+            completed = 0
+            errors = 0
+
+            for strategy in strategies:
+                strategy_id = strategy['id']
+                strategy_name = strategy.get('name', f'Strategy {strategy_id}')
+
+                try:
+                    logger.info(f"Executing strategy: {strategy_name} (ID: {strategy_id})")
+
+                    self.db.update_job_progress(
+                        job_id,
+                        progress_message=f'Executing: {strategy_name}'
+                    )
+
+                    # Execute the strategy
+                    result = executor.execute_strategy(strategy_id)
+                    results.append({
+                        'strategy_id': strategy_id,
+                        'name': strategy_name,
+                        'status': result.get('status', 'completed'),
+                        'trades_executed': result.get('trades_executed', 0),
+                        'alpha': result.get('alpha', 0)
+                    })
+
+                    logger.info(
+                        f"Strategy {strategy_name} completed: "
+                        f"{result.get('trades_executed', 0)} trades, "
+                        f"alpha: {result.get('alpha', 0):.2f}%"
+                    )
+
+                except Exception as e:
+                    logger.error(f"Strategy {strategy_name} failed: {e}")
+                    results.append({
+                        'strategy_id': strategy_id,
+                        'name': strategy_name,
+                        'status': 'failed',
+                        'error': str(e)
+                    })
+                    errors += 1
+
+                completed += 1
+                pct = 5 + int((completed / total) * 90)
+                self.db.update_job_progress(
+                    job_id,
+                    progress_pct=pct,
+                    processed_count=completed
+                )
+                self._send_heartbeat(job_id)
+
+            # Complete job
+            final_result = {
+                'total_strategies': total,
+                'completed': completed,
+                'errors': errors,
+                'results': results
+            }
+
+            self.db.flush()
+            self.db.complete_job(job_id, final_result)
+            logger.info(f"Strategy execution complete: {completed}/{total} strategies, {errors} errors")
+
+        except Exception as e:
+            logger.error(f"Strategy execution job failed: {e}")
+            import traceback
+            traceback.print_exc()
             self.db.fail_job(job_id, str(e))
 
 
