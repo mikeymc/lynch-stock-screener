@@ -1398,20 +1398,27 @@ Reasoning: [Brief explanation of their final decision]
 
         # Execute buys
         for decision in buy_decisions:
+            symbol = decision['symbol']
             try:
                 position = self.position_sizer.calculate_position(
                     portfolio_id=portfolio_id,
-                    symbol=decision['symbol'],
+                    symbol=symbol,
                     conviction_score=decision.get('consensus_score', 50),
                     method=method,
                     rules=position_rules,
                     other_buys=[d for d in buy_decisions if d != decision]
                 )
 
+                # Log position sizing decision
+                print(f"  Position sizing for {symbol}:")
+                print(f"    Shares: {position.shares}")
+                print(f"    Value: ${position.estimated_value:,.2f}")
+                print(f"    Reasoning: {position.reasoning}")
+
                 if position.shares > 0:
                     result = portfolio_service.execute_trade(
                         portfolio_id=portfolio_id,
-                        symbol=decision['symbol'],
+                        symbol=symbol,
                         transaction_type='BUY',
                         quantity=position.shares,
                         note=f"Strategy buy: {decision.get('consensus_reasoning', '')}",
@@ -1421,9 +1428,17 @@ Reasoning: [Brief explanation of their final decision]
                         trades_executed += 1
                         self._log_event(
                             run_id,
-                            f"BUY {decision['symbol']}: {position.shares} shares @ {position.reasoning}"
+                            f"BUY {symbol}: {position.shares} shares @ {position.reasoning}"
                         )
+                        print(f"    ✓ Trade executed successfully")
+                    else:
+                        print(f"    ✗ Trade failed: {result.get('error', 'Unknown error')}")
+                        logger.warning(f"Trade execution failed for {symbol}: {result.get('error')}")
+                else:
+                    print(f"    ⚠ Skipping trade: {position.reasoning}")
+                    logger.info(f"Skipping {symbol} buy: {position.reasoning}")
             except Exception as e:
-                logger.error(f"Failed to execute buy for {decision['symbol']}: {e}")
+                logger.error(f"Failed to execute buy for {symbol}: {e}")
+                print(f"    ✗ Exception during trade execution: {e}")
 
         return trades_executed
