@@ -2159,6 +2159,28 @@ class Database:
             ON strategy_runs(strategy_id, started_at DESC)
         """)
 
+        # Thesis Refresh Queue (for dedicated background job)
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS thesis_refresh_queue (
+                id SERIAL PRIMARY KEY,
+                symbol TEXT NOT NULL REFERENCES stocks(symbol) ON DELETE CASCADE,
+                reason TEXT NOT NULL,
+                priority INTEGER NOT NULL DEFAULT 0,
+                status TEXT NOT NULL DEFAULT 'PENDING'
+                    CHECK (status IN ('PENDING', 'PROCESSING', 'COMPLETED', 'FAILED')),
+                attempts INTEGER DEFAULT 0,
+                error_message TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(symbol)
+            )
+        """)
+
+        cursor.execute("""
+            CREATE INDEX IF NOT EXISTS idx_thesis_queue_status_priority
+            ON thesis_refresh_queue(status, priority DESC)
+        """)
+
         # Individual stock decisions within a run
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS strategy_decisions (
