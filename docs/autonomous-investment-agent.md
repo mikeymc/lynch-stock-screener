@@ -38,17 +38,20 @@ Strategy Definition (DB)
 │  2. SCORE           → Lynch + Buffett character scoring      │
 │         │              (via lynch_criteria.evaluate_stock)   │
 │         ▼                                                    │
-│  3. ENRICH          → Thesis generation                      │
+│  3. GENERATE THESES → Each character creates thesis          │
+│         │              (Lynch thesis + Buffett thesis)       │
 │         │              (via stock_analyst.get_or_generate)   │
 │         ▼                                                    │
-│  4. DELIBERATE      → Apply consensus mode + thesis filter   │
-│         │              (both_agree / weighted / veto_power)  │
+│  4. DELIBERATE      → AI moderator evaluates both theses     │
+│         │              (Gemini generates consensus verdict)  │
+│         │              (cached in deliberations table)       │
 │         ▼                                                    │
 │  5. CHECK EXITS     → Evaluate existing positions            │
 │         │              (profit target, stop loss, score deg) │
 │         ▼                                                    │
 │  6. SIZE & EXECUTE  → Position sizing + paper trade          │
 │         │              (via portfolio_service.execute_trade) │
+│         │              (detailed logging of sizing decisions)│
 │         ▼                                                    │
 │  7. AUDIT           → Log decisions + track vs SPY           │
 │                                                              │
@@ -419,6 +422,87 @@ else:
 
 ---
 
+## Deliberation System
+
+The deliberation system adds a third AI layer that analyzes both Lynch and Buffett theses to reach a final consensus verdict. This prevents situations where both characters individually recommend BUY but for contradictory reasons.
+
+### How It Works
+
+1. **Dual Thesis Generation**: Lynch and Buffett each generate independent investment theses via `stock_analyst.get_or_generate_analysis()`
+2. **Deliberation**: A third AI (Gemini) reads both theses and generates a final verdict
+3. **Caching**: Deliberations are cached in the `deliberations` table to reduce API costs
+4. **Verdict Extraction**: BUY/WATCH/AVOID verdict is extracted via regex from deliberation text
+
+### Implementation
+
+```python
+def _conduct_deliberation(self, symbol: str, user_id: int, lynch_thesis: str, buffett_thesis: str) -> Optional[str]:
+    """
+    Have a third AI deliberate between Lynch and Buffett theses.
+    Returns BUY, WATCH, AVOID, or None if deliberation fails.
+    """
+    # Check cache first
+    cached = self.db.get_deliberation(user_id=user_id, symbol=symbol)
+    if cached:
+        return cached['final_verdict']
+
+    # Generate deliberation
+    prompt = f"""You are an impartial investment advisor...
+    [Lynch's thesis]
+    {lynch_thesis}
+
+    [Buffett's thesis]
+    {buffett_thesis}
+
+    Provide your final verdict: BUY, WATCH, or AVOID"""
+
+    deliberation_text = gemini_client.generate(prompt)
+    verdict = self._extract_thesis_verdict(deliberation_text)
+
+    # Cache result
+    self.db.save_deliberation(
+        user_id=user_id,
+        symbol=symbol,
+        lynch_thesis=lynch_thesis,
+        buffett_thesis=buffett_thesis,
+        deliberation_text=deliberation_text,
+        final_verdict=verdict
+    )
+
+    return verdict
+```
+
+### Database Schema
+
+```sql
+CREATE TABLE IF NOT EXISTS deliberations (
+    id SERIAL PRIMARY KEY,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    symbol TEXT NOT NULL,
+    lynch_thesis TEXT NOT NULL,
+    buffett_thesis TEXT NOT NULL,
+    deliberation_text TEXT NOT NULL,
+    final_verdict TEXT,
+    generated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(user_id, symbol)
+);
+```
+
+### Strategy Configuration
+
+Strategies can require specific deliberation verdicts:
+
+```json
+{
+  "require_thesis": true,
+  "thesis_verdict_required": ["BUY"]
+}
+```
+
+If `thesis_verdict_required` is set, the deliberation verdict must match one of the specified values for the stock to proceed to trading.
+
+---
+
 ## Code Changes
 
 ### New Files
@@ -463,14 +547,41 @@ Main orchestrator containing:
    - `_score_candidates()`: Score with Lynch/Buffett via `lynch_criteria.evaluate_stock()`
    - `_generate_theses()`: Generate thesis via `stock_analyst.get_or_generate_analysis()`
    - `_extract_thesis_verdict()`: Parse BUY/WATCH/AVOID from thesis text
+   - `_conduct_deliberation()`: Generate AI deliberation between Lynch/Buffett theses
    - `_deliberate()`: Apply consensus + thesis verdict filtering
-   - `_execute_trades()`: Execute buys and sells
+   - `_execute_trades()`: Execute buys and sells with detailed logging
    - `_get_current_scores()`: Helper for exit checker scoring function
+
+**Recent Enhancements to `_execute_trades()` (lines 1399-1443):**
+
+Added comprehensive logging to diagnose trade execution issues:
+
+```python
+# Log position sizing decision
+print(f"  Position sizing for {symbol}:")
+print(f"    Shares: {position.shares}")
+print(f"    Value: ${position.estimated_value:,.2f}")
+print(f"    Reasoning: {position.reasoning}")
+
+if position.shares > 0:
+    result = portfolio_service.execute_trade(...)
+    if result.get('success'):
+        print(f"    ✓ Trade executed successfully")
+    else:
+        print(f"    ✗ Trade failed: {result.get('error', 'Unknown error')}")
+else:
+    print(f"    ⚠ Skipping trade: {position.reasoning}")
+```
+
+This logging reveals:
+- Why position sizer returns 0 shares (e.g., "Already at max position")
+- Trade execution failures (e.g., "Market is closed")
+- Position sizing calculations (shares, value, reasoning)
 
 ### Modified Files
 
 #### backend/database.py
-Added ~20 CRUD methods:
+Added ~20 CRUD methods and bug fixes:
 
 **Strategy CRUD:**
 - `create_strategy()`: Create new strategy
@@ -499,6 +610,15 @@ Added ~20 CRUD methods:
 - `save_strategy_performance()`: Save performance record
 - `get_strategy_performance()`: Get performance series
 - `get_strategy_inception_data()`: Get first performance record for alpha calculation
+
+**Deliberation:**
+- `save_deliberation()`: Cache deliberation result
+- `get_deliberation()`: Retrieve cached deliberation
+
+**Bug Fixes:**
+- `get_portfolio_holdings()`: Fixed to return dict `{'MSFT': 10}` instead of list `[{'symbol': 'MSFT', 'net_qty': 10}]`
+  - This bug caused `'list' object has no attribute 'get'` errors in PositionSizer
+  - Fixed in line 3919: `return {symbol: int(qty) for symbol, qty in rows}`
 
 #### backend/worker.py
 Added strategy_execution job type:
@@ -740,6 +860,216 @@ for event in json.loads(run['run_log']):
 
 ---
 
+## Production Deployment
+
+### Strategy 9: MSFT Autonomous Monitor
+
+The first production strategy is configured to monitor MSFT daily:
+
+**Configuration:**
+- **Strategy ID**: 9
+- **Name**: "Autonomous MSFT Monitor"
+- **Portfolio**: Portfolio 1 ("Lynch") with ~$64,000 cash
+- **Universe Filter**: `symbol == "MSFT"`
+- **Scoring Requirements**: Lynch ≥ 70, Buffett ≥ 70
+- **Thesis Requirements**: Requires theses from BOTH characters
+- **Deliberation**: Uses Gemini AI to deliberate between Lynch/Buffett theses
+- **Consensus Mode**: `both_agree` (both must recommend BUY)
+- **Position Sizing**: `fixed_pct` at 10% of portfolio per position
+- **Schedule**: Daily at 9:30 AM ET (via GitHub Actions cron)
+- **Status**: `enabled=True`
+
+**SQL to Create Strategy 9:**
+
+```sql
+INSERT INTO investment_strategies (
+    user_id, portfolio_id, name, description,
+    conditions, consensus_mode, consensus_threshold,
+    position_sizing, exit_conditions, schedule_cron, enabled
+) VALUES (
+    1,
+    1,
+    'Autonomous MSFT Monitor',
+    'Daily autonomous monitoring of MSFT. Requires Lynch and Buffett both score 70+, generates theses with deliberation, executes 10% position on BUY consensus.',
+    '{
+      "universe": {
+        "filters": [
+          {"field": "symbol", "operator": "==", "value": "MSFT"}
+        ]
+      },
+      "scoring_requirements": [
+        {"character": "lynch", "min_score": 70},
+        {"character": "buffett", "min_score": 70}
+      ],
+      "require_thesis": true,
+      "thesis_verdict_required": ["BUY"]
+    }'::jsonb,
+    'both_agree',
+    70.0,
+    '{
+      "method": "fixed_pct",
+      "max_position_pct": 10.0,
+      "fixed_position_pct": 10.0
+    }'::jsonb,
+    '{
+      "profit_target_pct": 50,
+      "stop_loss_pct": -20
+    }'::jsonb,
+    '30 9 * * 1-5',
+    true
+) RETURNING id;
+```
+
+### GitHub Actions Integration
+
+The strategy executes automatically via GitHub Actions cron job:
+
+```yaml
+# .github/workflows/scheduled-jobs.yml
+- cron: '30 14 * * 1-5'  # 9:30 AM ET = 2:30 PM UTC on weekdays
+```
+
+The workflow calls the API to create a `strategy_execution` background job, which is processed by `worker.py`:
+
+```python
+# backend/worker.py (lines 233-234)
+elif job_type == 'strategy_execution':
+    self._run_strategy_execution(job_id, params)
+```
+
+### Helper Scripts
+
+Several helper scripts were created for testing and maintenance:
+
+#### cleanup_strategies.py
+Disables duplicate/test strategies:
+
+```python
+from database import Database
+
+db = Database()
+
+# Disable test strategies 1-4, keep only 9
+for strategy_id in [1, 2, 3, 4]:
+    db.update_strategy(strategy_id=strategy_id, user_id=1, enabled=False)
+
+# Verify only strategy 9 is enabled
+enabled = db.get_enabled_strategies()
+assert len(enabled) == 1 and enabled[0]['id'] == 9
+```
+
+#### verify_autonomous_strategy.py
+Comprehensive status check showing:
+- Strategy configuration
+- Portfolio state (total value, cash, holdings)
+- Recent execution history
+- Data cache status (metrics, theses, deliberations)
+
+```bash
+uv run python backend/verify_autonomous_strategy.py
+```
+
+#### run_strategy_9.py
+Simple local testing script:
+
+```python
+from database import Database
+from strategy_executor import StrategyExecutor
+
+db = Database()
+executor = StrategyExecutor(db)
+
+# Show portfolio before
+portfolio = db.get_portfolio_summary(1, use_live_prices=False)
+print(f"Cash: ${portfolio['cash']:,.2f}")
+
+# Execute strategy
+result = executor.execute_strategy(9)
+print(f"Status: {result['status']}")
+print(f"Trades: {result['trades_executed']}")
+
+# Show portfolio after
+portfolio = db.get_portfolio_summary(1, use_live_prices=False)
+print(f"Cash: ${portfolio['cash']:,.2f}")
+```
+
+#### update_strategy_position_size.py
+Updates position sizing parameters:
+
+```python
+from database import Database
+
+db = Database()
+
+# Increase max_position_pct from 1% to 10%
+strategy = db.get_strategy(9)
+position_sizing = strategy['position_sizing']
+position_sizing['max_position_pct'] = 10.0
+position_sizing['fixed_position_pct'] = 10.0
+
+db.update_strategy(
+    strategy_id=9,
+    user_id=1,
+    position_sizing=position_sizing
+)
+```
+
+### Common Production Issues and Fixes
+
+#### Issue 1: `'list' object has no attribute 'get'`
+**Symptom**: Position sizer crashes when checking existing holdings
+
+**Root Cause**: `get_portfolio_holdings()` returned list of dicts instead of dict
+
+**Fix**: Updated database.py line 3919:
+```python
+# Before (buggy):
+return [dict(zip(columns, row)) for row in cursor.fetchall()]
+
+# After (fixed):
+return {symbol: int(qty) for symbol, qty in rows}
+```
+
+#### Issue 2: BUY decision executes 0 trades
+**Symptom**: Deliberation returns BUY verdict but no trades execute
+
+**Possible Causes**:
+1. **Market closed**: Trades only execute 4 AM - 8 PM ET on weekdays
+2. **Position limit reached**: Already at `max_position_pct` for that stock
+3. **Insufficient cash**: Not enough cash to meet `min_position_value`
+
+**Diagnosis**: Check the detailed logging output from `_execute_trades()`:
+```
+Position sizing for MSFT:
+  Shares: 0
+  Value: $0.00
+  Reasoning: Already at max position (10 shares = $4236.75)
+  ⚠ Skipping trade: Already at max position
+```
+
+**Fix**: Either increase `max_position_pct` or sell existing position first
+
+#### Issue 3: Deliberation verdict is None
+**Symptom**: Thesis generated successfully but deliberation returns None
+
+**Possible Causes**:
+1. **Gemini API error**: 503, 404, or rate limit
+2. **Verdict extraction failed**: Deliberation text generated but parsing failed
+3. **Missing API key**: `GOOGLE_API_KEY` not set in environment
+
+**Diagnosis**: Check strategy_runs.run_log for error messages
+
+**Fix**: Verify API key, check retry logic, ensure deliberation prompt requests verdict in expected format
+
+#### Issue 4: Unknown job type: strategy_execution
+**Symptom**: GitHub Actions cron creates job but worker doesn't process it
+
+**Root Cause**: Production deployment missing latest worker.py code
+
+**Fix**: Deploy worker.py with `strategy_execution` handler (lines 233-234)
+
+---
+
 ## Known Limitations and Future Work
 
 ### Not Yet Implemented
@@ -773,14 +1103,28 @@ for event in json.loads(run['run_log']):
 
 ## File Reference
 
+### Core Implementation Files
+
+| File | Purpose | Lines |
+|------|---------|-------|
+| `backend/strategy_executor.py` | Main orchestrator and all components | ~1500 |
+| `backend/database.py` | CRUD methods for strategy tables + deliberations | ~4000 |
+| `backend/worker.py` | Background job execution (strategy_execution handler) | ~500 |
+| `.github/workflows/scheduled-jobs.yml` | Scheduled job triggers (9:30 AM ET cron) | ~200 |
+| `tests/backend/test_strategy_executor.py` | Unit and integration tests (36 tests) | ~1000 |
+| `docs/autonomous-investment-agent.md` | This documentation | ~1000 |
+
+### Helper Scripts
+
 | File | Purpose |
 |------|---------|
-| `backend/strategy_executor.py` | Main orchestrator and all components |
-| `backend/database.py` | CRUD methods for strategy tables |
-| `backend/worker.py` | Background job execution |
-| `.github/workflows/scheduled-jobs.yml` | Scheduled job triggers |
-| `tests/backend/test_strategy_executor.py` | Unit and integration tests |
-| `docs/autonomous-investment-agent.md` | This documentation |
+| `backend/cleanup_strategies.py` | Disable duplicate test strategies |
+| `backend/verify_autonomous_strategy.py` | Comprehensive status checker for Strategy 9 |
+| `backend/run_strategy_9.py` | Simple local testing script with before/after portfolio state |
+| `backend/test_autonomous_strategy.py` | Detailed manual execution test (superseded by run_strategy_9.py) |
+| `backend/update_strategy_position_size.py` | Update max_position_pct for existing strategy |
+| `backend/investigate_run9.py` | Diagnostic script to analyze specific run failures |
+| `backend/test_trade_execution_fix.py` | Test script for get_portfolio_holdings fix |
 
 ### Existing Files Used (Not Modified)
 
@@ -849,5 +1193,27 @@ Reason: {d['decision_reasoning']}
 
 ---
 
-*Last updated: January 2026*
-*Author: Claude (Opus 4.5) with Mikey*
+## Changelog
+
+### January 31, 2026
+- Added deliberation system (third AI layer to reconcile Lynch/Buffett theses)
+- Fixed `get_portfolio_holdings()` to return dict instead of list
+- Added comprehensive logging to `_execute_trades()` showing position sizing decisions
+- Created helper scripts for testing and maintenance
+- Configured Strategy 9 (MSFT Autonomous Monitor) for production
+- Increased max_position_pct from 1% to 10% based on portfolio size
+- Documented common production issues and fixes
+
+### January 2026 (Initial Release)
+- Implemented autonomous investment strategy system
+- Added 6-phase execution pipeline (screen, score, thesis, deliberate, exit check, trade)
+- Created 5 database tables for strategy tracking
+- Implemented 3 consensus modes (both_agree, weighted_confidence, veto_power)
+- Added 4 position sizing methods (equal_weight, conviction_weighted, fixed_pct, kelly)
+- Integrated with GitHub Actions for scheduled execution
+- Wrote 36 unit and integration tests
+
+---
+
+*Last updated: January 31, 2026*
+*Author: Claude (Sonnet 4.5) with Mikey*
