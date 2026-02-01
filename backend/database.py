@@ -8,7 +8,7 @@ import os
 import queue
 import time
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timezone, date
 from typing import Optional, Dict, Any, List, Set
 import json
 
@@ -772,6 +772,19 @@ class Database:
                 -- Aggressively drop legacy unique constraint if it exists
                 ALTER TABLE lynch_analyses DROP CONSTRAINT IF EXISTS lynch_analyses_user_symbol_unique;
             END $$;
+        """)
+
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS deliberations (
+                user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                symbol TEXT NOT NULL,
+                deliberation_text TEXT NOT NULL,
+                final_verdict TEXT CHECK (final_verdict IN ('BUY', 'WATCH', 'AVOID')),
+                generated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                model_version TEXT,
+                PRIMARY KEY (user_id, symbol),
+                FOREIGN KEY (symbol) REFERENCES stocks(symbol)
+            )
         """)
 
         cursor.execute("""
@@ -2065,6 +2078,173 @@ class Database:
             ON portfolio_value_snapshots(portfolio_id, snapshot_at)
         """)
 
+        # ============================================================
+        # Autonomous Investment Strategy Tables
+        # ============================================================
+
+        # Investment strategies defined by users
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS investment_strategies (
+                id SERIAL PRIMARY KEY,
+                user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                portfolio_id INTEGER NOT NULL REFERENCES portfolios(id) ON DELETE CASCADE,
+                name TEXT NOT NULL,
+                description TEXT,
+
+                -- Screening conditions (JSON with universe filters, scoring requirements)
+                conditions JSONB NOT NULL,
+
+                -- Consensus configuration
+                consensus_mode TEXT NOT NULL DEFAULT 'both_agree'
+                    CHECK (consensus_mode IN ('both_agree', 'weighted_confidence', 'veto_power')),
+                consensus_threshold REAL DEFAULT 70.0,
+
+                -- Position sizing configuration
+                position_sizing JSONB NOT NULL DEFAULT '{"method": "equal_weight", "max_position_pct": 5.0}',
+
+                -- Exit conditions (profit targets, stop losses, quality rules)
+                exit_conditions JSONB DEFAULT '{}',
+
+                -- Execution schedule (cron format)
+                schedule_cron TEXT DEFAULT '0 9 * * 1-5',
+                enabled BOOLEAN DEFAULT true,
+
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+
+        cursor.execute("""
+            CREATE INDEX IF NOT EXISTS idx_strategies_user
+            ON investment_strategies(user_id)
+        """)
+
+        cursor.execute("""
+            CREATE INDEX IF NOT EXISTS idx_strategies_enabled
+            ON investment_strategies(enabled, schedule_cron)
+        """)
+
+        # Strategy execution runs (one per scheduled execution)
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS strategy_runs (
+                id SERIAL PRIMARY KEY,
+                strategy_id INTEGER NOT NULL REFERENCES investment_strategies(id) ON DELETE CASCADE,
+
+                -- Execution metadata
+                started_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                completed_at TIMESTAMP,
+                status TEXT NOT NULL DEFAULT 'running'
+                    CHECK (status IN ('running', 'completed', 'failed', 'cancelled')),
+
+                -- Summary statistics
+                stocks_screened INTEGER DEFAULT 0,
+                stocks_scored INTEGER DEFAULT 0,
+                theses_generated INTEGER DEFAULT 0,
+                trades_executed INTEGER DEFAULT 0,
+
+                -- Benchmark data at time of run
+                spy_price REAL,
+                portfolio_value REAL,
+
+                -- Error info if failed
+                error_message TEXT,
+
+                -- Full run log (JSON array of events)
+                run_log JSONB DEFAULT '[]'
+            )
+        """)
+
+        cursor.execute("""
+            CREATE INDEX IF NOT EXISTS idx_runs_strategy
+            ON strategy_runs(strategy_id, started_at DESC)
+        """)
+
+        # Individual stock decisions within a run
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS strategy_decisions (
+                id SERIAL PRIMARY KEY,
+                run_id INTEGER NOT NULL REFERENCES strategy_runs(id) ON DELETE CASCADE,
+                symbol TEXT NOT NULL,
+
+                -- Scoring results from each character
+                lynch_score REAL,
+                lynch_status TEXT,
+                buffett_score REAL,
+                buffett_status TEXT,
+
+                -- Combined/consensus result
+                consensus_score REAL,
+                consensus_verdict TEXT CHECK (consensus_verdict IN ('BUY', 'WATCH', 'AVOID', 'VETO')),
+
+                -- Thesis generation results
+                thesis_verdict TEXT CHECK (thesis_verdict IN ('BUY', 'WATCH', 'AVOID')),
+                thesis_summary TEXT,
+                thesis_full TEXT,
+
+                -- DCF results
+                dcf_fair_value REAL,
+                dcf_upside_pct REAL,
+
+                -- Final decision and execution
+                final_decision TEXT CHECK (final_decision IN ('BUY', 'SKIP', 'HOLD', 'SELL')),
+                decision_reasoning TEXT,
+
+                -- If trade executed
+                transaction_id INTEGER REFERENCES portfolio_transactions(id),
+                shares_traded INTEGER,
+                trade_price REAL,
+                position_value REAL,
+
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+
+        cursor.execute("""
+            CREATE INDEX IF NOT EXISTS idx_decisions_run
+            ON strategy_decisions(run_id)
+        """)
+
+        cursor.execute("""
+            CREATE INDEX IF NOT EXISTS idx_decisions_symbol
+            ON strategy_decisions(symbol)
+        """)
+
+        # Benchmark tracking (daily SPY snapshots)
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS benchmark_snapshots (
+                id SERIAL PRIMARY KEY,
+                snapshot_date DATE NOT NULL UNIQUE,
+                spy_price REAL NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+
+        cursor.execute("""
+            CREATE INDEX IF NOT EXISTS idx_benchmark_date
+            ON benchmark_snapshots(snapshot_date)
+        """)
+
+        # Strategy performance vs benchmark
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS strategy_performance (
+                id SERIAL PRIMARY KEY,
+                strategy_id INTEGER NOT NULL REFERENCES investment_strategies(id) ON DELETE CASCADE,
+                snapshot_date DATE NOT NULL,
+
+                portfolio_value REAL NOT NULL,
+                portfolio_return_pct REAL,
+                spy_return_pct REAL,
+                alpha REAL,
+
+                UNIQUE(strategy_id, snapshot_date)
+            )
+        """)
+
+        cursor.execute("""
+            CREATE INDEX IF NOT EXISTS idx_perf_strategy
+            ON strategy_performance(strategy_id, snapshot_date)
+        """)
+
         conn.commit()
 
     def save_stock_basic(self, symbol: str, company_name: str, exchange: str, sector: str = None,
@@ -2850,6 +3030,50 @@ class Database:
                 'generated_at': row[2],
                 'model_version': row[3],
                 'character_id': row[4]
+            }
+        finally:
+            self.return_connection(conn)
+
+    def save_deliberation(self, user_id: int, symbol: str, deliberation_text: str, final_verdict: str, model_version: str):
+        """Save or update a deliberation between Lynch and Buffett."""
+        conn = self.get_connection()
+        try:
+            cursor = conn.cursor()
+            cursor.execute("""
+                INSERT INTO deliberations
+                (user_id, symbol, deliberation_text, final_verdict, generated_at, model_version)
+                VALUES (%s, %s, %s, %s, %s, %s)
+                ON CONFLICT (user_id, symbol) DO UPDATE SET
+                    deliberation_text = EXCLUDED.deliberation_text,
+                    final_verdict = EXCLUDED.final_verdict,
+                    generated_at = EXCLUDED.generated_at,
+                    model_version = EXCLUDED.model_version
+            """, (user_id, symbol, deliberation_text, final_verdict, datetime.now(), model_version))
+            conn.commit()
+        finally:
+            self.return_connection(conn)
+
+    def get_deliberation(self, user_id: int, symbol: str) -> Optional[Dict[str, Any]]:
+        """Get cached deliberation for a stock."""
+        conn = self.get_connection()
+        try:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT symbol, deliberation_text, final_verdict, generated_at, model_version
+                FROM deliberations
+                WHERE user_id = %s AND symbol = %s
+            """, (user_id, symbol))
+            row = cursor.fetchone()
+
+            if not row:
+                return None
+
+            return {
+                'symbol': row[0],
+                'deliberation_text': row[1],
+                'final_verdict': row[2],
+                'generated_at': row[3],
+                'model_version': row[4]
             }
         finally:
             self.return_connection(conn)
@@ -6219,5 +6443,479 @@ class Database:
             deleted = cursor.rowcount > 0
             conn.commit()
             return deleted
+        finally:
+            self.return_connection(conn)
+
+    # ============================================================
+    # Investment Strategy Methods
+    # ============================================================
+
+    def create_strategy(
+        self,
+        user_id: int,
+        portfolio_id: int,
+        name: str,
+        conditions: Dict[str, Any],
+        consensus_mode: str = 'both_agree',
+        consensus_threshold: float = 70.0,
+        position_sizing: Dict[str, Any] = None,
+        exit_conditions: Dict[str, Any] = None,
+        schedule_cron: str = '0 9 * * 1-5',
+        description: str = None
+    ) -> int:
+        """Create a new investment strategy."""
+        if position_sizing is None:
+            position_sizing = {'method': 'equal_weight', 'max_position_pct': 5.0}
+        if exit_conditions is None:
+            exit_conditions = {}
+
+        conn = self.get_connection()
+        try:
+            cursor = conn.cursor()
+            cursor.execute("""
+                INSERT INTO investment_strategies
+                (user_id, portfolio_id, name, description, conditions, consensus_mode,
+                 consensus_threshold, position_sizing, exit_conditions, schedule_cron)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                RETURNING id
+            """, (
+                user_id, portfolio_id, name, description,
+                json.dumps(conditions), consensus_mode, consensus_threshold,
+                json.dumps(position_sizing), json.dumps(exit_conditions), schedule_cron
+            ))
+            strategy_id = cursor.fetchone()[0]
+            conn.commit()
+            return strategy_id
+        finally:
+            self.return_connection(conn)
+
+    def get_strategy(self, strategy_id: int) -> Optional[Dict[str, Any]]:
+        """Get a strategy by ID."""
+        conn = self.get_connection()
+        try:
+            cursor = conn.cursor(row_factory=psycopg.rows.dict_row)
+            cursor.execute("""
+                SELECT id, user_id, portfolio_id, name, description, conditions,
+                       consensus_mode, consensus_threshold, position_sizing,
+                       exit_conditions, schedule_cron, enabled, created_at, updated_at
+                FROM investment_strategies
+                WHERE id = %s
+            """, (strategy_id,))
+            return cursor.fetchone()
+        finally:
+            self.return_connection(conn)
+
+    def get_user_strategies(self, user_id: int) -> List[Dict[str, Any]]:
+        """Get all strategies for a user."""
+        conn = self.get_connection()
+        try:
+            cursor = conn.cursor(row_factory=psycopg.rows.dict_row)
+            cursor.execute("""
+                SELECT s.id, s.user_id, s.portfolio_id, s.name, s.description,
+                       s.conditions, s.consensus_mode, s.consensus_threshold,
+                       s.position_sizing, s.exit_conditions, s.schedule_cron,
+                       s.enabled, s.created_at, s.updated_at,
+                       p.name as portfolio_name
+                FROM investment_strategies s
+                JOIN portfolios p ON s.portfolio_id = p.id
+                WHERE s.user_id = %s
+                ORDER BY s.created_at DESC
+            """, (user_id,))
+            return cursor.fetchall()
+        finally:
+            self.return_connection(conn)
+
+    def get_enabled_strategies(self) -> List[Dict[str, Any]]:
+        """Get all enabled strategies (for scheduled execution)."""
+        conn = self.get_connection()
+        try:
+            cursor = conn.cursor(row_factory=psycopg.rows.dict_row)
+            cursor.execute("""
+                SELECT id, user_id, portfolio_id, name, conditions,
+                       consensus_mode, consensus_threshold, position_sizing,
+                       exit_conditions, schedule_cron
+                FROM investment_strategies
+                WHERE enabled = true
+            """)
+            return cursor.fetchall()
+        finally:
+            self.return_connection(conn)
+
+    def update_strategy(self, strategy_id: int, user_id: int, **kwargs) -> bool:
+        """Update strategy fields. Returns True if updated."""
+        allowed_fields = {
+            'name', 'description', 'conditions', 'consensus_mode',
+            'consensus_threshold', 'position_sizing', 'exit_conditions',
+            'schedule_cron', 'enabled'
+        }
+        updates = {k: v for k, v in kwargs.items() if k in allowed_fields}
+        if not updates:
+            return False
+
+        # JSON-encode dict fields
+        for field in ['conditions', 'position_sizing', 'exit_conditions']:
+            if field in updates and isinstance(updates[field], dict):
+                updates[field] = json.dumps(updates[field])
+
+        set_clause = ', '.join(f"{k} = %s" for k in updates.keys())
+        values = list(updates.values()) + [strategy_id, user_id]
+
+        conn = self.get_connection()
+        try:
+            cursor = conn.cursor()
+            cursor.execute(f"""
+                UPDATE investment_strategies
+                SET {set_clause}, updated_at = CURRENT_TIMESTAMP
+                WHERE id = %s AND user_id = %s
+            """, values)
+            updated = cursor.rowcount > 0
+            conn.commit()
+            return updated
+        finally:
+            self.return_connection(conn)
+
+    def delete_strategy(self, strategy_id: int, user_id: int) -> bool:
+        """Delete a strategy (verifies ownership). Returns True if deleted."""
+        conn = self.get_connection()
+        try:
+            cursor = conn.cursor()
+            cursor.execute("""
+                DELETE FROM investment_strategies
+                WHERE id = %s AND user_id = %s
+            """, (strategy_id, user_id))
+            deleted = cursor.rowcount > 0
+            conn.commit()
+            return deleted
+        finally:
+            self.return_connection(conn)
+
+    # ============================================================
+    # Strategy Run Methods
+    # ============================================================
+
+    def create_strategy_run(self, strategy_id: int) -> int:
+        """Create a new strategy run record."""
+        conn = self.get_connection()
+        try:
+            cursor = conn.cursor()
+            cursor.execute("""
+                INSERT INTO strategy_runs (strategy_id)
+                VALUES (%s)
+                RETURNING id
+            """, (strategy_id,))
+            run_id = cursor.fetchone()[0]
+            conn.commit()
+            return run_id
+        finally:
+            self.return_connection(conn)
+
+    def get_strategy_run(self, run_id: int) -> Optional[Dict[str, Any]]:
+        """Get a strategy run by ID."""
+        conn = self.get_connection()
+        try:
+            cursor = conn.cursor(row_factory=psycopg.rows.dict_row)
+            cursor.execute("""
+                SELECT id, strategy_id, started_at, completed_at, status,
+                       stocks_screened, stocks_scored, theses_generated,
+                       trades_executed, spy_price, portfolio_value,
+                       error_message, run_log
+                FROM strategy_runs
+                WHERE id = %s
+            """, (run_id,))
+            return cursor.fetchone()
+        finally:
+            self.return_connection(conn)
+
+    def get_strategy_runs(self, strategy_id: int, limit: int = 20) -> List[Dict[str, Any]]:
+        """Get recent runs for a strategy."""
+        conn = self.get_connection()
+        try:
+            cursor = conn.cursor(row_factory=psycopg.rows.dict_row)
+            cursor.execute("""
+                SELECT id, strategy_id, started_at, completed_at, status,
+                       stocks_screened, stocks_scored, theses_generated,
+                       trades_executed, spy_price, portfolio_value, error_message
+                FROM strategy_runs
+                WHERE strategy_id = %s
+                ORDER BY started_at DESC
+                LIMIT %s
+            """, (strategy_id, limit))
+            return cursor.fetchall()
+        finally:
+            self.return_connection(conn)
+
+    def update_strategy_run(self, run_id: int, **kwargs) -> bool:
+        """Update strategy run fields."""
+        allowed_fields = {
+            'status', 'completed_at', 'stocks_screened', 'stocks_scored',
+            'theses_generated', 'trades_executed', 'spy_price',
+            'portfolio_value', 'error_message', 'run_log'
+        }
+        updates = {k: v for k, v in kwargs.items() if k in allowed_fields}
+        if not updates:
+            return False
+
+        # JSON-encode run_log if it's a list
+        if 'run_log' in updates and isinstance(updates['run_log'], list):
+            updates['run_log'] = json.dumps(updates['run_log'])
+
+        set_clause = ', '.join(f"{k} = %s" for k in updates.keys())
+        values = list(updates.values()) + [run_id]
+
+        conn = self.get_connection()
+        try:
+            cursor = conn.cursor()
+            cursor.execute(f"""
+                UPDATE strategy_runs
+                SET {set_clause}
+                WHERE id = %s
+            """, values)
+            updated = cursor.rowcount > 0
+            conn.commit()
+            return updated
+        finally:
+            self.return_connection(conn)
+
+    def append_to_run_log(self, run_id: int, event: Dict[str, Any]) -> bool:
+        """Append an event to the run log."""
+        conn = self.get_connection()
+        try:
+            cursor = conn.cursor()
+            cursor.execute("""
+                UPDATE strategy_runs
+                SET run_log = run_log || %s::jsonb
+                WHERE id = %s
+            """, (json.dumps([event]), run_id))
+            updated = cursor.rowcount > 0
+            conn.commit()
+            return updated
+        finally:
+            self.return_connection(conn)
+
+    # ============================================================
+    # Strategy Decision Methods
+    # ============================================================
+
+    def create_strategy_decision(
+        self,
+        run_id: int,
+        symbol: str,
+        lynch_score: float = None,
+        lynch_status: str = None,
+        buffett_score: float = None,
+        buffett_status: str = None,
+        consensus_score: float = None,
+        consensus_verdict: str = None,
+        thesis_verdict: str = None,
+        thesis_summary: str = None,
+        thesis_full: str = None,
+        dcf_fair_value: float = None,
+        dcf_upside_pct: float = None,
+        final_decision: str = None,
+        decision_reasoning: str = None,
+        transaction_id: int = None,
+        shares_traded: int = None,
+        trade_price: float = None,
+        position_value: float = None
+    ) -> int:
+        """Create a strategy decision record."""
+        conn = self.get_connection()
+        try:
+            cursor = conn.cursor()
+            cursor.execute("""
+                INSERT INTO strategy_decisions
+                (run_id, symbol, lynch_score, lynch_status, buffett_score, buffett_status,
+                 consensus_score, consensus_verdict, thesis_verdict, thesis_summary,
+                 thesis_full, dcf_fair_value, dcf_upside_pct, final_decision,
+                 decision_reasoning, transaction_id, shares_traded, trade_price, position_value)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                RETURNING id
+            """, (
+                run_id, symbol, lynch_score, lynch_status, buffett_score, buffett_status,
+                consensus_score, consensus_verdict, thesis_verdict, thesis_summary,
+                thesis_full, dcf_fair_value, dcf_upside_pct, final_decision,
+                decision_reasoning, transaction_id, shares_traded, trade_price, position_value
+            ))
+            decision_id = cursor.fetchone()[0]
+            conn.commit()
+            return decision_id
+        finally:
+            self.return_connection(conn)
+
+    def update_strategy_decision(self, decision_id: int, **kwargs) -> bool:
+        """Update strategy decision fields."""
+        allowed_fields = {
+            'lynch_score', 'lynch_status', 'buffett_score', 'buffett_status',
+            'consensus_score', 'consensus_verdict', 'thesis_verdict',
+            'thesis_summary', 'thesis_full', 'dcf_fair_value', 'dcf_upside_pct',
+            'final_decision', 'decision_reasoning', 'transaction_id',
+            'shares_traded', 'trade_price', 'position_value'
+        }
+        updates = {k: v for k, v in kwargs.items() if k in allowed_fields}
+        if not updates:
+            return False
+
+        set_clause = ', '.join(f"{k} = %s" for k in updates.keys())
+        values = list(updates.values()) + [decision_id]
+
+        conn = self.get_connection()
+        try:
+            cursor = conn.cursor()
+            cursor.execute(f"""
+                UPDATE strategy_decisions
+                SET {set_clause}
+                WHERE id = %s
+            """, values)
+            updated = cursor.rowcount > 0
+            conn.commit()
+            return updated
+        finally:
+            self.return_connection(conn)
+
+    def get_run_decisions(self, run_id: int) -> List[Dict[str, Any]]:
+        """Get all decisions for a strategy run."""
+        conn = self.get_connection()
+        try:
+            cursor = conn.cursor(row_factory=psycopg.rows.dict_row)
+            cursor.execute("""
+                SELECT id, run_id, symbol, lynch_score, lynch_status,
+                       buffett_score, buffett_status, consensus_score,
+                       consensus_verdict, thesis_verdict, thesis_summary,
+                       thesis_full, dcf_fair_value, dcf_upside_pct, final_decision,
+                       decision_reasoning, transaction_id, shares_traded,
+                       trade_price, position_value, created_at
+                FROM strategy_decisions
+                WHERE run_id = %s
+                ORDER BY created_at ASC
+            """, (run_id,))
+            return cursor.fetchall()
+        finally:
+            self.return_connection(conn)
+
+    # ============================================================
+    # Benchmark & Performance Methods
+    # ============================================================
+
+    def save_benchmark_snapshot(self, snapshot_date: date, spy_price: float) -> int:
+        """Save or update daily SPY benchmark price."""
+        conn = self.get_connection()
+        try:
+            cursor = conn.cursor()
+            cursor.execute("""
+                INSERT INTO benchmark_snapshots (snapshot_date, spy_price)
+                VALUES (%s, %s)
+                ON CONFLICT (snapshot_date) DO UPDATE SET spy_price = EXCLUDED.spy_price
+                RETURNING id
+            """, (snapshot_date, spy_price))
+            snapshot_id = cursor.fetchone()[0]
+            conn.commit()
+            return snapshot_id
+        finally:
+            self.return_connection(conn)
+
+    def get_benchmark_snapshot(self, snapshot_date: date) -> Optional[Dict[str, Any]]:
+        """Get benchmark snapshot for a specific date."""
+        conn = self.get_connection()
+        try:
+            cursor = conn.cursor(row_factory=psycopg.rows.dict_row)
+            cursor.execute("""
+                SELECT id, snapshot_date, spy_price, created_at
+                FROM benchmark_snapshots
+                WHERE snapshot_date = %s
+            """, (snapshot_date,))
+            return cursor.fetchone()
+        finally:
+            self.return_connection(conn)
+
+    def get_benchmark_range(self, start_date: date, end_date: date) -> List[Dict[str, Any]]:
+        """Get benchmark snapshots for a date range."""
+        conn = self.get_connection()
+        try:
+            cursor = conn.cursor(row_factory=psycopg.rows.dict_row)
+            cursor.execute("""
+                SELECT snapshot_date, spy_price
+                FROM benchmark_snapshots
+                WHERE snapshot_date BETWEEN %s AND %s
+                ORDER BY snapshot_date ASC
+            """, (start_date, end_date))
+            return cursor.fetchall()
+        finally:
+            self.return_connection(conn)
+
+    def save_strategy_performance(
+        self,
+        strategy_id: int,
+        snapshot_date: date,
+        portfolio_value: float,
+        portfolio_return_pct: float = None,
+        spy_return_pct: float = None,
+        alpha: float = None
+    ) -> int:
+        """Save or update strategy performance snapshot."""
+        conn = self.get_connection()
+        try:
+            cursor = conn.cursor()
+            cursor.execute("""
+                INSERT INTO strategy_performance
+                (strategy_id, snapshot_date, portfolio_value, portfolio_return_pct, spy_return_pct, alpha)
+                VALUES (%s, %s, %s, %s, %s, %s)
+                ON CONFLICT (strategy_id, snapshot_date) DO UPDATE SET
+                    portfolio_value = EXCLUDED.portfolio_value,
+                    portfolio_return_pct = EXCLUDED.portfolio_return_pct,
+                    spy_return_pct = EXCLUDED.spy_return_pct,
+                    alpha = EXCLUDED.alpha
+                RETURNING id
+            """, (strategy_id, snapshot_date, portfolio_value, portfolio_return_pct, spy_return_pct, alpha))
+            perf_id = cursor.fetchone()[0]
+            conn.commit()
+            return perf_id
+        finally:
+            self.return_connection(conn)
+
+    def get_strategy_performance(
+        self,
+        strategy_id: int,
+        start_date: date = None,
+        end_date: date = None
+    ) -> List[Dict[str, Any]]:
+        """Get strategy performance history."""
+        conn = self.get_connection()
+        try:
+            cursor = conn.cursor(row_factory=psycopg.rows.dict_row)
+            query = """
+                SELECT strategy_id, snapshot_date, portfolio_value,
+                       portfolio_return_pct, spy_return_pct, alpha
+                FROM strategy_performance
+                WHERE strategy_id = %s
+            """
+            params = [strategy_id]
+
+            if start_date:
+                query += " AND snapshot_date >= %s"
+                params.append(start_date)
+            if end_date:
+                query += " AND snapshot_date <= %s"
+                params.append(end_date)
+
+            query += " ORDER BY snapshot_date ASC"
+            cursor.execute(query, params)
+            return cursor.fetchall()
+        finally:
+            self.return_connection(conn)
+
+    def get_strategy_inception_data(self, strategy_id: int) -> Optional[Dict[str, Any]]:
+        """Get the first performance record (inception) for a strategy."""
+        conn = self.get_connection()
+        try:
+            cursor = conn.cursor(row_factory=psycopg.rows.dict_row)
+            cursor.execute("""
+                SELECT sp.snapshot_date, sp.portfolio_value, bs.spy_price
+                FROM strategy_performance sp
+                JOIN benchmark_snapshots bs ON sp.snapshot_date = bs.snapshot_date
+                WHERE sp.strategy_id = %s
+                ORDER BY sp.snapshot_date ASC
+                LIMIT 1
+            """, (strategy_id,))
+            return cursor.fetchone()
         finally:
             self.return_connection(conn)
