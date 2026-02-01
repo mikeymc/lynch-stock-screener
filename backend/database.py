@@ -3915,8 +3915,9 @@ class Database:
                            ELSE 0 
                        END) > 0
             """, (portfolio_id,))
-            columns = [desc[0] for desc in cursor.description]
-            return [dict(zip(columns, row)) for row in cursor.fetchall()]
+            rows = cursor.fetchall()
+            # Return dict mapping symbol -> quantity (not list of dicts!)
+            return {symbol: int(qty) for symbol, qty in rows}
         finally:
             self.return_connection(conn)
 
