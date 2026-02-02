@@ -725,9 +725,13 @@ class StrategyExecutor:
             self._lynch_criteria = LynchCriteria(self.db, analyzer)
         return self._lynch_criteria
 
-    def execute_strategy(self, strategy_id: int) -> Dict[str, Any]:
+    def execute_strategy(self, strategy_id: int, limit: Optional[int] = None) -> Dict[str, Any]:
         """Execute a strategy run.
-
+        
+        Args:
+            strategy_id: ID of strategy to run
+            limit: Optional limit on number of stocks to score
+            
         Returns:
             Summary of the run with statistics
         """
@@ -770,6 +774,11 @@ class StrategyExecutor:
             self._log_event(run_id, "Starting screening phase")
             conditions = strategy.get('conditions', {})
             candidates = self.condition_evaluator.evaluate_universe(conditions)
+            
+            # Apply limit if requested
+            if limit and limit > 0:
+                print(f"  Limiting candidates to {limit} per request (found {len(candidates)})")
+                candidates = candidates[:limit]
 
             self.db.update_strategy_run(run_id, stocks_screened=len(candidates))
             self._log_event(run_id, f"Screened {len(candidates)} candidates")
@@ -964,13 +973,32 @@ class StrategyExecutor:
 
                 if passes:
                     scored.append(stock_data)
-                    print(f"    ✓ PASSED requirements")
+                    # Create reasoning string for log
+                    reason_parts = []
+                    if lynch_min is not None:
+                        reason_parts.append(f"Lynch {stock_data['lynch_score']:.0f} >= {lynch_min}")
+                    if buffett_min is not None:
+                        reason_parts.append(f"Buffett {stock_data['buffett_score']:.0f} >= {buffett_min}")
+                    
+                    if not reason_parts:
+                        reason_str = "No minimum score requirements set"
+                    else:
+                        reason_str = ", ".join(reason_parts)
+
+                    print(f"    ✓ PASSED requirements ({reason_str})")
                     logger.debug(
                         f"{symbol}: Lynch={stock_data['lynch_score']:.0f}, "
-                        f"Buffett={stock_data['buffett_score']:.0f} - PASSED"
+                        f"Buffett={stock_data['buffett_score']:.0f} - PASSED ({reason_str})"
                     )
                 else:
-                    print(f"    ✗ FAILED requirements")
+                    fail_reasons = []
+                    if lynch_min is not None and stock_data['lynch_score'] < lynch_min:
+                        fail_reasons.append(f"Lynch {stock_data['lynch_score']:.0f} < {lynch_min}")
+                    if buffett_min is not None and stock_data['buffett_score'] < buffett_min:
+                        fail_reasons.append(f"Buffett {stock_data['buffett_score']:.0f} < {buffett_min}")
+                    
+                    fail_str = ", ".join(fail_reasons)
+                    print(f"    ✗ FAILED requirements ({fail_str})")
 
             except Exception as e:
                 logger.warning(f"Failed to score {symbol}: {e}")
@@ -1378,23 +1406,64 @@ Reasoning: [Brief explanation of their final decision]
         method = position_rules.get('method', 'equal_weight')
 
         trades_executed = 0
+        
+        # Check market status
+        is_market_open = portfolio_service.is_market_open()
+        
+        # If market is closed, we need user_id to create alerts
+        user_id = None
+        if not is_market_open:
+            # We need to fetch the portfolio to get the user_id
+            try:
+                portfolio = self.db.get_portfolio(portfolio_id)
+                if portfolio:
+                    user_id = portfolio.get('user_id')
+            except Exception as e:
+                logger.error(f"Failed to fetch portfolio {portfolio_id} for user lookup: {e}")
+
+            if not user_id:
+                logger.error(f"Could not determine user_id for portfolio {portfolio_id}, cannot queue off-hours trades.")
+                # We can either return or attempt to process (which will fail for trades). 
+                # Let's proceed but warn.
+        
+        if not is_market_open:
+            print(f"   Market is closed. Queuing trades for next open via Alerts.")
+            self._log_event(run_id, "Market closed. Queuing transactions for next market open.")
 
         # Execute sells first (to free up cash)
         for exit_signal in exits:
             try:
-                result = portfolio_service.execute_trade(
-                    portfolio_id=portfolio_id,
-                    symbol=exit_signal.symbol,
-                    transaction_type='SELL',
-                    quantity=exit_signal.quantity,
-                    note=exit_signal.reason,
-                    db=self.db
-                )
-                if result.get('success'):
-                    trades_executed += 1
-                    self._log_event(run_id, f"SELL {exit_signal.symbol}: {exit_signal.reason}")
+                if is_market_open:
+                    result = portfolio_service.execute_trade(
+                        portfolio_id=portfolio_id,
+                        symbol=exit_signal.symbol,
+                        transaction_type='SELL',
+                        quantity=exit_signal.quantity,
+                        note=exit_signal.reason,
+                        db=self.db
+                    )
+                    if result.get('success'):
+                        trades_executed += 1
+                        self._log_event(run_id, f"SELL {exit_signal.symbol}: {exit_signal.reason}")
+                elif user_id:
+                    # Queue sell
+                    alert_id = self.db.create_alert(
+                        user_id=user_id,
+                        symbol=exit_signal.symbol,
+                        condition_type='price_above', # Dummy condition
+                        condition_params={'threshold': 0},
+                        condition_description=f"Strategy Queue: Sell {exit_signal.quantity} {exit_signal.symbol} at Open",
+                        action_type='market_sell',
+                        action_payload={'quantity': exit_signal.quantity},
+                        portfolio_id=portfolio_id,
+                        action_note=f"Queued Strategy Sell (Run {run_id}): {exit_signal.reason}"
+                    )
+                    logger.info(f"Queued sell alert {alert_id} for {exit_signal.symbol}")
+                    self._log_event(run_id, f"QUEUED SELL {exit_signal.symbol}: {exit_signal.quantity} shares (Alert {alert_id})")
+                    trades_executed += 1 # Count as 'handled'
+                    
             except Exception as e:
-                logger.error(f"Failed to execute sell for {exit_signal.symbol}: {e}")
+                logger.error(f"Failed to execute/queue sell for {exit_signal.symbol}: {e}")
 
         # Execute buys
         for decision in buy_decisions:
@@ -1416,24 +1485,45 @@ Reasoning: [Brief explanation of their final decision]
                 print(f"    Reasoning: {position.reasoning}")
 
                 if position.shares > 0:
-                    result = portfolio_service.execute_trade(
-                        portfolio_id=portfolio_id,
-                        symbol=symbol,
-                        transaction_type='BUY',
-                        quantity=position.shares,
-                        note=f"Strategy buy: {decision.get('consensus_reasoning', '')}",
-                        db=self.db
-                    )
-                    if result.get('success'):
-                        trades_executed += 1
-                        self._log_event(
-                            run_id,
-                            f"BUY {symbol}: {position.shares} shares @ {position.reasoning}"
+                    if is_market_open:
+                        result = portfolio_service.execute_trade(
+                            portfolio_id=portfolio_id,
+                            symbol=symbol,
+                            transaction_type='BUY',
+                            quantity=position.shares,
+                            note=f"Strategy buy: {decision.get('consensus_reasoning', '')}",
+                            db=self.db
                         )
-                        print(f"    ✓ Trade executed successfully")
-                    else:
-                        print(f"    ✗ Trade failed: {result.get('error', 'Unknown error')}")
-                        logger.warning(f"Trade execution failed for {symbol}: {result.get('error')}")
+                        if result.get('success'):
+                            trades_executed += 1
+                            self._log_event(
+                                run_id,
+                                f"BUY {symbol}: {position.shares} shares @ {position.reasoning}"
+                            )
+                            print(f"    ✓ Trade executed successfully")
+                        else:
+                            print(f"    ✗ Trade failed: {result.get('error', 'Unknown error')}")
+                            logger.warning(f"Trade execution failed for {symbol}: {result.get('error')}")
+                    elif user_id:
+                        # Queue buy
+                        alert_id = self.db.create_alert(
+                            user_id=user_id,
+                            symbol=symbol,
+                            condition_type='price_above', # Dummy condition
+                            condition_params={'threshold': 0},
+                            condition_description=f"Strategy Queue: Buy {position.shares} {symbol} at Open",
+                            action_type='market_buy',
+                            action_payload={'quantity': position.shares},
+                            portfolio_id=portfolio_id,
+                            action_note=f"Queued Strategy Buy (Run {run_id}): {decision.get('consensus_reasoning', '')}"
+                        )
+                        logger.info(f"Queued buy alert {alert_id} for {symbol}")
+                        self._log_event(
+                            run_id, 
+                            f"QUEUED BUY {symbol}: {position.shares} shares (Alert {alert_id})"
+                        )
+                        print(f"    ✓ Trade queued for market open (Alert {alert_id})")
+                        trades_executed += 1
                 else:
                     print(f"    ⚠ Skipping trade: {position.reasoning}")
                     logger.info(f"Skipping {symbol} buy: {position.reasoning}")
