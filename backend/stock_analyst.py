@@ -427,13 +427,13 @@ class StockAnalyst:
         symbol = stock_data.get('symbol', 'UNKNOWN')
         t0 = time.time()
         symbol = stock_data.get('symbol', 'UNKNOWN')
-        logger.info(f"[Analysis][{symbol}] (Character: {character_id}) Constructing prompt (Model: {model_version})")
+        logger.info(f"[Thesis][{symbol}] (Character: {character_id}) Constructing prompt (Model: {model_version})")
         prompt = self.format_prompt(stock_data, history, sections, news, material_events, 
                                     transcripts=transcripts, lynch_brief=lynch_brief,
                                     user_id=user_id, character_id=character_id)
         t_prompt = (time.time() - t0) * 1000
         prompt_size_bytes = len(prompt.encode('utf-8'))
-        logger.info(f"[Analysis][{symbol}] (Character: {character_id}) Prompt constructed in {t_prompt:.2f}ms. Size: {len(prompt)} chars ({prompt_size_bytes/1024:.2f} KB)")
+        logger.info(f"[Thesis][{symbol}] (Character: {character_id}) Prompt constructed in {t_prompt:.2f}ms. Size: {len(prompt)} chars ({prompt_size_bytes/1024:.2f} KB)")
 
         # Retry logic with fallback to flash model
         models_to_try = [model_version, FALLBACK_MODEL] if model_version != FALLBACK_MODEL else [model_version]
