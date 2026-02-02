@@ -424,13 +424,16 @@ class StockAnalyst:
             raise ValueError(f"Invalid model: {model_version}. Must be one of {AVAILABLE_MODELS}")
 
         t0 = time.time()
-        logger.info(f"[Analysis] Constructing prompt for {stock_data.get('symbol')} (Character: {character_id})")
+        symbol = stock_data.get('symbol', 'UNKNOWN')
+        t0 = time.time()
+        symbol = stock_data.get('symbol', 'UNKNOWN')
+        logger.info(f"[Analysis][{symbol}] (Character: {character_id}) Constructing prompt (Model: {model_version})")
         prompt = self.format_prompt(stock_data, history, sections, news, material_events, 
                                     transcripts=transcripts, lynch_brief=lynch_brief,
                                     user_id=user_id, character_id=character_id)
         t_prompt = (time.time() - t0) * 1000
         prompt_size_bytes = len(prompt.encode('utf-8'))
-        logger.info(f"[Analysis][{stock_data.get('symbol')}] Prompt constructed in {t_prompt:.2f}ms. Size: {len(prompt)} chars ({prompt_size_bytes/1024:.2f} KB)")
+        logger.info(f"[Analysis][{symbol}] (Character: {character_id}) Prompt constructed in {t_prompt:.2f}ms. Size: {len(prompt)} chars ({prompt_size_bytes/1024:.2f} KB)")
 
         # Retry logic with fallback to flash model
         models_to_try = [model_version, FALLBACK_MODEL] if model_version != FALLBACK_MODEL else [model_version]
@@ -444,7 +447,7 @@ class StockAnalyst:
 
             while retry_count <= max_retries:
                 try:
-                    logger.info(f"[Analysis] Sending streaming request to {model}...")
+                    logger.info(f"[Analysis][{symbol}] (Character: {character_id}) Sending streaming request to {model}...")
                     response = self.client.models.generate_content_stream(
                         model=model,
                         contents=prompt,
@@ -461,7 +464,7 @@ class StockAnalyst:
                             )
                         )
                     )
-                    logger.info(f"[Analysis] Stream initialized. Waiting for first chunk from {model}...")
+                    logger.info(f"[Analysis][{symbol}] (Character: {character_id}) Stream initialized. Waiting for first chunk from {model}...")
                     model_success = True
                     
                     # Yield from response, logging first chunk
@@ -469,7 +472,7 @@ class StockAnalyst:
                     for chunk in response:
                         if chunk.text:
                             if not first_chunk_received:
-                                logger.info(f"[Analysis] Received first chunk from {model}")
+                                logger.info(f"[Analysis][{symbol}] (Character: {character_id}) Received first chunk from {model}")
                                 first_chunk_received = True
                             yield chunk.text
                     break
@@ -479,7 +482,9 @@ class StockAnalyst:
                     # If retries left for this model, wait and retry
                     if is_overloaded and retry_count < max_retries:
                         sleep_time = base_delay * (2 ** retry_count)
-                        logger.warning(f"Gemini API ({model}) overloaded. Retrying in {sleep_time}s (attempt {retry_count + 1}/{max_retries})")
+                    if is_overloaded and retry_count < max_retries:
+                        sleep_time = base_delay * (2 ** retry_count)
+                        logger.warning(f"[Analysis][{symbol}] (Character: {character_id}) Gemini API ({model}) overloaded. Retrying in {sleep_time}s (attempt {retry_count + 1}/{max_retries})")
                         time.sleep(sleep_time)
                         retry_count += 1
                         continue
@@ -490,7 +495,7 @@ class StockAnalyst:
                         raise e
 
                     # Otherwise break inner loop to try next model
-                    logger.warning(f"Primary model {model} failed. Switching to fallback...")
+                    logger.warning(f"[Analysis][{symbol}] (Character: {character_id}) Primary model {model} failed. Switching to fallback...")
                     break
 
             if model_success:
@@ -515,10 +520,16 @@ class StockAnalyst:
         transcripts: Optional[List[Dict[str, Any]]] = None,
         lynch_brief: Optional[str] = None,
         use_cache: bool = True,
+        max_age_days: Optional[float] = None,
         model_version: str = DEFAULT_MODEL,
         character_id: Optional[str] = None
     ):
-        """Get cached analysis or stream a new one."""
+        """Get cached analysis or stream a new one.
+        
+        Args:
+            max_age_days: If provided, cached analysis older than this (in days) is considered stale.
+                          Float allowed (e.g., 0.5 = 12 hours).
+        """
         if model_version not in AVAILABLE_MODELS:
             raise ValueError(f"Invalid model: {model_version}. Must be one of {AVAILABLE_MODELS}")
 
@@ -530,8 +541,37 @@ class StockAnalyst:
         if use_cache:
             cached = self.db.get_lynch_analysis(user_id, symbol, character_id=character_id)
             if cached:
-                yield cached['analysis_text']
-                return
+                is_stale = False
+                
+                # Check 1: Max Age
+                if max_age_days is not None:
+                    age_delta = datetime.now(timezone.utc) - cached['generated_at'].replace(tzinfo=timezone.utc)
+                    age_days = age_delta.total_seconds() / 86400
+                    if age_days > max_age_days:
+                        logger.info(f"[{symbol}] Cached analysis stale (Age: {age_days:.1f}d > Limit: {max_age_days}d)")
+                        is_stale = True
+
+                # Check 2: Data Freshness (Event Trigger)
+                # If we have stock_data.last_updated, check if analysis is older than new data
+                if not is_stale and stock_data.get('last_updated'):
+                    # Ensure timezone awareness for comparison
+                    last_data_update = stock_data['last_updated']
+                    if last_data_update.tzinfo is None:
+                        last_data_update = last_data_update.replace(tzinfo=timezone.utc)
+                    
+                    analysis_date = cached['generated_at'].replace(tzinfo=timezone.utc)
+                    
+                    # Only trigger if data is significantly newer (e.g. > 1 hour buffer to avoid race conditions)
+                    # or if specifically requested via max_age_days
+                    if last_data_update > analysis_date:
+                        # Log but don't force invalidate unless max_age_days is also set/breached
+                        # This prevents constant regeneration just because price ticked
+                        pass
+
+                if not is_stale:
+                    logger.info(f"[Analysis][{symbol}] (Character: {character_id}) Found fresh cached analysis. Skipping generation.")
+                    yield cached['analysis_text']
+                    return
 
         # Generate new analysis
         full_text_parts = []

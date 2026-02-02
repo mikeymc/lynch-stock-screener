@@ -207,6 +207,24 @@ CREATE TABLE IF NOT EXISTS strategy_performance (
 );
 ```
 
+#### 6. thesis_refresh_queue
+Tracks pending and completed thesis regenerations to manage costs and freshness.
+
+```sql
+CREATE TABLE IF NOT EXISTS thesis_refresh_queue (
+    id SERIAL PRIMARY KEY,
+    symbol TEXT NOT NULL UNIQUE,
+    reason TEXT NOT NULL,
+    priority INTEGER DEFAULT 10,
+    status TEXT DEFAULT 'PENDING',
+    error_message TEXT,
+    attempts INTEGER DEFAULT 0,
+    last_attempt_at TIMESTAMP,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+```
+
 ---
 
 ## Design Decisions
@@ -500,6 +518,38 @@ Strategies can require specific deliberation verdicts:
 ```
 
 If `thesis_verdict_required` is set, the deliberation verdict must match one of the specified values for the stock to proceed to trading.
+
+---
+
+## Content Refresh Strategy (Caching)
+
+To manage Gemini API costs while ensuring high-quality analysis for strategy execution, a standalone background infrastructure exists to pre-compute and cache investment theses.
+
+### Standalone Thesis Refresher Job
+A dedicated background job, `thesis_refresher` (managed in `backend/worker.py`), runs periodically to populate and process a refresh queue. This decouples content generation from the active trading window, ensuring that when a strategy executes at 9:30 AM, it has fresh analysis ready to consume.
+
+### Global Universe Filters
+To prevent wasting compute and API budget on uninvestable stocks, a global filter is applied to the refresh pipeline:
+- **Price**: >= $10.00
+- **Market Cap**: >= $500M
+- **Exclusion**: These filters are applied to all "Quality" and "Mover" signals, but are bypassed for stocks already held in a user's **Portfolio**.
+
+### Tiered Refresh Schedule (TTL)
+The refresh frequency is tiered based on the stock's status and market events:
+
+| Category | Reason | Max Age (TTL) | Actual Frequency |
+| :--- | :--- | :--- | :--- |
+| **User Portfolio** | `portfolio` | 7 Days | Weekly |
+| **Excellent Quality** | `quality_excellent` | 14 Days | Bi-Weekly |
+| **Good Quality** | `quality_good` | 30 Days | Monthly |
+| **Upcoming Earnings** | `earnings_soon` | 1 Day | Daily (during window) |
+| **Big Movers** (Drops >5%)| `big_mover` | 1 Day | Daily (until stable) |
+
+### Refresh Queue Management
+The `thesis_refresh_queue` table tracks every pending and completed refresh:
+- **Prioritization**: Portfolio (100) > Earnings (50) = Movers (50) > Quality (10).
+- **Pruning**: The worker automatically prunes "Big Mover" entries that no longer meet the 5% drop / $10 price threshold, keeping the queue lean.
+- **Parallelization**: The refresher uses a `ThreadPoolExecutor` (typically 10 threads) to process the queue rapidly without hitting per-minute API rate limits.
 
 ---
 

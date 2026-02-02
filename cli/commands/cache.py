@@ -1028,3 +1028,97 @@ def all_caches(
         console.print("[yellow]Use individual commands to stop specific jobs[/yellow]")
         console.print("[dim]Example: bag cache prices stop <job_id>[/dim]")
 
+# Thesis Caching (Generate Analysis)
+@app.command("theses")
+def theses(
+    action: str = typer.Argument(..., help="Action: start or stop"),
+    job_id: int = typer.Argument(None, help="Job ID (required for stop)"),
+    prod: bool = typer.Option(False, "--prod", help="Trigger production API instead of local"),
+    limit: int = typer.Option(None, "--limit", "-l", help="Limit number of stocks (default: unlimited)"),
+    symbols: str = typer.Option(None, "--symbols", "-s", help="Comma-separated symbols to process (for testing)"),
+    force: bool = typer.Option(False, "--force", "-f", help="Force refresh (ignore max_age)"),
+):
+    """Cache investment theses (generate/refresh AI analysis)"""
+    if action == "start":
+        # Build params
+        params = {}
+        if limit:
+            params["limit"] = limit
+        if symbols:
+            # Convert comma-separated string to list
+            params["symbols"] = [s.strip().upper() for s in symbols.split(",")]
+            console.print(f"[dim]Processing specific symbols: {params['symbols']}[/dim]")
+        if force:
+            params["force_refresh"] = True
+        
+        # Determine API URL
+        api_url = API_URL if prod else "http://localhost:5001"
+        
+        # Get token
+        token = get_api_token()
+        headers = {
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {token}"
+        }
+        
+        console.print(f"[bold blue]🚀 Starting thesis cache/refresh...[/bold blue]")
+        
+        payload = {
+            "type": "thesis_refresher",
+            "params": params
+        }
+        
+        try:
+            response = httpx.post(
+                f"{api_url}/api/jobs",
+                json=payload,
+                headers=headers,
+                timeout=30.0
+            )
+            response.raise_for_status()
+            
+            data = response.json()
+            job_id = data.get("job_id")
+            
+            console.print(f"[bold green]✓ Thesis cache job started![/bold green]")
+            console.print(f"[dim]Job ID: {job_id}[/dim]")
+            console.print(f"[dim]Monitor: {api_url}/api/jobs/{job_id}[/dim]")
+            return job_id
+            
+        except httpx.HTTPError as e:
+            console.print(f"[bold red]✗ Failed to start thesis cache:[/bold red] {e}")
+            if not prod:
+                console.print("[yellow]Make sure local server is running[/yellow]")
+            raise typer.Exit(1)
+            
+    elif action == "stop":
+        if not job_id:
+            console.print("[bold red]✗ Job ID required for stop[/bold red]")
+            raise typer.Exit(1)
+        
+        # Determine API URL
+        api_url = API_URL if prod else "http://localhost:5001"
+        
+        # Get token
+        token = get_api_token()
+        headers = {"Authorization": f"Bearer {token}"}
+        
+        console.print(f"[bold blue]🛑 Cancelling thesis cache job {job_id}...[/bold blue]")
+        
+        try:
+            response = httpx.post(
+                f"{api_url}/api/jobs/{job_id}/cancel",
+                headers=headers,
+                timeout=30.0
+            )
+            response.raise_for_status()
+            console.print(f"[bold green]✓ Job {job_id} cancelled![/bold green]")
+            
+        except httpx.HTTPError as e:
+            console.print(f"[bold red]✗ Failed to cancel job:[/bold red] {e}")
+            if not prod:
+                console.print("[yellow]Make sure local server is running[/yellow]")
+            raise typer.Exit(1)
+    else:
+        console.print(f"[bold red]✗ Unknown action: {action}[/bold red]")
+        raise typer.Exit(1)
