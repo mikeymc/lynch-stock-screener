@@ -15,6 +15,8 @@ import {
 } from '@/components/ui/table'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Skeleton } from '@/components/ui/skeleton'
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog'
+import ReactMarkdown from 'react-markdown'
 import { format } from 'date-fns'
 import { Line } from 'react-chartjs-2'
 
@@ -372,6 +374,12 @@ function DecisionsView({ runId, runs, onRunChange }) {
 function DecisionCard({ decision }) {
     const isBuy = decision.final_decision === 'BUY'
     const isSkip = decision.final_decision === 'SKIP' || decision.final_decision === 'HOLD'
+    const [showDeliberation, setShowDeliberation] = useState(false)
+
+    // Truncate logic
+    // Prefer thesis_full for AI runs, fallback to decision_reasoning (heuristic)
+    const rawReasoning = decision.thesis_full || decision.decision_reasoning || ''
+    const isLong = rawReasoning.length > 300
 
     return (
         <Card className={`border-l-4 ${isBuy ? 'border-l-green-500' : 'border-l-muted'}`}>
@@ -407,23 +415,69 @@ function DecisionCard({ decision }) {
                 </div>
 
                 {decision.decision_reasoning && (
-                    <div className="bg-accent/20 p-3 rounded-md mb-2">
-                        <div className="flex items-center gap-2 mb-1 text-primary">
-                            <MessageSquare className="h-3 w-3" />
-                            <span className="font-semibold text-xs uppercase">Deliberation / Reasoning</span>
+                    <div className="bg-muted/50 p-3 rounded-md mb-2 border border-border">
+                        <div className="flex justify-between items-center mb-2">
+                            <div className="flex items-center gap-2 text-muted-foreground">
+                                <MessageSquare className="h-3 w-3" />
+                                <span className="font-bold text-[10px] uppercase tracking-wider">Deliberation</span>
+                            </div>
+                            {isLong && (
+                                <Badge
+                                    variant="outline"
+                                    className={`text-[10px] font-bold px-2 py-0 border-transparent ${decision.consensus_verdict === 'BUY' ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400' :
+                                        decision.consensus_verdict === 'AVOID' ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400' :
+                                            'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-400'
+                                        }`}
+                                >
+                                    Consensus: {decision.consensus_verdict || decision.final_decision}
+                                </Badge>
+                            )}
                         </div>
-                        <p className="text-muted-foreground leading-relaxed">
-                            {decision.decision_reasoning}
-                        </p>
+
+                        {isLong ? (
+                            <Button
+                                variant="outline"
+                                size="sm"
+                                className="w-full text-xs h-7 font-bold border-primary/40 text-primary bg-white dark:bg-slate-900 shadow-sm hover:bg-primary hover:text-primary-foreground transition-all"
+                                onClick={() => setShowDeliberation(true)}
+                            >
+                                Review deliberation
+                            </Button>
+                        ) : (
+                            <p className="text-foreground leading-relaxed whitespace-pre-line text-xs">
+                                {rawReasoning}
+                            </p>
+                        )}
                     </div>
                 )}
 
-                {decision.thesis_summary && (
-                    <div className="text-xs text-muted-foreground mt-2">
-                        <span className="font-medium">Thesis: </span>
-                        {decision.thesis_summary}
-                    </div>
-                )}
+                <Dialog open={showDeliberation} onOpenChange={setShowDeliberation}>
+                    <DialogContent className="max-w-3xl max-h-[85vh] p-0 flex flex-col overflow-hidden border-border bg-background shadow-2xl">
+                        <DialogHeader className="p-6 pb-4 border-b">
+                            <div className="flex items-center gap-3">
+                                <div className="p-2 rounded-lg bg-primary text-primary-foreground">
+                                    <MessageSquare size={20} />
+                                </div>
+                                <div>
+                                    <DialogTitle className="text-xl font-bold">Analysis Deliberation: {decision.symbol}</DialogTitle>
+                                    <DialogDescription>
+                                        Qualitative debate between Lynch and Buffett agents
+                                    </DialogDescription>
+                                </div>
+                            </div>
+                        </DialogHeader>
+                        <ScrollArea className="h-[calc(85vh-180px)] w-full border-b">
+                            <div className="p-8 prose prose-sm max-w-none dark:prose-invert">
+                                <ReactMarkdown>{rawReasoning}</ReactMarkdown>
+                            </div>
+                        </ScrollArea>
+                        <DialogFooter className="border-t p-4 px-6 bg-muted/30">
+                            <Button variant="outline" size="sm" onClick={() => setShowDeliberation(false)}>
+                                Close
+                            </Button>
+                        </DialogFooter>
+                    </DialogContent>
+                </Dialog>
             </CardContent>
         </Card>
     )
