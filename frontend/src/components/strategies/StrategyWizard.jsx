@@ -15,7 +15,8 @@ const StrategyWizard = ({ onClose, onSuccess }) => {
         description: '',
         // Logic
         conditions: {
-            filters: []
+            filters: [],
+            require_thesis: true // Default to true for AI deliberation
         },
         consensus_mode: 'both_agree',
         consensus_threshold: 70,
@@ -170,13 +171,39 @@ const StrategyWizard = ({ onClose, onSuccess }) => {
                         <div className="space-y-8">
                             <h3 className="text-2xl font-semibold text-white">Strategy Logic</h3>
 
-                            {/* Conditions Builder Placeholder */}
+                            {/* Analysis Mode (AI Deliberation) */}
                             <div className="bg-slate-800/50 rounded-xl p-6 border border-slate-700">
-                                <h4 className="font-medium text-blue-400 mb-4 flex items-center gap-2">
-                                    <Check size={18} /> Screening Conditions
+                                <h4 className="font-medium text-purple-400 mb-4 flex items-center gap-2">
+                                    <HelpCircle size={18} /> Analysis Mode
                                 </h4>
-                                <div className="text-center py-8 text-slate-500 border border-dashed border-slate-700 rounded-lg">
-                                    Condition Builder Coming Soon (Defaulting to All Screened Stocks)
+                                <div className="flex items-start justify-between">
+                                    <div>
+                                        <label className="text-white font-medium block mb-1">
+                                            Enable AI Deliberation
+                                        </label>
+                                        <p className="text-sm text-slate-400 max-w-md">
+                                            If enabled, AI agents (Lynch & Buffett) will hold a qualitative debate for each stock.
+                                            <br />
+                                            <span className="text-amber-400/80 inline-flex items-center gap-1 mt-1">
+                                                <AlertCircle size={12} /> Slower execution (~30s per stock) but deeper insights.
+                                            </span>
+                                        </p>
+                                    </div>
+                                    <div className="flex items-center">
+                                        <button
+                                            onClick={() => setFormData({
+                                                ...formData,
+                                                conditions: { ...formData.conditions, require_thesis: !formData.conditions.require_thesis }
+                                            })}
+                                            className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${formData.conditions.require_thesis ? 'bg-purple-600' : 'bg-slate-700'
+                                                }`}
+                                        >
+                                            <span
+                                                className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${formData.conditions.require_thesis ? 'translate-x-6' : 'translate-x-1'
+                                                    }`}
+                                            />
+                                        </button>
+                                    </div>
                                 </div>
                             </div>
 
@@ -323,6 +350,12 @@ const StrategyWizard = ({ onClose, onSuccess }) => {
                                 <div className="flex justify-between border-b border-slate-700 pb-3">
                                     <span className="text-slate-400">Consensus</span>
                                     <span className="text-white">{formData.consensus_mode} ({formData.consensus_threshold})</span>
+                                </div>
+                                <div className="flex justify-between border-b border-slate-700 pb-3">
+                                    <span className="text-slate-400">Analysis Mode</span>
+                                    <span className={formData.conditions.require_thesis ? "text-purple-400" : "text-slate-500"}>
+                                        {formData.conditions.require_thesis ? "AI Deliberation (Deep)" : "Heuristic Only (Fast)"}
+                                    </span>
                                 </div>
                                 <div className="flex justify-between border-b border-slate-700 pb-3">
                                     <span className="text-slate-400">Exit Rules</span>
