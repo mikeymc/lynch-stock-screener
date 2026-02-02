@@ -6529,7 +6529,7 @@ class Database:
             self.return_connection(conn)
 
     def get_user_strategies(self, user_id: int) -> List[Dict[str, Any]]:
-        """Get all strategies for a user."""
+        """Get all strategies for a user with performance summary."""
         conn = self.get_connection()
         try:
             cursor = conn.cursor(row_factory=psycopg.rows.dict_row)
@@ -6538,9 +6538,21 @@ class Database:
                        s.conditions, s.consensus_mode, s.consensus_threshold,
                        s.position_sizing, s.exit_conditions, s.schedule_cron,
                        s.enabled, s.created_at, s.updated_at,
-                       p.name as portfolio_name
+                       p.name as portfolio_name,
+                       sp.alpha, sp.portfolio_return_pct, sp.spy_return_pct,
+                       sr.last_run_date, sr.last_run_status
                 FROM investment_strategies s
                 JOIN portfolios p ON s.portfolio_id = p.id
+                LEFT JOIN (
+                    SELECT DISTINCT ON (strategy_id) strategy_id, alpha, portfolio_return_pct, spy_return_pct
+                    FROM strategy_performance
+                    ORDER BY strategy_id, snapshot_date DESC
+                ) sp ON s.id = sp.strategy_id
+                LEFT JOIN (
+                    SELECT DISTINCT ON (strategy_id) strategy_id, started_at as last_run_date, status as last_run_status
+                    FROM strategy_runs
+                    ORDER BY strategy_id, started_at DESC
+                ) sr ON s.id = sr.strategy_id
                 WHERE s.user_id = %s
                 ORDER BY s.created_at DESC
             """, (user_id,))

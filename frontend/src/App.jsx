@@ -28,6 +28,8 @@ import Settings from './pages/Settings'
 import Alerts from './pages/Alerts'
 import Economy from './pages/Economy'
 import Portfolios from './pages/Portfolios'
+import Strategies from './pages/Strategies'
+import StrategyDetail from './pages/StrategyDetail'
 import { screeningCache } from './utils/cache'
 import Help from './pages/Help'
 import { OnboardingWizard } from './components/OnboardingWizard'
@@ -1171,67 +1173,69 @@ function App() {
       <Routes>
 
         <Route element={
-        <AppShell
-          filter={filter}
-          setFilter={setFilter}
-          algorithm={algorithm}
-          setAlgorithm={setAlgorithm}
-          algorithms={algorithms}
-          summary={summary}
-          watchlistCount={watchlist.size}
-          showAdvancedFilters={showAdvancedFilters}
-          setShowAdvancedFilters={setShowAdvancedFilters}
-          activeCharacter={activeCharacter}
-        />
-      }>
-        <Route path="/" element={
-          <StockListView
-            key={activeCharacter} // Force remount when character changes
-            stocks={stocks}
-            setStocks={setStocks}
-            allStocks={allStocks}
-            setAllStocks={setAllStocks}
-            summary={summary}
-            setSummary={setSummary}
+          <AppShell
             filter={filter}
             setFilter={setFilter}
-            searchQuery={searchQuery}
-            setSearchQuery={setSearchQuery}
-            currentPage={currentPage}
-            setCurrentPage={setCurrentPage}
-            sortBy={sortBy}
-            setSortBy={setSortBy}
-            sortDir={sortDir}
-            setSortDir={setSortDir}
-            watchlist={watchlist}
-            toggleWatchlist={toggleWatchlist}
             algorithm={algorithm}
             setAlgorithm={setAlgorithm}
             algorithms={algorithms}
+            summary={summary}
+            watchlistCount={watchlist.size}
             showAdvancedFilters={showAdvancedFilters}
             setShowAdvancedFilters={setShowAdvancedFilters}
             activeCharacter={activeCharacter}
-            setActiveCharacter={setActiveCharacter}
-            user={user}
           />
-        } />
-        <Route path="/stock/:symbol" element={
-          <StockDetail
-            watchlist={watchlist}
-            toggleWatchlist={toggleWatchlist}
-            algorithm={algorithm}
-            algorithms={algorithms}
-            activeCharacter={activeCharacter}
-          />
-        } />
-        <Route path="/tuning" element={<AlgorithmTuning />} />
-        <Route path="/settings" element={<Settings />} />
-        <Route path="/alerts" element={<Alerts />} />
-        <Route path="/portfolios" element={<Portfolios />} />
-        <Route path="/economy" element={<Economy />} />
-        <Route path="/help" element={<Help />} />
-      </Route>
-      <Route path="*" element={<Navigate to="/" replace />} />
+        }>
+          <Route path="/" element={
+            <StockListView
+              key={activeCharacter} // Force remount when character changes
+              stocks={stocks}
+              setStocks={setStocks}
+              allStocks={allStocks}
+              setAllStocks={setAllStocks}
+              summary={summary}
+              setSummary={setSummary}
+              filter={filter}
+              setFilter={setFilter}
+              searchQuery={searchQuery}
+              setSearchQuery={setSearchQuery}
+              currentPage={currentPage}
+              setCurrentPage={setCurrentPage}
+              sortBy={sortBy}
+              setSortBy={setSortBy}
+              sortDir={sortDir}
+              setSortDir={setSortDir}
+              watchlist={watchlist}
+              toggleWatchlist={toggleWatchlist}
+              algorithm={algorithm}
+              setAlgorithm={setAlgorithm}
+              algorithms={algorithms}
+              showAdvancedFilters={showAdvancedFilters}
+              setShowAdvancedFilters={setShowAdvancedFilters}
+              activeCharacter={activeCharacter}
+              setActiveCharacter={setActiveCharacter}
+              user={user}
+            />
+          } />
+          <Route path="/stock/:symbol" element={
+            <StockDetail
+              watchlist={watchlist}
+              toggleWatchlist={toggleWatchlist}
+              algorithm={algorithm}
+              algorithms={algorithms}
+              activeCharacter={activeCharacter}
+            />
+          } />
+          <Route path="/tuning" element={<AlgorithmTuning />} />
+          <Route path="/settings" element={<Settings />} />
+          <Route path="/alerts" element={<Alerts />} />
+          <Route path="/portfolios" element={<Portfolios />} />
+          <Route path="/strategies" element={<Strategies />} />
+          <Route path="/strategies/:id" element={<StrategyDetail />} />
+          <Route path="/economy" element={<Economy />} />
+          <Route path="/help" element={<Help />} />
+        </Route>
+        <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </>
   )

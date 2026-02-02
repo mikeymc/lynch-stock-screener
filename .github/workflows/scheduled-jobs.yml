@@ -62,6 +62,8 @@ on:
     - cron: '0 6 * * *'
     # Strategy execution at 9:30 AM ET (2:30 PM UTC) on weekdays - just after market open
     - cron: '30 14 * * 1-5'
+    # Benchmark snapshot at 4:05 PM ET (9:05 PM UTC) on weekdays - Market Close
+    - cron: '5 21 * * 1-5'
   workflow_dispatch:
     inputs:
       job_type:
@@ -82,6 +84,7 @@ on:
           - forward_metrics_cache
           - price_update
           - strategy_execution
+          - benchmark_snapshot
 
 jobs:
   trigger-job:
@@ -141,6 +144,7 @@ jobs:
               "30 23 * * *") echo "type=transcript_cache" >> $GITHUB_OUTPUT ;;
               "0 6 * * *")   echo "type=forward_metrics_cache" >> $GITHUB_OUTPUT ;;
               "30 14 * * 1-5") echo "type=strategy_execution" >> $GITHUB_OUTPUT ;;
+              "5 21 * * 1-5") echo "type=benchmark_snapshot" >> $GITHUB_OUTPUT ;;
               *)             echo "Unknown schedule: $SCHEDULE" && exit 1 ;;
             esac
           fi

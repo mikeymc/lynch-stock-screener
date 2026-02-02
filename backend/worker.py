@@ -234,8 +234,25 @@ class BackgroundWorker:
             self._run_strategy_execution(job_id, params)
         elif job_type == 'thesis_refresher':
             self._run_thesis_refresher(job_id, params)
+        elif job_type == 'benchmark_snapshot':
+            self._run_benchmark_snapshot(job_id, params)
         else:
             raise ValueError(f"Unknown job type: {job_type}")
+
+    def _run_benchmark_snapshot(self, job_id: int, params: Dict[str, Any]):
+        """Record daily benchmark (SPY) price."""
+        logger.info(f"Running benchmark_snapshot job {job_id}")
+        
+        from strategy_executor import BenchmarkTracker
+        tracker = BenchmarkTracker(self.db)
+        
+        try:
+            result = tracker.record_daily_benchmark()
+            self.db.complete_job(job_id, result=result)
+            logger.info(f"Benchmark snapshot completed: {result}")
+        except Exception as e:
+            logger.error(f"Benchmark snapshot failed: {e}")
+            self.db.fail_job(job_id, str(e))
 
     def _send_heartbeat(self, job_id: int):
         """Send heartbeat to extend job claim"""
@@ -287,6 +304,7 @@ class BackgroundWorker:
                 # Normal Auto-Aggregation
                 
                 # 1. User Interest: Stocks in Portfolios (Priority 100)
+                self.db.update_job_progress(job_id, progress_message='Aggregating candidates from Portfolios...')
                 logger.info("Aggregating Portfolio Signal...")
                 cursor.execute("""
                     INSERT INTO thesis_refresh_queue (symbol, reason, priority, status)
@@ -304,6 +322,7 @@ class BackgroundWorker:
                 
                 # 2. Market Activity: Upcoming Earnings < 7 days (Priority 50)
                 # Filter: Price >= $10.00 AND Market Cap >= $500M
+                self.db.update_job_progress(job_id, progress_message='Aggregating candidates from upcoming earnings...')
                 logger.info("Aggregating Earnings Signal...")
                 cursor.execute("""
                     INSERT INTO thesis_refresh_queue (symbol, reason, priority, status)
@@ -320,6 +339,7 @@ class BackgroundWorker:
                 # 3. Market Activity: Big Movers > 5% DROP (Priority 50)
                 # Filter: Price > $10.00 AND Market Cap >= $500M (Avoid junk/penny stocks)
                 # Logic: Only care about drops
+                self.db.update_job_progress(job_id, progress_message='Aggregating candidates from big movers...')
                 logger.info("Aggregating Big Movers Signal...")
                 
                 # Pruning: Remove stale movers that no longer meet criteria
@@ -353,6 +373,7 @@ class BackgroundWorker:
                 
                 # 4. Quality: High Scores (Priority 10)
                 # Need to join with stocks table to ensure symbol exists
+                self.db.update_job_progress(job_id, progress_message='Analyzing quality scores (Lynch/Buffett)...')
                 logger.info("Aggregating Quality Signal...")
                 # Note: We assume 'overall_status' is in a table we can join, but stock_vectors is separate.
                 # We'll use a python-side fetch for vectors since it might be complex JSON or separate logic
@@ -504,6 +525,10 @@ class BackgroundWorker:
             """, (ids,))
             conn.commit()
             
+            # Initial progress for processing phase
+            total_items = len(batch)
+            self.db.update_job_progress(job_id, total_count=total_items, processed_count=0, progress_pct=0, progress_message=f'Processing {total_items} stocks (Parallel)...')
+            
         finally:
             self.db.return_connection(conn)
             
@@ -545,6 +570,13 @@ class BackgroundWorker:
                         processed_count += 1
                     else:
                         error_count += 1
+                        
+                    # Periodic progress update
+                    current_done = processed_count + error_count
+                    total_items = len(batch)
+                    if total_items > 0 and (current_done % 5 == 0 or current_done == total_items):
+                        pct = int((current_done / total_items) * 100)
+                        self.db.update_job_progress(job_id, progress_pct=pct, processed_count=current_done)
                         
                 except Exception as e:
                     logger.error(f"Worker thread error key={symbol}: {e}")
