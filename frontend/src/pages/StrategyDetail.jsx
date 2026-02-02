@@ -387,9 +387,6 @@ function DecisionCard({ decision }) {
                 <div className="flex justify-between items-center">
                     <div className="flex items-center gap-2">
                         <Badge variant="outline" className="font-bold">{decision.symbol}</Badge>
-                        <span className="text-sm text-muted-foreground">
-                            Score: {decision.consensus_score?.toFixed(0) || 'N/A'}
-                        </span>
                     </div>
                     <Badge variant={isBuy ? 'success' : 'secondary'}>
                         {decision.final_decision}
