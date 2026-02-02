@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { ArrowLeft, Play, Settings, Activity, Calendar, DollarSign, TrendingUp, TrendingDown, MessageSquare } from 'lucide-react'
+import { ArrowLeft, Play, Settings, Activity, Calendar, DollarSign, TrendingUp, TrendingDown, MessageSquare, Wallet } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -117,6 +117,10 @@ function StrategyDetail() {
                     <Badge variant={strategy.enabled ? "success" : "secondary"}>
                         {strategy.enabled ? 'Active' : 'Paused'}
                     </Badge>
+                    <Button variant="outline" size="sm" onClick={() => navigate(`/portfolios/${strategy.portfolio_id}`)}>
+                        <Wallet className="h-4 w-4 mr-2" />
+                        View Portfolio
+                    </Button>
                     <Button variant="outline" size="sm">
                         <Settings className="h-4 w-4 mr-2" />
                         Configure
@@ -268,6 +272,7 @@ function DetailSkeleton() {
 function DecisionsView({ runId, runs, onRunChange }) {
     const [decisions, setDecisions] = useState([])
     const [loading, setLoading] = useState(false)
+    const [filter, setFilter] = useState('ALL')
 
     useEffect(() => {
         if (!runId) return
@@ -275,7 +280,8 @@ function DecisionsView({ runId, runs, onRunChange }) {
         const fetchDecisions = async () => {
             setLoading(true)
             try {
-                const response = await fetch(`/api/strategies/runs/${runId}/decisions`)
+                const url = `/api/strategies/runs/${runId}/decisions`;
+                const response = await fetch(url)
                 if (response.ok) {
                     const data = await response.json()
                     setDecisions(data)
@@ -288,6 +294,14 @@ function DecisionsView({ runId, runs, onRunChange }) {
         }
         fetchDecisions()
     }, [runId])
+
+    const filteredDecisions = decisions.filter(d => {
+        if (filter === 'ALL') return true
+        if (filter === 'BUY') return d.final_decision === 'BUY'
+        if (filter === 'SKIP') return d.final_decision === 'SKIP' || d.final_decision === 'HOLD' || d.final_decision === 'AVOID' || d.final_decision === 'WATCH'
+        if (filter === 'SELL') return d.final_decision === 'SELL'
+        return true
+    })
 
     if (!runId && runs.length === 0) {
         return <div className="p-8 text-center text-muted-foreground">No runs available to view decisions.</div>
@@ -323,7 +337,15 @@ function DecisionsView({ runId, runs, onRunChange }) {
             {/* Main: Decisions List */}
             <div className="col-span-9">
                 <div className="flex justify-between items-center mb-4">
-                    <h3 className="font-semibold">Decisions Log ({decisions.length})</h3>
+                    <h3 className="font-semibold">Decisions Log ({filteredDecisions.length})</h3>
+                    <Tabs value={filter} onValueChange={setFilter} className="w-[400px]">
+                        <TabsList className="grid w-full grid-cols-4">
+                            <TabsTrigger value="ALL">All</TabsTrigger>
+                            <TabsTrigger value="BUY">Buy</TabsTrigger>
+                            <TabsTrigger value="SKIP">Skip</TabsTrigger>
+                            <TabsTrigger value="SELL">Sell</TabsTrigger>
+                        </TabsList>
+                    </Tabs>
                 </div>
 
                 {loading ? (
@@ -331,13 +353,13 @@ function DecisionsView({ runId, runs, onRunChange }) {
                         <Skeleton className="h-32 w-full" />
                         <Skeleton className="h-32 w-full" />
                     </div>
-                ) : decisions.length === 0 ? (
+                ) : filteredDecisions.length === 0 ? (
                     <div className="text-center p-8 text-muted-foreground border rounded-lg border-dashed">
-                        No decisions recorded for this run.
+                        No decisions found for this filter.
                     </div>
                 ) : (
                     <div className="space-y-4">
-                        {decisions.map(decision => (
+                        {filteredDecisions.map(decision => (
                             <DecisionCard key={decision.id} decision={decision} />
                         ))}
                     </div>

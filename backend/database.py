@@ -3821,9 +3821,11 @@ class Database:
         try:
             cursor = conn.cursor(row_factory=psycopg.rows.dict_row)
             cursor.execute("""
-                SELECT id, user_id, name, initial_cash, created_at
-                FROM portfolios
-                WHERE id = %s
+                SELECT p.id, p.user_id, p.name, p.initial_cash, p.created_at,
+                       s.id as strategy_id, s.name as strategy_name
+                FROM portfolios p
+                LEFT JOIN investment_strategies s ON p.id = s.portfolio_id
+                WHERE p.id = %s
             """, (portfolio_id,))
             return cursor.fetchone()
         finally:
@@ -3835,10 +3837,11 @@ class Database:
         try:
             cursor = conn.cursor(row_factory=psycopg.rows.dict_row)
             cursor.execute("""
-                SELECT id, user_id, name, initial_cash, created_at
-                FROM portfolios
-                WHERE user_id = %s
-                ORDER BY created_at DESC
+                SELECT p.*, s.id as strategy_id, s.name as strategy_name
+                FROM portfolios p
+                LEFT JOIN investment_strategies s ON p.id = s.portfolio_id
+                WHERE p.user_id = %s
+                ORDER BY p.created_at DESC
             """, (user_id,))
             return cursor.fetchall()
         finally:
@@ -4157,7 +4160,9 @@ class Database:
             'holdings_value': holdings_value,
             'total_value': total_value,
             'gain_loss': gain_loss,
-            'gain_loss_percent': gain_loss_percent
+            'gain_loss_percent': gain_loss_percent,
+            'strategy_id': portfolio.get('strategy_id'),
+            'strategy_name': portfolio.get('strategy_name')
         }
 
     def get_all_portfolios(self) -> List[Dict[str, Any]]:
@@ -6823,7 +6828,19 @@ class Database:
                 WHERE run_id = %s
                 ORDER BY created_at ASC
             """, (run_id,))
-            return cursor.fetchall()
+            results = cursor.fetchall()
+            
+            # Sanitize NaN values for JSON compatibility
+            sanitized_results = []
+            for row in results:
+                # Convert Row to dict to allow modification
+                item = dict(row)
+                for key, value in item.items():
+                    if isinstance(value, float) and (value != value): # Check for NaN
+                        item[key] = None
+                sanitized_results.append(item)
+                
+            return sanitized_results
         finally:
             self.return_connection(conn)
 

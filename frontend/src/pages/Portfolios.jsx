@@ -2,6 +2,7 @@
 // ABOUTME: Displays portfolio cards, holdings, transactions, and performance charts
 
 import { useState, useEffect, useMemo } from 'react'
+import { useParams, useNavigate } from 'react-router-dom'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -65,6 +66,8 @@ const formatDate = (dateStr) => {
 
 export default function Portfolios() {
     const { user } = useAuth()
+    const { id } = useParams()
+    const navigate = useNavigate()
     const [portfolios, setPortfolios] = useState([])
     const [selectedPortfolio, setSelectedPortfolio] = useState(null)
     const [loading, setLoading] = useState(true)
@@ -79,6 +82,32 @@ export default function Portfolios() {
     useEffect(() => {
         fetchPortfolios()
     }, [])
+
+    // Handle deep linking to specific portfolio
+    useEffect(() => {
+        if (id) {
+            fetchPortfolioById(id)
+        } else {
+            setSelectedPortfolio(null)
+        }
+    }, [id])
+
+    const fetchPortfolioById = async (portfolioId) => {
+        try {
+            setLoading(true)
+            const response = await fetch(`/api/portfolios/${portfolioId}`)
+            if (response.ok) {
+                const data = await response.json()
+                setSelectedPortfolio(data)
+            } else {
+                console.error('Failed to fetch specific portfolio')
+            }
+        } catch (err) {
+            console.error('Error fetching specific portfolio:', err)
+        } finally {
+            setLoading(false)
+        }
+    }
 
     const fetchPortfolios = async () => {
         try {
@@ -201,7 +230,7 @@ export default function Portfolios() {
         return (
             <PortfolioDetail
                 portfolio={selectedPortfolio}
-                onBack={() => setSelectedPortfolio(null)}
+                onBack={() => navigate('/portfolios')}
                 onRefresh={refreshSelectedPortfolio}
                 onDelete={() => deletePortfolio(selectedPortfolio.id)}
             />
@@ -326,6 +355,18 @@ function PortfolioCard({ portfolio, onClick, onDelete }) {
                 </CardTitle>
                 <CardDescription className="text-xs">
                     Created {new Date(portfolio.created_at).toLocaleDateString()}
+                    {portfolio.strategy_id && (
+                        <Button
+                            variant="link"
+                            className="p-0 h-auto text-xs ml-2 text-primary"
+                            onClick={(e) => {
+                                e.stopPropagation()
+                                window.location.href = `/strategies/${portfolio.strategy_id}`
+                            }}
+                        >
+                            View Strategy
+                        </Button>
+                    )}
                 </CardDescription>
             </CardHeader>
             <CardContent>
@@ -429,9 +470,21 @@ function PortfolioDetail({ portfolio, onBack, onRefresh, onDelete }) {
                         </p>
                     </div>
                 </div>
-                <Button variant="ghost" size="icon" className="text-muted-foreground hover:text-destructive" onClick={onDelete}>
-                    <Trash2 className="h-5 w-5" />
-                </Button>
+                <div className="flex items-center gap-2">
+                    {portfolio.strategy_id && (
+                        <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => window.location.href = `/strategies/${portfolio.strategy_id}`}
+                        >
+                            <Activity className="h-4 w-4 mr-2" />
+                            View Strategy
+                        </Button>
+                    )}
+                    <Button variant="ghost" size="icon" className="text-muted-foreground hover:text-destructive" onClick={onDelete}>
+                        <Trash2 className="h-5 w-5" />
+                    </Button>
+                </div>
             </div>
 
             {/* Summary Cards */}

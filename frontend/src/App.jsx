@@ -1230,6 +1230,7 @@ function App() {
           <Route path="/settings" element={<Settings />} />
           <Route path="/alerts" element={<Alerts />} />
           <Route path="/portfolios" element={<Portfolios />} />
+          <Route path="/portfolios/:id" element={<Portfolios />} />
           <Route path="/strategies" element={<Strategies />} />
           <Route path="/strategies/:id" element={<StrategyDetail />} />
           <Route path="/economy" element={<Economy />} />
