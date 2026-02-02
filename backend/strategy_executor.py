@@ -1062,6 +1062,11 @@ class StrategyExecutor:
                 lynch_verdict = self._extract_thesis_verdict(lynch_thesis_text)
                 stock['lynch_thesis'] = lynch_thesis_text
                 stock['lynch_thesis_verdict'] = lynch_verdict
+                
+                # Fetch timestamp for cache invalidation
+                lynch_meta = self.db.get_lynch_analysis(user_id, symbol, character_id='lynch')
+                stock['lynch_thesis_timestamp'] = lynch_meta.get('generated_at') if lynch_meta else None
+                
                 print(f"      Lynch verdict: {lynch_verdict}")
 
                 # Generate Buffett thesis
@@ -1080,6 +1085,11 @@ class StrategyExecutor:
                 buffett_verdict = self._extract_thesis_verdict(buffett_thesis_text)
                 stock['buffett_thesis'] = buffett_thesis_text
                 stock['buffett_thesis_verdict'] = buffett_verdict
+                
+                # Fetch timestamp for cache invalidation
+                buffett_meta = self.db.get_lynch_analysis(user_id, symbol, character_id='buffett')
+                stock['buffett_thesis_timestamp'] = buffett_meta.get('generated_at') if buffett_meta else None
+                
                 print(f"      Buffett verdict: {buffett_verdict}")
 
                 logger.debug(f"{symbol}: Lynch={lynch_verdict}, Buffett={buffett_verdict}")
@@ -1101,7 +1111,9 @@ class StrategyExecutor:
         lynch_thesis: str,
         lynch_verdict: str,
         buffett_thesis: str,
-        buffett_verdict: str
+        buffett_verdict: str,
+        lynch_timestamp: Optional[datetime] = None,
+        buffett_timestamp: Optional[datetime] = None
     ) -> tuple[str, str]:
         """Conduct deliberation between Lynch and Buffett to reach consensus.
 
@@ -1112,6 +1124,8 @@ class StrategyExecutor:
             lynch_verdict: Lynch's verdict (BUY/WATCH/AVOID)
             buffett_thesis: Buffett's full thesis text
             buffett_verdict: Buffett's verdict (BUY/WATCH/AVOID)
+            lynch_timestamp: Timestamp when Lynch thesis was generated
+            buffett_timestamp: Timestamp when Buffett thesis was generated
 
         Returns:
             Tuple of (deliberation_text, final_verdict)
@@ -1121,11 +1135,41 @@ class StrategyExecutor:
         from google.genai.types import GenerateContentConfig
 
         # Check cache first
+        # Check cache first
         cached = self.db.get_deliberation(user_id, symbol)
         if cached:
-            logger.info(f"[Deliberation] Using cached deliberation for {symbol}")
-            print(f"    Using cached deliberation from {cached['generated_at']}")
-            return cached['deliberation_text'], cached['final_verdict']
+            # Check for invalidation based on timestamps
+            is_stale = False
+            cached_time = cached['generated_at']
+            
+            # Ensure timezone awareness for comparison if needed
+            if cached_time.tzinfo is None:
+                cached_time = cached_time.replace(tzinfo=None) # Assume naive if inputs are naive
+                
+            invalidation_reason = ""
+            
+            if lynch_timestamp:
+                if lynch_timestamp.tzinfo is None:
+                    lynch_timestamp = lynch_timestamp.replace(tzinfo=None)
+                if cached_time < lynch_timestamp:
+                    is_stale = True
+                    invalidation_reason = f"Lynch thesis newer ({lynch_timestamp} > {cached_time})"
+            
+            if not is_stale and buffett_timestamp:
+                if buffett_timestamp.tzinfo is None:
+                    buffett_timestamp = buffett_timestamp.replace(tzinfo=None)
+                if cached_time < buffett_timestamp:
+                    is_stale = True
+                    invalidation_reason = f"Buffett thesis newer ({buffett_timestamp} > {cached_time})"
+            
+            if not is_stale:
+                logger.info(f"[Deliberation] Using cached deliberation for {symbol}")
+                print(f"    Using cached deliberation from {cached['generated_at']}")
+                return cached['deliberation_text'], cached['final_verdict']
+            else:
+                logger.info(f"[Deliberation] Cache invalid for {symbol}: {invalidation_reason}")
+                print(f"    Cache invalid: {invalidation_reason}")
+                print(f"    Regenerating deliberation...")
 
         print(f"    No cached deliberation found, generating new one...")
 
@@ -1290,7 +1334,9 @@ Reasoning: [Brief explanation of their final decision]
                         lynch_thesis=lynch_thesis,
                         lynch_verdict=stock.get('lynch_thesis_verdict', 'UNKNOWN'),
                         buffett_thesis=buffett_thesis,
-                        buffett_verdict=stock.get('buffett_thesis_verdict', 'UNKNOWN')
+                        buffett_verdict=stock.get('buffett_thesis_verdict', 'UNKNOWN'),
+                        lynch_timestamp=stock.get('lynch_thesis_timestamp'),
+                        buffett_timestamp=stock.get('buffett_thesis_timestamp')
                     )
 
                     stock['deliberation'] = deliberation_text
