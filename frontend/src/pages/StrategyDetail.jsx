@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { useParams, useNavigate } from 'react-router-dom'
+import { useParams, useNavigate, Link } from 'react-router-dom'
 import { ArrowLeft, Play, Settings, Activity, Calendar, DollarSign, TrendingUp, TrendingDown, MessageSquare, Wallet } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -386,7 +386,9 @@ function DecisionCard({ decision }) {
             <CardHeader className="py-3">
                 <div className="flex justify-between items-center">
                     <div className="flex items-center gap-2">
-                        <Badge variant="outline" className="font-bold">{decision.symbol}</Badge>
+                        <Link to={`/stock/${decision.symbol}`}>
+                            <Badge variant="outline" className="font-bold hover:bg-accent">{decision.symbol}</Badge>
+                        </Link>
                     </div>
                     <Badge variant={isBuy ? 'success' : 'secondary'}>
                         {decision.final_decision}

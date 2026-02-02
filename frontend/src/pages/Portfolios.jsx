@@ -2,7 +2,7 @@
 // ABOUTME: Displays portfolio cards, holdings, transactions, and performance charts
 
 import { useState, useEffect, useMemo } from 'react'
-import { useParams, useNavigate } from 'react-router-dom'
+import { useParams, useNavigate, Link } from 'react-router-dom'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -608,7 +608,11 @@ function HoldingsTab({ portfolio }) {
                         const isPositive = holding.gain_loss >= 0
                         return (
                             <TableRow key={holding.symbol}>
-                                <TableCell className="font-medium">{holding.symbol}</TableCell>
+                                <TableCell className="font-medium">
+                                    <Link to={`/stock/${holding.symbol}`} className="hover:underline text-primary">
+                                        {holding.symbol}
+                                    </Link>
+                                </TableCell>
                                 <TableCell className="text-right">{holding.quantity}</TableCell>
                                 <TableCell className="text-right">{formatCurrency(holding.avg_purchase_price)}</TableCell>
                                 <TableCell className="text-right">{formatCurrency(holding.current_price)}</TableCell>
