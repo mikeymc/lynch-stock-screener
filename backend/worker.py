@@ -3139,6 +3139,11 @@ Return JSON only:
 
             # Get strategies to execute
             strategy_ids = params.get('strategy_ids')
+            
+            # Fallback for singular strategy_id (backward compatibility)
+            if not strategy_ids and params.get('strategy_id'):
+                strategy_ids = [params.get('strategy_id')]
+            
             if strategy_ids:
                 strategies = [self.db.get_strategy(sid) for sid in strategy_ids]
                 strategies = [s for s in strategies if s]  # Filter None
@@ -3178,7 +3183,8 @@ Return JSON only:
                     )
 
                     # Execute the strategy
-                    result = executor.execute_strategy(strategy_id)
+                    limit = params.get('limit')
+                    result = executor.execute_strategy(strategy_id, limit=limit)
                     results.append({
                         'strategy_id': strategy_id,
                         'name': strategy_name,
