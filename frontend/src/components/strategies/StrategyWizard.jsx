@@ -110,24 +110,24 @@ const StrategyWizard = ({ onClose, onSuccess }) => {
     };
 
     return (
-        <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4">
-            <div className="bg-slate-900 border border-slate-700 rounded-xl w-full max-w-4xl h-[80vh] flex flex-col shadow-2xl overflow-hidden">
+        <div className="fixed inset-0 bg-background/80 flex items-center justify-center z-50 p-4">
+            <div className="bg-card border border-border rounded-xl w-full max-w-4xl h-[80vh] flex flex-col shadow-2xl overflow-hidden">
 
                 {/* Header */}
-                <div className="border-b border-slate-700 p-6 flex justify-between items-center bg-slate-900">
+                <div className="border-b border-border p-6 flex justify-between items-center bg-card">
                     <div>
-                        <h2 className="text-xl font-bold text-white">Create Strategy</h2>
+                        <h2 className="text-xl font-bold text-foreground">Create Strategy</h2>
                         <div className="flex gap-2 mt-2">
                             {[1, 2, 3, 4].map(s => (
                                 <div
                                     key={s}
-                                    className={`h-1.5 w-8 rounded-full transition-colors ${s <= step ? 'bg-blue-500' : 'bg-slate-700'
+                                    className={`h-1.5 w-8 rounded-full transition-colors ${s <= step ? 'bg-primary' : 'bg-muted'
                                         }`}
                                 />
                             ))}
                         </div>
                     </div>
-                    <button onClick={onClose} className="p-2 hover:bg-slate-800 rounded-full text-slate-400 hover:text-white">
+                    <button onClick={onClose} className="p-2 hover:bg-muted rounded-full text-muted-foreground hover:text-foreground">
                         <X size={24} />
                     </button>
                 </div>
@@ -135,7 +135,7 @@ const StrategyWizard = ({ onClose, onSuccess }) => {
                 {/* Content */}
                 <div className="flex-1 overflow-y-auto p-8">
                     {error && (
-                        <div className="mb-6 p-4 bg-red-900/30 border border-red-800 rounded-lg flex items-center gap-3 text-red-200">
+                        <div className="mb-6 p-4 bg-destructive/10 border border-destructive/50 rounded-lg flex items-center gap-3 text-destructive">
                             <AlertCircle size={20} />
                             {error}
                         </div>
@@ -143,24 +143,24 @@ const StrategyWizard = ({ onClose, onSuccess }) => {
 
                     {step === 1 && (
                         <div className="space-y-6 max-w-lg mx-auto">
-                            <h3 className="text-2xl font-semibold text-white mb-2">The Basics</h3>
+                            <h3 className="text-2xl font-semibold text-foreground mb-2">The Basics</h3>
                             <div>
-                                <label className="block text-slate-400 mb-2 text-sm">Strategy Name</label>
+                                <label className="block text-muted-foreground mb-2 text-sm">Strategy Name</label>
                                 <input
                                     type="text"
                                     value={formData.name}
                                     onChange={e => setFormData({ ...formData, name: e.target.value })}
-                                    className="w-full bg-slate-800 border border-slate-700 rounded-lg p-3 text-white focus:border-blue-500 focus:outline-none"
+                                    className="w-full bg-background border border-input rounded-lg p-3 text-foreground focus:border-primary focus:outline-none"
                                     placeholder="e.g., Aggressive Tech Growth"
                                     autoFocus
                                 />
                             </div>
                             <div>
-                                <label className="block text-slate-400 mb-2 text-sm">Description</label>
+                                <label className="block text-muted-foreground mb-2 text-sm">Description</label>
                                 <textarea
                                     value={formData.description}
                                     onChange={e => setFormData({ ...formData, description: e.target.value })}
-                                    className="w-full bg-slate-800 border border-slate-700 rounded-lg p-3 text-white min-h-[120px] focus:border-blue-500 focus:outline-none"
+                                    className="w-full bg-background border border-input rounded-lg p-3 text-foreground min-h-[120px] focus:border-primary focus:outline-none"
                                     placeholder="Describe the goal of this strategy..."
                                 />
                             </div>
@@ -169,22 +169,22 @@ const StrategyWizard = ({ onClose, onSuccess }) => {
 
                     {step === 2 && (
                         <div className="space-y-8">
-                            <h3 className="text-2xl font-semibold text-white">Strategy Logic</h3>
+                            <h3 className="text-2xl font-semibold text-foreground">Strategy Logic</h3>
 
                             {/* Analysis Mode (AI Deliberation) */}
-                            <div className="bg-slate-800/50 rounded-xl p-6 border border-slate-700">
-                                <h4 className="font-medium text-purple-400 mb-4 flex items-center gap-2">
+                            <div className="bg-muted/50 rounded-xl p-6 border border-border">
+                                <h4 className="font-medium text-foreground mb-4 flex items-center gap-2">
                                     <HelpCircle size={18} /> Analysis Mode
                                 </h4>
                                 <div className="flex items-start justify-between">
                                     <div>
-                                        <label className="text-white font-medium block mb-1">
+                                        <label className="text-foreground font-medium block mb-1">
                                             Enable AI Deliberation
                                         </label>
-                                        <p className="text-sm text-slate-400 max-w-md">
+                                        <p className="text-sm text-muted-foreground max-w-md">
                                             If enabled, AI agents (Lynch & Buffett) will hold a qualitative debate for each stock.
                                             <br />
-                                            <span className="text-amber-400/80 inline-flex items-center gap-1 mt-1">
+                                            <span className="text-orange-400/80 inline-flex items-center gap-1 mt-1">
                                                 <AlertCircle size={12} /> Slower execution (~30s per stock) but deeper insights.
                                             </span>
                                         </p>
@@ -195,7 +195,7 @@ const StrategyWizard = ({ onClose, onSuccess }) => {
                                                 ...formData,
                                                 conditions: { ...formData.conditions, require_thesis: !formData.conditions.require_thesis }
                                             })}
-                                            className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${formData.conditions.require_thesis ? 'bg-purple-600' : 'bg-slate-700'
+                                            className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${formData.conditions.require_thesis ? 'bg-primary' : 'bg-muted'
                                                 }`}
                                         >
                                             <span
@@ -208,24 +208,24 @@ const StrategyWizard = ({ onClose, onSuccess }) => {
                             </div>
 
                             {/* Consensus Settings */}
-                            <div className="bg-slate-800/50 rounded-xl p-6 border border-slate-700 grid grid-cols-2 gap-8">
+                            <div className="bg-muted/50 rounded-xl p-6 border border-border grid grid-cols-2 gap-8">
                                 <div>
-                                    <label className="block text-slate-400 mb-2 text-sm">Consensus Mode</label>
+                                    <label className="block text-muted-foreground mb-2 text-sm">Consensus Mode</label>
                                     <select
                                         value={formData.consensus_mode}
                                         onChange={e => setFormData({ ...formData, consensus_mode: e.target.value })}
-                                        className="w-full bg-slate-900 border border-slate-700 rounded-lg p-3 text-white"
+                                        className="w-full bg-background border border-input rounded-lg p-3 text-foreground"
                                     >
                                         <option value="both_agree">Strict Agreement (Both must buy)</option>
                                         <option value="weighted_confidence">Weighted Confidence</option>
                                         <option value="veto_power">Veto Power (Either can block)</option>
                                     </select>
-                                    <p className="text-xs text-slate-500 mt-2">
+                                    <p className="text-xs text-muted-foreground mt-2">
                                         Determines how Lynch and Buffett agents agree on a trade.
                                     </p>
                                 </div>
                                 <div>
-                                    <label className="block text-slate-400 mb-2 text-sm">
+                                    <label className="block text-muted-foreground mb-2 text-sm">
                                         Consensus Threshold ({formData.consensus_threshold})
                                     </label>
                                     <input
@@ -233,17 +233,17 @@ const StrategyWizard = ({ onClose, onSuccess }) => {
                                         min="50" max="90" step="5"
                                         value={formData.consensus_threshold}
                                         onChange={e => setFormData({ ...formData, consensus_threshold: parseInt(e.target.value) })}
-                                        className="w-full h-2 bg-slate-700 rounded-lg appearance-none cursor-pointer"
+                                        className="w-full h-2 bg-muted rounded-lg appearance-none cursor-pointer"
                                     />
                                 </div>
                             </div>
 
                             {/* Exit Conditions */}
-                            <div className="bg-slate-800/50 rounded-xl p-6 border border-slate-700">
-                                <h4 className="font-medium text-red-400 mb-4">Exit Conditions</h4>
+                            <div className="bg-muted/50 rounded-xl p-6 border border-border">
+                                <h4 className="font-medium text-destructive mb-4">Exit Conditions</h4>
                                 <div className="grid grid-cols-3 gap-6">
                                     <div>
-                                        <label className="block text-slate-400 mb-2 text-sm">Profit Target (%)</label>
+                                        <label className="block text-muted-foreground mb-2 text-sm">Profit Target (%)</label>
                                         <input
                                             type="number"
                                             placeholder="e.g. 50"
@@ -252,11 +252,11 @@ const StrategyWizard = ({ onClose, onSuccess }) => {
                                                 ...formData,
                                                 exit_conditions: { ...formData.exit_conditions, profit_target_pct: e.target.value }
                                             })}
-                                            className="w-full bg-slate-900 border border-slate-700 rounded-lg p-3 text-white"
+                                            className="w-full bg-background border border-input rounded-lg p-3 text-foreground"
                                         />
                                     </div>
                                     <div>
-                                        <label className="block text-slate-400 mb-2 text-sm">Stop Loss (%)</label>
+                                        <label className="block text-muted-foreground mb-2 text-sm">Stop Loss (%)</label>
                                         <input
                                             type="number"
                                             placeholder="e.g. -15"
@@ -265,11 +265,11 @@ const StrategyWizard = ({ onClose, onSuccess }) => {
                                                 ...formData,
                                                 exit_conditions: { ...formData.exit_conditions, stop_loss_pct: e.target.value }
                                             })}
-                                            className="w-full bg-slate-900 border border-slate-700 rounded-lg p-3 text-white"
+                                            className="w-full bg-background border border-input rounded-lg p-3 text-foreground"
                                         />
                                     </div>
                                     <div>
-                                        <label className="block text-slate-400 mb-2 text-sm">Max Hold Days</label>
+                                        <label className="block text-muted-foreground mb-2 text-sm">Max Hold Days</label>
                                         <input
                                             type="number"
                                             placeholder="e.g. 365"
@@ -278,7 +278,7 @@ const StrategyWizard = ({ onClose, onSuccess }) => {
                                                 ...formData,
                                                 exit_conditions: { ...formData.exit_conditions, max_hold_days: e.target.value }
                                             })}
-                                            className="w-full bg-slate-900 border border-slate-700 rounded-lg p-3 text-white"
+                                            className="w-full bg-background border border-input rounded-lg p-3 text-foreground"
                                         />
                                     </div>
                                 </div>
@@ -288,35 +288,35 @@ const StrategyWizard = ({ onClose, onSuccess }) => {
 
                     {step === 3 && (
                         <div className="space-y-8 max-w-xl mx-auto">
-                            <h3 className="text-2xl font-semibold text-white">Execution</h3>
+                            <h3 className="text-2xl font-semibold text-foreground">Execution</h3>
 
                             <div>
-                                <label className="block text-slate-400 mb-2 text-sm">Target Portfolio</label>
+                                <label className="block text-muted-foreground mb-2 text-sm">Target Portfolio</label>
                                 <select
                                     value={formData.portfolio_id}
                                     onChange={e => setFormData({ ...formData, portfolio_id: e.target.value })}
-                                    className="w-full bg-slate-800 border border-slate-700 rounded-lg p-3 text-white"
+                                    className="w-full bg-background border border-input rounded-lg p-3 text-foreground"
                                 >
                                     <option value="new">✨ Create New Portfolio ("{formData.name || 'Strategy Name'}")</option>
                                     {portfolios.map(p => (
                                         <option key={p.id} value={p.id}>{p.name} (${p.current_value?.toLocaleString()})</option>
                                     ))}
                                 </select>
-                                <div className="flex items-start gap-2 mt-3 text-xs text-blue-400 bg-blue-900/20 p-3 rounded-lg border border-blue-900/50">
+                                <div className="flex items-start gap-2 mt-3 text-xs text-primary bg-primary/10 p-3 rounded-lg border border-primary/20">
                                     <Info size={14} className="mt-0.5" />
                                     Creating a new portfolio allows you to track this strategy's performance in isolation.
                                 </div>
                             </div>
 
                             <div>
-                                <label className="block text-slate-400 mb-2 text-sm">Position Sizing</label>
+                                <label className="block text-muted-foreground mb-2 text-sm">Position Sizing</label>
                                 <select
                                     value={formData.position_sizing.method}
                                     onChange={e => setFormData({
                                         ...formData,
                                         position_sizing: { ...formData.position_sizing, method: e.target.value }
                                     })}
-                                    className="w-full bg-slate-800 border border-slate-700 rounded-lg p-3 text-white"
+                                    className="w-full bg-background border border-input rounded-lg p-3 text-foreground"
                                 >
                                     <option value="equal_weight">Equal Weight (Divided evenly)</option>
                                     <option value="conviction_weighted">Conviction Weighted (Higher score = More capital)</option>
@@ -324,11 +324,11 @@ const StrategyWizard = ({ onClose, onSuccess }) => {
                             </div>
 
                             <div>
-                                <label className="block text-slate-400 mb-2 text-sm">Schedule</label>
+                                <label className="block text-muted-foreground mb-2 text-sm">Schedule</label>
                                 <select
                                     value={formData.schedule_cron}
                                     onChange={e => setFormData({ ...formData, schedule_cron: e.target.value })}
-                                    className="w-full bg-slate-800 border border-slate-700 rounded-lg p-3 text-white"
+                                    className="w-full bg-background border border-input rounded-lg p-3 text-foreground"
                                 >
                                     <option value="0 9 * * 1-5">Daily at Market Open (9:00 AM)</option>
                                     <option value="0 16 * * 1-5">Daily at Market Close (4:00 PM)</option>
@@ -340,40 +340,40 @@ const StrategyWizard = ({ onClose, onSuccess }) => {
 
                     {step === 4 && (
                         <div className="max-w-xl mx-auto text-center">
-                            <h3 className="text-2xl font-semibold text-white mb-6">Review Strategy</h3>
+                            <h3 className="text-2xl font-semibold text-foreground mb-6">Review Strategy</h3>
 
-                            <div className="bg-slate-800 rounded-xl p-6 text-left space-y-4 mb-8">
-                                <div className="flex justify-between border-b border-slate-700 pb-3">
-                                    <span className="text-slate-400">Name</span>
-                                    <span className="text-white font-medium">{formData.name}</span>
+                            <div className="bg-muted/50 rounded-xl p-6 text-left space-y-4 mb-8">
+                                <div className="flex justify-between border-b border-border pb-3">
+                                    <span className="text-muted-foreground">Name</span>
+                                    <span className="text-foreground font-medium">{formData.name}</span>
                                 </div>
-                                <div className="flex justify-between border-b border-slate-700 pb-3">
-                                    <span className="text-slate-400">Consensus</span>
-                                    <span className="text-white">{formData.consensus_mode} ({formData.consensus_threshold})</span>
+                                <div className="flex justify-between border-b border-border pb-3">
+                                    <span className="text-muted-foreground">Consensus</span>
+                                    <span className="text-foreground">{formData.consensus_mode} ({formData.consensus_threshold})</span>
                                 </div>
-                                <div className="flex justify-between border-b border-slate-700 pb-3">
-                                    <span className="text-slate-400">Analysis Mode</span>
-                                    <span className={formData.conditions.require_thesis ? "text-purple-400" : "text-slate-500"}>
+                                <div className="flex justify-between border-b border-border pb-3">
+                                    <span className="text-muted-foreground">Analysis Mode</span>
+                                    <span className={formData.conditions.require_thesis ? "text-primary" : "text-muted-foreground"}>
                                         {formData.conditions.require_thesis ? "AI Deliberation (Deep)" : "Heuristic Only (Fast)"}
                                     </span>
                                 </div>
-                                <div className="flex justify-between border-b border-slate-700 pb-3">
-                                    <span className="text-slate-400">Exit Rules</span>
-                                    <span className="text-white">
+                                <div className="flex justify-between border-b border-border pb-3">
+                                    <span className="text-muted-foreground">Exit Rules</span>
+                                    <span className="text-foreground">
                                         {formData.exit_conditions.profit_target_pct ? `Target: +${formData.exit_conditions.profit_target_pct}%` : 'No Target'}
                                         {' / '}
                                         {formData.exit_conditions.stop_loss_pct ? `Stop: ${formData.exit_conditions.stop_loss_pct}%` : 'No Stop'}
                                     </span>
                                 </div>
                                 <div className="flex justify-between pb-1">
-                                    <span className="text-slate-400">Portfolio</span>
-                                    <span className="text-white">
+                                    <span className="text-muted-foreground">Portfolio</span>
+                                    <span className="text-foreground">
                                         {formData.portfolio_id === 'new' ? 'Create New' : 'Existing'}
                                     </span>
                                 </div>
                             </div>
 
-                            <div className="flex items-center justify-center gap-2 text-emerald-400 bg-emerald-900/10 p-4 rounded-lg border border-emerald-900/30">
+                            <div className="flex items-center justify-center gap-2 text-primary bg-primary/10 p-4 rounded-lg border border-primary/30">
                                 <Check size={20} />
                                 <span>Ready to initialize strategy agent</span>
                             </div>
@@ -382,11 +382,11 @@ const StrategyWizard = ({ onClose, onSuccess }) => {
                 </div>
 
                 {/* Footer */}
-                <div className="border-t border-slate-700 p-6 bg-slate-900 flex justify-between">
+                <div className="border-t border-border p-6 bg-card flex justify-between">
                     <button
                         onClick={handleBack}
                         disabled={step === 1}
-                        className={`px-6 py-2 rounded-lg flex items-center gap-2 ${step === 1 ? 'opacity-0' : 'text-slate-400 hover:text-white hover:bg-slate-800'
+                        className={`px-6 py-2 rounded-lg flex items-center gap-2 ${step === 1 ? 'opacity-0' : 'text-muted-foreground hover:text-foreground hover:bg-muted'
                             }`}
                     >
                         <ChevronLeft size={20} /> Back
@@ -395,7 +395,7 @@ const StrategyWizard = ({ onClose, onSuccess }) => {
                     {step < 4 ? (
                         <button
                             onClick={handleNext}
-                            className="px-6 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-lg flex items-center gap-2 font-medium"
+                            className="px-6 py-2 bg-primary hover:bg-primary/90 text-primary-foreground rounded-lg flex items-center gap-2 font-medium"
                         >
                             Next Step <ChevronRight size={20} />
                         </button>
@@ -403,7 +403,7 @@ const StrategyWizard = ({ onClose, onSuccess }) => {
                         <button
                             onClick={handleSubmit}
                             disabled={loading}
-                            className="px-8 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg flex items-center gap-2 font-medium shadow-lg shadow-emerald-900/20"
+                            className="px-8 py-2 bg-primary hover:bg-primary/90 text-primary-foreground rounded-lg flex items-center gap-2 font-medium shadow-lg shadow-primary/20"
                         >
                             {loading ? 'Creating...' : 'Create Strategy'} <Check size={20} />
                         </button>
