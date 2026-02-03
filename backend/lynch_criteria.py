@@ -29,6 +29,14 @@ ALGORITHM_METADATA = {
 }
 
 
+SCORE_THRESHOLDS = {
+    'STRONG_BUY': 80,
+    'BUY': 60,
+    'HOLD': 40,
+    'CAUTION': 20
+}
+
+
 class LynchCriteria:
     # Constants removed in favor of dynamic settings
     # See self.settings in __init__
