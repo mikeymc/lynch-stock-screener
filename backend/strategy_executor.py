@@ -809,10 +809,8 @@ class StrategyExecutor:
             print("=" * 60)
             print("PHASE 4: DELIBERATION")
             print("=" * 60)
-            consensus_mode = strategy.get('consensus_mode', 'both_agree')
-            consensus_config = {'threshold': strategy.get('consensus_threshold', 70)}
             user_id = strategy.get('user_id')
-            decisions = self._deliberate(enriched, consensus_mode, consensus_config, run_id, conditions, user_id)
+            decisions = self._deliberate(enriched, run_id, conditions, user_id)
             print(f"✓ {len(decisions)} BUY decisions made\n")
 
             # Phase 5: Check exits
@@ -921,12 +919,10 @@ class StrategyExecutor:
         Returns:
             List of scored stocks that pass the scoring requirements
         """
-        scored = []
-        scoring_reqs = conditions.get('scoring_requirements', [])
-
-        # Parse scoring requirements
-        lynch_min = None
-        buffett_min = None
+        # Parse scoring requirements (Default to 0 - no filtering)
+        lynch_min = 0
+        buffett_min = 0
+        
         for req in scoring_reqs:
             if req.get('character') == 'lynch':
                 lynch_min = req.get('min_score', 0)
@@ -1292,8 +1288,6 @@ Reasoning: [Brief explanation of their final decision]
     def _deliberate(
         self,
         enriched: List[Dict[str, Any]],
-        consensus_mode: str,
-        config: Dict[str, Any],
         run_id: int,
         conditions: Dict[str, Any] = None,
         user_id: int = None
@@ -1305,10 +1299,9 @@ Reasoning: [Brief explanation of their final decision]
 
         Args:
             enriched: Stocks with scores and optional thesis data
-            consensus_mode: 'both_agree', 'weighted_confidence', or 'veto_power'
-            config: Consensus configuration (threshold, weights, etc.)
             run_id: Current run ID for logging
             conditions: Strategy conditions (for thesis_verdict_required filtering)
+            user_id: User ID who owns the strategy
 
         Returns:
             List of stocks with BUY decisions
@@ -1397,28 +1390,9 @@ Reasoning: [Brief explanation of their final decision]
                 )
 
             else:
-                # No theses - use score-based consensus (old behavior)
-                lynch_result = {
-                    'score': stock.get('lynch_score', 0),
-                    'status': stock.get('lynch_status', 'N/A')
-                }
-                buffett_result = {
-                    'score': stock.get('buffett_score', 0),
-                    'status': stock.get('buffett_status', 'N/A')
-                }
-
-                consensus = self.consensus_engine.evaluate(
-                    lynch_result, buffett_result, consensus_mode, config
-                )
-
-                stock['consensus_verdict'] = consensus.verdict
-                stock['consensus_score'] = consensus.score
-                stock['consensus_reasoning'] = consensus.reasoning
-
-                if consensus.verdict == 'BUY':
-                    decisions.append(stock)
-
-                # Record decision
+                # No theses available - SKIP
+                # We now strictly require AI deliberation to trade.
+                print(f"    ⚠ Skipping {symbol}: No theses generated for deliberation")
                 self.db.create_strategy_decision(
                     run_id=run_id,
                     symbol=symbol,
@@ -1426,13 +1400,13 @@ Reasoning: [Brief explanation of their final decision]
                     lynch_status=stock.get('lynch_status'),
                     buffett_score=stock.get('buffett_score'),
                     buffett_status=stock.get('buffett_status'),
-                    consensus_score=consensus.score,
-                    consensus_verdict=consensus.verdict,
+                    consensus_score=None,
+                    consensus_verdict='SKIP',
                     thesis_verdict=None,
                     thesis_summary=None,
                     thesis_full=None,
-                    final_decision='BUY' if consensus.verdict == 'BUY' else 'SKIP',
-                    decision_reasoning=consensus.reasoning
+                    final_decision='SKIP',
+                    decision_reasoning="Skipped: No theses generated for AI deliberation"
                 )
 
         return decisions
