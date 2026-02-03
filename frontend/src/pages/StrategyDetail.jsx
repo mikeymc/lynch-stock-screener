@@ -19,6 +19,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import ReactMarkdown from 'react-markdown'
 import { format } from 'date-fns'
 import { Line } from 'react-chartjs-2'
+import StrategyWizard from '@/components/strategies/StrategyWizard'
 
 function StrategyDetail() {
     const { id } = useParams()
@@ -29,6 +30,7 @@ function StrategyDetail() {
     const [loading, setLoading] = useState(true)
     const [error, setError] = useState(null)
     const [activeRunId, setActiveRunId] = useState(null)
+    const [showConfigModal, setShowConfigModal] = useState(false)
 
     useEffect(() => {
         const fetchDetail = async () => {
@@ -53,6 +55,56 @@ function StrategyDetail() {
         }
         fetchDetail()
     }, [id])
+
+    useEffect(() => {
+        const fetchDetail = async () => {
+            try {
+                const response = await fetch(`/api/strategies/${id}`)
+                if (!response.ok) {
+                    throw new Error('Failed to fetch strategy details')
+                }
+                const data = await response.json()
+                setStrategy(data.strategy)
+                setPerformance(data.performance)
+                setRuns(data.runs)
+                if (data.runs.length > 0) {
+                    setActiveRunId(data.runs[0].id)
+                }
+            } catch (err) {
+                console.error(err)
+                setError(err.message)
+            } finally {
+                setLoading(false)
+            }
+        }
+        fetchDetail()
+    }, [id])
+
+    const handleToggleEnabled = async () => {
+        if (!strategy) return;
+
+        const newStatus = !strategy.enabled;
+
+        try {
+            // Optimistic update
+            setStrategy(prev => ({ ...prev, enabled: newStatus }));
+
+            const response = await fetch(`/api/strategies/${id}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ enabled: newStatus })
+            });
+
+            if (!response.ok) {
+                throw new Error('Failed to update status');
+            }
+        } catch (err) {
+            console.error(err);
+            // Revert on error
+            setStrategy(prev => ({ ...prev, enabled: !newStatus }));
+            alert("Failed to update strategy status");
+        }
+    };
 
     // Chart Data Preparation
     const chartData = {
@@ -116,21 +168,22 @@ function StrategyDetail() {
                     </div>
                 </div>
                 <div className="flex items-center gap-2">
-                    <Badge variant={strategy.enabled ? "success" : "secondary"}>
+                    <Badge
+                        variant={strategy.enabled ? "success" : "secondary"}
+                        className="cursor-pointer hover:opacity-80 transition-opacity select-none"
+                        onClick={handleToggleEnabled}
+                    >
                         {strategy.enabled ? 'Active' : 'Paused'}
                     </Badge>
                     <Button variant="outline" size="sm" onClick={() => navigate(`/portfolios/${strategy.portfolio_id}`)}>
                         <Wallet className="h-4 w-4 mr-2" />
                         View Portfolio
                     </Button>
-                    <Button variant="outline" size="sm">
+                    <Button variant="outline" size="sm" onClick={() => setShowConfigModal(true)}>
                         <Settings className="h-4 w-4 mr-2" />
                         Configure
                     </Button>
-                    <Button size="sm">
-                        <Play className="h-4 w-4 mr-2" />
-                        Run Now
-                    </Button>
+
                 </div>
             </div>
 
@@ -238,6 +291,18 @@ function StrategyDetail() {
                     <DecisionsView runId={activeRunId} runs={runs} onRunChange={setActiveRunId} />
                 </TabsContent>
             </Tabs>
+
+            {showConfigModal && strategy && (
+                <StrategyWizard
+                    initialData={strategy}
+                    mode="edit"
+                    onClose={() => setShowConfigModal(false)}
+                    onSuccess={() => {
+                        setShowConfigModal(false);
+                        window.location.reload();
+                    }}
+                />
+            )}
         </div>
     )
 }

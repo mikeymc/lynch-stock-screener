@@ -8,9 +8,9 @@ import {
  * Strategy Wizard Component
  * A multi-step wizard for creating autonomous investment strategies.
  */
-const StrategyWizard = ({ onClose, onSuccess }) => {
+const StrategyWizard = ({ onClose, onSuccess, initialData = null, mode = 'create' }) => {
     const [step, setStep] = useState(1);
-    const [formData, setFormData] = useState({
+    const [formData, setFormData] = useState(initialData || {
         name: '',
         description: '',
         // Logic
@@ -89,8 +89,11 @@ const StrategyWizard = ({ onClose, onSuccess }) => {
             if (payload.exit_conditions.stop_loss_pct)
                 payload.exit_conditions.stop_loss_pct = parseFloat(payload.exit_conditions.stop_loss_pct);
 
-            const response = await fetch('/api/strategies', {
-                method: 'POST',
+            const url = mode === 'edit' ? `/api/strategies/${initialData.id}` : '/api/strategies';
+            const method = mode === 'edit' ? 'PUT' : 'POST';
+
+            const response = await fetch(url, {
+                method: method,
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(payload)
             });
@@ -116,7 +119,7 @@ const StrategyWizard = ({ onClose, onSuccess }) => {
                 {/* Header */}
                 <div className="border-b border-border p-6 flex justify-between items-center bg-card">
                     <div>
-                        <h2 className="text-xl font-bold text-foreground">Create Strategy</h2>
+                        <h2 className="text-xl font-bold text-foreground">{mode === 'edit' ? 'Strategy Configuration' : 'Create Strategy'}</h2>
                         <div className="flex gap-2 mt-2">
                             {[1, 2, 3, 4].map(s => (
                                 <div
@@ -392,7 +395,7 @@ const StrategyWizard = ({ onClose, onSuccess }) => {
                             disabled={loading}
                             className="px-8 py-2 bg-primary hover:bg-primary/90 text-primary-foreground rounded-lg flex items-center gap-2 font-medium shadow-lg shadow-primary/20"
                         >
-                            {loading ? 'Creating...' : 'Create Strategy'} <Check size={20} />
+                            {loading ? (mode === 'edit' ? 'Updating...' : 'Creating...') : (mode === 'edit' ? 'Update Strategy' : 'Create Strategy')} <Check size={20} />
                         </button>
                     )}
                 </div>

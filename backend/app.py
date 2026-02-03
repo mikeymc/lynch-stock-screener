@@ -707,6 +707,47 @@ def create_strategy(user_id):
         return jsonify({'error': str(e)}), 500
 
 
+@app.route('/api/strategies/<int:strategy_id>', methods=['PUT'])
+@require_user_auth
+def update_strategy(user_id, strategy_id):
+    """Update an existing investment strategy."""
+    try:
+        data = request.json
+        if not data:
+            return jsonify({'error': 'No data provided'}), 400
+            
+        # Verify ownership
+        strategy = db.get_strategy(strategy_id)
+        if not strategy:
+            return jsonify({'error': 'Strategy not found'}), 404
+        if strategy['user_id'] != user_id:
+            return jsonify({'error': 'Unauthorized'}), 403
+            
+        success = db.update_strategy(
+            user_id=user_id,
+            strategy_id=strategy_id,
+            name=data.get('name'),
+            description=data.get('description'),
+            conditions=data.get('conditions'),
+            consensus_mode=data.get('consensus_mode'),
+            consensus_threshold=float(data.get('consensus_threshold')) if data.get('consensus_threshold') else None,
+            position_sizing=data.get('position_sizing'),
+            exit_conditions=data.get('exit_conditions'),
+            schedule_cron=data.get('schedule_cron'),
+            portfolio_id=data.get('portfolio_id'),
+            enabled=data.get('enabled')
+        )
+        
+        if success:
+            return jsonify({'message': 'Strategy updated successfully'})
+        else:
+            return jsonify({'error': 'No changes made or update failed'}), 400
+            
+    except Exception as e:
+        logger.error(f"Error updating strategy: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
 @app.route('/api/strategies', methods=['GET'])
 @require_user_auth
 def get_strategies(user_id):

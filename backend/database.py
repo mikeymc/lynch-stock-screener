@@ -6517,6 +6517,77 @@ class Database:
         finally:
             self.return_connection(conn)
 
+    def update_strategy(
+        self,
+        user_id: int,
+        strategy_id: int,
+        name: str = None,
+        description: str = None,
+        conditions: Dict[str, Any] = None,
+        consensus_mode: str = None,
+        consensus_threshold: float = None,
+        position_sizing: Dict[str, Any] = None,
+        exit_conditions: Dict[str, Any] = None,
+        schedule_cron: str = None,
+        portfolio_id: int = None,
+        enabled: bool = None
+    ) -> bool:
+        """Update an existing investment strategy."""
+        conn = self.get_connection()
+        try:
+            cursor = conn.cursor()
+            updates = []
+            params = []
+
+            if name is not None:
+                updates.append("name = %s")
+                params.append(name)
+            
+
+
+            if description is not None:
+                updates.append("description = %s")
+                params.append(description)
+            if conditions is not None:
+                updates.append("conditions = %s")
+                params.append(json.dumps(conditions))
+            if consensus_mode is not None:
+                updates.append("consensus_mode = %s")
+                params.append(consensus_mode)
+            if consensus_threshold is not None:
+                updates.append("consensus_threshold = %s")
+                params.append(consensus_threshold)
+            if position_sizing is not None:
+                updates.append("position_sizing = %s")
+                params.append(json.dumps(position_sizing))
+            if exit_conditions is not None:
+                updates.append("exit_conditions = %s")
+                params.append(json.dumps(exit_conditions))
+            if schedule_cron is not None:
+                updates.append("schedule_cron = %s")
+                params.append(schedule_cron)
+            if portfolio_id is not None:
+                updates.append("portfolio_id = %s")
+                params.append(portfolio_id)
+            if enabled is not None:
+                updates.append("enabled = %s")
+                params.append(enabled)
+
+            if not updates:
+                return False
+
+            updates.append("updated_at = CURRENT_TIMESTAMP")
+            
+            query = f"UPDATE investment_strategies SET {', '.join(updates)} WHERE id = %s AND user_id = %s"
+            params.append(strategy_id)
+            params.append(user_id)
+            
+            cursor.execute(query, params)
+            conn.commit()
+            return cursor.rowcount > 0
+        finally:
+            self.return_connection(conn)
+
     def get_strategy(self, strategy_id: int) -> Optional[Dict[str, Any]]:
         """Get a strategy by ID."""
         conn = self.get_connection()
@@ -6581,38 +6652,7 @@ class Database:
         finally:
             self.return_connection(conn)
 
-    def update_strategy(self, strategy_id: int, user_id: int, **kwargs) -> bool:
-        """Update strategy fields. Returns True if updated."""
-        allowed_fields = {
-            'name', 'description', 'conditions', 'consensus_mode',
-            'consensus_threshold', 'position_sizing', 'exit_conditions',
-            'schedule_cron', 'enabled'
-        }
-        updates = {k: v for k, v in kwargs.items() if k in allowed_fields}
-        if not updates:
-            return False
 
-        # JSON-encode dict fields
-        for field in ['conditions', 'position_sizing', 'exit_conditions']:
-            if field in updates and isinstance(updates[field], dict):
-                updates[field] = json.dumps(updates[field])
-
-        set_clause = ', '.join(f"{k} = %s" for k in updates.keys())
-        values = list(updates.values()) + [strategy_id, user_id]
-
-        conn = self.get_connection()
-        try:
-            cursor = conn.cursor()
-            cursor.execute(f"""
-                UPDATE investment_strategies
-                SET {set_clause}, updated_at = CURRENT_TIMESTAMP
-                WHERE id = %s AND user_id = %s
-            """, values)
-            updated = cursor.rowcount > 0
-            conn.commit()
-            return updated
-        finally:
-            self.return_connection(conn)
 
     def delete_strategy(self, strategy_id: int, user_id: int) -> bool:
         """Delete a strategy (verifies ownership). Returns True if deleted."""
