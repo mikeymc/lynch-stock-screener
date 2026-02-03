@@ -12,6 +12,7 @@ google-genai
 google-auth
 google-auth-oauthlib
 edgartools
+hishel==0.0.26
 gunicorn
 tradingview-screener
 beautifulsoup4

@@ -380,6 +380,10 @@ class EdgarFetcher:
         
         from datetime import datetime
 
+        # Sort by end date descending to process most recent filings first
+        # This handles cases where EDGAR has duplicate/corrected entries or shifted FY labels
+        eps_data_list.sort(key=lambda x: x.get('end', ''), reverse=True)
+
         for entry in eps_data_list:
             form = entry.get('form')
             if form in ['10-Q', '6-K', '10-K', '20-F', '40-F']:
@@ -469,61 +473,67 @@ class EdgarFetcher:
                 quarterly_by_year[year] = []
             quarterly_by_year[year].append(entry)
 
-        # Convert cumulative quarters to individual quarters and calculate Q4
+        # Convert cumulative quarters to individual quarters
+        # We process all years where we have quarterly data
         converted_quarterly = []
-
-        for year, annual_data in annual_by_year.items():
-            if year in quarterly_by_year:
-                quarters = quarterly_by_year[year]
-                quarters_dict = {q['quarter']: q for q in quarters}
-
-                # Only proceed if we have Q1, Q2, and Q3
-                if all(f'Q{i}' in quarters_dict for i in [1, 2, 3]):
-                    # Get cumulative values from EDGAR
-                    q1_cumulative = quarters_dict['Q1']['eps']
+        
+        all_years = set(quarterly_by_year.keys())
+        
+        for year in sorted(all_years, reverse=True):
+            quarters_dict = {q['quarter']: q for q in quarterly_by_year.get(year, [])}
+            annual_entry = annual_by_year.get(year)
+            
+            # Q1
+            if 'Q1' in quarters_dict:
+                q1_cumulative = quarters_dict['Q1']['eps']
+                converted_quarterly.append({
+                    'year': year,
+                    'quarter': 'Q1',
+                    'eps': q1_cumulative,
+                    'fiscal_end': quarters_dict['Q1']['fiscal_end']
+                })
+                
+                # Q2 (Needs Q1)
+                if 'Q2' in quarters_dict:
                     q2_cumulative = quarters_dict['Q2']['eps']
-                    q3_cumulative = quarters_dict['Q3']['eps']
-                    annual_eps = annual_data['val']
-
-                    # Convert to individual quarter values
-                    q1_individual = q1_cumulative
                     q2_individual = q2_cumulative - q1_cumulative
-                    q3_individual = q3_cumulative - q2_cumulative
-                    q4_individual = annual_eps - q3_cumulative
-
-                    # Validate that individual quarters sum to annual (within rounding tolerance)
-                    # Note: EPS is not strictly additive due to share count changes, but should be close
-                    calculated_annual = q1_individual + q2_individual + q3_individual + q4_individual
-                    if abs(calculated_annual - annual_eps) < 0.5:
-                        # Add converted individual quarters
-                        converted_quarterly.append({
-                            'year': year,
-                            'quarter': 'Q1',
-                            'eps': q1_individual,
-                            'fiscal_end': quarters_dict['Q1']['fiscal_end']
-                        })
-                        converted_quarterly.append({
-                            'year': year,
-                            'quarter': 'Q2',
-                            'eps': q2_individual,
-                            'fiscal_end': quarters_dict['Q2']['fiscal_end']
-                        })
+                    converted_quarterly.append({
+                        'year': year,
+                        'quarter': 'Q2',
+                        'eps': q2_individual,
+                        'fiscal_end': quarters_dict['Q2']['fiscal_end']
+                    })
+                    
+                    # Q3 (Needs Q2)
+                    if 'Q3' in quarters_dict:
+                        q3_cumulative = quarters_dict['Q3']['eps']
+                        q3_individual = q3_cumulative - q2_cumulative
                         converted_quarterly.append({
                             'year': year,
                             'quarter': 'Q3',
                             'eps': q3_individual,
                             'fiscal_end': quarters_dict['Q3']['fiscal_end']
                         })
-                        converted_quarterly.append({
-                            'year': year,
-                            'quarter': 'Q4',
-                            'eps': q4_individual,
-                            'fiscal_end': annual_data['end'],
-                            'is_calculated': True
-                        })
-                        logger.debug(f"[FY{year}] Individual quarters: Q1=${q1_individual:.2f}, Q2=${q2_individual:.2f}, Q3=${q3_individual:.2f}, Q4=${q4_individual:.2f} (sum=${calculated_annual:.2f} vs annual=${annual_eps:.2f})")
-                    else:
-                        logger.warning(f"[FY{year}] Inconsistent quarterly EPS data: quarters sum to ${calculated_annual:.2f} but annual is ${annual_eps:.2f}. Q1=${q1_individual:.2f}, Q2=${q2_individual:.2f}, Q3=${q3_individual:.2f}, Q4=${q4_individual:.2f}")
+                        
+                        # Q4 (Needs Annual + Q3)
+                        if annual_entry:
+                            annual_eps = annual_entry['val']
+                            q4_individual = annual_eps - q3_cumulative
+                            
+                            # Validate sum
+                            calculated_annual = q1_cumulative + q2_individual + q3_individual + q4_individual
+                            
+                            # Add Q4 regardless of minor validation error, but log warning if large
+                            if abs(calculated_annual - annual_eps) > 0.5:
+                                logger.warning(f"[FY{year}] Q4 calc mismatch: sum={calculated_annual} vs annual={annual_eps}")
+                                
+                            converted_quarterly.append({
+                                'year': year,
+                                'quarter': 'Q4',
+                                'eps': q4_individual,
+                                'fiscal_end': annual_entry['end'],
+                                'is_calculated': True
+                            })
 
         quarterly_eps = converted_quarterly
 
@@ -860,6 +870,9 @@ class EdgarFetcher:
         quarterly_net_income = []
         seen_quarters = set()
 
+        # Sort by end date descending to process most recent filings first
+        net_income_data_list.sort(key=lambda x: x.get('end', ''), reverse=True)
+
         for entry in net_income_data_list:
             if entry.get('form') in ['10-Q', '6-K']:
                 fiscal_end = entry.get('end')
@@ -942,59 +955,60 @@ class EdgarFetcher:
                 quarterly_by_year[year] = []
             quarterly_by_year[year].append(entry)
 
-        # Convert cumulative quarters to individual quarters and calculate Q4
+        # Convert cumulative quarters to individual quarters
+        # We process all years where we have quarterly data
         converted_quarterly = []
-
-        for year, annual_entry in annual_by_year.items():
-            if year in quarterly_by_year:
-                quarters = quarterly_by_year[year]
-                quarters_dict = {q['quarter']: q for q in quarters}
-
-                # Only proceed if we have Q1, Q2, and Q3
-                if all(f'Q{i}' in quarters_dict for i in [1, 2, 3]):
-                    # Get cumulative values from EDGAR
-                    q1_cumulative = quarters_dict['Q1']['net_income']
+        
+        all_years = set(quarterly_by_year.keys())
+        
+        for year in sorted(all_years, reverse=True):
+            quarters_dict = {q['quarter']: q for q in quarterly_by_year.get(year, [])}
+            annual_entry = annual_by_year.get(year)
+            
+            # Q1
+            if 'Q1' in quarters_dict:
+                q1_cumulative = quarters_dict['Q1']['net_income']
+                converted_quarterly.append({
+                    'year': year,
+                    'quarter': 'Q1',
+                    'net_income': q1_cumulative,
+                    'fiscal_end': quarters_dict['Q1']['fiscal_end']
+                })
+                
+                # Q2 (Needs Q1)
+                if 'Q2' in quarters_dict:
                     q2_cumulative = quarters_dict['Q2']['net_income']
-                    q3_cumulative = quarters_dict['Q3']['net_income']
-                    annual_ni = annual_entry['net_income']
-
-                    # Convert to individual quarter values
-                    q1_individual = q1_cumulative
                     q2_individual = q2_cumulative - q1_cumulative
-                    q3_individual = q3_cumulative - q2_cumulative
-                    q4_individual = annual_ni - q3_cumulative
-
-                    # Validate that individual quarters sum to annual (within rounding tolerance)
-                    calculated_annual = q1_individual + q2_individual + q3_individual + q4_individual
-                    if abs(calculated_annual - annual_ni) < 1000:
-                        # Add converted individual quarters
-                        converted_quarterly.append({
-                            'year': year,
-                            'quarter': 'Q1',
-                            'net_income': q1_individual,
-                            'fiscal_end': quarters_dict['Q1']['fiscal_end']
-                        })
-                        converted_quarterly.append({
-                            'year': year,
-                            'quarter': 'Q2',
-                            'net_income': q2_individual,
-                            'fiscal_end': quarters_dict['Q2']['fiscal_end']
-                        })
+                    converted_quarterly.append({
+                        'year': year,
+                        'quarter': 'Q2',
+                        'net_income': q2_individual,
+                        'fiscal_end': quarters_dict['Q2']['fiscal_end']
+                    })
+                    
+                    # Q3 (Needs Q2)
+                    if 'Q3' in quarters_dict:
+                        q3_cumulative = quarters_dict['Q3']['net_income']
+                        q3_individual = q3_cumulative - q2_cumulative
                         converted_quarterly.append({
                             'year': year,
                             'quarter': 'Q3',
                             'net_income': q3_individual,
                             'fiscal_end': quarters_dict['Q3']['fiscal_end']
                         })
-                        converted_quarterly.append({
-                            'year': year,
-                            'quarter': 'Q4',
-                            'net_income': q4_individual,
-                            'fiscal_end': annual_entry['fiscal_end']
-                        })
-                        logger.debug(f"[FY{year}] Individual quarters: Q1=${q1_individual:,.0f}, Q2=${q2_individual:,.0f}, Q3=${q3_individual:,.0f}, Q4=${q4_individual:,.0f} (sum=${calculated_annual:,.0f} vs annual=${annual_ni:,.0f})")
-                    else:
-                        logger.warning(f"[FY{year}] Inconsistent quarterly data: quarters sum to ${calculated_annual:,.0f} but annual is ${annual_ni:,.0f}. Q1=${q1_individual:,.0f}, Q2=${q2_individual:,.0f}, Q3=${q3_individual:,.0f}, Q4=${q4_individual:,.0f}")
+                        
+                        # Q4 (Needs Annual + Q3)
+                        if annual_entry:
+                            annual_ni = annual_entry['net_income']
+                            q4_individual = annual_ni - q3_cumulative
+                            
+                            # Add Q4
+                            converted_quarterly.append({
+                                'year': year,
+                                'quarter': 'Q4',
+                                'net_income': q4_individual,
+                                'fiscal_end': annual_entry['fiscal_end']
+                            })
 
         quarterly_net_income = converted_quarterly
 
@@ -1132,30 +1146,54 @@ class EdgarFetcher:
             quarterly_by_year[year].append(entry)
 
         converted_quarterly = []
-        for year, annual_entry in annual_by_year.items():
-            if year in quarterly_by_year:
-                quarters = quarterly_by_year[year]
-                quarters_dict = {q['quarter']: q for q in quarters}
+        # Merge all years found in both sets
+        all_years = set(annual_by_year.keys()) | set(quarterly_by_year.keys())
 
-                if all(f'Q{i}' in quarters_dict for i in [1, 2, 3]):
-                    q1_cumulative = quarters_dict['Q1']['revenue']
-                    q2_cumulative = quarters_dict['Q2']['revenue']
-                    q3_cumulative = quarters_dict['Q3']['revenue']
-                    annual_rev = annual_entry['revenue']
+        for year in sorted(all_years, reverse=True):
+            quarters = quarterly_by_year.get(year, [])
+            quarters_dict = {q['quarter']: q for q in quarters}
+            
+            annual_entry = annual_by_year.get(year)
 
-                    q1_individual = q1_cumulative
-                    q2_individual = q2_cumulative - q1_cumulative
-                    q3_individual = q3_cumulative - q2_cumulative
-                    q4_individual = annual_rev - q3_cumulative
+            # Case 1: Full year available (Standard)
+            if annual_entry and all(f'Q{i}' in quarters_dict for i in [1, 2, 3]):
+                q1_cumulative = quarters_dict['Q1']['revenue']
+                q2_cumulative = quarters_dict['Q2']['revenue']
+                q3_cumulative = quarters_dict['Q3']['revenue']
+                annual_rev = annual_entry['revenue']
 
-                    calculated_annual = q1_individual + q2_individual + q3_individual + q4_individual
-                    if abs(calculated_annual - annual_rev) < 1000000:  # $1M tolerance
-                        converted_quarterly.extend([
-                            {'year': year, 'quarter': 'Q1', 'revenue': q1_individual, 'fiscal_end': quarters_dict['Q1']['fiscal_end']},
-                            {'year': year, 'quarter': 'Q2', 'revenue': q2_individual, 'fiscal_end': quarters_dict['Q2']['fiscal_end']},
-                            {'year': year, 'quarter': 'Q3', 'revenue': q3_individual, 'fiscal_end': quarters_dict['Q3']['fiscal_end']},
-                            {'year': year, 'quarter': 'Q4', 'revenue': q4_individual, 'fiscal_end': annual_entry['fiscal_end']},
-                        ])
+                q1_individual = q1_cumulative
+                q2_individual = q2_cumulative - q1_cumulative
+                q3_individual = q3_cumulative - q2_cumulative
+                q4_individual = annual_rev - q3_cumulative
+
+                calculated_annual = q1_individual + q2_individual + q3_individual + q4_individual
+                if abs(calculated_annual - annual_rev) < 1000000:  # $1M tolerance
+                    converted_quarterly.extend([
+                        {'year': year, 'quarter': 'Q1', 'revenue': q1_individual, 'fiscal_end': quarters_dict['Q1']['fiscal_end']},
+                        {'year': year, 'quarter': 'Q2', 'revenue': q2_individual, 'fiscal_end': quarters_dict['Q2']['fiscal_end']},
+                        {'year': year, 'quarter': 'Q3', 'revenue': q3_individual, 'fiscal_end': quarters_dict['Q3']['fiscal_end']},
+                        {'year': year, 'quarter': 'Q4', 'revenue': q4_individual, 'fiscal_end': annual_entry['fiscal_end']},
+                    ])
+            
+            # Case 2: Incomplete year (e.g. current year with Q1, Q2, Q3 but no Annual)
+            # Process whatever quarters we have
+            elif not annual_entry and quarters:
+                 # Sort quarters
+                sorted_quarters = sorted(quarters, key=lambda x: x['quarter'])
+                prev_cumulative = 0
+                
+                for q_data in sorted_quarters:
+                    curr_cumulative = q_data['revenue']
+                    individual_revenue = curr_cumulative - prev_cumulative
+                    
+                    converted_quarterly.append({
+                        'year': year,
+                        'quarter': q_data['quarter'],
+                        'revenue': individual_revenue,
+                        'fiscal_end': q_data['fiscal_end']
+                    })
+                    prev_cumulative = curr_cumulative
 
         quarterly_revenue = converted_quarterly
 
@@ -1205,6 +1243,7 @@ class EdgarFetcher:
                     'PaymentsToAcquirePropertyPlantAndEquipment',
                     'PaymentsToAcquireProductiveAssets',
                     'PaymentsForProceedsFromProductiveAssets', # Banks (MS)
+                    'PaymentsToAcquireOtherProductiveAssets', # VZ (2019+)
                 ]
                 for tag in capex_tags:
                     if tag in company_facts['facts']['us-gaap']:
@@ -1272,28 +1311,53 @@ class EdgarFetcher:
                 quarterly_by_year[year].append(entry)
 
             converted = []
-            for year, annual_entry in annual_by_year.items():
-                if year in quarterly_by_year:
-                    quarters = quarterly_by_year[year]
-                    quarters_dict = {q['quarter']: q for q in quarters}
+            
+            # Merge all years found
+            all_years = set(annual_by_year.keys()) | set(quarterly_by_year.keys())
+            
+            for year in sorted(all_years, reverse=True):
+                quarters = quarterly_by_year.get(year, [])
+                quarters_dict = {q['quarter']: q for q in quarters}
+                
+                annual_entry = annual_by_year.get(year)
 
-                    if all(f'Q{i}' in quarters_dict for i in [1, 2, 3]):
-                        q1_cumulative = quarters_dict['Q1']['val']
-                        q2_cumulative = quarters_dict['Q2']['val']
-                        q3_cumulative = quarters_dict['Q3']['val']
-                        annual_val = annual_entry['val']
+                # Case 1: Full year available (Standard)
+                if annual_entry and all(f'Q{i}' in quarters_dict for i in [1, 2, 3]):
+                    q1_cumulative = quarters_dict['Q1']['val']
+                    q2_cumulative = quarters_dict['Q2']['val']
+                    q3_cumulative = quarters_dict['Q3']['val']
+                    annual_val = annual_entry['val']
 
-                        q1_individual = q1_cumulative
-                        q2_individual = q2_cumulative - q1_cumulative
-                        q3_individual = q3_cumulative - q2_cumulative
-                        q4_individual = annual_val - q3_cumulative
+                    q1_individual = q1_cumulative
+                    q2_individual = q2_cumulative - q1_cumulative
+                    q3_individual = q3_cumulative - q2_cumulative
+                    q4_individual = annual_val - q3_cumulative
 
-                        converted.extend([
-                            {'year': year, 'quarter': 'Q1', 'val': q1_individual, 'fiscal_end': quarters_dict['Q1']['fiscal_end']},
-                            {'year': year, 'quarter': 'Q2', 'val': q2_individual, 'fiscal_end': quarters_dict['Q2']['fiscal_end']},
-                            {'year': year, 'quarter': 'Q3', 'val': q3_individual, 'fiscal_end': quarters_dict['Q3']['fiscal_end']},
-                            {'year': year, 'quarter': 'Q4', 'val': q4_individual, 'fiscal_end': annual_entry['fiscal_end']},
-                        ])
+                    converted.extend([
+                        {'year': year, 'quarter': 'Q1', 'val': q1_individual, 'fiscal_end': quarters_dict['Q1']['fiscal_end']},
+                        {'year': year, 'quarter': 'Q2', 'val': q2_individual, 'fiscal_end': quarters_dict['Q2']['fiscal_end']},
+                        {'year': year, 'quarter': 'Q3', 'val': q3_individual, 'fiscal_end': quarters_dict['Q3']['fiscal_end']},
+                        {'year': year, 'quarter': 'Q4', 'val': q4_individual, 'fiscal_end': annual_entry['fiscal_end']},
+                    ])
+                
+                # Case 2: Incomplete year (e.g. current year with Q1, Q2, Q3)
+                # Process whatever quarters we have by differencing cumulative values
+                elif not annual_entry and quarters:
+                    # Sort quarters to process in order
+                    sorted_quarters = sorted(quarters, key=lambda x: x['quarter'])
+                    prev_cumulative = 0
+                    
+                    for q_data in sorted_quarters:
+                        curr_cumulative = q_data['val']
+                        individual_val = curr_cumulative - prev_cumulative
+                        
+                        converted.append({
+                            'year': year,
+                            'quarter': q_data['quarter'],
+                            'val': individual_val,
+                            'fiscal_end': q_data['fiscal_end']
+                        })
+                        prev_cumulative = curr_cumulative
 
             return converted
 
