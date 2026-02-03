@@ -387,16 +387,16 @@ class LynchCriteria:
         )
 
         # Determine rating based on score
-        if overall_score >= 80:
+        if overall_score >= SCORE_THRESHOLDS['STRONG_BUY']:
             rating_label = "STRONG BUY"
             overall_status = "STRONG_BUY"
-        elif overall_score >= 60:
+        elif overall_score >= SCORE_THRESHOLDS['BUY']:
             rating_label = "BUY"
             overall_status = "BUY"
-        elif overall_score >= 40:
+        elif overall_score >= SCORE_THRESHOLDS['HOLD']:
             rating_label = "HOLD"
             overall_status = "HOLD"
-        elif overall_score >= 20:
+        elif overall_score >= SCORE_THRESHOLDS['CAUTION']:
             rating_label = "CAUTION"
             overall_status = "CAUTION"
         else:

@@ -913,23 +913,22 @@ class StrategyExecutor:
 
         Args:
             candidates: List of symbols to score
-            conditions: Strategy conditions with scoring_requirements
-            run_id: Current run ID for logging
-
-        Returns:
-            List of scored stocks that pass the scoring requirements
-        """
-        # Parse scoring requirements (Default to 0 - no filtering)
-        lynch_min = 0
-        buffett_min = 0
+        from lynch_criteria import SCORE_THRESHOLDS
         
+        # Parse scoring requirements (Default to 'BUY' threshold - 60)
+        # We use OR logic: A stock must meet AT LEAST ONE criteria to pass.
+        default_min = SCORE_THRESHOLDS['BUY']
+        lynch_req = default_min
+        buffett_req = default_min
+        
+        # Check for overrides
         for req in scoring_reqs:
             if req.get('character') == 'lynch':
-                lynch_min = req.get('min_score', 0)
+                lynch_req = req.get('min_score', default_min)
             elif req.get('character') == 'buffett':
-                buffett_min = req.get('min_score', 0)
+                buffett_req = req.get('min_score', default_min)
 
-        self._log_event(run_id, f"Scoring {len(candidates)} candidates (Lynch min: {lynch_min}, Buffett min: {buffett_min})")
+        self._log_event(run_id, f"Scoring {len(candidates)} candidates (Triggers -- Lynch: {lynch_req}, Buffett: {buffett_req})")
 
         for symbol in candidates:
             try:
@@ -960,38 +959,35 @@ class StrategyExecutor:
                     stock_data['buffett_status'] = 'ERROR'
                     print(f"      Buffett: ERROR")
 
-                # Check if passes scoring requirements
-                passes = True
-                if lynch_min is not None and stock_data['lynch_score'] < lynch_min:
-                    passes = False
-                if buffett_min is not None and stock_data['buffett_score'] < buffett_min:
-                    passes = False
-
+                # Check if passes scoring requirements (OR Logic)
+                # Pass if ANY requirement is met
+                lynch_pass = stock_data['lynch_score'] >= lynch_req
+                buffett_pass = stock_data['buffett_score'] >= buffett_req
+                
+                passes = lynch_pass or buffett_pass
+                
                 if passes:
                     scored.append(stock_data)
                     # Create reasoning string for log
                     reason_parts = []
-                    if lynch_min is not None:
-                        reason_parts.append(f"Lynch {stock_data['lynch_score']:.0f} >= {lynch_min}")
-                    if buffett_min is not None:
-                        reason_parts.append(f"Buffett {stock_data['buffett_score']:.0f} >= {buffett_min}")
+                    if lynch_pass:
+                        reason_parts.append(f"Lynch {stock_data['lynch_score']:.0f} >= {lynch_req}")
+                    if buffett_pass:
+                        reason_parts.append(f"Buffett {stock_data['buffett_score']:.0f} >= {buffett_req}")
                     
-                    if not reason_parts:
-                        reason_str = "No minimum score requirements set"
-                    else:
-                        reason_str = ", ".join(reason_parts)
+                    reason_str = ", ".join(reason_parts)
 
                     print(f"    ✓ PASSED requirements ({reason_str})")
                     logger.debug(
-                        f"{symbol}: Lynch={stock_data['lynch_score']:.0f}, "
-                        f"Buffett={stock_data['buffett_score']:.0f} - PASSED ({reason_str})"
+                        f"{symbol}: PASSED ({reason_str})"
                     )
                 else:
                     fail_reasons = []
-                    if lynch_min is not None and stock_data['lynch_score'] < lynch_min:
-                        fail_reasons.append(f"Lynch {stock_data['lynch_score']:.0f} < {lynch_min}")
-                    if buffett_min is not None and stock_data['buffett_score'] < buffett_min:
-                        fail_reasons.append(f"Buffett {stock_data['buffett_score']:.0f} < {buffett_min}")
+                    if not lynch_pass:
+                        fail_reasons.append(f"Lynch {stock_data['lynch_score']:.0f} < {lynch_req}")
+                    if not buffett_pass:
+                        fail_reasons.append(f"Buffett {stock_data['buffett_score']:.0f} < {buffett_req}")
+                    
                     
                     fail_str = ", ".join(fail_reasons)
                     print(f"    ✗ FAILED requirements ({fail_str})")

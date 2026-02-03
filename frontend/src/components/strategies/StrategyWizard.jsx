@@ -16,11 +16,7 @@ const StrategyWizard = ({ onClose, onSuccess }) => {
         // Logic
         conditions: {
             filters: [],
-            require_thesis: true, // Default to true for AI deliberation
-            scoring_requirements: [
-                { character: 'lynch', min_score: 0 },
-                { character: 'buffett', min_score: 0 }
-            ]
+            require_thesis: true // Default to true for AI deliberation
         },
         consensus_mode: 'both_agree',
         consensus_threshold: 70,
@@ -211,59 +207,6 @@ const StrategyWizard = ({ onClose, onSuccess }) => {
                                 </div>
                             </div>
 
-                            {/* Minimum Score Requirements */}
-                            <div className="bg-muted/50 rounded-xl p-6 border border-border">
-                                <h4 className="font-medium text-foreground mb-4 flex items-center gap-2">
-                                    <Check size={18} /> Minimum Score Requirements
-                                </h4>
-                                <div className="grid grid-cols-2 gap-8">
-                                    <div>
-                                        <label className="block text-muted-foreground mb-2 text-sm">Lynch Minimum Score ({formData.conditions.scoring_requirements.find(r => r.character === 'lynch')?.min_score ?? 0})</label>
-                                        <input
-                                            type="range"
-                                            min="0" max="90" step="5"
-                                            value={formData.conditions.scoring_requirements.find(r => r.character === 'lynch')?.min_score ?? 0}
-                                            onChange={e => {
-                                                const val = parseInt(e.target.value);
-                                                const newReqs = formData.conditions.scoring_requirements.map(r =>
-                                                    r.character === 'lynch' ? { ...r, min_score: val } : r
-                                                );
-                                                setFormData({
-                                                    ...formData,
-                                                    conditions: { ...formData.conditions, scoring_requirements: newReqs }
-                                                });
-                                            }}
-                                            className="w-full h-2 bg-muted rounded-lg appearance-none cursor-pointer"
-                                        />
-                                        <p className="text-xs text-muted-foreground mt-2">
-                                            Filter stocks below this Lynch screener score.
-                                        </p>
-                                    </div>
-                                    <div>
-                                        <label className="block text-muted-foreground mb-2 text-sm">Buffett Minimum Score ({formData.conditions.scoring_requirements.find(r => r.character === 'buffett')?.min_score ?? 0})</label>
-                                        <input
-                                            type="range"
-                                            min="0" max="90" step="5"
-                                            value={formData.conditions.scoring_requirements.find(r => r.character === 'buffett')?.min_score ?? 0}
-                                            onChange={e => {
-                                                const val = parseInt(e.target.value);
-                                                const newReqs = formData.conditions.scoring_requirements.map(r =>
-                                                    r.character === 'buffett' ? { ...r, min_score: val } : r
-                                                );
-                                                setFormData({
-                                                    ...formData,
-                                                    conditions: { ...formData.conditions, scoring_requirements: newReqs }
-                                                });
-                                            }}
-                                            className="w-full h-2 bg-muted rounded-lg appearance-none cursor-pointer"
-                                        />
-                                        <p className="text-xs text-muted-foreground mt-2">
-                                            Filter stocks below this Buffett screener score.
-                                        </p>
-                                    </div>
-                                </div>
-                            </div>
-
                             <div className="bg-muted/50 rounded-xl p-6 border border-border">
                                 <div>
                                     <label className="block text-muted-foreground mb-2 text-sm">Consensus Mode</label>
@@ -399,14 +342,6 @@ const StrategyWizard = ({ onClose, onSuccess }) => {
                                     <span className="text-muted-foreground">Analysis Mode</span>
                                     <span className={formData.conditions.require_thesis ? "text-primary" : "text-muted-foreground"}>
                                         {formData.conditions.require_thesis ? "AI Deliberation (Deep)" : "Heuristic Only (Fast)"}
-                                    </span>
-                                </div>
-                                <div className="flex justify-between border-b border-border pb-3">
-                                    <span className="text-muted-foreground">Screening</span>
-                                    <span className="text-foreground">
-                                        Lynch &gt; {formData.conditions.scoring_requirements.find(r => r.character === 'lynch')?.min_score ?? 0}
-                                        &nbsp;/&nbsp;
-                                        Buffett &gt; {formData.conditions.scoring_requirements.find(r => r.character === 'buffett')?.min_score ?? 0}
                                     </span>
                                 </div>
                                 <div className="flex justify-between border-b border-border pb-3">
