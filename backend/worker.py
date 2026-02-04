@@ -1833,11 +1833,13 @@ Return JSON only:
             limit: Optional max number of stocks to process
             region: Region filter (us, north-america, europe, asia, all)
             force_refresh: If True, bypass cache and fetch fresh data
+            symbols: Optional list of specific symbols to process (for testing)
             use_rss: If True, use RSS feed to pre-filter to only stocks with new filings
         """
         limit = params.get('limit')
         region = params.get('region', 'us')
         force_refresh = params.get('force_refresh', False)
+        specific_symbols = params.get('symbols')  # Optional list of specific symbols
         use_rss = params.get('use_rss', False)
         
         logger.info(f"Starting 8-K cache job {job_id} (region={region}, use_rss={use_rss})")
@@ -1855,44 +1857,51 @@ Return JSON only:
         except Exception as e:
             logger.warning(f"Could not disable edgartools cache: {e}")
         
-        # Map CLI region to TradingView regions (same as screening/prices)
-        region_mapping = {
-            'us': ['us'],
-            'north-america': ['north_america'],
-            'south-america': ['south_america'],
-            'europe': ['europe'],
-            'asia': ['asia'],
-            'all': None  # All regions
-        }
-        tv_regions = region_mapping.get(region, ['us'])
-        
-        # Get stock list from TradingView (same as prices does)
-        self.db.update_job_progress(job_id, progress_pct=5, progress_message=f'Fetching stock list from TradingView ({region})...')
-        tv_fetcher = TradingViewFetcher()
-        market_data_cache = tv_fetcher.fetch_all_stocks(limit=20000, regions=tv_regions)
-        
-        # Ensure all stocks exist in DB before caching (prevents FK violations)
-        self.db.update_job_progress(job_id, progress_pct=8, progress_message='Ensuring stocks exist in database...')
-        self.db.ensure_stocks_exist_batch(market_data_cache)
-        
-        # TradingView already filters via _should_skip_ticker (OTC, warrants, etc.)
-        all_symbols = list(market_data_cache.keys())
-        
-        # Sort by screening score if available (prioritize STRONG_BUY stocks)
-        scored_symbols = self.db.get_stocks_ordered_by_score(limit=None)
-        scored_set = set(scored_symbols)
-        
-        # Put scored symbols first (in score order), then remaining unscored symbols
-        sorted_symbols = [s for s in scored_symbols if s in set(all_symbols)]
-        remaining = [s for s in all_symbols if s not in scored_set]
-        all_symbols = sorted_symbols + remaining
-        
+        # If specific symbols provided, use those directly (for testing)
+        if specific_symbols:
+            all_symbols = specific_symbols
+            logger.info(f"Using specific symbols: {all_symbols}")
+            # Ensure these stocks exist in DB
+            self.db.update_job_progress(job_id, progress_pct=5, progress_message=f'Processing {len(all_symbols)} specific symbols...')
+        else:
+            # Map CLI region to TradingView regions (same as screening/prices)
+            region_mapping = {
+                'us': ['us'],
+                'north-america': ['north_america'],
+                'south-america': ['south_america'],
+                'europe': ['europe'],
+                'asia': ['asia'],
+                'all': None  # All regions
+            }
+            tv_regions = region_mapping.get(region, ['us'])
+
+            # Get stock list from TradingView (same as prices does)
+            self.db.update_job_progress(job_id, progress_pct=5, progress_message=f'Fetching stock list from TradingView ({region})...')
+            tv_fetcher = TradingViewFetcher()
+            market_data_cache = tv_fetcher.fetch_all_stocks(limit=20000, regions=tv_regions)
+
+            # Ensure all stocks exist in DB before caching (prevents FK violations)
+            self.db.update_job_progress(job_id, progress_pct=8, progress_message='Ensuring stocks exist in database...')
+            self.db.ensure_stocks_exist_batch(market_data_cache)
+
+            # TradingView already filters via _should_skip_ticker (OTC, warrants, etc.)
+            all_symbols = list(market_data_cache.keys())
+
+            # Sort by screening score if available (prioritize STRONG_BUY stocks)
+            scored_symbols = self.db.get_stocks_ordered_by_score(limit=None)
+            scored_set = set(scored_symbols)
+
+            # Put scored symbols first (in score order), then remaining unscored symbols
+            sorted_symbols = [s for s in scored_symbols if s in set(all_symbols)]
+            remaining = [s for s in all_symbols if s not in scored_set]
+            all_symbols = sorted_symbols + remaining
+
         # Apply limit if specified
         if limit and limit < len(all_symbols):
             all_symbols = all_symbols[:limit]
         
         # RSS-based optimization: only process stocks with new filings
-        if use_rss and not force_refresh:
+        if use_rss and not force_refresh and not specific_symbols:
             from sec_rss_client import SECRSSClient
             self.db.update_job_progress(job_id, progress_pct=9, progress_message='Checking RSS feed for new 8-K filings...')
             
@@ -1929,7 +1938,7 @@ Return JSON only:
             user_agent=sec_user_agent,
             edgar_fetcher=edgar_fetcher
         )
-        events_fetcher = MaterialEventsFetcher(self.db, sec_8k_client)
+        events_fetcher = MaterialEventsFetcher(self.db, sec_8k_client, data_fetcher=self.data_fetcher)
         
         self.db.update_job_progress(job_id, progress_pct=10,
                                     progress_message=f'Caching 8-K events for {total} stocks...',

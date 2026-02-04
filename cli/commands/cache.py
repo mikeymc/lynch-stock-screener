@@ -493,6 +493,7 @@ def eight_k(
     job_id: int = typer.Argument(None, help="Job ID (required for stop)"),
     prod: bool = typer.Option(False, "--prod", help="Trigger production API instead of local"),
     limit: int = typer.Option(None, "--limit", "-l", help="Limit number of stocks"),
+    symbols: str = typer.Option(None, "--symbols", "-s", help="Comma-separated symbols to process (for testing)"),
     region: str = typer.Option("us", "--region", "-r",
                                help="Region to cache: us, north-america, south-america, europe, asia, all"),
     force: bool = typer.Option(False, "--force", "-f", help="Force refresh cache"),
@@ -511,6 +512,10 @@ def eight_k(
         params = {"region": region, "use_rss": use_rss}
         if limit:
             params["limit"] = limit
+        if symbols:
+            # Convert comma-separated string to list
+            params["symbols"] = [s.strip().upper() for s in symbols.split(",")]
+            console.print(f"[dim]Processing specific symbols: {params['symbols']}[/dim]")
         if force:
             params["force_refresh"] = True
         
