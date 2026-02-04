@@ -2061,6 +2061,21 @@ class Database:
             ON portfolio_transactions(portfolio_id)
         """)
 
+        # Migration: Add position_type column for tracking new vs addition trades
+        cursor.execute("""
+            DO $$
+            BEGIN
+                IF NOT EXISTS (
+                    SELECT 1 FROM information_schema.columns
+                    WHERE table_name = 'portfolio_transactions'
+                    AND column_name = 'position_type'
+                ) THEN
+                    ALTER TABLE portfolio_transactions
+                    ADD COLUMN position_type VARCHAR(20) CHECK (position_type IN ('new', 'addition', 'exit'));
+                END IF;
+            END $$;
+        """)
+
         # Portfolio value snapshots (for historical charts)
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS portfolio_value_snapshots (
@@ -2076,6 +2091,22 @@ class Database:
         cursor.execute("""
             CREATE INDEX IF NOT EXISTS idx_portfolio_snapshots_portfolio_time
             ON portfolio_value_snapshots(portfolio_id, snapshot_at)
+        """)
+
+        # Position entry tracking (for re-evaluation grace periods)
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS position_entry_tracking (
+                portfolio_id INTEGER NOT NULL REFERENCES portfolios(id) ON DELETE CASCADE,
+                symbol VARCHAR(10) NOT NULL,
+                first_buy_date DATE NOT NULL,
+                last_evaluated_date DATE,
+                PRIMARY KEY (portfolio_id, symbol)
+            )
+        """)
+
+        cursor.execute("""
+            CREATE INDEX IF NOT EXISTS idx_position_entry_tracking_portfolio
+            ON position_entry_tracking(portfolio_id)
         """)
 
         # ============================================================
@@ -3881,20 +3912,41 @@ class Database:
         transaction_type: str,
         quantity: int,
         price_per_share: float,
-        note: str = None
+        note: str = None,
+        position_type: str = None
     ) -> int:
-        """Record a buy or sell transaction"""
+        """Record a buy or sell transaction
+
+        Args:
+            portfolio_id: Portfolio ID
+            symbol: Stock symbol
+            transaction_type: 'BUY', 'SELL', or 'DIVIDEND'
+            quantity: Number of shares
+            price_per_share: Price per share
+            note: Optional note
+            position_type: Optional 'new', 'addition', or 'exit' for tracking
+        """
+        from datetime import date
         total_value = quantity * price_per_share
         conn = self.get_connection()
         try:
             cursor = conn.cursor()
             cursor.execute("""
                 INSERT INTO portfolio_transactions
-                (portfolio_id, symbol, transaction_type, quantity, price_per_share, total_value, note)
-                VALUES (%s, %s, %s, %s, %s, %s, %s)
+                (portfolio_id, symbol, transaction_type, quantity, price_per_share, total_value, note, position_type)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
                 RETURNING id
-            """, (portfolio_id, symbol, transaction_type, quantity, price_per_share, total_value, note))
+            """, (portfolio_id, symbol, transaction_type, quantity, price_per_share, total_value, note, position_type))
             tx_id = cursor.fetchone()[0]
+
+            # Track position entry for BUY transactions
+            if transaction_type == 'BUY':
+                cursor.execute("""
+                    INSERT INTO position_entry_tracking (portfolio_id, symbol, first_buy_date, last_evaluated_date)
+                    VALUES (%s, %s, %s, NULL)
+                    ON CONFLICT (portfolio_id, symbol) DO NOTHING
+                """, (portfolio_id, symbol, date.today()))
+
             conn.commit()
             return tx_id
         finally:
@@ -4056,7 +4108,7 @@ class Database:
     def get_portfolio_cash(self, portfolio_id: int) -> float:
         """Compute current cash balance from initial cash and transactions.
 
-        cash = initial_cash - sum(BUY totals) + sum(SELL totals)
+        cash = initial_cash - sum(BUY totals) + sum(SELL totals) + sum(DIVIDEND totals)
         """
         conn = self.get_connection()
         try:
@@ -4080,6 +4132,204 @@ class Database:
             buys, sells, dividends = cursor.fetchone()
 
             return initial_cash - buys + sells + dividends
+        finally:
+            self.return_connection(conn)
+
+    def get_portfolio_dividend_summary(self, portfolio_id: int) -> Dict[str, Any]:
+        """Get dividend income summary for a portfolio.
+
+        Returns total dividends received, YTD dividends, and breakdown by symbol.
+        """
+        from datetime import date
+        conn = self.get_connection()
+        try:
+            cursor = conn.cursor()
+
+            # Total dividends all-time
+            cursor.execute("""
+                SELECT COALESCE(SUM(total_value), 0) as total_dividends
+                FROM portfolio_transactions
+                WHERE portfolio_id = %s AND transaction_type = 'DIVIDEND'
+            """, (portfolio_id,))
+            total_dividends = cursor.fetchone()[0]
+
+            # Year-to-date dividends
+            ytd_start = date(date.today().year, 1, 1)
+            cursor.execute("""
+                SELECT COALESCE(SUM(total_value), 0) as ytd_dividends
+                FROM portfolio_transactions
+                WHERE portfolio_id = %s
+                AND transaction_type = 'DIVIDEND'
+                AND executed_at >= %s
+            """, (portfolio_id, ytd_start))
+            ytd_dividends = cursor.fetchone()[0]
+
+            # Breakdown by symbol
+            cursor.execute("""
+                SELECT
+                    symbol,
+                    COUNT(*) as payment_count,
+                    SUM(total_value) as total_received,
+                    MAX(executed_at) as last_payment
+                FROM portfolio_transactions
+                WHERE portfolio_id = %s AND transaction_type = 'DIVIDEND'
+                GROUP BY symbol
+                ORDER BY total_received DESC
+            """, (portfolio_id,))
+
+            breakdown = []
+            for row in cursor.fetchall():
+                breakdown.append({
+                    'symbol': row[0],
+                    'payment_count': row[1],
+                    'total_received': float(row[2]),
+                    'last_payment': row[3]
+                })
+
+            return {
+                'total_dividends': float(total_dividends),
+                'ytd_dividends': float(ytd_dividends),
+                'breakdown': breakdown
+            }
+        finally:
+            self.return_connection(conn)
+
+    def track_position_entry(self, portfolio_id: int, symbol: str, buy_date: date = None):
+        """Track when a position was first entered (for re-evaluation grace periods)."""
+        if buy_date is None:
+            buy_date = date.today()
+
+        conn = self.get_connection()
+        try:
+            cursor = conn.cursor()
+            cursor.execute("""
+                INSERT INTO position_entry_tracking (portfolio_id, symbol, first_buy_date, last_evaluated_date)
+                VALUES (%s, %s, %s, NULL)
+                ON CONFLICT (portfolio_id, symbol) DO NOTHING
+            """, (portfolio_id, symbol, buy_date))
+            conn.commit()
+        finally:
+            self.return_connection(conn)
+
+    def update_position_evaluation_date(self, portfolio_id: int, symbol: str):
+        """Update when a position was last evaluated for re-evaluation tracking."""
+        conn = self.get_connection()
+        try:
+            cursor = conn.cursor()
+            cursor.execute("""
+                UPDATE position_entry_tracking
+                SET last_evaluated_date = %s
+                WHERE portfolio_id = %s AND symbol = %s
+            """, (date.today(), portfolio_id, symbol))
+            conn.commit()
+        finally:
+            self.return_connection(conn)
+
+    def get_position_entry_dates(self, portfolio_id: int) -> Dict[str, Dict[str, Any]]:
+        """Get entry dates for all positions in portfolio.
+
+        Returns dict mapping symbol -> {first_buy_date, last_evaluated_date, days_held}
+        """
+        conn = self.get_connection()
+        try:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT symbol, first_buy_date, last_evaluated_date
+                FROM position_entry_tracking
+                WHERE portfolio_id = %s
+            """, (portfolio_id,))
+
+            result = {}
+            today = date.today()
+            for symbol, first_buy, last_eval in cursor.fetchall():
+                days_held = (today - first_buy).days if first_buy else 0
+                result[symbol] = {
+                    'first_buy_date': first_buy,
+                    'last_evaluated_date': last_eval,
+                    'days_held': days_held
+                }
+            return result
+        finally:
+            self.return_connection(conn)
+
+    def get_portfolio_performance_with_attribution(self, portfolio_id: int) -> Dict[str, Any]:
+        """Calculate portfolio performance with dividend attribution.
+
+        Separates total return into:
+        - Capital gains/losses from price changes
+        - Dividend income
+        - Realized gains from sells
+        """
+        conn = self.get_connection()
+        try:
+            cursor = conn.cursor()
+
+            # Get initial cash
+            cursor.execute("SELECT initial_cash FROM portfolios WHERE id = %s", (portfolio_id,))
+            row = cursor.fetchone()
+            if not row:
+                return None
+            initial_cash = row[0]
+
+            # Get transaction breakdown
+            cursor.execute("""
+                SELECT
+                    COALESCE(SUM(CASE WHEN transaction_type = 'BUY' THEN total_value ELSE 0 END), 0) as total_bought,
+                    COALESCE(SUM(CASE WHEN transaction_type = 'SELL' THEN total_value ELSE 0 END), 0) as total_sold,
+                    COALESCE(SUM(CASE WHEN transaction_type = 'DIVIDEND' THEN total_value ELSE 0 END), 0) as dividend_income
+                FROM portfolio_transactions
+                WHERE portfolio_id = %s
+            """, (portfolio_id,))
+            total_bought, total_sold, dividend_income = cursor.fetchone()
+
+            # Get current portfolio value
+            summary = self.get_portfolio_summary(portfolio_id, use_live_prices=False)
+            if not summary:
+                return None
+
+            current_value = summary['total_value']
+            holdings_value = summary['holdings_value']
+            cash = summary['cash']
+
+            # Calculate realized gains (money from sells minus cost basis)
+            # This is approximate - true realized gains need FIFO/LIFO tracking
+            cursor.execute("""
+                SELECT
+                    symbol,
+                    SUM(CASE WHEN transaction_type = 'BUY' THEN quantity * price_per_share ELSE 0 END) as cost_basis,
+                    SUM(CASE WHEN transaction_type = 'SELL' THEN quantity * price_per_share ELSE 0 END) as sell_proceeds
+                FROM portfolio_transactions
+                WHERE portfolio_id = %s
+                GROUP BY symbol
+                HAVING SUM(CASE WHEN transaction_type = 'SELL' THEN quantity ELSE 0 END) > 0
+            """, (portfolio_id,))
+
+            realized_gains = 0.0
+            for symbol, cost, proceeds in cursor.fetchall():
+                if cost and proceeds:
+                    realized_gains += (proceeds - cost)
+
+            # Unrealized gains (current holdings value minus cost basis)
+            holdings_cost_basis = total_bought - total_sold
+            unrealized_gains = holdings_value - holdings_cost_basis
+
+            # Total return = (current_value - initial_cash) / initial_cash
+            total_return = current_value - initial_cash
+            total_return_pct = (total_return / initial_cash * 100) if initial_cash > 0 else 0
+
+            # Attribution
+            capital_gains = unrealized_gains + realized_gains
+            dividend_yield_pct = (dividend_income / initial_cash * 100) if initial_cash > 0 else 0
+
+            return {
+                'total_return': float(total_return),
+                'total_return_pct': float(total_return_pct),
+                'capital_gains': float(capital_gains),
+                'dividend_income': float(dividend_income),
+                'dividend_yield_pct': float(dividend_yield_pct),
+                'realized_gains': float(realized_gains),
+                'unrealized_gains': float(unrealized_gains)
+            }
         finally:
             self.return_connection(conn)
 
@@ -4148,6 +4398,10 @@ class Database:
         gain_loss = total_value - initial_cash
         gain_loss_percent = (gain_loss / initial_cash * 100) if initial_cash > 0 else 0.0
 
+        # Get dividend metrics
+        dividend_summary = self.get_portfolio_dividend_summary(portfolio_id)
+        performance_attribution = self.get_portfolio_performance_with_attribution(portfolio_id)
+
         return {
             'id': portfolio['id'],
             'user_id': portfolio['user_id'],
@@ -4162,7 +4416,15 @@ class Database:
             'gain_loss': gain_loss,
             'gain_loss_percent': gain_loss_percent,
             'strategy_id': portfolio.get('strategy_id'),
-            'strategy_name': portfolio.get('strategy_name')
+            'strategy_name': portfolio.get('strategy_name'),
+            # Dividend tracking
+            'total_dividends': dividend_summary.get('total_dividends', 0),
+            'ytd_dividends': dividend_summary.get('ytd_dividends', 0),
+            'dividend_breakdown': dividend_summary.get('breakdown', []),
+            # Performance attribution
+            'capital_gains': performance_attribution.get('capital_gains', 0) if performance_attribution else 0,
+            'dividend_income': performance_attribution.get('dividend_income', 0) if performance_attribution else 0,
+            'dividend_yield_pct': performance_attribution.get('dividend_yield_pct', 0) if performance_attribution else 0
         }
 
     def get_all_portfolios(self) -> List[Dict[str, Any]]:

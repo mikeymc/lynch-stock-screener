@@ -606,6 +606,168 @@ class ExitConditionChecker:
         return None
 
 
+class HoldingReevaluator:
+    """Checks if held positions still meet entry criteria."""
+
+    def __init__(self, db, condition_evaluator, lynch_criteria):
+        self.db = db
+        self.condition_evaluator = condition_evaluator
+        self.lynch_criteria = lynch_criteria
+
+    def check_holdings(
+        self,
+        portfolio_id: int,
+        strategy_conditions: Dict[str, Any],
+        reevaluation_config: Dict[str, Any]
+    ) -> List[ExitSignal]:
+        """Check all holdings against re-evaluation criteria.
+
+        Args:
+            portfolio_id: Portfolio to check
+            strategy_conditions: Strategy conditions (universe filters, scoring requirements)
+            reevaluation_config: Re-evaluation configuration with:
+                - enabled: bool
+                - check_universe_filters: bool
+                - check_scoring_requirements: bool
+                - grace_period_days: int
+
+        Returns:
+            List of ExitSignal for positions that fail re-evaluation
+        """
+        if not reevaluation_config.get('enabled', False):
+            return []
+
+        holdings = self.db.get_portfolio_holdings(portfolio_id)
+        if not holdings:
+            return []
+
+        entry_dates = self.db.get_position_entry_dates(portfolio_id)
+        grace_period = reevaluation_config.get('grace_period_days', 30)
+
+        exits = []
+        for symbol, quantity in holdings.items():
+            # Apply grace period
+            entry_info = entry_dates.get(symbol, {})
+            days_held = entry_info.get('days_held', 0)
+            if days_held < grace_period:
+                logger.debug(f"Skipping {symbol} re-evaluation: within grace period ({days_held}/{grace_period} days)")
+                continue
+
+            # Check universe filters
+            if reevaluation_config.get('check_universe_filters', True):
+                exit_signal = self._check_universe_compliance(
+                    symbol, quantity, strategy_conditions
+                )
+                if exit_signal:
+                    exits.append(exit_signal)
+                    continue
+
+            # Check scoring requirements
+            if reevaluation_config.get('check_scoring_requirements', True):
+                exit_signal = self._check_scoring_compliance(
+                    symbol, quantity, strategy_conditions
+                )
+                if exit_signal:
+                    exits.append(exit_signal)
+                    continue
+
+            # Update last evaluated date
+            self.db.update_position_evaluation_date(portfolio_id, symbol)
+
+        return exits
+
+    def _check_universe_compliance(
+        self,
+        symbol: str,
+        quantity: int,
+        conditions: Dict[str, Any]
+    ) -> Optional[ExitSignal]:
+        """Check if position still passes universe filters."""
+        try:
+            # Evaluate universe with just this symbol
+            passing_symbols = self.condition_evaluator.evaluate_universe(conditions)
+
+            if symbol not in passing_symbols:
+                # Get current price for exit signal
+                price = self._get_current_price(symbol)
+                current_value = quantity * price if price else 0
+
+                return ExitSignal(
+                    symbol=symbol,
+                    quantity=quantity,
+                    reason=f"Re-evaluation: No longer passes universe filters",
+                    current_value=current_value,
+                    gain_pct=0.0  # Will be calculated by caller if needed
+                )
+        except Exception as e:
+            logger.warning(f"Failed universe compliance check for {symbol}: {e}")
+
+        return None
+
+    def _check_scoring_compliance(
+        self,
+        symbol: str,
+        quantity: int,
+        conditions: Dict[str, Any]
+    ) -> Optional[ExitSignal]:
+        """Check if position still meets scoring requirements."""
+        try:
+            from lynch_criteria import SCORE_THRESHOLDS
+
+            scoring_reqs = conditions.get('scoring_requirements', [])
+            if not scoring_reqs:
+                return None
+
+            # Default thresholds
+            lynch_req = SCORE_THRESHOLDS.get('BUY', 60)
+            buffett_req = SCORE_THRESHOLDS.get('BUY', 60)
+
+            for req in scoring_reqs:
+                if req.get('character') == 'lynch':
+                    lynch_req = req.get('min_score', lynch_req)
+                elif req.get('character') == 'buffett':
+                    buffett_req = req.get('min_score', buffett_req)
+
+            # Score the stock
+            lynch_result = self.lynch_criteria.evaluate_stock(symbol, character_id='lynch')
+            buffett_result = self.lynch_criteria.evaluate_stock(symbol, character_id='buffett')
+
+            lynch_score = lynch_result.get('overall_score', 0) if lynch_result else 0
+            buffett_score = buffett_result.get('overall_score', 0) if buffett_result else 0
+
+            # Check if still meets requirements (OR logic: at least one must pass)
+            lynch_pass = lynch_score >= lynch_req
+            buffett_pass = buffett_score >= buffett_req
+
+            if not (lynch_pass or buffett_pass):
+                price = self._get_current_price(symbol)
+                current_value = quantity * price if price else 0
+
+                return ExitSignal(
+                    symbol=symbol,
+                    quantity=quantity,
+                    reason=f"Re-evaluation: Scores degraded (Lynch {lynch_score:.0f} < {lynch_req}, Buffett {buffett_score:.0f} < {buffett_req})",
+                    current_value=current_value,
+                    gain_pct=0.0
+                )
+
+        except Exception as e:
+            logger.warning(f"Failed scoring compliance check for {symbol}: {e}")
+
+        return None
+
+    def _get_current_price(self, symbol: str) -> Optional[float]:
+        """Get current price from database."""
+        conn = self.db.get_connection()
+        try:
+            cursor = conn.cursor()
+            cursor.execute("SELECT price FROM stock_metrics WHERE symbol = %s", (symbol,))
+            row = cursor.fetchone()
+            return row[0] if row else None
+        finally:
+            self.db.return_connection(conn)
+
+
 class BenchmarkTracker:
     """Tracks strategy performance vs S&P 500."""
 
@@ -706,6 +868,7 @@ class StrategyExecutor:
         # Lazily initialize analyst and lynch_criteria if not provided
         self._analyst = analyst
         self._lynch_criteria = lynch_criteria
+        self._holding_reevaluator = None
 
     @property
     def analyst(self):
@@ -724,6 +887,17 @@ class StrategyExecutor:
             analyzer = EarningsAnalyzer(self.db)
             self._lynch_criteria = LynchCriteria(self.db, analyzer)
         return self._lynch_criteria
+
+    @property
+    def holding_reevaluator(self):
+        """Lazy initialization of HoldingReevaluator."""
+        if self._holding_reevaluator is None:
+            self._holding_reevaluator = HoldingReevaluator(
+                self.db,
+                self.condition_evaluator,
+                self.lynch_criteria
+            )
+        return self._holding_reevaluator
 
     def execute_strategy(self, strategy_id: int, limit: Optional[int] = None) -> Dict[str, Any]:
         """Execute a strategy run.
@@ -773,22 +947,50 @@ class StrategyExecutor:
             print("=" * 60)
             self._log_event(run_id, "Starting screening phase")
             conditions = strategy.get('conditions', {})
-            candidates = self.condition_evaluator.evaluate_universe(conditions)
-            
+            all_candidates = self.condition_evaluator.evaluate_universe(conditions)
+
             # Apply limit if requested
             if limit and limit > 0:
-                print(f"  Limiting candidates to {limit} per request (found {len(candidates)})")
-                candidates = candidates[:limit]
+                print(f"  Limiting candidates to {limit} per request (found {len(all_candidates)})")
+                all_candidates = all_candidates[:limit]
 
-            self.db.update_strategy_run(run_id, stocks_screened=len(candidates))
-            self._log_event(run_id, f"Screened {len(candidates)} candidates")
-            print(f"✓ Screened {len(candidates)} candidates: {candidates}\n")
+            # Separate held vs new positions
+            holdings = self.db.get_portfolio_holdings(portfolio_id)
+            held_symbols = set(holdings.keys())
+            new_candidates = [s for s in all_candidates if s not in held_symbols]
+            held_candidates = [s for s in all_candidates if s in held_symbols]
 
-            # Phase 2: Score candidates
+            print(f"  Universe breakdown:")
+            print(f"    New positions: {len(new_candidates)}")
+            print(f"    Position additions: {len(held_candidates)}")
+            if held_candidates:
+                print(f"    Held stocks in universe: {held_candidates}")
+
+            self.db.update_strategy_run(run_id, stocks_screened=len(all_candidates))
+            self._log_event(run_id, f"Screened {len(all_candidates)} candidates ({len(new_candidates)} new, {len(held_candidates)} additions)")
+            print(f"✓ Screened {len(all_candidates)} total candidates\n")
+
+            # Phase 2: Score candidates (with differentiated thresholds)
             print("=" * 60)
             print("PHASE 2: SCORING")
             print("=" * 60)
-            scored = self._score_candidates(candidates, conditions, run_id)
+
+            # Score new positions with standard thresholds
+            scored_new = []
+            if new_candidates:
+                print(f"  Scoring {len(new_candidates)} new position candidates...")
+                scored_new = self._score_candidates(new_candidates, conditions, run_id, is_addition=False)
+                print(f"  ✓ {len(scored_new)} new positions passed requirements\n")
+
+            # Score additions with higher thresholds
+            scored_additions = []
+            if held_candidates:
+                print(f"  Scoring {len(held_candidates)} position addition candidates (higher thresholds)...")
+                scored_additions = self._score_candidates(held_candidates, conditions, run_id, is_addition=True)
+                print(f"  ✓ {len(scored_additions)} additions passed requirements\n")
+
+            # Combine scored candidates
+            scored = scored_new + scored_additions
             self.db.update_strategy_run(run_id, stocks_scored=len(scored))
             print(f"✓ Scored {len(scored)} stocks that passed requirements\n")
 
@@ -813,6 +1015,20 @@ class StrategyExecutor:
             decisions = self._deliberate(enriched, run_id, conditions, user_id)
             print(f"✓ {len(decisions)} BUY decisions made\n")
 
+            # Phase 4.5: Process dividends (ensures cash reflects latest dividends before trades)
+            print("=" * 60)
+            print("PHASE 4.5: DIVIDEND PROCESSING")
+            print("=" * 60)
+            try:
+                from dividend_manager import DividendManager
+                dividend_mgr = DividendManager(self.db)
+                dividend_mgr.process_all_portfolios()
+                print("✓ Dividend processing complete\n")
+                self._log_event(run_id, "Processed dividends for all portfolios")
+            except Exception as e:
+                logger.warning(f"Dividend processing failed (non-critical): {e}")
+                print(f"⚠ Dividend processing failed: {e}\n")
+
             # Phase 5: Check exits
             print("=" * 60)
             print("PHASE 5: EXIT CHECKS")
@@ -824,6 +1040,28 @@ class StrategyExecutor:
                 scoring_func=self._get_current_scores
             )
             print(f"✓ Found {len(exits)} positions to exit\n")
+
+            # Phase 5.5: Holding Re-evaluation (check if held positions still meet criteria)
+            print("=" * 60)
+            print("PHASE 5.5: HOLDING RE-EVALUATION")
+            print("=" * 60)
+            reevaluation_config = conditions.get('holding_reevaluation', {})
+            if reevaluation_config.get('enabled', False):
+                reevaluation_exits = self.holding_reevaluator.check_holdings(
+                    portfolio_id,
+                    conditions,
+                    reevaluation_config
+                )
+                if reevaluation_exits:
+                    print(f"✓ Re-evaluation flagged {len(reevaluation_exits)} positions for exit:")
+                    for exit_signal in reevaluation_exits:
+                        print(f"    {exit_signal.symbol}: {exit_signal.reason}")
+                    exits.extend(reevaluation_exits)
+                    self._log_event(run_id, f"Re-evaluation: {len(reevaluation_exits)} positions flagged for exit")
+                else:
+                    print("✓ All held positions still meet criteria")
+            else:
+                print("Skipping (re-evaluation not enabled)\n")
 
             # Phase 6: Execute trades
             print("=" * 60)
@@ -907,33 +1145,70 @@ class StrategyExecutor:
         self,
         candidates: List[str],
         conditions: Dict[str, Any],
-        run_id: int
+        run_id: int,
+        is_addition: bool = False
     ) -> List[Dict[str, Any]]:
         """Score candidates with Lynch and Buffett scoring.
 
         Args:
             candidates: List of symbols to score
+            conditions: Strategy conditions with scoring requirements
+            run_id: Current run ID for logging
+            is_addition: If True, use higher thresholds for position additions
+
+        Returns:
+            List of stocks that passed scoring requirements
+        """
         from lynch_criteria import SCORE_THRESHOLDS
-        
+        scored = []
+        scoring_reqs = conditions.get('scoring_requirements', [])
+
         # Parse scoring requirements (Default to 'BUY' threshold - 60)
         # We use OR logic: A stock must meet AT LEAST ONE criteria to pass.
-        default_min = SCORE_THRESHOLDS['BUY']
+        default_min = SCORE_THRESHOLDS.get('BUY', 60)
         lynch_req = default_min
         buffett_req = default_min
-        
-        # Check for overrides
-        for req in scoring_reqs:
-            if req.get('character') == 'lynch':
-                lynch_req = req.get('min_score', default_min)
-            elif req.get('character') == 'buffett':
-                buffett_req = req.get('min_score', default_min)
 
-        self._log_event(run_id, f"Scoring {len(candidates)} candidates (Triggers -- Lynch: {lynch_req}, Buffett: {buffett_req})")
+        # For additions, use higher thresholds if configured
+        if is_addition:
+            addition_reqs = conditions.get('addition_scoring_requirements', [])
+            if addition_reqs:
+                # Use explicit addition requirements
+                for req in addition_reqs:
+                    if req.get('character') == 'lynch':
+                        lynch_req = req.get('min_score', default_min)
+                    elif req.get('character') == 'buffett':
+                        buffett_req = req.get('min_score', default_min)
+            else:
+                # Default: +10 higher than base requirements
+                for req in scoring_reqs:
+                    if req.get('character') == 'lynch':
+                        lynch_req = req.get('min_score', default_min) + 10
+                    elif req.get('character') == 'buffett':
+                        buffett_req = req.get('min_score', default_min) + 10
+                # If no base requirements, use default + 10
+                if not scoring_reqs:
+                    lynch_req = default_min + 10
+                    buffett_req = default_min + 10
+        else:
+            # New positions: use standard requirements
+            for req in scoring_reqs:
+                if req.get('character') == 'lynch':
+                    lynch_req = req.get('min_score', default_min)
+                elif req.get('character') == 'buffett':
+                    buffett_req = req.get('min_score', default_min)
+
+        position_type = "addition" if is_addition else "new position"
+        self._log_event(run_id, f"Scoring {len(candidates)} {position_type} candidates (Lynch: {lynch_req}, Buffett: {buffett_req})")
 
         for symbol in candidates:
             try:
-                stock_data = {'symbol': symbol}
-                print(f"  Scoring {symbol}...")
+                stock_data = {
+                    'symbol': symbol,
+                    'position_type': 'addition' if is_addition else 'new'
+                }
+                type_label = "ADDITION" if is_addition else "NEW"
+                print(f"  Scoring {symbol} ({type_label})...")
 
                 # Score with Lynch
                 print(f"    - Evaluating with Lynch criteria...")
@@ -974,12 +1249,13 @@ class StrategyExecutor:
                         reason_parts.append(f"Lynch {stock_data['lynch_score']:.0f} >= {lynch_req}")
                     if buffett_pass:
                         reason_parts.append(f"Buffett {stock_data['buffett_score']:.0f} >= {buffett_req}")
-                    
+
                     reason_str = ", ".join(reason_parts)
 
-                    print(f"    ✓ PASSED requirements ({reason_str})")
+                    threshold_note = " (higher bar for additions)" if is_addition else ""
+                    print(f"    ✓ PASSED requirements ({reason_str}){threshold_note}")
                     logger.debug(
-                        f"{symbol}: PASSED ({reason_str})"
+                        f"{symbol}: PASSED as {type_label} ({reason_str})"
                     )
                 else:
                     fail_reasons = []
@@ -987,16 +1263,17 @@ class StrategyExecutor:
                         fail_reasons.append(f"Lynch {stock_data['lynch_score']:.0f} < {lynch_req}")
                     if not buffett_pass:
                         fail_reasons.append(f"Buffett {stock_data['buffett_score']:.0f} < {buffett_req}")
-                    
-                    
+
+
                     fail_str = ", ".join(fail_reasons)
-                    print(f"    ✗ FAILED requirements ({fail_str})")
+                    threshold_note = " (higher bar for additions)" if is_addition else ""
+                    print(f"    ✗ FAILED requirements ({fail_str}){threshold_note}")
 
             except Exception as e:
                 logger.warning(f"Failed to score {symbol}: {e}")
                 continue
 
-        self._log_event(run_id, f"Scoring complete: {len(scored)}/{len(candidates)} passed requirements")
+        self._log_event(run_id, f"Scoring complete: {len(scored)}/{len(candidates)} {position_type}s passed requirements")
         return scored
 
     def _generate_theses(
@@ -1407,6 +1684,109 @@ Reasoning: [Brief explanation of their final decision]
 
         return decisions
 
+    def _calculate_all_positions(
+        self,
+        buy_decisions: List[Dict[str, Any]],
+        portfolio_id: int,
+        available_cash: float,
+        method: str,
+        rules: Dict[str, Any],
+        run_id: int
+    ) -> List[Dict[str, Any]]:
+        """Phase 1: Calculate all positions with priority ordering.
+
+        Calculates position sizes for all buy decisions, prioritizes by conviction,
+        and ensures total doesn't exceed available cash.
+
+        Args:
+            buy_decisions: List of stocks with BUY decisions
+            portfolio_id: Portfolio to trade in
+            available_cash: Current available cash
+            method: Position sizing method
+            rules: Position sizing rules
+            run_id: Current run ID for logging
+
+        Returns:
+            List of dicts with: {symbol, decision, position, priority_score}
+            Sorted by priority (highest conviction first)
+        """
+        if not buy_decisions:
+            return []
+
+        print("\n  Phase 1: Calculating all positions with priority ordering...")
+        self._log_event(run_id, f"Phase 1: Calculating positions for {len(buy_decisions)} buy decisions")
+
+        # Calculate positions for all decisions
+        positions_data = []
+        for decision in buy_decisions:
+            symbol = decision['symbol']
+            conviction = decision.get('consensus_score', 50)
+
+            try:
+                position = self.position_sizer.calculate_position(
+                    portfolio_id=portfolio_id,
+                    symbol=symbol,
+                    conviction_score=conviction,
+                    method=method,
+                    rules=rules,
+                    other_buys=[d for d in buy_decisions if d != decision]
+                )
+
+                # Calculate priority score
+                # Primary: conviction score (higher = more priority)
+                # Secondary: position size (smaller = more priority for diversification)
+                priority_score = conviction - (position.position_pct * 0.1)
+
+                positions_data.append({
+                    'symbol': symbol,
+                    'decision': decision,
+                    'position': position,
+                    'conviction': conviction,
+                    'priority_score': priority_score
+                })
+
+                print(f"    {symbol}: {position.shares} shares (${position.estimated_value:,.2f}), "
+                      f"conviction={conviction:.0f}, priority={priority_score:.1f}")
+
+            except Exception as e:
+                logger.error(f"Failed to calculate position for {symbol}: {e}")
+                continue
+
+        # Sort by priority (highest first)
+        positions_data.sort(key=lambda x: x['priority_score'], reverse=True)
+
+        # Calculate total cash needed
+        total_requested = sum(p['position'].estimated_value for p in positions_data)
+        print(f"\n  Total requested: ${total_requested:,.2f}, Available: ${available_cash:,.2f}")
+        self._log_event(run_id, f"Total requested: ${total_requested:,.2f}, Available: ${available_cash:,.2f}")
+
+        # If we exceed available cash, need to rebalance
+        if total_requested > available_cash:
+            print(f"  ⚠ Insufficient cash! Selecting highest priority positions...")
+            self._log_event(run_id, f"Insufficient cash. Prioritizing highest conviction positions.")
+
+            # Select positions that fit in budget (greedy by priority)
+            selected = []
+            remaining_cash = available_cash
+
+            for pos_data in positions_data:
+                if pos_data['position'].estimated_value <= remaining_cash:
+                    selected.append(pos_data)
+                    remaining_cash -= pos_data['position'].estimated_value
+                    print(f"    ✓ Selected {pos_data['symbol']} (${pos_data['position'].estimated_value:,.2f})")
+                else:
+                    print(f"    ✗ Skipped {pos_data['symbol']} (${pos_data['position'].estimated_value:,.2f}) - insufficient cash")
+                    self._log_event(run_id, f"Skipped {pos_data['symbol']} - insufficient cash")
+
+            positions_data = selected
+            print(f"  Selected {len(positions_data)}/{len(buy_decisions)} positions, "
+                  f"using ${available_cash - remaining_cash:,.2f} of ${available_cash:,.2f}")
+            self._log_event(run_id, f"Selected {len(positions_data)} positions totaling ${available_cash - remaining_cash:,.2f}")
+        else:
+            print(f"  ✓ All positions fit within available cash")
+
+        return positions_data
+
     def _execute_trades(
         self,
         buy_decisions: List[Dict[str, Any]],
@@ -1414,7 +1794,7 @@ Reasoning: [Brief explanation of their final decision]
         strategy: Dict[str, Any],
         run_id: int
     ) -> int:
-        """Execute buy and sell trades."""
+        """Execute buy and sell trades with two-phase cash tracking."""
         import portfolio_service
 
         portfolio_id = strategy['portfolio_id']
@@ -1447,6 +1827,8 @@ Reasoning: [Brief explanation of their final decision]
             self._log_event(run_id, "Market closed. Queuing transactions for next market open.")
 
         # Execute sells first (to free up cash)
+        print("\n  Executing SELL orders...")
+        cash_freed = 0.0
         for exit_signal in exits:
             try:
                 if is_market_open:
@@ -1456,17 +1838,20 @@ Reasoning: [Brief explanation of their final decision]
                         transaction_type='SELL',
                         quantity=exit_signal.quantity,
                         note=exit_signal.reason,
+                        position_type='exit',
                         db=self.db
                     )
                     if result.get('success'):
                         trades_executed += 1
+                        cash_freed += exit_signal.current_value
                         self._log_event(run_id, f"SELL {exit_signal.symbol}: {exit_signal.reason}")
+                        print(f"    ✓ SOLD {exit_signal.symbol}: {exit_signal.quantity} shares "
+                              f"(freed ${exit_signal.current_value:,.2f})")
                 elif user_id:
-                    # Queue sell
                     alert_id = self.db.create_alert(
                         user_id=user_id,
                         symbol=exit_signal.symbol,
-                        condition_type='price_above', # Dummy condition
+                        condition_type='price_above',
                         condition_params={'threshold': 0},
                         condition_description=f"Strategy Queue: Sell {exit_signal.quantity} {exit_signal.symbol} at Open",
                         action_type='market_sell',
@@ -1476,56 +1861,79 @@ Reasoning: [Brief explanation of their final decision]
                     )
                     logger.info(f"Queued sell alert {alert_id} for {exit_signal.symbol}")
                     self._log_event(run_id, f"QUEUED SELL {exit_signal.symbol}: {exit_signal.quantity} shares (Alert {alert_id})")
-                    trades_executed += 1 # Count as 'handled'
-                    
+                    trades_executed += 1
+
             except Exception as e:
                 logger.error(f"Failed to execute/queue sell for {exit_signal.symbol}: {e}")
+                print(f"    ✗ Failed to sell {exit_signal.symbol}: {e}")
 
-        # Execute buys
-        for decision in buy_decisions:
-            symbol = decision['symbol']
-            try:
-                position = self.position_sizer.calculate_position(
-                    portfolio_id=portfolio_id,
-                    symbol=symbol,
-                    conviction_score=decision.get('consensus_score', 50),
-                    method=method,
-                    rules=position_rules,
-                    other_buys=[d for d in buy_decisions if d != decision]
-                )
+        # Get current cash after sells
+        summary = self.db.get_portfolio_summary(portfolio_id, use_live_prices=False)
+        available_cash = summary.get('cash', 0) if summary else 0
+        print(f"\n  Available cash after sells: ${available_cash:,.2f} "
+              f"(freed ${cash_freed:,.2f} from {len(exits)} sells)")
+        self._log_event(run_id, f"Available cash: ${available_cash:,.2f}")
 
-                # Log position sizing decision
-                print(f"  Position sizing for {symbol}:")
+        # Phase 1: Calculate all positions with priority ordering
+        prioritized_positions = self._calculate_all_positions(
+            buy_decisions=buy_decisions,
+            portfolio_id=portfolio_id,
+            available_cash=available_cash,
+            method=method,
+            rules=position_rules,
+            run_id=run_id
+        )
+
+        # Phase 2: Execute buys in priority order with real-time cash tracking
+        if prioritized_positions:
+            print(f"\n  Phase 2: Executing {len(prioritized_positions)} BUY orders in priority order...")
+            self._log_event(run_id, f"Phase 2: Executing {len(prioritized_positions)} buys")
+
+            running_cash = available_cash
+
+            for pos_data in prioritized_positions:
+                symbol = pos_data['symbol']
+                position = pos_data['position']
+                decision = pos_data['decision']
+
+                print(f"\n  Executing {symbol}:")
                 print(f"    Shares: {position.shares}")
                 print(f"    Value: ${position.estimated_value:,.2f}")
-                print(f"    Reasoning: {position.reasoning}")
+                print(f"    Cash before: ${running_cash:,.2f}")
 
                 if position.shares > 0:
+                    # Get position type from decision
+                    pos_type = decision.get('position_type', 'new')
+
                     if is_market_open:
                         result = portfolio_service.execute_trade(
                             portfolio_id=portfolio_id,
                             symbol=symbol,
                             transaction_type='BUY',
                             quantity=position.shares,
-                            note=f"Strategy buy: {decision.get('consensus_reasoning', '')}",
+                            note=f"Strategy buy ({pos_type}): {decision.get('consensus_reasoning', '')}",
+                            position_type=pos_type,
                             db=self.db
                         )
                         if result.get('success'):
                             trades_executed += 1
+                            running_cash -= position.estimated_value
                             self._log_event(
                                 run_id,
-                                f"BUY {symbol}: {position.shares} shares @ {position.reasoning}"
+                                f"BUY {symbol}: {position.shares} shares, ${position.estimated_value:,.2f} spent, ${running_cash:,.2f} remaining"
                             )
                             print(f"    ✓ Trade executed successfully")
+                            print(f"    Cash after: ${running_cash:,.2f}")
                         else:
-                            print(f"    ✗ Trade failed: {result.get('error', 'Unknown error')}")
-                            logger.warning(f"Trade execution failed for {symbol}: {result.get('error')}")
+                            error = result.get('error', 'Unknown error')
+                            print(f"    ✗ Trade failed: {error}")
+                            logger.warning(f"Trade execution failed for {symbol}: {error}")
+                            self._log_event(run_id, f"BUY {symbol} FAILED: {error}")
                     elif user_id:
-                        # Queue buy
                         alert_id = self.db.create_alert(
                             user_id=user_id,
                             symbol=symbol,
-                            condition_type='price_above', # Dummy condition
+                            condition_type='price_above',
                             condition_params={'threshold': 0},
                             condition_description=f"Strategy Queue: Buy {position.shares} {symbol} at Open",
                             action_type='market_buy',
@@ -1535,16 +1943,16 @@ Reasoning: [Brief explanation of their final decision]
                         )
                         logger.info(f"Queued buy alert {alert_id} for {symbol}")
                         self._log_event(
-                            run_id, 
+                            run_id,
                             f"QUEUED BUY {symbol}: {position.shares} shares (Alert {alert_id})"
                         )
                         print(f"    ✓ Trade queued for market open (Alert {alert_id})")
                         trades_executed += 1
+                        running_cash -= position.estimated_value
                 else:
                     print(f"    ⚠ Skipping trade: {position.reasoning}")
                     logger.info(f"Skipping {symbol} buy: {position.reasoning}")
-            except Exception as e:
-                logger.error(f"Failed to execute buy for {symbol}: {e}")
-                print(f"    ✗ Exception during trade execution: {e}")
+        else:
+            print("\n  No buy positions to execute")
 
         return trades_executed

@@ -164,7 +164,8 @@ def execute_trade(
     symbol: str,
     transaction_type: str,
     quantity: int,
-    note: str = None
+    note: str = None,
+    position_type: str = None
 ) -> Dict[str, Any]:
     """
     Execute a paper trade.
@@ -182,6 +183,7 @@ def execute_trade(
         transaction_type: 'BUY' or 'SELL'
         quantity: Number of shares
         note: Optional note for the transaction
+        position_type: Optional 'new', 'addition', or 'exit' for tracking
 
     Returns:
         Dict with:
@@ -225,7 +227,8 @@ def execute_trade(
         transaction_type=transaction_type,
         quantity=quantity,
         price_per_share=price,
-        note=note
+        note=note,
+        position_type=position_type
     )
 
     logger.info(

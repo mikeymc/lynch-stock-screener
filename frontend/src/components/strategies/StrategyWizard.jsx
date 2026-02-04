@@ -10,13 +10,14 @@ import {
  */
 const StrategyWizard = ({ onClose, onSuccess, initialData = null, mode = 'create' }) => {
     const [step, setStep] = useState(1);
-    const [formData, setFormData] = useState(initialData || {
+
+    // Default values
+    const defaults = {
         name: '',
         description: '',
-        // Logic
         conditions: {
             filters: [],
-            require_thesis: true // Default to true for AI deliberation
+            require_thesis: true
         },
         consensus_mode: 'both_agree',
         consensus_threshold: 70,
@@ -25,14 +26,30 @@ const StrategyWizard = ({ onClose, onSuccess, initialData = null, mode = 'create
             stop_loss_pct: '',
             max_hold_days: ''
         },
-        // Execution
         portfolio_selection: 'new',
-        portfolio_id: 'new', // 'new' or integer
+        portfolio_id: 'new',
         position_sizing: {
-            method: 'equal_weight'
+            method: 'equal_weight',
+            max_position_pct: 10.0,
+            min_position_value: 500,
+            fixed_position_pct: '',
+            kelly_fraction: ''
         },
         schedule_cron: '0 9 * * 1-5'
-    });
+    };
+
+    // Merge initialData with defaults to ensure all fields exist
+    const [formData, setFormData] = useState(
+        initialData
+            ? {
+                ...defaults,
+                ...initialData,
+                conditions: { ...defaults.conditions, ...initialData.conditions },
+                exit_conditions: { ...defaults.exit_conditions, ...initialData.exit_conditions },
+                position_sizing: { ...defaults.position_sizing, ...initialData.position_sizing }
+            }
+            : defaults
+    );
 
     const [portfolios, setPortfolios] = useState([]);
     const [error, setError] = useState(null);
@@ -73,7 +90,21 @@ const StrategyWizard = ({ onClose, onSuccess, initialData = null, mode = 'create
                 return false;
             }
         }
-        // Add more validation as needed
+        if (currentStep === 3) {
+            // Validate position sizing
+            if (formData.position_sizing.method === 'fixed_pct' && !formData.position_sizing.fixed_position_pct) {
+                setError("Fixed position percentage is required for this method");
+                return false;
+            }
+            if (formData.position_sizing.method === 'kelly' && !formData.position_sizing.kelly_fraction) {
+                setError("Kelly fraction is required for this method");
+                return false;
+            }
+            if (!formData.position_sizing.max_position_pct) {
+                setError("Max position percentage is required");
+                return false;
+            }
+        }
         return true;
     };
 
@@ -83,11 +114,21 @@ const StrategyWizard = ({ onClose, onSuccess, initialData = null, mode = 'create
         try {
             const payload = { ...formData };
 
-            // Clean up numbers
+            // Clean up exit conditions
             if (payload.exit_conditions.profit_target_pct)
                 payload.exit_conditions.profit_target_pct = parseFloat(payload.exit_conditions.profit_target_pct);
             if (payload.exit_conditions.stop_loss_pct)
                 payload.exit_conditions.stop_loss_pct = parseFloat(payload.exit_conditions.stop_loss_pct);
+
+            // Clean up position sizing
+            if (payload.position_sizing.max_position_pct)
+                payload.position_sizing.max_position_pct = parseFloat(payload.position_sizing.max_position_pct);
+            if (payload.position_sizing.min_position_value)
+                payload.position_sizing.min_position_value = parseFloat(payload.position_sizing.min_position_value);
+            if (payload.position_sizing.fixed_position_pct)
+                payload.position_sizing.fixed_position_pct = parseFloat(payload.position_sizing.fixed_position_pct);
+            if (payload.position_sizing.kelly_fraction)
+                payload.position_sizing.kelly_fraction = parseFloat(payload.position_sizing.kelly_fraction);
 
             const url = mode === 'edit' ? `/api/strategies/${initialData.id}` : '/api/strategies';
             const method = mode === 'edit' ? 'PUT' : 'POST';
@@ -298,19 +339,119 @@ const StrategyWizard = ({ onClose, onSuccess, initialData = null, mode = 'create
                                 </div>
                             </div>
 
-                            <div>
-                                <label className="block text-muted-foreground mb-2 text-sm">Position Sizing</label>
-                                <select
-                                    value={formData.position_sizing.method}
-                                    onChange={e => setFormData({
-                                        ...formData,
-                                        position_sizing: { ...formData.position_sizing, method: e.target.value }
-                                    })}
-                                    className="w-full bg-background border border-input rounded-lg p-3 text-foreground"
-                                >
-                                    <option value="equal_weight">Equal Weight (Divided evenly)</option>
-                                    <option value="conviction_weighted">Conviction Weighted (Higher score = More capital)</option>
-                                </select>
+                            <div className="bg-muted/50 rounded-xl p-6 border border-border space-y-6">
+                                <div>
+                                    <h4 className="font-medium text-foreground mb-4">Position Sizing</h4>
+                                    <label className="block text-muted-foreground mb-2 text-sm">Method</label>
+                                    <select
+                                        value={formData.position_sizing.method}
+                                        onChange={e => setFormData({
+                                            ...formData,
+                                            position_sizing: { ...formData.position_sizing, method: e.target.value }
+                                        })}
+                                        className="w-full bg-background border border-input rounded-lg p-3 text-foreground"
+                                    >
+                                        <option value="equal_weight">Equal Weight</option>
+                                        <option value="conviction_weighted">Conviction Weighted</option>
+                                        <option value="fixed_pct">Fixed Percentage</option>
+                                        <option value="kelly">Kelly Criterion</option>
+                                    </select>
+                                    <p className="text-xs text-muted-foreground mt-2">
+                                        {formData.position_sizing.method === 'equal_weight' && 'Divide available cash equally among all buys'}
+                                        {formData.position_sizing.method === 'conviction_weighted' && 'Higher consensus score = larger position'}
+                                        {formData.position_sizing.method === 'fixed_pct' && 'Fixed percentage of portfolio per position'}
+                                        {formData.position_sizing.method === 'kelly' && 'Simplified Kelly criterion based on conviction'}
+                                    </p>
+                                </div>
+
+                                {/* Method-specific fields */}
+                                {formData.position_sizing.method === 'fixed_pct' && (
+                                    <div>
+                                        <label className="block text-muted-foreground mb-2 text-sm">Fixed Position Size (%)</label>
+                                        <input
+                                            type="number"
+                                            step="0.1"
+                                            min="0.1"
+                                            max="100"
+                                            placeholder="e.g. 5.0"
+                                            value={formData.position_sizing.fixed_position_pct}
+                                            onChange={e => setFormData({
+                                                ...formData,
+                                                position_sizing: { ...formData.position_sizing, fixed_position_pct: e.target.value }
+                                            })}
+                                            className="w-full bg-background border border-input rounded-lg p-3 text-foreground"
+                                        />
+                                        <p className="text-xs text-muted-foreground mt-2">
+                                            Percentage of total portfolio to allocate per position
+                                        </p>
+                                    </div>
+                                )}
+
+                                {formData.position_sizing.method === 'kelly' && (
+                                    <div>
+                                        <label className="block text-muted-foreground mb-2 text-sm">Kelly Fraction</label>
+                                        <input
+                                            type="number"
+                                            step="0.01"
+                                            min="0.01"
+                                            max="1.0"
+                                            placeholder="e.g. 0.25"
+                                            value={formData.position_sizing.kelly_fraction}
+                                            onChange={e => setFormData({
+                                                ...formData,
+                                                position_sizing: { ...formData.position_sizing, kelly_fraction: e.target.value }
+                                            })}
+                                            className="w-full bg-background border border-input rounded-lg p-3 text-foreground"
+                                        />
+                                        <p className="text-xs text-muted-foreground mt-2">
+                                            Fraction of Kelly bet (0.25 = quarter Kelly, conservative)
+                                        </p>
+                                    </div>
+                                )}
+
+                                {/* Common constraints */}
+                                <div className="pt-4 border-t border-border">
+                                    <h5 className="text-sm font-medium text-muted-foreground mb-4">Position Constraints</h5>
+                                    <div className="grid grid-cols-2 gap-4">
+                                        <div>
+                                            <label className="block text-muted-foreground mb-2 text-sm">Max Position (%)</label>
+                                            <input
+                                                type="number"
+                                                step="0.1"
+                                                min="0.1"
+                                                max="100"
+                                                placeholder="e.g. 10.0"
+                                                value={formData.position_sizing.max_position_pct}
+                                                onChange={e => setFormData({
+                                                    ...formData,
+                                                    position_sizing: { ...formData.position_sizing, max_position_pct: e.target.value }
+                                                })}
+                                                className="w-full bg-background border border-input rounded-lg p-3 text-foreground"
+                                            />
+                                            <p className="text-xs text-muted-foreground mt-2">
+                                                Never exceed this % of portfolio in one stock
+                                            </p>
+                                        </div>
+                                        <div>
+                                            <label className="block text-muted-foreground mb-2 text-sm">Min Position Value ($)</label>
+                                            <input
+                                                type="number"
+                                                step="100"
+                                                min="0"
+                                                placeholder="e.g. 500"
+                                                value={formData.position_sizing.min_position_value}
+                                                onChange={e => setFormData({
+                                                    ...formData,
+                                                    position_sizing: { ...formData.position_sizing, min_position_value: e.target.value }
+                                                })}
+                                                className="w-full bg-background border border-input rounded-lg p-3 text-foreground"
+                                            />
+                                            <p className="text-xs text-muted-foreground mt-2">
+                                                Skip positions below this dollar amount
+                                            </p>
+                                        </div>
+                                    </div>
+                                </div>
                             </div>
 
                             <div>
@@ -353,6 +494,21 @@ const StrategyWizard = ({ onClose, onSuccess, initialData = null, mode = 'create
                                         {formData.exit_conditions.profit_target_pct ? `Target: +${formData.exit_conditions.profit_target_pct}%` : 'No Target'}
                                         {' / '}
                                         {formData.exit_conditions.stop_loss_pct ? `Stop: ${formData.exit_conditions.stop_loss_pct}%` : 'No Stop'}
+                                    </span>
+                                </div>
+                                <div className="flex justify-between border-b border-border pb-3">
+                                    <span className="text-muted-foreground">Position Sizing</span>
+                                    <span className="text-foreground">
+                                        {formData.position_sizing.method === 'equal_weight' && 'Equal Weight'}
+                                        {formData.position_sizing.method === 'conviction_weighted' && 'Conviction Weighted'}
+                                        {formData.position_sizing.method === 'fixed_pct' && `Fixed ${formData.position_sizing.fixed_position_pct || '?'}%`}
+                                        {formData.position_sizing.method === 'kelly' && `Kelly (${formData.position_sizing.kelly_fraction || '?'})`}
+                                    </span>
+                                </div>
+                                <div className="flex justify-between border-b border-border pb-3">
+                                    <span className="text-muted-foreground">Position Limits</span>
+                                    <span className="text-foreground text-sm">
+                                        Max: {formData.position_sizing.max_position_pct || '?'}% / Min: ${formData.position_sizing.min_position_value || '?'}
                                     </span>
                                 </div>
                                 <div className="flex justify-between pb-1">
