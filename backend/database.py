@@ -4282,14 +4282,11 @@ class Database:
             """, (portfolio_id,))
             total_bought, total_sold, dividend_income = cursor.fetchone()
 
-            # Get current portfolio value
-            summary = self.get_portfolio_summary(portfolio_id, use_live_prices=False)
-            if not summary:
-                return None
-
-            current_value = summary['total_value']
-            holdings_value = summary['holdings_value']
-            cash = summary['cash']
+            # Calculate current portfolio value directly (avoid circular reference with get_portfolio_summary)
+            cash = self.get_portfolio_cash(portfolio_id)
+            holdings_detailed = self.get_portfolio_holdings_detailed(portfolio_id, use_live_prices=False)
+            holdings_value = sum(h['current_value'] for h in holdings_detailed)
+            current_value = cash + holdings_value
 
             # Calculate realized gains (money from sells minus cost basis)
             # This is approximate - true realized gains need FIFO/LIFO tracking

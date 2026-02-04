@@ -12,11 +12,17 @@ This document describes the autonomous investment agent system built for the Lyn
 
 ### Key Capabilities
 
-- **Autonomous Execution**: Strategies run daily at market open (9:30 AM ET) without human intervention
-- **Configurable Consensus**: Three modes for combining Lynch and Buffett opinions
-- **Paper Trading**: All trades execute in isolated paper portfolios (real broker integration planned for later)
-- **Performance Tracking**: Alpha calculation vs S&P 500 benchmark
+- **Autonomous Execution**: Strategies run on custom schedules (preset or custom cron) or manually on-demand
+- **Universe Filtering**: Define custom stock filters (price drops, market cap, PE ratio, sector, etc.)
+- **Configurable Consensus**: Three modes for combining Lynch and Buffett opinions with adjustable thresholds
+- **Scoring Requirements**: Set minimum Lynch/Buffett scores for new positions and higher bars for additions
+- **Thesis Verdict Requirements**: Require specific thesis verdicts (BUY/WATCH/AVOID) from AI deliberation
+- **Portfolio Re-evaluation**: Automatically exit holdings that no longer meet entry criteria (opt-in)
+- **Paper Trading**: All trades execute in isolated paper portfolios with two-phase cash tracking
+- **Performance Tracking**: Alpha calculation vs S&P 500 benchmark with dividend attribution
 - **Exit Management**: Automatic sell decisions based on profit targets, stop losses, and score degradation
+- **Preview Mode**: Test strategy configuration without executing trades
+- **Manual Execution**: Trigger strategy runs on-demand via UI with background job polling
 
 ---
 
@@ -29,14 +35,18 @@ Strategy Definition (DB)
          │
          ▼
 ┌─────────────────────────────────────────────────────────────┐
-│                    DAILY EXECUTION FLOW                      │
+│                     EXECUTION FLOW                           │
 ├─────────────────────────────────────────────────────────────┤
 │                                                              │
-│  1. SCREEN          → Filter universe by conditions          │
-│         │              (price drop, market cap, sector)      │
+│  0. DIVIDENDS       → Process dividend payments              │
+│         │              (adds to cash balance)                │
+│         ▼                                                    │
+│  1. SCREEN          → Filter universe by custom conditions   │
+│         │              (user-defined filters on any metric)  │
 │         ▼                                                    │
 │  2. SCORE           → Lynch + Buffett character scoring      │
 │         │              (via lynch_criteria.evaluate_stock)   │
+│         │              (separate thresholds for new/additions)│
 │         ▼                                                    │
 │  3. GENERATE THESES → Each character creates thesis          │
 │         │              (Lynch thesis + Buffett thesis)       │
@@ -44,17 +54,22 @@ Strategy Definition (DB)
 │         ▼                                                    │
 │  4. DELIBERATE      → AI moderator evaluates both theses     │
 │         │              (Gemini generates consensus verdict)  │
-│         │              (cached in deliberations table)       │
+│         │              (require specific verdicts: BUY/WATCH)│
 │         ▼                                                    │
 │  5. CHECK EXITS     → Evaluate existing positions            │
 │         │              (profit target, stop loss, score deg) │
 │         ▼                                                    │
-│  6. SIZE & EXECUTE  → Position sizing + paper trade          │
-│         │              (via portfolio_service.execute_trade) │
-│         │              (detailed logging of sizing decisions)│
+│  5.5 RE-EVALUATE    → Check holdings vs entry criteria       │
+│         │              (opt-in: exit if no longer qualify)   │
+│         ▼                                                    │
+│  6. SIZE & EXECUTE  → Two-phase position sizing              │
+│         │              Phase 1: Calculate all positions      │
+│         │              Phase 2: Execute by priority order    │
+│         │              (prevents cash overdraft)             │
 │         ▼                                                    │
 │  7. AUDIT           → Log decisions + track vs SPY           │
-│                                                              │
+│         │              (dividend attribution included)       │
+│         │                                                    │
 └─────────────────────────────────────────────────────────────┘
 ```
 
@@ -75,12 +90,20 @@ Strategy Definition (DB)
 │  └──────────────────┘  └──────────────────┘  │ - kelly       │  │
 │                                              └───────────────┘  │
 │  ┌──────────────────┐  ┌──────────────────┐                     │
-│  │ExitConditionChecker│ │ BenchmarkTracker │                     │
+│  │ExitConditionChecker│ │HoldingReevaluator│                     │
 │  │                  │  │                  │                     │
-│  │ - check_exits    │  │ - record_daily   │                     │
-│  │ - profit_target  │  │ - record_perf    │                     │
-│  │ - stop_loss      │  │ - get_series     │                     │
-│  │ - score_degrade  │  └──────────────────┘                     │
+│  │ - check_exits    │  │ - check_holdings │                     │
+│  │ - profit_target  │  │ - check_universe │                     │
+│  │ - stop_loss      │  │ - check_scoring  │                     │
+│  │ - score_degrade  │  │ - grace_period   │                     │
+│  └──────────────────┘  └──────────────────┘                     │
+│                                                                  │
+│  ┌──────────────────┐                                           │
+│  │ BenchmarkTracker │                                           │
+│  │                  │                                           │
+│  │ - record_daily   │                                           │
+│  │ - record_perf    │                                           │
+│  │ - get_series     │                                           │
 │  └──────────────────┘                                           │
 │                                                                  │
 │  External Dependencies (lazy-loaded):                           │
@@ -334,8 +357,18 @@ CREATE TABLE IF NOT EXISTS thesis_refresh_queue (
     {"character": "lynch", "min_score": 70},
     {"character": "buffett", "min_score": 70}
   ],
+  "addition_scoring_requirements": [
+    {"character": "lynch", "min_score": 80},
+    {"character": "buffett", "min_score": 80}
+  ],
   "require_thesis": true,
-  "thesis_verdict_required": ["BUY"]
+  "thesis_verdict_required": ["BUY"],
+  "holding_reevaluation": {
+    "enabled": true,
+    "check_universe_filters": true,
+    "check_scoring_requirements": true,
+    "grace_period_days": 30
+  }
 }
 ```
 
@@ -791,7 +824,40 @@ strategy_id = db.create_strategy(
 
 ### Manual Execution
 
-To manually trigger strategy execution:
+**Via UI (Recommended)**
+
+On the Strategy Detail page, click the "Run Now" button:
+- Queues a background job for execution
+- Shows "Running..." status while executing
+- Polls for completion every 2 seconds
+- Auto-refreshes strategy details when complete
+- Displays errors if job fails
+
+**Via API**
+
+Trigger via REST endpoint:
+
+```bash
+POST /api/strategies/:id/run
+```
+
+Response:
+```json
+{
+  "message": "Strategy run queued",
+  "job_id": 123,
+  "strategy_id": 1
+}
+```
+
+Then poll for job status:
+```bash
+GET /api/jobs/123
+```
+
+**Via Python Script**
+
+Direct execution (bypasses background queue):
 
 ```python
 from database import Database
@@ -1245,6 +1311,23 @@ Reason: {d['decision_reasoning']}
 
 ## Changelog
 
+### February 2026
+**Strategy Wizard Gap Closure & Critical Fixes**
+- **Universe Filters**: Added full filter builder UI with field/operator/value rows
+- **Scoring Requirements**: Added Lynch/Buffett minimum score sliders (0-100, step 5)
+- **Thesis Verdict Requirements**: Added BUY/WATCH/AVOID verdict checkboxes
+- **Score Degradation Exits**: Extended exit conditions with Lynch/Buffett score thresholds
+- **Portfolio Creation**: Added custom portfolio name and initial cash amount inputs
+- **Consensus Threshold**: Added conditional threshold input for weighted_confidence mode
+- **Schedule Control**: Extended schedule with custom cron and manual-only options
+- **Preview Mode**: Added preview button to test strategy before enabling
+- **Manual Execution**: Added "Run Now" button with background job polling
+- **Two-Phase Cash Tracking**: Fixed cash overflow by calculating all positions before execution
+- **Dividend Tracking**: Added dividend income visibility and performance attribution
+- **Portfolio Re-evaluation**: Added automatic exit for holdings that no longer meet criteria (opt-in)
+- **Position Addition Control**: Higher conviction thresholds for adding to existing positions
+- All 9 gaps between backend capabilities and frontend UI now closed
+
 ### January 31, 2026
 - Added deliberation system (third AI layer to reconcile Lynch/Buffett theses)
 - Fixed `get_portfolio_holdings()` to return dict instead of list
@@ -1265,5 +1348,5 @@ Reason: {d['decision_reasoning']}
 
 ---
 
-*Last updated: January 31, 2026*
+*Last updated: February 3, 2026*
 *Author: Claude (Sonnet 4.5) with Mikey*

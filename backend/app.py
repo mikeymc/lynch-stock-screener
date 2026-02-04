@@ -788,6 +788,146 @@ def get_strategy_detail(user_id, strategy_id):
         return jsonify({'error': str(e)}), 500
 
 
+@app.route('/api/strategies/<int:strategy_id>/run', methods=['POST'])
+@require_user_auth
+def manual_run_strategy(user_id, strategy_id):
+    """Manually trigger a strategy execution via background job."""
+    try:
+        # Verify ownership
+        strategy = db.get_strategy(strategy_id)
+        if not strategy:
+            return jsonify({'error': 'Strategy not found'}), 404
+
+        if strategy['user_id'] != user_id:
+            return jsonify({'error': 'Unauthorized'}), 403
+
+        # Create background job for strategy execution
+        job_id = db.create_background_job(
+            job_type='strategy_execution',
+            params={'strategy_id': strategy_id}
+        )
+
+        logger.info(f"Manual strategy run queued: strategy_id={strategy_id}, job_id={job_id}")
+
+        return jsonify({
+            'message': 'Strategy run queued',
+            'job_id': job_id,
+            'strategy_id': strategy_id
+        })
+    except Exception as e:
+        logger.error(f"Error queueing manual strategy run: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/strategies/preview', methods=['POST'])
+@require_user_auth
+def preview_strategy(user_id):
+    """Preview stocks that match strategy criteria without executing trades."""
+    try:
+        data = request.get_json()
+        conditions = data.get('conditions', {})
+
+        # Import here to avoid circular dependencies
+        from strategy_executor import ConditionEvaluator
+        from lynch_criteria import LynchCriteria
+        from earnings_analyzer import EarningsAnalyzer
+
+        # Initialize evaluator and scorer
+        evaluator = ConditionEvaluator(db)
+        analyzer = EarningsAnalyzer(db)
+        lynch_criteria = LynchCriteria(db, analyzer)
+
+        # Filter universe
+        candidates = evaluator.evaluate_universe(conditions)
+
+        if not candidates:
+            return jsonify({'candidates': []})
+
+        # Get min scores for filtering
+        scoring_requirements = conditions.get('scoring_requirements', [])
+        lynch_min = next((r['min_score'] for r in scoring_requirements if r['character'] == 'lynch'), 0)
+        buffett_min = next((r['min_score'] for r in scoring_requirements if r['character'] == 'buffett'), 0)
+
+        # Use vectorized scoring (same as strategy executor) for consistency
+        try:
+            from stock_vectors import StockVectors, DEFAULT_ALGORITHM_CONFIG
+            from characters.buffett import BUFFETT
+
+            # Load stock data with vectorized approach
+            vectors = StockVectors(db)
+            df_all = vectors.load_vectors(country_filter='US')
+
+            if df_all is None or df_all.empty:
+                return jsonify({'candidates': []})
+
+            # Filter to just our candidates
+            df = df_all[df_all['symbol'].isin(candidates)].copy()
+
+            if df.empty:
+                return jsonify({'candidates': []})
+
+            # Score with Lynch using default config
+            df_lynch = lynch_criteria.evaluate_batch(df, DEFAULT_ALGORITHM_CONFIG)
+
+            # Score with Buffett - construct config from scoring weights
+            buffett_config = {}
+            for sw in BUFFETT.scoring_weights:
+                if sw.metric == 'roe':
+                    buffett_config['weight_roe'] = sw.weight
+                    buffett_config['roe_excellent'] = sw.threshold.excellent
+                    buffett_config['roe_good'] = sw.threshold.good
+                    buffett_config['roe_fair'] = sw.threshold.fair
+                elif sw.metric == 'debt_to_earnings':
+                    buffett_config['weight_debt_earnings'] = sw.weight
+                    buffett_config['de_excellent'] = sw.threshold.excellent
+                    buffett_config['de_good'] = sw.threshold.good
+                    buffett_config['de_fair'] = sw.threshold.fair
+                elif sw.metric == 'gross_margin':
+                    buffett_config['weight_gross_margin'] = sw.weight
+                    buffett_config['gm_excellent'] = sw.threshold.excellent
+                    buffett_config['gm_good'] = sw.threshold.good
+                    buffett_config['gm_fair'] = sw.threshold.fair
+
+            df_buffett = lynch_criteria.evaluate_batch(df, buffett_config)
+
+            # Merge scores (same as strategy executor)
+            df_merged = df_lynch[['symbol', 'overall_score']].rename(
+                columns={'overall_score': 'lynch_score'}
+            )
+            df_buffett_scores = df_buffett[['symbol', 'overall_score']].rename(
+                columns={'overall_score': 'buffett_score'}
+            )
+            df_merged = df_merged.merge(df_buffett_scores, on='symbol', how='inner')
+
+            # Filter by minimum thresholds
+            df_filtered = df_merged[
+                (df_merged['lynch_score'] >= lynch_min) &
+                (df_merged['buffett_score'] >= buffett_min)
+            ].copy()
+
+            # Create results
+            results = []
+            for _, row in df_filtered.iterrows():
+                results.append({
+                    'symbol': row['symbol'],
+                    'lynch_score': float(row['lynch_score']),
+                    'buffett_score': float(row['buffett_score'])
+                })
+
+            # Sort by average score descending
+            results.sort(key=lambda x: (x['lynch_score'] + x['buffett_score']) / 2, reverse=True)
+
+        except Exception as e:
+            logger.error(f"Error in vectorized scoring for preview: {e}")
+            return jsonify({'error': f'Scoring failed: {str(e)}'}), 500
+
+        return jsonify({'candidates': results})
+
+    except Exception as e:
+        logger.error(f"Error previewing strategy: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
 @app.route('/api/strategies/runs/<int:run_id>/decisions', methods=['GET'])
 @require_user_auth
 def get_run_decisions(user_id, run_id):

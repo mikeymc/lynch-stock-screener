@@ -150,7 +150,9 @@ class LynchCriteria:
         active_character = character_id if character_id else self._get_active_character()
 
         if active_character != 'lynch':
-            return self._evaluate_with_character(symbol, active_character, overrides, custom_metrics)
+            # Convert stock_metrics to custom_metrics if provided
+            metrics_to_pass = custom_metrics if custom_metrics else stock_metrics
+            return self._evaluate_with_character(symbol, active_character, overrides, metrics_to_pass)
 
         # Lynch evaluation
         # Get base metrics and growth data

@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import {
     X, ChevronRight, ChevronLeft, Check, Plus, Trash2,
-    HelpCircle, AlertCircle, Info
+    HelpCircle, AlertCircle, Info, Eye
 } from 'lucide-react';
 
 /**
@@ -17,17 +17,28 @@ const StrategyWizard = ({ onClose, onSuccess, initialData = null, mode = 'create
         description: '',
         conditions: {
             filters: [],
-            require_thesis: true
+            require_thesis: true,
+            scoring_requirements: [
+                { character: 'lynch', min_score: 60 },
+                { character: 'buffett', min_score: 60 }
+            ],
+            thesis_verdict_required: ['BUY']
         },
         consensus_mode: 'both_agree',
         consensus_threshold: 70,
         exit_conditions: {
             profit_target_pct: '',
             stop_loss_pct: '',
-            max_hold_days: ''
+            max_hold_days: '',
+            score_degradation: {
+                lynch_below: '',
+                buffett_below: ''
+            }
         },
         portfolio_selection: 'new',
         portfolio_id: 'new',
+        new_portfolio_name: '',
+        initial_cash: 100000,
         position_sizing: {
             method: 'equal_weight',
             max_position_pct: 10.0,
@@ -54,6 +65,8 @@ const StrategyWizard = ({ onClose, onSuccess, initialData = null, mode = 'create
     const [portfolios, setPortfolios] = useState([]);
     const [error, setError] = useState(null);
     const [loading, setLoading] = useState(false);
+    const [previewing, setPreviewing] = useState(false);
+    const [previewResults, setPreviewResults] = useState(null);
 
     // Fetch portfolios on mount
     useEffect(() => {
@@ -153,6 +166,34 @@ const StrategyWizard = ({ onClose, onSuccess, initialData = null, mode = 'create
         }
     };
 
+    const handlePreview = async () => {
+        setPreviewing(true);
+        setError(null);
+        try {
+            const payload = {
+                conditions: formData.conditions
+            };
+
+            const response = await fetch('/api/strategies/preview', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+
+            const result = await response.json();
+
+            if (!response.ok) {
+                throw new Error(result.error || 'Preview failed');
+            }
+
+            setPreviewResults(result);
+        } catch (err) {
+            setError(err.message);
+        } finally {
+            setPreviewing(false);
+        }
+    };
+
     return (
         <div className="fixed inset-0 bg-background/80 flex items-center justify-center z-50 p-4">
             <div className="bg-card border border-border rounded-xl w-full max-w-4xl h-[80vh] flex flex-col shadow-2xl overflow-hidden">
@@ -215,6 +256,223 @@ const StrategyWizard = ({ onClose, onSuccess, initialData = null, mode = 'create
                         <div className="space-y-8">
                             <h3 className="text-2xl font-semibold text-foreground">Strategy Logic</h3>
 
+                            {/* Universe Filters */}
+                            <div className="bg-muted/50 rounded-xl p-6 border border-border">
+                                <h4 className="font-medium text-foreground mb-4">Stock Screening Filters</h4>
+                                <p className="text-sm text-muted-foreground mb-4">
+                                    Define which stocks to evaluate. Leave empty to screen all stocks.
+                                </p>
+
+                                {formData.conditions.filters && formData.conditions.filters.length > 0 && (
+                                    <div className="space-y-3 mb-4">
+                                        {formData.conditions.filters.map((filter, idx) => (
+                                            <div key={idx} className="flex gap-3 items-start bg-background p-3 rounded-lg border border-input">
+                                                {/* Field Selection */}
+                                                <select
+                                                    value={filter.field || ''}
+                                                    onChange={e => {
+                                                        const newFilters = [...formData.conditions.filters];
+                                                        newFilters[idx] = { ...newFilters[idx], field: e.target.value };
+                                                        setFormData({
+                                                            ...formData,
+                                                            conditions: { ...formData.conditions, filters: newFilters }
+                                                        });
+                                                    }}
+                                                    className="flex-1 bg-background border border-input rounded-lg p-2 text-sm text-foreground"
+                                                >
+                                                    <option value="">Select field...</option>
+                                                    <option value="price_vs_52wk_high">Price vs 52-Week High (%)</option>
+                                                    <option value="market_cap">Market Cap ($)</option>
+                                                    <option value="pe_ratio">P/E Ratio</option>
+                                                    <option value="peg_ratio">PEG Ratio</option>
+                                                    <option value="debt_to_equity">Debt/Equity</option>
+                                                    <option value="price">Price ($)</option>
+                                                    <option value="sector">Sector</option>
+                                                </select>
+
+                                                {/* Operator Selection */}
+                                                <select
+                                                    value={filter.operator || ''}
+                                                    onChange={e => {
+                                                        const newFilters = [...formData.conditions.filters];
+                                                        newFilters[idx] = { ...newFilters[idx], operator: e.target.value };
+                                                        setFormData({
+                                                            ...formData,
+                                                            conditions: { ...formData.conditions, filters: newFilters }
+                                                        });
+                                                    }}
+                                                    className="w-24 bg-background border border-input rounded-lg p-2 text-sm text-foreground"
+                                                >
+                                                    <option value="">Op...</option>
+                                                    {filter.field === 'sector' ? (
+                                                        <>
+                                                            <option value="==">=</option>
+                                                            <option value="!=">≠</option>
+                                                        </>
+                                                    ) : (
+                                                        <>
+                                                            <option value="<">&lt;</option>
+                                                            <option value=">">&gt;</option>
+                                                            <option value="<=">≤</option>
+                                                            <option value=">=">≥</option>
+                                                            <option value="==">=</option>
+                                                            <option value="!=">≠</option>
+                                                        </>
+                                                    )}
+                                                </select>
+
+                                                {/* Value Input */}
+                                                {filter.field === 'sector' ? (
+                                                    <input
+                                                        type="text"
+                                                        placeholder="e.g. Technology"
+                                                        value={filter.value || ''}
+                                                        onChange={e => {
+                                                            const newFilters = [...formData.conditions.filters];
+                                                            newFilters[idx] = { ...newFilters[idx], value: e.target.value };
+                                                            setFormData({
+                                                                ...formData,
+                                                                conditions: { ...formData.conditions, filters: newFilters }
+                                                            });
+                                                        }}
+                                                        className="flex-1 bg-background border border-input rounded-lg p-2 text-sm text-foreground"
+                                                    />
+                                                ) : (
+                                                    <input
+                                                        type="number"
+                                                        step={filter.field === 'market_cap' ? '1000000000' : filter.field === 'price' ? '1' : '0.1'}
+                                                        placeholder={
+                                                            filter.field === 'price_vs_52wk_high' ? 'e.g. -20' :
+                                                            filter.field === 'market_cap' ? 'e.g. 10000000000' :
+                                                            filter.field === 'price' ? 'e.g. 50' :
+                                                            'e.g. 1.5'
+                                                        }
+                                                        value={filter.value === undefined ? '' : filter.value}
+                                                        onChange={e => {
+                                                            const newFilters = [...formData.conditions.filters];
+                                                            newFilters[idx] = { ...newFilters[idx], value: parseFloat(e.target.value) || '' };
+                                                            setFormData({
+                                                                ...formData,
+                                                                conditions: { ...formData.conditions, filters: newFilters }
+                                                            });
+                                                        }}
+                                                        className="flex-1 bg-background border border-input rounded-lg p-2 text-sm text-foreground"
+                                                    />
+                                                )}
+
+                                                {/* Remove Button */}
+                                                <button
+                                                    onClick={() => {
+                                                        const newFilters = formData.conditions.filters.filter((_, i) => i !== idx);
+                                                        setFormData({
+                                                            ...formData,
+                                                            conditions: { ...formData.conditions, filters: newFilters }
+                                                        });
+                                                    }}
+                                                    className="p-2 text-destructive hover:bg-destructive/10 rounded-lg"
+                                                    title="Remove filter"
+                                                >
+                                                    <Trash2 size={16} />
+                                                </button>
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
+
+                                <button
+                                    onClick={() => {
+                                        setFormData({
+                                            ...formData,
+                                            conditions: {
+                                                ...formData.conditions,
+                                                filters: [...(formData.conditions.filters || []), { field: '', operator: '', value: '' }]
+                                            }
+                                        });
+                                    }}
+                                    className="px-4 py-2 bg-primary/10 hover:bg-primary/20 text-primary rounded-lg flex items-center gap-2 text-sm font-medium transition-colors"
+                                >
+                                    <Plus size={16} /> Add Filter
+                                </button>
+                            </div>
+
+                            {/* Scoring Requirements */}
+                            <div className="bg-muted/50 rounded-xl p-6 border border-border">
+                                <h4 className="font-medium text-foreground mb-4">Minimum Score Thresholds</h4>
+                                <p className="text-sm text-muted-foreground mb-6">
+                                    Only stocks scoring above these thresholds will proceed to deliberation.
+                                </p>
+
+                                <div className="space-y-6">
+                                    <div>
+                                        <label className="flex justify-between mb-3">
+                                            <span className="text-sm text-foreground">Lynch Minimum Score</span>
+                                            <span className="font-mono text-sm text-primary font-medium">
+                                                {formData.conditions.scoring_requirements?.find(r => r.character === 'lynch')?.min_score || 60}
+                                            </span>
+                                        </label>
+                                        <input
+                                            type="range"
+                                            min="0"
+                                            max="100"
+                                            step="5"
+                                            value={formData.conditions.scoring_requirements?.find(r => r.character === 'lynch')?.min_score || 60}
+                                            onChange={e => {
+                                                const newReqs = [...(formData.conditions.scoring_requirements || [])];
+                                                const lynchIdx = newReqs.findIndex(r => r.character === 'lynch');
+                                                if (lynchIdx >= 0) {
+                                                    newReqs[lynchIdx] = { character: 'lynch', min_score: parseInt(e.target.value) };
+                                                } else {
+                                                    newReqs.push({ character: 'lynch', min_score: parseInt(e.target.value) });
+                                                }
+                                                setFormData({
+                                                    ...formData,
+                                                    conditions: { ...formData.conditions, scoring_requirements: newReqs }
+                                                });
+                                            }}
+                                            className="w-full h-2 bg-muted rounded-lg appearance-none cursor-pointer accent-primary"
+                                        />
+                                        <div className="flex justify-between text-xs text-muted-foreground mt-1">
+                                            <span>0 (Any)</span>
+                                            <span>100 (Perfect)</span>
+                                        </div>
+                                    </div>
+
+                                    <div>
+                                        <label className="flex justify-between mb-3">
+                                            <span className="text-sm text-foreground">Buffett Minimum Score</span>
+                                            <span className="font-mono text-sm text-primary font-medium">
+                                                {formData.conditions.scoring_requirements?.find(r => r.character === 'buffett')?.min_score || 60}
+                                            </span>
+                                        </label>
+                                        <input
+                                            type="range"
+                                            min="0"
+                                            max="100"
+                                            step="5"
+                                            value={formData.conditions.scoring_requirements?.find(r => r.character === 'buffett')?.min_score || 60}
+                                            onChange={e => {
+                                                const newReqs = [...(formData.conditions.scoring_requirements || [])];
+                                                const buffettIdx = newReqs.findIndex(r => r.character === 'buffett');
+                                                if (buffettIdx >= 0) {
+                                                    newReqs[buffettIdx] = { character: 'buffett', min_score: parseInt(e.target.value) };
+                                                } else {
+                                                    newReqs.push({ character: 'buffett', min_score: parseInt(e.target.value) });
+                                                }
+                                                setFormData({
+                                                    ...formData,
+                                                    conditions: { ...formData.conditions, scoring_requirements: newReqs }
+                                                });
+                                            }}
+                                            className="w-full h-2 bg-muted rounded-lg appearance-none cursor-pointer accent-primary"
+                                        />
+                                        <div className="flex justify-between text-xs text-muted-foreground mt-1">
+                                            <span>0 (Any)</span>
+                                            <span>100 (Perfect)</span>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
                             {/* Analysis Mode (AI Deliberation) */}
                             <div className="bg-muted/50 rounded-xl p-6 border border-border">
                                 <h4 className="font-medium text-foreground mb-4 flex items-center gap-2">
@@ -249,6 +507,83 @@ const StrategyWizard = ({ onClose, onSuccess, initialData = null, mode = 'create
                                         </button>
                                     </div>
                                 </div>
+
+                                {/* Thesis Verdict Requirements (conditional) */}
+                                {formData.conditions.require_thesis && (
+                                    <div className="mt-6 pt-6 border-t border-border">
+                                        <label className="text-sm font-medium text-foreground mb-3 block">
+                                            Accept These Verdicts:
+                                        </label>
+                                        <p className="text-xs text-muted-foreground mb-4">
+                                            Only trade when deliberation reaches these conclusions
+                                        </p>
+                                        <div className="space-y-3">
+                                            <label className="flex items-center gap-3 cursor-pointer group">
+                                                <input
+                                                    type="checkbox"
+                                                    checked={(formData.conditions.thesis_verdict_required || []).includes('BUY')}
+                                                    onChange={e => {
+                                                        const verdicts = formData.conditions.thesis_verdict_required || [];
+                                                        const newVerdicts = e.target.checked
+                                                            ? [...verdicts, 'BUY']
+                                                            : verdicts.filter(v => v !== 'BUY');
+                                                        setFormData({
+                                                            ...formData,
+                                                            conditions: { ...formData.conditions, thesis_verdict_required: newVerdicts }
+                                                        });
+                                                    }}
+                                                    className="w-4 h-4 rounded border-input text-primary focus:ring-primary"
+                                                />
+                                                <div>
+                                                    <span className="text-sm text-foreground font-medium">BUY</span>
+                                                    <p className="text-xs text-muted-foreground">High conviction purchase</p>
+                                                </div>
+                                            </label>
+                                            <label className="flex items-center gap-3 cursor-pointer group">
+                                                <input
+                                                    type="checkbox"
+                                                    checked={(formData.conditions.thesis_verdict_required || []).includes('WATCH')}
+                                                    onChange={e => {
+                                                        const verdicts = formData.conditions.thesis_verdict_required || [];
+                                                        const newVerdicts = e.target.checked
+                                                            ? [...verdicts, 'WATCH']
+                                                            : verdicts.filter(v => v !== 'WATCH');
+                                                        setFormData({
+                                                            ...formData,
+                                                            conditions: { ...formData.conditions, thesis_verdict_required: newVerdicts }
+                                                        });
+                                                    }}
+                                                    className="w-4 h-4 rounded border-input text-primary focus:ring-primary"
+                                                />
+                                                <div>
+                                                    <span className="text-sm text-foreground font-medium">WATCH</span>
+                                                    <p className="text-xs text-muted-foreground">Interesting, needs monitoring</p>
+                                                </div>
+                                            </label>
+                                            <label className="flex items-center gap-3 cursor-pointer group">
+                                                <input
+                                                    type="checkbox"
+                                                    checked={(formData.conditions.thesis_verdict_required || []).includes('AVOID')}
+                                                    onChange={e => {
+                                                        const verdicts = formData.conditions.thesis_verdict_required || [];
+                                                        const newVerdicts = e.target.checked
+                                                            ? [...verdicts, 'AVOID']
+                                                            : verdicts.filter(v => v !== 'AVOID');
+                                                        setFormData({
+                                                            ...formData,
+                                                            conditions: { ...formData.conditions, thesis_verdict_required: newVerdicts }
+                                                        });
+                                                    }}
+                                                    className="w-4 h-4 rounded border-input text-primary focus:ring-primary"
+                                                />
+                                                <div>
+                                                    <span className="text-sm text-foreground font-medium">AVOID</span>
+                                                    <p className="text-xs text-muted-foreground">Pass on opportunity</p>
+                                                </div>
+                                            </label>
+                                        </div>
+                                    </div>
+                                )}
                             </div>
 
                             <div className="bg-muted/50 rounded-xl p-6 border border-border">
@@ -266,6 +601,25 @@ const StrategyWizard = ({ onClose, onSuccess, initialData = null, mode = 'create
                                     <p className="text-xs text-muted-foreground mt-2">
                                         Determines how Lynch and Buffett agents agree on a trade.
                                     </p>
+
+                                    {/* Consensus Threshold (conditional on weighted_confidence) */}
+                                    {formData.consensus_mode === 'weighted_confidence' && (
+                                        <div className="mt-6 pt-6 border-t border-border">
+                                            <label className="block text-muted-foreground mb-2 text-sm">Consensus Threshold</label>
+                                            <input
+                                                type="number"
+                                                min="0"
+                                                max="100"
+                                                step="5"
+                                                value={formData.consensus_threshold || 70}
+                                                onChange={e => setFormData({ ...formData, consensus_threshold: parseInt(e.target.value) || 70 })}
+                                                className="w-full bg-background border border-input rounded-lg p-3 text-foreground"
+                                            />
+                                            <p className="text-xs text-muted-foreground mt-2">
+                                                Combined score needed for WATCH verdict (80+ = BUY)
+                                            </p>
+                                        </div>
+                                    )}
                                 </div>
                             </div>
 
@@ -313,6 +667,60 @@ const StrategyWizard = ({ onClose, onSuccess, initialData = null, mode = 'create
                                         />
                                     </div>
                                 </div>
+
+                                {/* Score Degradation Triggers */}
+                                <div className="pt-6 border-t border-border">
+                                    <h5 className="text-sm font-medium text-foreground mb-3">Score Degradation Triggers</h5>
+                                    <p className="text-xs text-muted-foreground mb-4">
+                                        Sell if re-evaluated scores fall below these thresholds (checks fundamentals, not price)
+                                    </p>
+                                    <div className="grid grid-cols-2 gap-6">
+                                        <div>
+                                            <label className="block text-muted-foreground mb-2 text-sm">Lynch Score Below</label>
+                                            <input
+                                                type="number"
+                                                min="0"
+                                                max="100"
+                                                step="5"
+                                                placeholder="e.g. 40"
+                                                value={formData.exit_conditions.score_degradation?.lynch_below || ''}
+                                                onChange={e => setFormData({
+                                                    ...formData,
+                                                    exit_conditions: {
+                                                        ...formData.exit_conditions,
+                                                        score_degradation: {
+                                                            ...formData.exit_conditions.score_degradation,
+                                                            lynch_below: e.target.value ? parseInt(e.target.value) : ''
+                                                        }
+                                                    }
+                                                })}
+                                                className="w-full bg-background border border-input rounded-lg p-3 text-foreground"
+                                            />
+                                        </div>
+                                        <div>
+                                            <label className="block text-muted-foreground mb-2 text-sm">Buffett Score Below</label>
+                                            <input
+                                                type="number"
+                                                min="0"
+                                                max="100"
+                                                step="5"
+                                                placeholder="e.g. 40"
+                                                value={formData.exit_conditions.score_degradation?.buffett_below || ''}
+                                                onChange={e => setFormData({
+                                                    ...formData,
+                                                    exit_conditions: {
+                                                        ...formData.exit_conditions,
+                                                        score_degradation: {
+                                                            ...formData.exit_conditions.score_degradation,
+                                                            buffett_below: e.target.value ? parseInt(e.target.value) : ''
+                                                        }
+                                                    }
+                                                })}
+                                                className="w-full bg-background border border-input rounded-lg p-3 text-foreground"
+                                            />
+                                        </div>
+                                    </div>
+                                </div>
                             </div>
                         </div>
                     )}
@@ -337,6 +745,40 @@ const StrategyWizard = ({ onClose, onSuccess, initialData = null, mode = 'create
                                     <Info size={14} className="mt-0.5" />
                                     Creating a new portfolio allows you to track this strategy's performance in isolation.
                                 </div>
+
+                                {/* New Portfolio Configuration */}
+                                {formData.portfolio_id === 'new' && (
+                                    <div className="mt-4 space-y-4 p-4 bg-background rounded-lg border border-border">
+                                        <div>
+                                            <label className="block text-muted-foreground mb-2 text-sm">Portfolio Name</label>
+                                            <input
+                                                type="text"
+                                                value={formData.new_portfolio_name || ''}
+                                                onChange={e => setFormData({ ...formData, new_portfolio_name: e.target.value })}
+                                                placeholder={formData.name || 'Strategy Name'}
+                                                className="w-full bg-background border border-input rounded-lg p-3 text-foreground"
+                                            />
+                                            <p className="text-xs text-muted-foreground mt-1">
+                                                Defaults to strategy name if left empty
+                                            </p>
+                                        </div>
+
+                                        <div>
+                                            <label className="block text-muted-foreground mb-2 text-sm">Initial Cash ($)</label>
+                                            <input
+                                                type="number"
+                                                step="1000"
+                                                min="1000"
+                                                value={formData.initial_cash || 100000}
+                                                onChange={e => setFormData({ ...formData, initial_cash: parseInt(e.target.value) || 100000 })}
+                                                className="w-full bg-background border border-input rounded-lg p-3 text-foreground"
+                                            />
+                                            <p className="text-xs text-muted-foreground mt-1">
+                                                Paper trading starting balance
+                                            </p>
+                                        </div>
+                                    </div>
+                                )}
                             </div>
 
                             <div className="bg-muted/50 rounded-xl p-6 border border-border space-y-6">
@@ -457,14 +899,51 @@ const StrategyWizard = ({ onClose, onSuccess, initialData = null, mode = 'create
                             <div>
                                 <label className="block text-muted-foreground mb-2 text-sm">Schedule</label>
                                 <select
-                                    value={formData.schedule_cron}
-                                    onChange={e => setFormData({ ...formData, schedule_cron: e.target.value })}
+                                    value={
+                                        formData.schedule_cron === '' || formData.schedule_cron === null ? 'manual' :
+                                        ['0 9 * * 1-5', '0 16 * * 1-5', '0 9 * * 1'].includes(formData.schedule_cron) ?
+                                        formData.schedule_cron : 'custom'
+                                    }
+                                    onChange={e => {
+                                        if (e.target.value === 'manual') {
+                                            setFormData({ ...formData, schedule_cron: '' });
+                                        } else if (e.target.value === 'custom') {
+                                            setFormData({ ...formData, schedule_cron: '' });
+                                        } else {
+                                            setFormData({ ...formData, schedule_cron: e.target.value });
+                                        }
+                                    }}
                                     className="w-full bg-background border border-input rounded-lg p-3 text-foreground"
                                 >
                                     <option value="0 9 * * 1-5">Daily at Market Open (9:00 AM)</option>
                                     <option value="0 16 * * 1-5">Daily at Market Close (4:00 PM)</option>
                                     <option value="0 9 * * 1">Weekly (Mondays)</option>
+                                    <option value="custom">Custom cron...</option>
+                                    <option value="manual">Manual only (no schedule)</option>
                                 </select>
+
+                                {/* Custom cron input */}
+                                {!['0 9 * * 1-5', '0 16 * * 1-5', '0 9 * * 1', '', null].includes(formData.schedule_cron) && (
+                                    <div className="mt-4">
+                                        <label className="block text-muted-foreground mb-2 text-sm">Custom Cron Expression</label>
+                                        <input
+                                            type="text"
+                                            placeholder="0 9 * * 1-5"
+                                            value={formData.schedule_cron}
+                                            onChange={e => setFormData({ ...formData, schedule_cron: e.target.value })}
+                                            className="w-full bg-background border border-input rounded-lg p-3 text-foreground font-mono text-sm"
+                                        />
+                                        <p className="text-xs text-muted-foreground mt-2">
+                                            Format: minute hour day month weekday (e.g., "0 9 * * 1-5" = 9 AM weekdays)
+                                        </p>
+                                    </div>
+                                )}
+
+                                {(formData.schedule_cron === '' || formData.schedule_cron === null) && (
+                                    <p className="text-xs text-muted-foreground mt-2">
+                                        Strategy will only run when manually triggered
+                                    </p>
+                                )}
                             </div>
                         </div>
                     )}
@@ -517,6 +996,49 @@ const StrategyWizard = ({ onClose, onSuccess, initialData = null, mode = 'create
                                         {formData.portfolio_id === 'new' ? 'Create New' : 'Existing'}
                                     </span>
                                 </div>
+                            </div>
+
+                            {/* Preview Section */}
+                            <div className="mb-6">
+                                <button
+                                    onClick={handlePreview}
+                                    disabled={previewing}
+                                    className="w-full px-6 py-3 bg-muted hover:bg-muted/80 text-foreground rounded-lg flex items-center justify-center gap-2 font-medium border border-border"
+                                >
+                                    <Eye size={20} />
+                                    {previewing ? 'Running Preview...' : 'Preview Stock Selection'}
+                                </button>
+
+                                {previewResults && (
+                                    <div className="mt-4 bg-muted/50 rounded-lg p-4 text-left">
+                                        <h4 className="text-sm font-semibold text-foreground mb-3">
+                                            Preview Results: {previewResults.candidates?.length || 0} stocks match criteria
+                                        </h4>
+                                        {previewResults.candidates && previewResults.candidates.length > 0 ? (
+                                            <div className="space-y-2 max-h-64 overflow-y-auto">
+                                                {previewResults.candidates.map((stock, idx) => (
+                                                    <div key={idx} className="flex justify-between items-center p-2 bg-background rounded border border-border">
+                                                        <span className="font-medium text-foreground">{stock.symbol}</span>
+                                                        <div className="flex gap-3 text-sm">
+                                                            {stock.lynch_score !== undefined && (
+                                                                <span className="text-muted-foreground">
+                                                                    Lynch: <span className="text-foreground font-medium">{stock.lynch_score}</span>
+                                                                </span>
+                                                            )}
+                                                            {stock.buffett_score !== undefined && (
+                                                                <span className="text-muted-foreground">
+                                                                    Buffett: <span className="text-foreground font-medium">{stock.buffett_score}</span>
+                                                                </span>
+                                                            )}
+                                                        </div>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        ) : (
+                                            <p className="text-sm text-muted-foreground">No stocks match the current criteria. Consider adjusting your filters or scoring requirements.</p>
+                                        )}
+                                    </div>
+                                )}
                             </div>
 
                             <div className="flex items-center justify-center gap-2 text-primary bg-primary/10 p-4 rounded-lg border border-primary/30">
