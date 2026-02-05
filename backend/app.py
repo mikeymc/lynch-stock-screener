@@ -190,7 +190,7 @@ sec_8k_client = SEC8KClient(sec_user_agent)
 # Track running validation/optimization jobs
 validation_jobs = {}
 optimization_jobs = {}
-rescoring_jobs = {}
+
 
 
 
@@ -4326,13 +4326,7 @@ def get_optimization_progress(job_id):
         logger.error(f"Error getting optimization progress for job {job_id}: {e}")
         return jsonify({'error': str(e), 'status': 'error'}), 500
 
-@app.route('/api/rescore/progress/<job_id>', methods=['GET'])
-def get_rescoring_progress(job_id):
-    """Get progress of a rescoring job"""
-    if job_id not in rescoring_jobs:
-        return jsonify({'error': 'Job not found'}), 404
-    
-    return jsonify(clean_nan_values(rescoring_jobs[job_id]))
+
 
 @app.route('/api/algorithm/config', methods=['GET', 'POST'])
 @require_user_auth
@@ -4472,21 +4466,9 @@ def algorithm_config(user_id=None):
         # Reload cached settings so detail page uses updated config
         criteria.reload_settings()
 
-        # Return immediately (no rescoring needed - scoring is done on-demand)
-        import uuid
-        job_id = str(uuid.uuid4())
-        
-        rescoring_jobs[job_id] = {
-            'status': 'complete',
-            'message': 'Rescoring skipped - scoring is done on-demand',
-            'total': 0,
-            'success': 0
-        }
-        
         return jsonify({
             'success': True,
-            'character_id': character_id,
-            'rescore_job_id': job_id
+            'character_id': character_id
         })
 
 

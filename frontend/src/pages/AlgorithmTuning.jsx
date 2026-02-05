@@ -61,12 +61,10 @@ export default function AlgorithmTuning() {
     const [rescoringRunning, setRescoringRunning] = useState(false);
     const [validationJobId, setValidationJobId] = useState(null);
     const [optimizationJobId, setOptimizationJobId] = useState(null);
-    const [rescoringJobId, setRescoringJobId] = useState(null);
-
     const [analysis, setAnalysis] = useState(null);
     const [optimizationResult, setOptimizationResult] = useState(null);
     const [optimizationProgress, setOptimizationProgress] = useState(null);
-    const [rescoringProgress, setRescoringProgress] = useState(null);
+
     const [yearsBack, setYearsBack] = useState(5);
 
     // Load current configuration on mount
