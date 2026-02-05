@@ -10,6 +10,57 @@ import {
  */
 const StrategyWizard = ({ onClose, onSuccess, initialData = null, mode = 'create' }) => {
     const [step, setStep] = useState(1);
+    const [selectedTemplate, setSelectedTemplate] = useState('');
+
+    // Filter Templates
+    const FILTER_TEMPLATES = {
+        beaten_down_large_caps: {
+            description: 'Large cap companies down 20%+ from their 52-week highs. Good for contrarian value investing.',
+            filters: [
+                { field: 'price_vs_52wk_high', operator: '<=', value: -20 },
+                { field: 'market_cap', operator: '>=', value: 10000000000 }
+            ]
+        },
+        value_stocks: {
+            description: 'Traditional value stocks with low P/E and PEG ratios. Favors mature, profitable companies.',
+            filters: [
+                { field: 'pe_ratio', operator: '<=', value: 15 },
+                { field: 'peg_ratio', operator: '<=', value: 1.0 }
+            ]
+        },
+        growth_at_reasonable_price: {
+            description: 'GARP strategy: PEG < 1 indicates growth trading below its rate. Peter Lynch\'s preferred approach.',
+            filters: [
+                { field: 'peg_ratio', operator: '<=', value: 1.0 },
+                { field: 'pe_ratio', operator: '>=', value: 5 },
+                { field: 'pe_ratio', operator: '<=', value: 30 }
+            ]
+        },
+        low_debt_stable: {
+            description: 'Conservative companies with low leverage. Safer during economic downturns.',
+            filters: [
+                { field: 'debt_to_equity', operator: '<=', value: 0.5 },
+                { field: 'market_cap', operator: '>=', value: 2000000000 }
+            ]
+        },
+        small_cap_growth: {
+            description: 'Small cap companies ($300M-$2B) with growth characteristics. Higher risk, higher potential reward.',
+            filters: [
+                { field: 'market_cap', operator: '>=', value: 300000000 },
+                { field: 'market_cap', operator: '<=', value: 2000000000 },
+                { field: 'pe_ratio', operator: '>=', value: 10 },
+                { field: 'pe_ratio', operator: '<=', value: 40 }
+            ]
+        },
+        dividend_value: {
+            description: 'Value-oriented companies likely to pay dividends. Low P/E, larger market caps.',
+            filters: [
+                { field: 'pe_ratio', operator: '<=', value: 15 },
+                { field: 'market_cap', operator: '>=', value: 5000000000 },
+                { field: 'debt_to_equity', operator: '<=', value: 1.0 }
+            ]
+        }
+    };
 
     // Default values
     const defaults = {
@@ -166,6 +217,26 @@ const StrategyWizard = ({ onClose, onSuccess, initialData = null, mode = 'create
         }
     };
 
+    const handleTemplateSelect = (e) => {
+        const templateKey = e.target.value;
+        setSelectedTemplate(templateKey);
+
+        if (templateKey === '') {
+            // "Custom" selected - clear filters
+            setFormData({
+                ...formData,
+                conditions: { ...formData.conditions, filters: [] }
+            });
+        } else {
+            // Apply template filters
+            const template = FILTER_TEMPLATES[templateKey];
+            setFormData({
+                ...formData,
+                conditions: { ...formData.conditions, filters: [...template.filters] }
+            });
+        }
+    };
+
     const handlePreview = async () => {
         setPreviewing(true);
         setError(null);
@@ -259,6 +330,35 @@ const StrategyWizard = ({ onClose, onSuccess, initialData = null, mode = 'create
                             {/* Universe Filters */}
                             <div className="bg-muted/50 rounded-xl p-6 border border-border">
                                 <h4 className="font-medium text-foreground mb-4">Stock Screening Filters</h4>
+
+                                {/* Template Selector */}
+                                <div className="mb-6">
+                                    <label className="block text-muted-foreground mb-2 text-sm">
+                                        Filter Template (Optional)
+                                    </label>
+                                    <select
+                                        value={selectedTemplate}
+                                        onChange={handleTemplateSelect}
+                                        className="w-full bg-background border border-input rounded-lg p-3 text-foreground"
+                                    >
+                                        <option value="">Custom (Build Your Own)</option>
+                                        <option value="beaten_down_large_caps">Beaten Down Large Caps</option>
+                                        <option value="value_stocks">Value Stocks</option>
+                                        <option value="growth_at_reasonable_price">Growth at Reasonable Price (GARP)</option>
+                                        <option value="low_debt_stable">Low Debt, Stable Companies</option>
+                                        <option value="small_cap_growth">Small Cap Growth</option>
+                                        <option value="dividend_value">Dividend Value Plays</option>
+                                    </select>
+
+                                    {selectedTemplate && (
+                                        <div className="mt-2 p-3 bg-primary/5 border border-primary/20 rounded-lg">
+                                            <p className="text-xs text-muted-foreground">
+                                                {FILTER_TEMPLATES[selectedTemplate].description}
+                                            </p>
+                                        </div>
+                                    )}
+                                </div>
+
                                 <p className="text-sm text-muted-foreground mb-4">
                                     Define which stocks to evaluate. Leave empty to screen all stocks.
                                 </p>
