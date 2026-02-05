@@ -22,18 +22,26 @@ export default function Settings() {
     const [expertiseLoading, setExpertiseLoading] = useState(true)
     const [switchingExpertise, setSwitchingExpertise] = useState(false)
 
+    const [algorithmTuningEnabled, setAlgorithmTuningEnabled] = useState(false)
+
     useEffect(() => {
         // Fetch available characters and current setting
         Promise.all([
             fetch("/api/characters").then(res => res.json()),
             fetch("/api/settings/character", { credentials: 'include' }).then(res => res.json()),
-            fetch("/api/settings/expertise-level", { credentials: 'include' }).then(res => res.json())
-        ]).then(([charsData, settingData, expertiseData]) => {
+            fetch("/api/settings/expertise-level", { credentials: 'include' }).then(res => res.json()),
+            fetch("/api/settings", { cache: 'no-store' }).then(res => res.json())
+        ]).then(([charsData, settingData, expertiseData, generalSettings]) => {
             setCharacters(charsData.characters || [])
             setActiveCharacter(settingData.active_character || "lynch")
             setCharacterLoading(false)
             setExpertiseLevel(expertiseData.expertise_level || "practicing")
             setExpertiseLoading(false)
+
+            // Check feature flag
+            const algoEnabled = generalSettings.feature_algorithm_optimization_enabled?.value === true ||
+                generalSettings.feature_algorithm_optimization_enabled?.value === 'true'
+            setAlgorithmTuningEnabled(algoEnabled)
         }).catch(err => {
             console.error("Failed to load settings:", err)
             setCharacterLoading(false)
@@ -134,10 +142,10 @@ export default function Settings() {
             id: "expertise",
             title: "Expertise Level",
         },
-        {
+        ...(algorithmTuningEnabled ? [{
             id: "item2",
             title: "Algorithm Tuning",
-        },
+        }] : []),
     ]
 
     return (

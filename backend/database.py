@@ -1647,7 +1647,7 @@ class Database:
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS app_settings (
                 key TEXT PRIMARY KEY,
-                value TEXT,
+                value JSONB,
                 description TEXT
             )
         """)
@@ -1695,6 +1695,42 @@ class Database:
                 VALUES ('feature_economy_link_enabled', 'false', 'Show Economy link in navigation sidebar')
             """)
             conn.commit()
+
+        # Feature flag: Algorithm Tuning / Optimization
+        cursor.execute("SELECT 1 FROM app_settings WHERE key = 'feature_algorithm_optimization_enabled'")
+        if not cursor.fetchone():
+            cursor.execute("""
+                INSERT INTO app_settings (key, value, description)
+                VALUES ('feature_algorithm_optimization_enabled', 'false'::jsonb, 'Enable algorithm tuning/optimization features')
+            """)
+            conn.commit()
+            
+        # Migration: Convert app_settings.value to JSONB if it's currently TEXT
+        cursor.execute("""
+            SELECT data_type 
+            FROM information_schema.columns 
+            WHERE table_name = 'app_settings' AND column_name = 'value'
+        """)
+        dtype = cursor.fetchone()
+        if dtype and dtype[0] == 'text':
+            logger.info("Migrating app_settings.value from TEXT to JSONB...")
+            try:
+                # 1. Fix known non-JSON formatting issues before casting
+                cursor.execute("UPDATE app_settings SET value = TRIM(value)")
+                
+                # 2. Fix bare strings that might resemble bools but should be bools (or handled as such)
+                # 'true' -> true (bool), '"true"' -> "true" (string). 
+                # We want boolean features to be boolean.
+                cursor.execute("UPDATE app_settings SET value = 'true' WHERE value = '\"true\"' OR value = 'true'")
+                cursor.execute("UPDATE app_settings SET value = 'false' WHERE value = '\"false\"' OR value = 'false'")
+                
+                # 3. Perform the alteration
+                cursor.execute("ALTER TABLE app_settings ALTER COLUMN value TYPE JSONB USING value::jsonb")
+                conn.commit()
+                logger.info("Migration complete: app_settings.value is now JSONB")
+            except Exception as e:
+                logger.error(f"Failed to migrate app_settings to JSONB: {e}")
+                conn.rollback()
 
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS news_articles (
@@ -4765,10 +4801,8 @@ class Database:
         if result is None:
             return None
         else:
-            try:
-                value = json.loads(result[0])
-            except (json.JSONDecodeError, TypeError):
-                value = result[0]
+            # psycopg3 automatically decodes JSONB
+            value = result[0]
                 
             return {
                 'key': key,
@@ -5746,7 +5780,8 @@ class Database:
         conn = self.get_connection()
         cursor = conn.cursor()
 
-        json_value = json.dumps(value)
+        # No need to json.dumps with JSONB column and psycopg3
+        json_value = value
 
         if description:
             cursor.execute("""
@@ -5780,10 +5815,8 @@ class Database:
 
         settings = {}
         for row in rows:
-            try:
-                value = json.loads(row[1])
-            except (json.JSONDecodeError, TypeError):
-                value = row[1]
+            # psycopg3 automatically decodes JSONB to Python objects (bool, dict, list)
+            value = row[1]
 
             settings[row[0]] = {
                 'value': value,
