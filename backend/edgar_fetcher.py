@@ -3537,7 +3537,7 @@ class EdgarFetcher:
 
             filings = []
             for i, form in enumerate(forms):
-                if form in ['10-K', '10-Q']:
+                if form in ['10-K', '10-Q', '20-F', '6-K']:
                     filing_date = filing_dates[i]
                     
                     # Skip filings older than since_date (incremental fetch)
@@ -3565,9 +3565,9 @@ class EdgarFetcher:
                     })
 
             if since_date and not filings:
-                logger.debug(f"[SECDataFetcher][{ticker}] No new 10-K/10-Q filings since {since_date}")
+                logger.debug(f"[SECDataFetcher][{ticker}] No new SEC filings since {since_date}")
             else:
-                logger.info(f"[SECDataFetcher][{ticker}] Found {len(filings)} 10-K/10-Q filings" + 
+                logger.info(f"[SECDataFetcher][{ticker}] Found {len(filings)} SEC filings" + 
                            (f" (new since {since_date})" if since_date else ""))
             return filings
 
@@ -3701,6 +3701,62 @@ class EdgarFetcher:
                         logger.info(f"[SECDataFetcher][{ticker}] Extracted Item 3 (Market Risk): {len(str(market_risk))} chars")
                 except (KeyError, AttributeError):
                     logger.info(f"[SECDataFetcher][{ticker}] Item 3 (Market Risk) not available in 10-Q")
+
+            elif filing_type == '20-F':
+                # Extract 20-F sections (Foreign Private Issuer Annual Report)
+                # 20-F item numbering differs from 10-K:
+                # Item 4 = Information on the Company (equivalent to Item 1 Business)
+                # Item 3D = Risk Factors (equivalent to Item 1A)
+                # Item 5 = Operating and Financial Review (equivalent to Item 7 MD&A)
+                # Item 11 = Quantitative and Qualitative Disclosures (equivalent to Item 7A)
+                
+                try:
+                    business = filing_obj["Item 4"]
+                    if business:
+                        sections['business'] = {
+                            'content': business,
+                            'filing_type': '20-F',
+                            'filing_date': filing_date
+                        }
+                        logger.info(f"[SECDataFetcher][{ticker}] Extracted Item 4 (Business): {len(str(business))} chars")
+                except (KeyError, AttributeError):
+                    logger.info(f"[SECDataFetcher][{ticker}] Item 4 (Business) not available in 20-F")
+
+                try:
+                    risk_factors = filing_obj["Item 3D"]
+                    if risk_factors:
+                        sections['risk_factors'] = {
+                            'content': risk_factors,
+                            'filing_type': '20-F',
+                            'filing_date': filing_date
+                        }
+                        logger.info(f"[SECDataFetcher][{ticker}] Extracted Item 3D (Risk Factors): {len(str(risk_factors))} chars")
+                except (KeyError, AttributeError):
+                    logger.info(f"[SECDataFetcher][{ticker}] Item 3D (Risk Factors) not available in 20-F")
+
+                try:
+                    mda = filing_obj["Item 5"]
+                    if mda:
+                        sections['mda'] = {
+                            'content': mda,
+                            'filing_type': '20-F',
+                            'filing_date': filing_date
+                        }
+                        logger.info(f"[SECDataFetcher][{ticker}] Extracted Item 5 (MD&A): {len(str(mda))} chars")
+                except (KeyError, AttributeError):
+                    logger.info(f"[SECDataFetcher][{ticker}] Item 5 (MD&A) not available in 20-F")
+
+                try:
+                    market_risk = filing_obj["Item 11"]
+                    if market_risk:
+                        sections['market_risk'] = {
+                            'content': market_risk,
+                            'filing_type': '20-F',
+                            'filing_date': filing_date
+                        }
+                        logger.info(f"[SECDataFetcher][{ticker}] Extracted Item 11 (Market Risk): {len(str(market_risk))} chars")
+                except (KeyError, AttributeError):
+                    logger.info(f"[SECDataFetcher][{ticker}] Item 11 (Market Risk) not available in 20-F")
 
             t_extract = (time.time() - t0) * 1000
             t_total = (time.time() - t_start) * 1000

@@ -1000,7 +1000,32 @@ def update_settings():
         return jsonify({'error': str(e)}), 500
 
 
-@app.route('/api/characters', methods=['GET'])
+@app.route('/api/countries', methods=['GET'])
+def get_countries():
+    """Get list of countries with stock counts for filtering."""
+    try:
+        conn = db.get_connection()
+        cursor = conn.cursor()
+        
+        # Get country counts
+        cursor.execute("""
+            SELECT country, COUNT(*) as count
+            FROM stocks
+            WHERE country IS NOT NULL
+            GROUP BY country
+            ORDER BY count DESC
+        """)
+        
+        rows = cursor.fetchall()
+        db.return_connection(conn)
+        
+        countries = [{'code': row[0], 'count': row[1]} for row in rows]
+        
+        return jsonify({'countries': countries})
+    except Exception as e:
+        logger.error(f"Error getting countries: {e}")
+        return jsonify({'error': str(e)}), 500
+
 def get_characters():
     """Get list of available investment characters."""
     try:

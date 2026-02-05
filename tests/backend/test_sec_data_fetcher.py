@@ -24,6 +24,7 @@ class TestSECDataFetcher:
     def mock_edgar_fetcher(self):
         """Create a mock EDGAR fetcher"""
         fetcher = Mock()
+        fetcher.get_cik_for_ticker = Mock(return_value="0000320193")  # Default: has CIK (SEC filer)
         fetcher.fetch_recent_filings = Mock()
         fetcher.extract_filing_sections = Mock()
         return fetcher
@@ -71,11 +72,29 @@ class TestSECDataFetcher:
             symbol, 'business', 'Business description...', '10-K', '2023-10-27'
         )
     
-    def test_skip_non_us_stock(self, fetcher, mock_db, mock_edgar_fetcher):
-        """Test that non-US stocks are skipped"""
-        # Setup
+    def test_fpi_stock_with_cik_is_processed(self, fetcher, mock_db, mock_edgar_fetcher):
+        """Test that Foreign Private Issuers with CIK are processed"""
+        # Setup: FPI like TSM has a CIK and files 20-F with SEC
         symbol = "TSM"
-        mock_db.get_stock_metrics.return_value = {'country': 'Taiwan'}
+        mock_edgar_fetcher.get_cik_for_ticker.return_value = "0001046179"  # TSM's actual CIK
+        mock_db.get_latest_sec_filing_date.return_value = None
+        mock_edgar_fetcher.fetch_recent_filings.return_value = [
+            {'type': '20-F', 'date': '2023-04-14', 'url': 'http://...', 'accession_number': '0001046179-23-000049'}
+        ]
+        mock_edgar_fetcher.extract_filing_sections.return_value = {}
+        
+        # Execute
+        fetcher.fetch_and_cache_all(symbol)
+        
+        # Verify - FPI should be processed (CIK-based, not country-based)
+        mock_edgar_fetcher.fetch_recent_filings.assert_called_once()
+        mock_db.save_sec_filing.assert_called_once()
+    
+    def test_skip_stock_without_cik(self, fetcher, mock_db, mock_edgar_fetcher):
+        """Test that stocks without CIK are skipped"""
+        # Setup: Stock without SEC filings (no CIK)
+        symbol = "UNKNOWN"
+        mock_edgar_fetcher.get_cik_for_ticker.return_value = None
         
         # Execute
         fetcher.fetch_and_cache_all(symbol)
@@ -170,6 +189,7 @@ class TestSECDataFetcherIncremental:
     def mock_edgar_fetcher(self):
         """Create a mock EDGAR fetcher"""
         fetcher = Mock()
+        fetcher.get_cik_for_ticker = Mock(return_value="0000320193")  # Default: has CIK (SEC filer)
         fetcher.fetch_recent_filings = Mock()
         fetcher.extract_filing_sections = Mock()
         return fetcher

@@ -3,6 +3,7 @@ import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
 import { RotateCcw } from 'lucide-react'
+import CountryFilter from '@/components/CountryFilter'
 
 // Region to country mappings (using 2-letter country codes)
 const REGION_COUNTRIES = {
@@ -22,21 +23,7 @@ export default function AdvancedFilter({ filters, onFiltersChange, isOpen, onTog
         setLocalFilters(filters)
     }, [filters])
 
-    const handleRegionToggle = (region) => {
-        const newRegions = localFilters.regions.includes(region)
-            ? localFilters.regions.filter(r => r !== region)
-            : [...localFilters.regions, region]
-
-        const updatedFilters = { ...localFilters, regions: newRegions }
-        setLocalFilters(updatedFilters)
-        onFiltersChange(updatedFilters)
-    }
-
-    const handleCountryToggle = (country) => {
-        const newCountries = localFilters.countries.includes(country)
-            ? localFilters.countries.filter(c => c !== country)
-            : [...localFilters.countries, country]
-
+    const handleCountryChange = (newCountries) => {
         const updatedFilters = { ...localFilters, countries: newCountries }
         setLocalFilters(updatedFilters)
         onFiltersChange(updatedFilters)
@@ -95,7 +82,6 @@ export default function AdvancedFilter({ filters, onFiltersChange, isOpen, onTog
     const handleClearFilters = () => {
         const emptyFilters = {
             countries: [],
-            regions: [],
             institutionalOwnership: { max: null },
             revenueGrowth: { min: null },
             incomeGrowth: { min: null },
@@ -109,11 +95,7 @@ export default function AdvancedFilter({ filters, onFiltersChange, isOpen, onTog
 
     const getActiveFilterCount = () => {
         let count = 0
-        // Only count country/region filters if they're visible (not US-only mode)
-        if (!usStocksOnly) {
-            if (localFilters.regions.length > 0) count++
-            if (localFilters.countries.length > 0) count++
-        }
+        if (localFilters.countries.length > 0) count++
         if (localFilters.institutionalOwnership?.max !== null) count++
         if (localFilters.revenueGrowth.min !== null) count++
         if (localFilters.incomeGrowth.min !== null) count++
@@ -128,24 +110,14 @@ export default function AdvancedFilter({ filters, onFiltersChange, isOpen, onTog
     return (
         <div className="bg-card rounded-lg border p-6 mb-4">
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-3">
-                {/* Region/Country Filters - Only show if not US-only mode */}
-                {!usStocksOnly && (
-                    <div className="flex flex-col gap-2">
-                        <Label className="text-sm font-medium">Region</Label>
-                        <div className="flex flex-wrap gap-2">
-                            {Object.keys(REGION_COUNTRIES).map(region => (
-                                <Button
-                                    key={region}
-                                    variant={localFilters.regions.includes(region) ? 'default' : 'outline'}
-                                    size="sm"
-                                    onClick={() => handleRegionToggle(region)}
-                                >
-                                    {region}
-                                </Button>
-                            ))}
-                        </div>
-                    </div>
-                )}
+                {/* Country Filter */}
+                <div className="flex flex-col gap-2">
+                    <Label className="text-sm font-medium">Country</Label>
+                    <CountryFilter
+                        selectedCountries={localFilters.countries}
+                        onChange={handleCountryChange}
+                    />
+                </div>
 
                 {/* Institutional Ownership */}
                 <div className="flex flex-col gap-2">

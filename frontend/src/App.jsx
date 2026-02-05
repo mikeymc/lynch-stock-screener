@@ -138,7 +138,6 @@ function StockListView({
   // Advanced filters state
   const [advancedFilters, setAdvancedFilters] = useState({
     countries: [],
-    regions: [],
     institutionalOwnership: { max: null },
     revenueGrowth: { min: null },
     incomeGrowth: { min: null },
@@ -759,28 +758,11 @@ function StockListView({
       )
     }
 
-    // Advanced filters (Region, etc.)
-    if (advancedFilters.regions.length > 0 || advancedFilters.countries.length > 0) {
+    // Advanced filters (Country)
+    if (advancedFilters.countries.length > 0) {
       result = result.filter(stock => {
         const stockCountry = stock.country || ''
-        let matchesRegion = false
-        const REGION_COUNTRIES = {
-          'USA': ['US'],
-          'Canada': ['CA'],
-          'Central/South America': ['MX', 'BR', 'AR', 'CL', 'PE', 'CO', 'VE', 'EC', 'BO', 'PY', 'UY', 'CR', 'PA', 'GT', 'HN', 'SV', 'NI'],
-          'Europe': ['GB', 'DE', 'FR', 'IT', 'ES', 'NL', 'CH', 'IE', 'BE', 'SE', 'NO', 'DK', 'FI', 'AT', 'PL', 'PT', 'GR', 'CZ', 'HU', 'RO', 'LU', 'IS'],
-          'Asia': ['CN', 'JP', 'KR', 'IN', 'SG', 'HK', 'TW', 'TH', 'MY', 'ID', 'PH', 'VN', 'IL'],
-          'Other': []
-        }
-        // Region check
-        for (const region of advancedFilters.regions) {
-          if ((REGION_COUNTRIES[region] || []).includes(stockCountry)) {
-            matchesRegion = true; break;
-          }
-        }
-        // Country check
-        const matchesCountry = advancedFilters.countries.includes(stockCountry)
-        return matchesRegion || matchesCountry
+        return advancedFilters.countries.includes(stockCountry)
       })
     }
     // Institutional ownership

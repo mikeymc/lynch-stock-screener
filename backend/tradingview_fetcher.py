@@ -234,9 +234,11 @@ class TradingViewFetcher:
                         
                         # Filter by security type (typespecs) - only include common stocks and REITs
                         # This excludes: etf, preferred, unit, closedend, trust, dr
+                        # Allows: common, reit, and empty (for FPIs)
                         if typespecs:
                             # typespecs is a list like ['common'] or ['preferred']
-                            if not any(spec in self.ALLOWED_TYPESPECS for spec in typespecs):
+                            # Allow empty typespecs (FPIs often have empty typespec)
+                            if not any(spec in self.ALLOWED_TYPESPECS or spec == '' for spec in typespecs):
                                 filtered_count += 1
                                 logger.debug(f"Filtering {ticker}: typespecs={typespecs}")
                                 continue
