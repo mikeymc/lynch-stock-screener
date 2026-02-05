@@ -1104,7 +1104,7 @@ Return JSON only:
         failed_symbols = []
 
         BATCH_SIZE = 10
-        MAX_WORKERS = 40
+        MAX_WORKERS = 20  # Reduced from 40 to prevent DB pool exhaustion when multiple jobs run
         BATCH_DELAY = 0.5
 
         with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
@@ -1153,7 +1153,8 @@ Return JSON only:
                                             progress_message=f'Processed {processed_count}/{total}',
                                             processed_count=processed_count)
                 
-                logger.info(f"========== SCREENING PROGRESS: {processed_count}/{total} ({progress_pct}%) | MEMORY: {get_memory_mb():.0f}MB ==========")
+                pool_stats = self.db.get_pool_stats()
+                logger.info(f"========== SCREENING PROGRESS: {processed_count}/{total} ({progress_pct}%) | MEMORY: {get_memory_mb():.0f}MB | DB POOL: {pool_stats['current_in_use']}/{pool_stats['pool_size']} (peak: {pool_stats['peak_in_use']}) ==========")
                 check_memory_warning(f"[screening {processed_count}/{total}]")
                 
                 # Periodic garbage collection to prevent memory buildup

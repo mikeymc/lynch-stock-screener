@@ -1857,7 +1857,7 @@ def screen_stocks():
             
             # Process stocks in batches using parallel workers
             BATCH_SIZE = 10
-            MAX_WORKERS = 40
+            MAX_WORKERS = 20  # Reduced from 40 to prevent DB pool exhaustion
             BATCH_DELAY = 0.5
             
             with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:

@@ -9,8 +9,8 @@ on:
     - cron: '0 * * * *'
     # Price Update - every 5 minutes (fast TradingView fetch)
     - cron: '*/5 * * * *'
-    # Full screening at 10:00 PM ET (3:00 AM UTC) daily
-    - cron: '0 3 * * *'
+    # Full screening at 8:00 PM ET (1:00 AM UTC) daily - staggered 3h before other heavy jobs
+    - cron: '0 1 * * *'
     # News cache every 2 hours from 6am-8pm ET on weekdays
     - cron: '0 11 * * 1-5'  # 6am ET
     - cron: '0 13 * * 1-5'  # 8am ET
@@ -47,9 +47,9 @@ on:
     - cron: '30 21 * * 1-5'  # 4:30pm ET
     - cron: '30 23 * * 1-5'  # 6:30pm ET
     - cron: '30 1 * * 2-6'   # 8:30pm ET
-    # Price history cache at 11:00 PM ET (4:00 AM UTC) daily
+    # Price history cache at 11:00 PM ET (4:00 AM UTC) daily - after full_screening completes
     - cron: '0 4 * * *'
-    # Outlook cache at 12:00 AM ET (5:00 AM UTC) daily
+    # Outlook cache at 12:00 AM ET (5:00 AM UTC) daily - after price_history completes
     - cron: '0 5 * * *'
     # Transcript cache at 12:30 AM ET (5:30 AM UTC) daily - runs last
     # Run 4x daily to catch new publications promptly
@@ -58,8 +58,8 @@ on:
     - cron: '30 17 * * *' # 12:30 PM ET 
     - cron: '30 23 * * *' # 6:30 PM ET
 
-    # Forward metrics cache at 1:00 AM ET (6:00 AM UTC) daily
-    - cron: '0 6 * * *'
+    # Forward metrics cache at 2:00 AM ET (7:00 AM UTC) daily - after outlook completes
+    - cron: '0 7 * * *'
     # Strategy execution at 9:30 AM ET (2:30 PM UTC) on weekdays - just after market open
     - cron: '30 14 * * 1-5'
     # Benchmark snapshot at 4:05 PM ET (9:05 PM UTC) on weekdays - Market Close
@@ -103,7 +103,7 @@ jobs:
             case "$SCHEDULE" in
               "*/5 * * * *") echo "type=price_update" >> $GITHUB_OUTPUT ;;
               "0 * * * *")   echo "type=check_alerts" >> $GITHUB_OUTPUT ;;
-              "0 3 * * *")   echo "type=full_screening" >> $GITHUB_OUTPUT ;;
+              "0 1 * * *")   echo "type=full_screening" >> $GITHUB_OUTPUT ;;
               "0 11 * * 1-5") echo "type=news_cache" >> $GITHUB_OUTPUT ;;
               "0 13 * * 1-5") echo "type=news_cache" >> $GITHUB_OUTPUT ;;
               "0 15 * * 1-5") echo "type=news_cache" >> $GITHUB_OUTPUT ;;
@@ -142,7 +142,7 @@ jobs:
               "30 11 * * *") echo "type=transcript_cache" >> $GITHUB_OUTPUT ;;
               "30 17 * * *") echo "type=transcript_cache" >> $GITHUB_OUTPUT ;;
               "30 23 * * *") echo "type=transcript_cache" >> $GITHUB_OUTPUT ;;
-              "0 6 * * *")   echo "type=forward_metrics_cache" >> $GITHUB_OUTPUT ;;
+              "0 7 * * *")   echo "type=forward_metrics_cache" >> $GITHUB_OUTPUT ;;
               "30 14 * * 1-5") echo "type=strategy_execution" >> $GITHUB_OUTPUT ;;
               "5 21 * * 1-5") echo "type=benchmark_snapshot" >> $GITHUB_OUTPUT ;;
               *)             echo "Unknown schedule: $SCHEDULE" && exit 1 ;;
