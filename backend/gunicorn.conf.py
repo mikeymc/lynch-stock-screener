@@ -16,7 +16,9 @@ workers = 1
 timeout = 28800  # 8 hours
 
 # Worker class
-worker_class = "sync"
+worker_class = "gthread"
+threads = 10
+
 
 # Logging
 accesslog = "-"
