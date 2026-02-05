@@ -13,9 +13,10 @@ logger = logging.getLogger(__name__)
 class MaterialEventsFetcher:
     """Fetches and caches material events (8-K filings) for stocks"""
     
-    def __init__(self, db: Database, sec_8k_client: SEC8KClient):
+    def __init__(self, db: Database, sec_8k_client: SEC8KClient, data_fetcher=None):
         self.db = db
         self.sec_8k_client = sec_8k_client
+        self.data_fetcher = data_fetcher
     
     def fetch_and_cache_events(self, symbol: str, force_refresh: bool = False):
         """
@@ -51,6 +52,10 @@ class MaterialEventsFetcher:
             # Save new events
             for event in events:
                 self.db.save_material_event(symbol, event)
+                
+                # Process Earnings (Item 2.02) if data_fetcher is available
+                if self.data_fetcher and '2.02' in event.get('sec_item_codes', []):
+                    self.data_fetcher.process_item_202(symbol, event)
             
             logger.info(f"[MaterialEventsFetcher][{symbol}] Cached {len(events)} {'new ' if since_date else ''}material events")
         

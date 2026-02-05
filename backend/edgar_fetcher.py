@@ -2825,6 +2825,515 @@ class EdgarFetcher:
                 
         return None
 
+    def _extract_quarterly_from_raw_xbrl(self, ticker: str, income_statement, fiscal_year: int = None, fiscal_quarter: str = None) -> Dict[str, Any]:
+        """
+        Extract discrete quarterly values from income statement using get_raw_data().
+        
+        In edgartools 5.x, to_dataframe() no longer provides (Q) column suffixes.
+        Instead, we use get_raw_data() which provides values with period keys like:
+        - 'duration_2025-04-01_2025-06-30' for Q2 discrete (3 months)
+        - 'duration_2025-01-01_2025-06-30' for 6-month YTD
+        
+        We identify quarterly values by finding periods with ~90 day duration.
+        """
+        result = {
+            'revenue': None,
+            'net_income': None,
+            'eps': None,
+            'fiscal_year': fiscal_year,
+            'fiscal_quarter': fiscal_quarter,
+            'fiscal_end': None
+        }
+        
+        try:
+            raw_data = income_statement.get_raw_data()
+        except Exception as e:
+            logger.warning(f"[{ticker}] Failed to get raw XBRL data: {e}")
+            return result
+        
+        quarter_period_key = None
+        
+        for item in raw_data:
+            if not item.get('has_values') or item.get('is_abstract'):
+                continue
+            
+            label = item.get('label', '')
+            concept = item.get('concept', '')
+            values = item.get('values', {})
+            
+            # Skip dimensional breakdowns (segments) - we want total values only
+            if item.get('is_dimension', False):
+                continue
+            
+            # Check if this is a revenue concept (not cost)
+            is_revenue = ('revenue' in label.lower() or 
+                         concept.lower() == 'us-gaap_revenues')
+            is_cost = 'cost' in label.lower()
+            
+            if is_revenue and not is_cost and not result['revenue']:
+                # Find the discrete quarterly value (shortest duration period)
+                quarterly_periods = []
+                for period_key, val in values.items():
+                    if period_key.startswith('duration_'):
+                        parts = period_key.replace('duration_', '').split('_')
+                        if len(parts) == 2:
+                            start_date = parts[0]
+                            end_date = parts[1]
+                            from datetime import datetime
+                            try:
+                                start = datetime.strptime(start_date, '%Y-%m-%d')
+                                end = datetime.strptime(end_date, '%Y-%m-%d')
+                                duration_days = (end - start).days
+                                quarterly_periods.append({
+                                    'key': period_key,
+                                    'value': val,
+                                    'start': start_date,
+                                    'end': end_date,
+                                    'duration_days': duration_days
+                                })
+                            except:
+                                pass
+                
+                if quarterly_periods:
+                    # Sort by end date (most recent first), then by duration (shortest = discrete quarterly)
+                    quarterly_periods.sort(key=lambda x: (-int(x['end'].replace('-', '')), x['duration_days']))
+                    
+                    # Pick the first one that's a 3-month period (80-100 days)
+                    for qp in quarterly_periods:
+                        if 80 <= qp['duration_days'] <= 100:
+                            result['revenue'] = qp['value']
+                            quarter_period_key = qp['key']
+                            result['fiscal_end'] = qp['end']
+                            logger.info(f"[{ticker}] Found discrete quarterly revenue: ${qp['value']/1e9:.2f}B from {qp['start']} to {qp['end']} ({qp['duration_days']} days)")
+                            break
+            
+            # Check for net income
+            is_net_income = ('net income' in label.lower() and 
+                           'per share' not in label.lower() and
+                           'comprehensive' not in label.lower())
+            
+            if is_net_income and not result['net_income'] and quarter_period_key:
+                if quarter_period_key in values:
+                    result['net_income'] = values[quarter_period_key]
+                    logger.info(f"[{ticker}] Found discrete quarterly Net Income: ${result['net_income']/1e9:.2f}B")
+            
+            # Check for EPS (diluted)
+            is_eps = ('earnings per share' in label.lower() and 'diluted' in label.lower())
+            
+            if is_eps and not result['eps'] and quarter_period_key:
+                if quarter_period_key in values:
+                    result['eps'] = values[quarter_period_key]
+                    logger.info(f"[{ticker}] Found discrete quarterly EPS: ${result['eps']:.2f}")
+        
+        # Infer fiscal quarter from fiscal_end date if not provided
+        if result['fiscal_end'] and not result['fiscal_quarter']:
+            try:
+                m = int(result['fiscal_end'].split('-')[1])
+                if m in [1, 2, 3]: result['fiscal_quarter'] = 'Q1'
+                elif m in [4, 5, 6]: result['fiscal_quarter'] = 'Q2'
+                elif m in [7, 8, 9]: result['fiscal_quarter'] = 'Q3'
+                else: result['fiscal_quarter'] = 'Q4'
+                result['fiscal_year'] = int(result['fiscal_end'].split('-')[0])
+            except:
+                pass
+        
+        return result
+
+
+
+    def get_quarterly_financials_from_10q(self, ticker: str, num_quarters: int = 8) -> Dict[str, List[Dict[str, Any]]]:
+        """
+        Extract quarterly financials directly from 10-Q filings using edgartools.
+        
+        This method bypasses the outdated company_facts API and parses 10-Q filings
+        directly to extract all quarterly financial metrics. This solves issues with:
+        - Missing data for companies like AAPL/MSFT (company_facts is outdated)
+        - Incorrect data for companies like NFLX (prior-year comparatives)
+        - Inconsistent XBRL tags across companies
+        
+        Args:
+            ticker: Stock ticker symbol
+            num_quarters: Number of recent quarters to extract (default: 8 = 2 years)
+        
+        Returns:
+            Dictionary containing quarterly data lists:
+            - revenue_quarterly: List of {year, quarter, revenue, fiscal_end}
+            - eps_quarterly: List of {year, quarter, eps, fiscal_end}
+            - net_income_quarterly: List of {year, quarter, net_income, fiscal_end}
+            - cash_flow_quarterly: List of {year, quarter, operating_cash_flow, capital_expenditures, free_cash_flow, fiscal_end}
+            - debt_to_equity_quarterly: List of {year, quarter, debt_to_equity, fiscal_end}
+            - shares_outstanding_quarterly: List of {year, quarter, shares, fiscal_end}
+            - shareholder_equity_quarterly: List of {year, quarter, shareholder_equity, fiscal_end}
+        """
+        try:
+            # Get company object
+            cik = self.get_cik_for_ticker(ticker)
+            if not cik:
+                logger.warning(f"[{ticker}] Could not find CIK")
+                return {}
+            
+            company = self.get_company(cik)
+            if not company:
+                logger.warning(f"[{ticker}] Could not create Company object")
+                return {}
+            
+            # Get recent 10-Q filings
+            filings = company.get_filings(form="10-Q").head(num_quarters)
+            
+            if not filings or len(filings) == 0:
+                logger.warning(f"[{ticker}] No 10-Q filings found")
+                return {}
+            
+            logger.info(f"[{ticker}] Found {len(filings)} 10-Q filings for extraction")
+            
+            # Initialize result lists
+            revenue_quarterly = []
+            eps_quarterly = []
+            net_income_quarterly = []
+            cash_flow_quarterly = []
+            debt_to_equity_quarterly = []
+            shares_outstanding_quarterly = []
+            shareholder_equity_quarterly = []
+            
+            # Process each filing
+            for filing in filings:
+                try:
+                    # Get XBRL data
+                    xbrl = filing.xbrl()
+                    if not xbrl:
+                        logger.debug(f"[{ticker}] No XBRL data for filing {filing.filing_date}")
+                        continue
+                    
+                    statements = xbrl.statements
+                    
+                    # Get fiscal period info from cover page
+                    cover = statements.cover_page()
+                    cover_df = cover.to_dataframe() if cover else None
+                    
+                    # Extract fiscal year and quarter
+                    fiscal_year = None
+                    fiscal_quarter = None
+                    fiscal_end = None
+                    
+                    if cover_df is not None and 'label' in cover_df.columns:
+                        # Find DocumentFiscalYearFocus and DocumentFiscalPeriodFocus
+                        for idx, row in cover_df.iterrows():
+                            label = row.get('label', '')
+                            if 'Fiscal Year' in label or 'Document Fiscal Year' in label:
+                                # Get the value from the first data column
+                                data_cols = [col for col in cover_df.columns if col not in ['concept', 'label', 'level', 'abstract', 'dimension']]
+                                if data_cols:
+                                    fiscal_year = row.get(data_cols[0])
+                                    if fiscal_year and isinstance(fiscal_year, str):
+                                        try:
+                                            fiscal_year = int(fiscal_year)
+                                        except:
+                                            pass
+                            elif 'Fiscal Period' in label or 'Document Fiscal Period' in label:
+                                data_cols = [col for col in cover_df.columns if col not in ['concept', 'label', 'level', 'abstract', 'dimension']]
+                                if data_cols:
+                                    fiscal_quarter = row.get(data_cols[0])
+                            elif 'Document Period End Date' in label:
+                                data_cols = [col for col in cover_df.columns if col not in ['concept', 'label', 'level', 'abstract', 'dimension']]
+                                if data_cols:
+                                    fiscal_end = row.get(data_cols[0])
+                    
+                    # Fallback: extract from income statement column name if not in cover page
+                    if not fiscal_year or not fiscal_quarter:
+                        # Try to get fiscal_end from income statement column
+                        income = statements.income_statement()
+                        if income:
+                            income_df = income.to_dataframe()
+                            if 'label' in income_df.columns:
+                                quarterly_cols = [col for col in income_df.columns if isinstance(col, str) and '(Q' in col]
+                                if quarterly_cols:
+                                    quarterly_col = quarterly_cols[0]
+                                    # Extract fiscal_end from column name like "2025-09-30 (Q3)"
+                                    if '-' in quarterly_col:
+                                        fiscal_end = quarterly_col.split(' ')[0]
+                                        # Extract year from fiscal_end
+                                        fiscal_year = int(fiscal_end[:4])
+                                        
+                                        # Calculate fiscal quarter based on fiscal year end
+                                        # We need to determine the company's fiscal year end month
+                                        # Look for the most recent 10-K to determine fiscal year end
+                                        try:
+                                            tenk_filings = company.get_filings(form="10-K").head(1)
+                                            if tenk_filings and len(tenk_filings) > 0:
+                                                tenk_filing = tenk_filings[0]
+                                                tenk_xbrl = tenk_filing.xbrl()
+                                                if tenk_xbrl:
+                                                    tenk_income = tenk_xbrl.statements.income_statement()
+                                                    if tenk_income:
+                                                        tenk_df = tenk_income.to_dataframe()
+                                                        # Find annual column (no Q in name)
+                                                        annual_cols = [col for col in tenk_df.columns if isinstance(col, str) and '-' in col and '(Q' not in col and col != 'level']
+                                                        if annual_cols:
+                                                            # Get fiscal year end date from 10-K
+                                                            fye_date = annual_cols[0]  # e.g., "2024-06-30"
+                                                            fye_month = int(fye_date[5:7])  # Extract month
+                                                            
+                                                            # Calculate fiscal quarter based on period end month
+                                                            period_end_month = int(fiscal_end[5:7])
+                                                            
+                                                            # Calculate months from fiscal year end
+                                                            # Fiscal Q1 = 1-3 months after FYE
+                                                            # Fiscal Q2 = 4-6 months after FYE
+                                                            # Fiscal Q3 = 7-9 months after FYE
+                                                            # Fiscal Q4 = 10-12 months after FYE (ends at FYE)
+                                                            
+                                                            months_from_fye = (period_end_month - fye_month) % 12
+                                                            if months_from_fye == 0:
+                                                                months_from_fye = 12  # Period ending at FYE is Q4
+                                                            
+                                                            if months_from_fye <= 3:
+                                                                fiscal_quarter = "Q1"
+                                                            elif months_from_fye <= 6:
+                                                                fiscal_quarter = "Q2"
+                                                            elif months_from_fye <= 9:
+                                                                fiscal_quarter = "Q3"
+                                                            else:
+                                                                fiscal_quarter = "Q4"
+                                                            
+                                                            logger.debug(f"[{ticker}] Calculated fiscal quarter: FYE month={fye_month}, period_end month={period_end_month}, months_from_fye={months_from_fye}, fiscal_quarter={fiscal_quarter}")
+                                        except Exception as e:
+                                            logger.debug(f"[{ticker}] Could not determine fiscal year end: {e}")
+                                            # Do not use quarterly_col here, it is not defined yet
+                    
+                    # Extract from Income Statement
+                    # Always fetch the income statement for data extraction
+                    income = statements.income_statement()
+                    
+                    if income:
+                        # Use new edgartools 5.x compatible extraction via get_raw_data()
+                        extracted = self._extract_quarterly_from_raw_xbrl(
+                            ticker, income, fiscal_year, fiscal_quarter
+                        )
+                        
+                        # Update fiscal info from extraction if not already set
+                        if not fiscal_year and extracted['fiscal_year']:
+                            fiscal_year = extracted['fiscal_year']
+                        if not fiscal_quarter and extracted['fiscal_quarter']:
+                            fiscal_quarter = extracted['fiscal_quarter']
+                        if not fiscal_end and extracted['fiscal_end']:
+                            fiscal_end = extracted['fiscal_end']
+                        
+                        # Store extracted values
+                        if extracted['revenue'] and extracted['revenue'] > 0 and fiscal_year and fiscal_quarter:
+                            revenue_quarterly.append({
+                                'year': fiscal_year,
+                                'quarter': fiscal_quarter,
+                                'revenue': extracted['revenue'],
+                                'fiscal_end': fiscal_end
+                            })
+                        
+                        if extracted['net_income'] is not None and fiscal_year and fiscal_quarter:
+                            net_income_quarterly.append({
+                                'year': fiscal_year,
+                                'quarter': fiscal_quarter,
+                                'net_income': extracted['net_income'],
+                                'fiscal_end': fiscal_end
+                            })
+                        
+                        if extracted['eps'] is not None and fiscal_year and fiscal_quarter:
+                            eps_quarterly.append({
+                                'year': fiscal_year,
+                                'quarter': fiscal_quarter,
+                                'eps': extracted['eps'],
+                                'fiscal_end': fiscal_end
+                            })
+                        
+                        # Skip the old to_dataframe based extraction below
+                        # (Balance sheet and cash flow extraction follows)
+                    
+
+                    # Extract from Balance Sheet
+                    balance_sheet = statements.balance_sheet()
+                    if balance_sheet:
+                        bs_df = balance_sheet.to_dataframe()
+                        
+                        if 'label' in bs_df.columns:
+                            # Find quarterly column
+                            quarterly_cols = [col for col in bs_df.columns if isinstance(col, str) and '(Q' in col]
+                            
+                            if quarterly_cols:
+                                quarterly_col = quarterly_cols[0]
+                                
+                                # Extract Total Debt
+                                debt_rows = bs_df[bs_df['label'].str.contains('Debt', case=False, na=False) & 
+                                                 bs_df['label'].str.contains('Total', case=False, na=False)]
+                                
+                                total_debt = None
+                                for idx in range(len(debt_rows)):
+                                    debt_row = debt_rows.iloc[idx]
+                                    if 'abstract' in bs_df.columns and debt_row.get('abstract', False):
+                                        continue
+                                    debt = debt_row[quarterly_col]
+                                    if isinstance(debt, str):
+                                        if debt.strip() == '':
+                                            continue
+                                        try:
+                                            debt = float(debt.replace(',', ''))
+                                        except:
+                                            continue
+                                    if debt and debt > 0:
+                                        total_debt = debt
+                                        break
+                                
+                                # Extract Shareholder Equity
+                                equity_rows = bs_df[bs_df['label'].str.contains('Equity', case=False, na=False) & 
+                                                   (bs_df['label'].str.contains('Stockholders', case=False, na=False) | 
+                                                    bs_df['label'].str.contains('Shareholders', case=False, na=False) |
+                                                    bs_df['label'].str.contains('Total Equity', case=False, na=False))]
+                                
+                                shareholder_equity = None
+                                for idx in range(len(equity_rows)):
+                                    equity_row = equity_rows.iloc[idx]
+                                    if 'abstract' in bs_df.columns and equity_row.get('abstract', False):
+                                        continue
+                                    equity = equity_row[quarterly_col]
+                                    if isinstance(equity, str):
+                                        if equity.strip() == '':
+                                            continue
+                                        try:
+                                            equity = float(equity.replace(',', ''))
+                                        except:
+                                            continue
+                                    if equity and equity > 0:
+                                        shareholder_equity = equity
+                                        shareholder_equity_quarterly.append({
+                                            'year': fiscal_year,
+                                            'quarter': fiscal_quarter,
+                                            'shareholder_equity': equity,
+                                            'fiscal_end': fiscal_end
+                                        })
+                                        break
+                                
+                                # Calculate Debt/Equity if both available
+                                if total_debt is not None and shareholder_equity is not None and shareholder_equity > 0:
+                                    debt_to_equity_quarterly.append({
+                                        'year': fiscal_year,
+                                        'quarter': fiscal_quarter,
+                                        'debt_to_equity': total_debt / shareholder_equity,
+                                        'fiscal_end': fiscal_end
+                                    })
+                                
+                                # Extract Shares Outstanding
+                                shares_rows = bs_df[bs_df['label'].str.contains('Shares', case=False, na=False) & 
+                                                   bs_df['label'].str.contains('Outstanding', case=False, na=False)]
+                                
+                                for idx in range(len(shares_rows)):
+                                    shares_row = shares_rows.iloc[idx]
+                                    if 'abstract' in bs_df.columns and shares_row.get('abstract', False):
+                                        continue
+                                    shares = shares_row[quarterly_col]
+                                    if isinstance(shares, str):
+                                        if shares.strip() == '':
+                                            continue
+                                        try:
+                                            shares = float(shares.replace(',', ''))
+                                        except:
+                                            continue
+                                    if shares and shares > 0:
+                                        shares_outstanding_quarterly.append({
+                                            'year': fiscal_year,
+                                            'quarter': fiscal_quarter,
+                                            'shares': shares,
+                                            'fiscal_end': fiscal_end
+                                        })
+                                        break
+                    
+                    # Extract from Cash Flow Statement
+                    cashflow = statements.cashflow_statement()
+                    if cashflow:
+                        cf_df = cashflow.to_dataframe()
+                        
+                        if 'label' in cf_df.columns:
+                            # Find quarterly column
+                            quarterly_cols = [col for col in cf_df.columns if isinstance(col, str) and '(Q' in col]
+                            
+                            if quarterly_cols:
+                                quarterly_col = quarterly_cols[0]
+                                
+                                # Extract Operating Cash Flow
+                                ocf_rows = cf_df[cf_df['label'].str.contains('Operating', case=False, na=False) & 
+                                                cf_df['label'].str.contains('Cash', case=False, na=False)]
+                                
+                                operating_cash_flow = None
+                                for idx in range(len(ocf_rows)):
+                                    ocf_row = ocf_rows.iloc[idx]
+                                    if 'abstract' in cf_df.columns and ocf_row.get('abstract', False):
+                                        continue
+                                    ocf = ocf_row[quarterly_col]
+                                    if isinstance(ocf, str):
+                                        if ocf.strip() == '':
+                                            continue
+                                        try:
+                                            ocf = float(ocf.replace(',', ''))
+                                        except:
+                                            continue
+                                    if ocf is not None:
+                                        operating_cash_flow = ocf
+                                        break
+                                
+                                # Extract CapEx
+                                capex_rows = cf_df[cf_df['label'].str.contains('Capital Expenditure', case=False, na=False) | 
+                                                  cf_df['label'].str.contains('Property', case=False, na=False)]
+                                
+                                capital_expenditures = None
+                                for idx in range(len(capex_rows)):
+                                    capex_row = capex_rows.iloc[idx]
+                                    if 'abstract' in cf_df.columns and capex_row.get('abstract', False):
+                                        continue
+                                    capex = capex_row[quarterly_col]
+                                    if isinstance(capex, str):
+                                        if capex.strip() == '':
+                                            continue
+                                        try:
+                                            capex = float(capex.replace(',', ''))
+                                        except:
+                                            continue
+                                    if capex is not None:
+                                        # CapEx is usually negative in cash flow statement
+                                        capital_expenditures = abs(capex)
+                                        break
+                                
+                                # Calculate Free Cash Flow if both available
+                                if operating_cash_flow is not None or capital_expenditures is not None:
+                                    fcf = None
+                                    if operating_cash_flow is not None and capital_expenditures is not None:
+                                        fcf = operating_cash_flow - capital_expenditures
+                                    
+                                    cash_flow_quarterly.append({
+                                        'year': fiscal_year,
+                                        'quarter': fiscal_quarter,
+                                        'operating_cash_flow': operating_cash_flow,
+                                        'capital_expenditures': capital_expenditures,
+                                        'free_cash_flow': fcf,
+                                        'fiscal_end': fiscal_end
+                                    })
+                
+                except Exception as e:
+                    logger.debug(f"[{ticker}] Error processing filing {filing.filing_date}: {e}")
+                    continue
+            
+            logger.info(f"[{ticker}] Extracted from 10-Q filings: {len(revenue_quarterly)} revenue, {len(eps_quarterly)} EPS, {len(net_income_quarterly)} NI, {len(cash_flow_quarterly)} CF, {len(debt_to_equity_quarterly)} D/E, {len(shares_outstanding_quarterly)} shares, {len(shareholder_equity_quarterly)} equity")
+            
+            return {
+                'revenue_quarterly': revenue_quarterly,
+                'eps_quarterly': eps_quarterly,
+                'net_income_quarterly': net_income_quarterly,
+                'cash_flow_quarterly': cash_flow_quarterly,
+                'debt_to_equity_quarterly': debt_to_equity_quarterly,
+                'shares_outstanding_quarterly': shares_outstanding_quarterly,
+                'shareholder_equity_quarterly': shareholder_equity_quarterly
+            }
+        
+        except Exception as e:
+            logger.error(f"[{ticker}] Error in get_quarterly_financials_from_10q: {e}")
+            import traceback
+            traceback.print_exc()
+            return {}
 
 
     def fetch_stock_fundamentals(self, ticker: str) -> Optional[Dict[str, Any]]:
@@ -2853,7 +3362,7 @@ class EdgarFetcher:
         debt_to_equity = self.parse_debt_to_equity(company_facts)
         debt_to_equity_history = self.parse_debt_to_equity_history(company_facts)
         shareholder_equity_history = self.parse_shareholder_equity_history(company_facts)
-        shareholder_equity_quarterly = self.parse_quarterly_shareholder_equity_history(company_facts)
+        # shareholder_equity_quarterly now comes from 10-Q parsing above
         cash_equivalents_history = self.parse_cash_equivalents_history(company_facts)
         cash_flow_history = self.parse_cash_flow_history(company_facts)
         
@@ -2869,18 +3378,89 @@ class EdgarFetcher:
 
         # Extract Net Income directly for storage
         net_income_annual = self.parse_net_income_history(company_facts)
-        net_income_quarterly = self.parse_quarterly_net_income_history(company_facts)
         
-        # Extract quarterly revenue, EPS, cash flow, and D/E from EDGAR
-        revenue_quarterly = self.parse_quarterly_revenue_history(company_facts)
-        eps_quarterly = self.parse_quarterly_eps_history(company_facts)
-        calculated_eps_quarterly = self.calculate_quarterly_eps_history(company_facts)
-        cash_flow_quarterly = self.parse_quarterly_cash_flow_history(company_facts)
-        debt_to_equity_quarterly = self.parse_quarterly_debt_to_equity_history(company_facts)
+        
+        # HYBRID APPROACH: Combine 10-Q parsing (accurate recent data) with company_facts (complete historical data)
+        # - Use 10-Q parsing for last 8 quarters (most accurate, handles fiscal quarters correctly)
+        # - Use company_facts for historical data (complete coverage, even if slightly outdated)
+        logger.info(f"[{ticker}] Extracting quarterly data using hybrid approach...")
+        
+        # 1. Get recent quarters from 10-Q filings (last 8 quarters, ~2 years)
+        logger.info(f"[{ticker}] Fetching recent 8 quarters from 10-Q filings...")
+        quarterly_10q_data = self.get_quarterly_financials_from_10q(ticker, num_quarters=8)
+        
+        # NOTE: The cumulative revenue fix below was removed - the root cause was that
+        # income = statements.income_statement() was not being called when fiscal info
+        # was found from the cover page. This has been fixed above.
+        
 
-        # Extract shares outstanding history
+        # 2. Get historical quarters from company_facts
+        logger.info(f"[{ticker}] Fetching historical quarterly data from company_facts...")
+        historical_revenue_quarterly = self.parse_quarterly_revenue_history(company_facts)
+        historical_net_income_quarterly = self.parse_quarterly_net_income_history(company_facts)
+        historical_cash_flow_quarterly = self.parse_quarterly_cash_flow_history(company_facts)
+        historical_debt_to_equity_quarterly = self.parse_quarterly_debt_to_equity_history(company_facts)
+        historical_shares_outstanding_quarterly = self.parse_quarterly_shares_outstanding_history(company_facts)
+        historical_shareholder_equity_quarterly = self.parse_quarterly_shareholder_equity_history(company_facts)
+        
+        # 3. Merge: 10-Q data takes precedence for recent quarters
+        def merge_quarterly_data(recent_data, historical_data):
+            """Merge recent 10-Q data with historical company_facts data, 10-Q takes precedence"""
+            # Create dict keyed by (year, quarter) for recent data
+            recent_by_key = {(e['year'], e['quarter']): e for e in recent_data}
+            
+            # Create dict for historical data
+            historical_by_key = {(e['year'], e['quarter']): e for e in historical_data}
+            
+            # Merge: start with historical, then overwrite with recent
+            merged = dict(historical_by_key)
+            merged.update(recent_by_key)
+            
+            # Convert back to list and sort by date (newest first)
+            result = list(merged.values())
+            result.sort(key=lambda x: (x['year'], x['quarter']), reverse=True)
+            return result
+        
+        # Merge each metric
+        revenue_quarterly = merge_quarterly_data(
+            quarterly_10q_data.get('revenue_quarterly', []),
+            historical_revenue_quarterly or []
+        )
+        
+        net_income_quarterly = merge_quarterly_data(
+            quarterly_10q_data.get('net_income_quarterly', []),
+            historical_net_income_quarterly or []
+        )
+        
+        eps_quarterly = quarterly_10q_data.get('eps_quarterly', [])  # Only from 10-Q (more accurate)
+        
+        cash_flow_quarterly = merge_quarterly_data(
+            quarterly_10q_data.get('cash_flow_quarterly', []),
+            historical_cash_flow_quarterly or []
+        )
+        
+        debt_to_equity_quarterly = merge_quarterly_data(
+            quarterly_10q_data.get('debt_to_equity_quarterly', []),
+            historical_debt_to_equity_quarterly or []
+        )
+        
+        shares_outstanding_quarterly = merge_quarterly_data(
+            quarterly_10q_data.get('shares_outstanding_quarterly', []),
+            historical_shares_outstanding_quarterly or []
+        )
+        
+        shareholder_equity_quarterly = merge_quarterly_data(
+            quarterly_10q_data.get('shareholder_equity_quarterly', []),
+            historical_shareholder_equity_quarterly or []
+        )
+        
+        logger.info(f"[{ticker}] Hybrid merge complete: {len(revenue_quarterly)} revenue quarters, {len(net_income_quarterly)} NI quarters, {len(eps_quarterly)} EPS quarters")
+        
+        # Keep calculated EPS from company_facts as fallback
+        calculated_eps_quarterly = self.calculate_quarterly_eps_history(company_facts)
+
+        # Extract shares outstanding history (annual)
         shares_outstanding_history = self.parse_shares_outstanding_history(company_facts)
-        shares_outstanding_quarterly = self.parse_quarterly_shares_outstanding_history(company_facts)
 
         # Parse dividend history
         dividend_history = self.parse_dividend_history(company_facts)

@@ -679,6 +679,7 @@ class Database:
                 operating_cash_flow REAL,
                 capital_expenditures REAL,
                 free_cash_flow REAL,
+                total_debt REAL,
                 last_updated TIMESTAMP,
                 FOREIGN KEY (symbol) REFERENCES stocks(symbol),
                 UNIQUE(symbol, year, period)
@@ -698,6 +699,9 @@ class Database:
                 END IF;
                 IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'earnings_history' AND column_name = 'cash_and_cash_equivalents') THEN
                     ALTER TABLE earnings_history ADD COLUMN cash_and_cash_equivalents REAL;
+                END IF;
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'earnings_history' AND column_name = 'total_debt') THEN
+                    ALTER TABLE earnings_history ADD COLUMN total_debt REAL;
                 END IF;
             END $$;
         """)
@@ -2633,14 +2637,14 @@ class Database:
         finally:
             self.return_connection(conn)
 
-    def save_earnings_history(self, symbol: str, year: int, eps: Optional[float], revenue: Optional[float], fiscal_end: str = None, debt_to_equity: float = None, period: str = 'annual', net_income: float = None, dividend_amount: float = None, operating_cash_flow: float = None, capital_expenditures: float = None, free_cash_flow: float = None, shareholder_equity: float = None, shares_outstanding: float = None, cash_and_cash_equivalents: float = None):
+    def save_earnings_history(self, symbol: str, year: int, eps: Optional[float], revenue: Optional[float], fiscal_end: str = None, debt_to_equity: float = None, period: str = 'annual', net_income: float = None, dividend_amount: float = None, operating_cash_flow: float = None, capital_expenditures: float = None, free_cash_flow: float = None, shareholder_equity: float = None, shares_outstanding: float = None, cash_and_cash_equivalents: float = None, total_debt: float = None):
         """Save earnings history for a single year/period."""
         sql = """
             INSERT INTO earnings_history (
                 symbol, year, earnings_per_share, revenue, fiscal_end, debt_to_equity, period,
-                net_income, dividend_amount, operating_cash_flow, capital_expenditures, free_cash_flow, shareholder_equity, shares_outstanding, cash_and_cash_equivalents, last_updated
+                net_income, dividend_amount, operating_cash_flow, capital_expenditures, free_cash_flow, shareholder_equity, shares_outstanding, cash_and_cash_equivalents, total_debt, last_updated
             )
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP)
             ON CONFLICT (symbol, year, period) DO UPDATE SET
                 earnings_per_share = EXCLUDED.earnings_per_share,
                 revenue = EXCLUDED.revenue,
@@ -2654,9 +2658,10 @@ class Database:
                 shareholder_equity = COALESCE(EXCLUDED.shareholder_equity, earnings_history.shareholder_equity),
                 shares_outstanding = COALESCE(EXCLUDED.shares_outstanding, earnings_history.shares_outstanding),
                 cash_and_cash_equivalents = COALESCE(EXCLUDED.cash_and_cash_equivalents, earnings_history.cash_and_cash_equivalents),
+                total_debt = COALESCE(EXCLUDED.total_debt, earnings_history.total_debt),
                 last_updated = CURRENT_TIMESTAMP
         """
-        args = (symbol, year, eps, revenue, fiscal_end, debt_to_equity, period, net_income, dividend_amount, operating_cash_flow, capital_expenditures, free_cash_flow, shareholder_equity, shares_outstanding, cash_and_cash_equivalents)
+        args = (symbol, year, eps, revenue, fiscal_end, debt_to_equity, period, net_income, dividend_amount, operating_cash_flow, capital_expenditures, free_cash_flow, shareholder_equity, shares_outstanding, cash_and_cash_equivalents, total_debt)
         self.write_queue.put((sql, args))
 
     def clear_quarterly_earnings(self, symbol: str) -> int:

@@ -143,6 +143,10 @@ class BackgroundWorker:
         # Initialize Dividend Manager
         self.dividend_manager = DividendManager(self.db)
 
+        # Initialize Data Fetcher
+        from data_fetcher import DataFetcher
+        self.data_fetcher = DataFetcher(self.db)
+
         logger.info(f"Worker {self.worker_id} initialized")
 
     def _handle_shutdown(self, signum, frame):

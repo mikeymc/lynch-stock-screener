@@ -12,6 +12,7 @@ from edgar_fetcher import EdgarFetcher
 import pandas as pd
 import logging
 import socket
+from earnings_extractor import EarningsExtractor
 from yfinance_rate_limiter import with_timeout_and_retry
 
 logger = logging.getLogger(__name__)
@@ -53,6 +54,7 @@ class DataFetcher:
             user_agent="Lynch Stock Screener mikey@example.com",
             db=db
         )
+        self.earnings_extractor = EarningsExtractor()
 
     @with_timeout_and_retry(timeout=30, max_retries=3, operation_name="yfinance info")
     def _get_yf_info(self, symbol: str) -> Optional[Dict[str, Any]]:
@@ -809,6 +811,87 @@ class DataFetcher:
         except Exception as e:
             logger.debug(f"Error calculating D/E ratio: {e}")
             return (None, None)
+
+    def process_item_202(self, symbol: str, event: Dict[str, Any]):
+        """
+        Process an 8-K Item 2.02 event to extract earnings data and gap-fill the database.
+        
+        Args:
+            symbol: Stock symbol
+            event: The 8-K event dictionary (must contain 'content_text' and 'filing_date')
+        """
+        try:
+            content = event.get('content_text')
+            filing_date = event.get('filing_date')
+            
+            if not content:
+                logger.warning(f"[{symbol}] Item 2.02 event missing content, skipping extraction.")
+                return
+
+            # 1. Extract Data
+            logger.info(f"[{symbol}] Extracting earnings from Item 2.02 (Date: {filing_date})...")
+            # filng_date is a date object usually, convert to YYYY-MM-DD string
+            filing_date_str = str(filing_date) if filing_date else None
+            
+            data = self.earnings_extractor.extract(content, filing_date=filing_date_str)
+            
+            logger.info(f"[{symbol}] Extracted: FY{data.fiscal_year} {data.quarter} - Rev: ${data.revenue:,.0f}, NI: ${data.net_income:,.0f}, EPS: ${data.eps:.2f}")
+
+            # 2. Gap-Fill Check
+            # Check if we already have data for this period (Symbol, Year, Quarter)
+            # The database 'earnings_history' has a unique constraint on (symbol, year, period)
+            # 'period' for quarterly is usually 'Q1', 'Q2', etc. (Stored as text? Check schema.)
+            # Schema: UNIQUE(symbol, year, period)
+            
+            conn = self.db.get_connection()
+            try:
+                cursor = conn.cursor()
+                cursor.execute("""
+                    SELECT 1 FROM earnings_history 
+                    WHERE symbol = %s AND year = %s AND period = %s
+                """, (symbol, data.fiscal_year, data.quarter))
+                exists = cursor.fetchone()
+                
+                if exists:
+                    logger.info(f"[{symbol}] Data for {data.fiscal_year} {data.quarter} already exists. Skipping 8-K gap-fill.")
+                    return
+                
+                logger.info(f"[{symbol}] Gap-fill: Inserting 8-K earnings for {data.fiscal_year} {data.quarter}")
+                
+                 # Compute Derived Metrics
+                free_cash_flow = None
+                if data.operating_cash_flow is not None and data.capital_expenditures is not None:
+                    # FCF = OCF - CapEx. CapEx should be positive magnitude as per prompt instruction.
+                    free_cash_flow = data.operating_cash_flow - abs(data.capital_expenditures)
+
+                debt_to_equity = None
+                if data.total_debt is not None and data.shareholder_equity:
+                    if data.shareholder_equity != 0:
+                        debt_to_equity = data.total_debt / data.shareholder_equity
+                
+                self.db.save_earnings_history(
+                    symbol=symbol,
+                    year=data.fiscal_year,
+                    eps=data.eps,
+                    revenue=data.revenue,
+                    net_income=data.net_income,
+                    period=data.quarter,
+                    operating_cash_flow=data.operating_cash_flow,
+                    capital_expenditures=data.capital_expenditures,
+                    free_cash_flow=free_cash_flow,
+                    total_debt=data.total_debt,
+                    shareholder_equity=data.shareholder_equity,
+                    debt_to_equity=debt_to_equity,
+                    shares_outstanding=data.shares_outstanding,
+                    cash_and_cash_equivalents=data.cash_and_cash_equivalents,
+                    dividend_amount=data.dividend_amount,
+                    fiscal_end=None, 
+                )
+            finally:
+                self.db.return_connection(conn)
+
+        except Exception as e:
+            logger.error(f"[{symbol}] Error processing Item 2.02: {e}")
 
     def _backfill_cash_flow(self, symbol: str, years: List[int]):
         """
