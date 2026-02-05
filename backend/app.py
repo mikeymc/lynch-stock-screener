@@ -192,9 +192,7 @@ validation_jobs = {}
 optimization_jobs = {}
 rescoring_jobs = {}
 
-# Global dict to track active screening threads
-active_screenings = {}
-screening_lock = threading.Lock()
+
 
 
 def clean_nan_values(obj):
@@ -1599,11 +1597,6 @@ def get_screening_progress(session_id):
         if not progress:
             return jsonify({'error': 'Session not found'}), 404
         
-        # Check if thread is still active
-        with screening_lock:
-            is_active = session_id in active_screenings
-        
-        progress['is_active'] = is_active
         return jsonify(progress)
         
     except Exception as e:
@@ -1656,10 +1649,7 @@ def stop_screening(session_id):
 
         if not progress:
             # Session doesn't exist (likely database was reset)
-            # Remove from active screenings anyway to clean up
-            with screening_lock:
-                if session_id in active_screenings:
-                    del active_screenings[session_id]
+
 
             return jsonify({
                 'status': 'not_found',
@@ -1670,10 +1660,7 @@ def stop_screening(session_id):
         # Mark session as cancelled
         db.cancel_session(session_id)
 
-        # Remove from active screenings (thread will exit on next check)
-        with screening_lock:
-            if session_id in active_screenings:
-                del active_screenings[session_id]
+
 
         return jsonify({
             'status': 'cancelled',
