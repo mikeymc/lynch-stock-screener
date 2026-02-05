@@ -330,8 +330,8 @@ class SmartChatAgent:
                         tool_name = fc.name
                         tool_args = dict(fc.args) if fc.args else {}
                         
-                        # Inject user_id context for alerts and portfolios
-                        portfolio_tools = ["create_portfolio", "get_my_portfolios", "get_portfolio_status", "buy_stock", "sell_stock"]
+                        # Inject user_id context for alerts, portfolios, and strategies
+                        portfolio_tools = ["create_portfolio", "get_my_portfolios", "get_portfolio_status", "buy_stock", "sell_stock", "create_strategy"]
                         if (tool_name == "manage_alerts" or tool_name in portfolio_tools) and user_id:
                             tool_args["user_id"] = user_id
                         
@@ -496,8 +496,8 @@ class SmartChatAgent:
                         tool_name = fc.name
                         tool_args = dict(fc.args) if fc.args else {}
                         
-                        # Inject user_id context for alerts and portfolios
-                        portfolio_tools = ["create_portfolio", "get_my_portfolios", "get_portfolio_status", "buy_stock", "sell_stock"]
+                        # Inject user_id context for alerts, portfolios, and strategies
+                        portfolio_tools = ["create_portfolio", "get_my_portfolios", "get_portfolio_status", "buy_stock", "sell_stock", "create_strategy"]
                         if (tool_name == "manage_alerts" or tool_name in portfolio_tools) and user_id:
                             tool_args["user_id"] = user_id
                         

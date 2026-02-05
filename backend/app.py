@@ -866,8 +866,13 @@ def preview_strategy(user_id):
             if df.empty:
                 return jsonify({'candidates': []})
 
+            logger.info(f"[PREVIEW DEBUG] df columns: {df.columns.tolist()}")
+            logger.info(f"[PREVIEW DEBUG] df sample: {df[['symbol', 'company_name']].head(3).to_dict() if 'company_name' in df.columns else 'NO COMPANY_NAME'}")
+
             # Score with Lynch using default config
             df_lynch = lynch_criteria.evaluate_batch(df, DEFAULT_ALGORITHM_CONFIG)
+            logger.info(f"[PREVIEW DEBUG] df_lynch columns: {df_lynch.columns.tolist()}")
+            logger.info(f"[PREVIEW DEBUG] df_lynch sample: {df_lynch[['symbol', 'company_name']].head(3).to_dict() if 'company_name' in df_lynch.columns else 'NO COMPANY_NAME'}")
 
             # Score with Buffett - construct config from scoring weights
             buffett_config = {}
@@ -890,14 +895,16 @@ def preview_strategy(user_id):
 
             df_buffett = lynch_criteria.evaluate_batch(df, buffett_config)
 
-            # Merge scores (same as strategy executor)
-            df_merged = df_lynch[['symbol', 'overall_score']].rename(
+            # Merge scores - include company_name from df_lynch
+            df_merged = df_lynch[['symbol', 'company_name', 'overall_score']].rename(
                 columns={'overall_score': 'lynch_score'}
             )
             df_buffett_scores = df_buffett[['symbol', 'overall_score']].rename(
                 columns={'overall_score': 'buffett_score'}
             )
             df_merged = df_merged.merge(df_buffett_scores, on='symbol', how='inner')
+            logger.info(f"[PREVIEW DEBUG] df_merged columns: {df_merged.columns.tolist()}")
+            logger.info(f"[PREVIEW DEBUG] df_merged sample: {df_merged[['symbol', 'company_name']].head(3).to_dict() if 'company_name' in df_merged.columns else 'NO COMPANY_NAME'}")
 
             # Filter by minimum thresholds
             df_filtered = df_merged[
@@ -910,12 +917,17 @@ def preview_strategy(user_id):
             for _, row in df_filtered.iterrows():
                 results.append({
                     'symbol': row['symbol'],
+                    'company_name': row.get('company_name', row['symbol']),
                     'lynch_score': float(row['lynch_score']),
                     'buffett_score': float(row['buffett_score'])
                 })
 
             # Sort by average score descending
             results.sort(key=lambda x: (x['lynch_score'] + x['buffett_score']) / 2, reverse=True)
+
+            logger.info(f"[PREVIEW DEBUG] Final results count: {len(results)}")
+            if results:
+                logger.info(f"[PREVIEW DEBUG] First result: {results[0]}")
 
         except Exception as e:
             logger.error(f"Error in vectorized scoring for preview: {e}")
@@ -4733,6 +4745,22 @@ def submit_feedback(user_id=None):
     except Exception as e:
         logger.error(f"Error submitting feedback: {e}")
         return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/strategy-templates', methods=['GET'])
+def get_strategy_templates():
+    """Get available strategy templates for wizard and chat."""
+    from strategy_templates import FILTER_TEMPLATES
+    return jsonify({
+        'templates': {
+            k: {
+                'name': v['name'],
+                'description': v['description'],
+                'filters': v['filters']
+            }
+            for k, v in FILTER_TEMPLATES.items()
+        }
+    })
 
 
 if __name__ == '__main__':

@@ -69,7 +69,10 @@ const TOOL_DESCRIPTIONS = {
   get_my_portfolios: "Loading your portfolios",
   get_portfolio_status: "Analyzing portfolio performance",
   buy_stock: "Buying shares",
-  sell_stock: "Selling shares"
+  sell_stock: "Selling shares",
+  // Strategy management tools
+  get_strategy_templates: "Browsing strategy templates",
+  create_strategy: "Creating investment strategy"
 }
 
 function SourceCitation({ sources }) {

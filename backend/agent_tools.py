@@ -538,6 +538,65 @@ sell_stock_decl = FunctionDeclaration(
 )
 
 
+get_strategy_templates_decl = FunctionDeclaration(
+    name="get_strategy_templates",
+    description="""Get available strategy templates that users can use as starting points.
+    Each template includes pre-configured filters for different investment approaches like
+    value investing, growth at reasonable price, dividend stocks, etc. Use this to help
+    users discover proven strategy patterns.""",
+    parameters=Schema(
+        type=Type.OBJECT,
+        properties={},
+    ),
+)
+
+
+create_strategy_decl = FunctionDeclaration(
+    name="create_strategy",
+    description="""Create a new autonomous investment strategy for the user.
+
+    The strategy will automatically screen stocks, score them using Lynch and Buffett criteria,
+    and optionally execute trades in a paper trading portfolio.
+
+    You can create a strategy by:
+    1. Using a template (get_strategy_templates first to see options)
+    2. Custom filters specified by the user
+    3. A mix of template + custom modifications
+
+    The strategy can create a new portfolio or use an existing one.""",
+    parameters=Schema(
+        type=Type.OBJECT,
+        properties={
+            "name": Schema(type=Type.STRING, description="Name for the strategy (e.g., 'My GARP Strategy')"),
+            "template_id": Schema(type=Type.STRING, description="Optional: ID of template to use as base (e.g., 'growth_at_reasonable_price')"),
+            "filters": Schema(
+                type=Type.ARRAY,
+                items=Schema(type=Type.OBJECT),
+                description="Optional: Custom filters array. Each filter has field, operator, value."
+            ),
+            "portfolio_id": Schema(type=Type.STRING, description="Portfolio ID or 'new' to create one. Default: 'new'"),
+            "portfolio_name": Schema(type=Type.STRING, description="Name for new portfolio (only if portfolio_id='new')"),
+            "initial_cash": Schema(type=Type.NUMBER, description="Initial cash for new portfolio (default: 100000)"),
+            "enable_now": Schema(type=Type.BOOLEAN, description="Whether to enable the strategy immediately (default: false)"),
+            "consensus_mode": Schema(
+                type=Type.STRING,
+                description="How Lynch and Buffett must agree: 'both_agree' (both must approve), 'weighted_confidence' (weighted average), 'veto_power' (either can block). Default: 'both_agree'"
+            ),
+            "consensus_threshold": Schema(type=Type.NUMBER, description="Minimum score required for approval (0-100). Default: 70"),
+            "position_sizing_method": Schema(
+                type=Type.STRING,
+                description="How to size positions: 'equal_weight' (equal allocation), 'conviction_weighted' (scale by confidence), 'fixed_pct' (fixed %), 'kelly_criterion' (Kelly formula). Default: 'equal_weight'"
+            ),
+            "max_position_pct": Schema(type=Type.NUMBER, description="Maximum % of portfolio per position (e.g., 10.0 for 10%). Default: 10.0"),
+            "profit_target_pct": Schema(type=Type.NUMBER, description="Optional: Sell when position gains this % (e.g., 50 for +50%)"),
+            "stop_loss_pct": Schema(type=Type.NUMBER, description="Optional: Sell when position loses this % (e.g., -20 for -20%)"),
+            "user_id": Schema(type=Type.INTEGER, description="Internal User ID (automatically injected)"),
+        },
+        required=["name"],
+    ),
+)
+
+
 # =============================================================================
 # FRED Macroeconomic Data Tools
 # =============================================================================
@@ -645,6 +704,9 @@ TOOL_DECLARATIONS = [
     get_portfolio_status_decl,
     buy_stock_decl,
     sell_stock_decl,
+    # Strategy management tools
+    get_strategy_templates_decl,
+    create_strategy_decl,
 ]
 
 # Create the Tool object for Gemini API
@@ -722,6 +784,9 @@ class ToolExecutor:
             "get_portfolio_status": self._get_portfolio_status,
             "buy_stock": self._buy_stock,
             "sell_stock": self._sell_stock,
+            # Strategy management tools
+            "get_strategy_templates": self._get_strategy_templates,
+            "create_strategy": self._create_strategy,
         }
         
         executor = executor_map.get(tool_name)
@@ -1343,6 +1408,113 @@ class ToolExecutor:
             return result
         except Exception as e:
             return {"success": False, "error": str(e)}
+
+    def _get_strategy_templates(self) -> Dict[str, Any]:
+        """Return available strategy templates."""
+        from strategy_templates import FILTER_TEMPLATES
+        return {
+            "success": True,
+            "templates": [
+                {
+                    "id": k,
+                    "name": v["name"],
+                    "description": v["description"],
+                    "use_case": v["use_case"],
+                    "filter_count": len(v["filters"])
+                }
+                for k, v in FILTER_TEMPLATES.items()
+            ]
+        }
+
+    def _create_strategy(
+        self,
+        name: str,
+        user_id: int,
+        template_id: str = None,
+        filters: List[Dict] = None,
+        portfolio_id: str = "new",
+        portfolio_name: str = None,
+        initial_cash: float = 100000.0,
+        enable_now: bool = False,
+        consensus_mode: str = None,
+        consensus_threshold: float = None,
+        position_sizing_method: str = None,
+        max_position_pct: float = None,
+        profit_target_pct: float = None,
+        stop_loss_pct: float = None
+    ) -> Dict[str, Any]:
+        """Create a new investment strategy conversationally."""
+        from strategy_templates import FILTER_TEMPLATES, STRATEGY_DEFAULTS
+
+        # Load template if specified
+        if template_id:
+            if template_id not in FILTER_TEMPLATES:
+                return {"success": False, "error": f"Unknown template: {template_id}"}
+            template = FILTER_TEMPLATES[template_id]
+            final_filters = template["filters"]
+            if filters:  # Allow override
+                final_filters = filters
+        elif filters:
+            final_filters = filters
+        else:
+            return {"success": False, "error": "Must provide either template_id or filters"}
+
+        # Handle portfolio creation
+        actual_portfolio_id = portfolio_id
+        if portfolio_id == "new":
+            pf_name = portfolio_name or f"{name} Portfolio"
+            actual_portfolio_id = self.db.create_portfolio(user_id, pf_name, initial_cash)
+
+        # Build conditions
+        conditions = {
+            "filters": final_filters,
+            "require_thesis": True,
+            "scoring_requirements": [
+                {"character": "lynch", "min_score": 60},
+                {"character": "buffett", "min_score": 60}
+            ],
+            "thesis_verdict_required": ["BUY"]
+        }
+
+        # Build position sizing
+        position_sizing = {
+            "method": position_sizing_method or STRATEGY_DEFAULTS["position_sizing"]["method"],
+            "max_position_pct": max_position_pct or STRATEGY_DEFAULTS["position_sizing"]["max_position_pct"]
+        }
+
+        # Build exit conditions
+        exit_conditions = {}
+        if profit_target_pct is not None:
+            exit_conditions["profit_target_pct"] = profit_target_pct
+        if stop_loss_pct is not None:
+            exit_conditions["stop_loss_pct"] = stop_loss_pct
+
+        # Create strategy
+        strategy_id = self.db.create_strategy(
+            user_id=user_id,
+            portfolio_id=actual_portfolio_id,
+            name=name,
+            description=f"Created via chat agent",
+            conditions=conditions,
+            consensus_mode=consensus_mode or STRATEGY_DEFAULTS["consensus_mode"],
+            consensus_threshold=consensus_threshold or STRATEGY_DEFAULTS["consensus_threshold"],
+            position_sizing=position_sizing,
+            exit_conditions=exit_conditions,
+            schedule_cron=STRATEGY_DEFAULTS["schedule_cron"]
+        )
+
+        # Enable if requested
+        if enable_now:
+            self.db.update_strategy(strategy_id, user_id, enabled=True)
+
+        return {
+            "success": True,
+            "strategy_id": strategy_id,
+            "portfolio_id": actual_portfolio_id,
+            "enabled": enable_now,
+            "message": f"Strategy '{name}' created successfully" + (" and enabled" if enable_now else ""),
+            "strategy_url": f"/strategies/{strategy_id}"
+        }
 
     def _get_peers(self, ticker: str, limit: int = 10) -> Dict[str, Any]:
         """Get peer companies in the same sector with their financial metrics."""
