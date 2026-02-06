@@ -73,28 +73,48 @@ class Database:
 
         # Initialize schema
         logger.info("Initializing database schema...")
+        # Initialize schema
+        logger.info("Initializing database schema...")
         init_conn = self.connection_pool.getconn()
         try:
-            self._init_schema_with_connection(init_conn)
-            # The _init_schema_with_connection method should handle its own commits.
-            # If it doesn't, a commit here would be needed. Assuming it does for now.
-            logger.info("Database schema initialized successfully")
-
-            # Migration: Drop unused screening tables (refactored to use on-demand scoring)
+            # Use Advisory Lock to serialize schema migration across multiple workers
+            # Lock ID: 8675309 (Arbitrary integer for this app's schema lock)
+            LOCK_ID = 8675309
+            cursor = init_conn.cursor()
+            
+            logger.info("Acquiring schema migration lock...")
+            cursor.execute("SELECT pg_advisory_lock(%s)", (LOCK_ID,))
+            
             try:
-                cursor = init_conn.cursor() # Create a cursor for the migration
-                cursor.execute("""
-                    DROP TABLE IF EXISTS screening_results CASCADE;
-                    DROP TABLE IF EXISTS screening_sessions CASCADE;
-                """)
+                logger.info("Schema migration lock acquired. Checking/Updating schema...")
+                self._init_schema_with_connection(init_conn)
+                
+                # Migration: Drop unused screening tables (refactored to use on-demand scoring)
+                try:
+                    cursor.execute("""
+                        DROP TABLE IF EXISTS screening_results CASCADE;
+                        DROP TABLE IF EXISTS screening_sessions CASCADE;
+                    """)
+                    # We commit everything at the end of the locked block
+                    logger.info("Migration: Dropped screening_sessions and screening_results tables")
+                except Exception as e:
+                    logger.warning(f"Migration warning (drop screening tables): {e}")
+                    # Don't rollback the whole thing just for this, but proceed
+                
+                logger.info("Database schema initialized successfully")
+
+            finally:
+                # Always release the lock
+                logger.info("Releasing schema migration lock...")
+                cursor.execute("SELECT pg_advisory_unlock(%s)", (LOCK_ID,))
                 init_conn.commit()
-                logger.info("Migration: Dropped screening_sessions and screening_results tables")
-            except Exception as e:
-                logger.warning(f"Migration warning (drop screening tables): {e}")
-                init_conn.rollback() # Rollback only the migration if it fails
 
         except Exception as e:
             logger.error(f"Failed to initialize database schema: {e}", exc_info=True)
+            try:
+                init_conn.rollback()
+            except:
+                pass
             raise
         finally:
             self.connection_pool.putconn(init_conn)
