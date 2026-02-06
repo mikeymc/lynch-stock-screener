@@ -4120,9 +4120,15 @@ class Database:
             detailed_holdings = []
             
             if use_live_prices:
-                from portfolio_service import fetch_current_price
+                from portfolio_service import fetch_current_prices_batch
+                
+                # Get all symbols that need prices
+                symbols = [row[0] for row in holdings_data]
+                prices_map = fetch_current_prices_batch(symbols, db=self)
+                
                 for symbol, quantity, avg_purchase_price in holdings_data:
-                    current_price = fetch_current_price(symbol, db=self)
+                    current_price = prices_map.get(symbol)
+                    
                     if current_price and avg_purchase_price:
                         total_cost = quantity * avg_purchase_price
                         current_value = quantity * current_price

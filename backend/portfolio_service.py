@@ -242,3 +242,84 @@ def execute_trade(
         'price_per_share': price,
         'total_value': total_value
     }
+
+
+def fetch_current_prices_batch(symbols: list[str], db=None) -> Dict[str, float]:
+    """
+    Fetch current prices for multiple stocks in a single batch request.
+    
+    Args:
+        symbols: List of stock symbols
+        db: Database instance for fallback (optional)
+        
+    Returns:
+        Dictionary mapping symbol -> price
+    """
+    import pandas as pd
+    
+    if not symbols:
+        return {}
+        
+    # Remove duplicates and empty strings
+    unique_symbols = [s.upper() for s in set(symbols) if s]
+    if not unique_symbols:
+        return {}
+        
+    prices = {}
+    
+    # Try batch download first
+    try:
+        # threads=False to avoid resource contention/deadlocks on some systems
+        # period="1d" gets the latest data
+        data = yf.download(unique_symbols, period="1d", progress=False, threads=False)
+        
+        # Handle different return formats from yfinance
+        if not data.empty:
+            # Check if we have MultiIndex columns (multiple symbols) or single level (single symbol)
+            if isinstance(data.columns, pd.MultiIndex):
+                # Multiple symbols: data['Close'] or data['Adj Close'] is a DataFrame with symbols as columns
+                # Note: yfinance recently changed behavior, 'Close' might be top level or second level depending on version
+                # Usually it is (Attribute, Ticker)
+                
+                # We try to get 'Close'
+                if 'Close' in data.columns.get_level_values(0):
+                    closes = data['Close'] # This should be a DataFrame with tickers as columns
+                    # Get the last row (latest date)
+                    last_prices = closes.iloc[-1]
+                    # Convert to dict, dropping NaNs
+                    prices = last_prices.dropna().to_dict()
+                elif 'Adj Close' in data.columns.get_level_values(0):
+                    closes = data['Adj Close']
+                    last_prices = closes.iloc[-1]
+                    prices = last_prices.dropna().to_dict()
+            else:
+                # Single symbol or flat index (if only one symbol was requested or returned)
+                # If single symbol passed to download, columns are ['Open', 'High', 'Low', 'Close', ...]
+                if 'Close' in data.columns:
+                    price = data['Close'].iloc[-1]
+                    # Check if price is scalar or series
+                    if pd.notna(price):
+                        # If unique_symbols had 1 element, that's the key
+                        if len(unique_symbols) == 1:
+                            prices[unique_symbols[0]] = float(price)
+                        else:
+                            # This case matches if yfinance returns single level despite multiple symbols (unlikely but possible)
+                            pass
+                            
+    except Exception as e:
+        logger.warning(f"[PortfolioService] Batch fetch error: {e}")
+        
+    # Fill in missing symbols individually (fallback)
+    # This ensures we don't return empty for symbols that failed batching but might work individually (or via DB)
+    missing = [s for s in unique_symbols if s not in prices]
+    if missing:
+        # Only log if we missed more than expected (e.g. if batch failed completely)
+        if len(missing) == len(unique_symbols):
+             logger.warning(f"[PortfolioService] Batch failed completely, falling back to individual fetch")
+        
+        for sym in missing:
+            p = fetch_current_price(sym, db)
+            if p is not None:
+                prices[sym] = p
+                
+    return prices
