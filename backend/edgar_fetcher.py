@@ -3751,21 +3751,33 @@ class EdgarFetcher:
         
         logger.info(f"[{ticker}] Hybrid merge complete: {len(revenue_quarterly)} revenue quarters, {len(net_income_quarterly)} NI quarters, {len(eps_quarterly)} EPS quarters")
         
-        # Keep calculated EPS from company_facts as fallback
-        calculated_eps_quarterly = self.calculate_quarterly_eps_history(company_facts)
+        # Parse data that depends on company_facts only if we fetched it
+        if not has_cached_data and company_facts:
+            # Keep calculated EPS from company_facts as fallback
+            calculated_eps_quarterly = self.calculate_quarterly_eps_history(company_facts)
 
-        # Extract shares outstanding history (annual)
-        shares_outstanding_history = self.parse_shares_outstanding_history(company_facts)
+            # Extract shares outstanding history (annual)
+            shares_outstanding_history = self.parse_shares_outstanding_history(company_facts)
 
-        # Parse dividend history
-        dividend_history = self.parse_dividend_history(company_facts)
+            # Parse dividend history
+            dividend_history = self.parse_dividend_history(company_facts)
+            
+            company_name = company_facts.get('entityName', '')
+            raw_facts = company_facts
+        else:
+            # Use data from cached DB fundamentals or defaults
+            calculated_eps_quarterly = db_fundamentals.get('calculated_eps_quarterly', []) if db_fundamentals else []
+            shares_outstanding_history = db_fundamentals.get('shares_outstanding_history', []) if db_fundamentals else []
+            dividend_history = db_fundamentals.get('dividend_history', []) if db_fundamentals else []
+            company_name = db_fundamentals.get('company_name', '') if db_fundamentals else ''
+            raw_facts = {}
 
         logger.info(f"[{ticker}] EDGAR fetch complete: {len(eps_history or [])} EPS years, {len(calculated_eps_history or [])} calculated EPS years, {len(net_income_annual or [])} annual NI, {len(net_income_quarterly or [])} quarterly NI, {len(revenue_quarterly or [])} quarterly Rev, {len(eps_quarterly or [])} quarterly EPS, {len(calculated_eps_quarterly or [])} calculated Q-EPS, {len(cash_flow_quarterly or [])} quarterly CF, {len(revenue_history or [])} revenue years, {len(debt_to_equity_history or [])} D/E years, {len(debt_to_equity_quarterly)} quarterly D/E, {len(shareholder_equity_history or [])} Equity years, {len(shareholder_equity_quarterly)} Quarterly Equity, {len(cash_equivalents_history or [])} Cash years, {len(shares_outstanding_history or [])} shares outstanding years, {len(cash_flow_history or [])} cash flow years, {len(dividend_history or [])} dividend entries, current D/E: {debt_to_equity}")
 
         fundamentals = {
             'ticker': ticker,
             'cik': cik,
-            'company_name': company_facts.get('entityName', ''),
+            'company_name': company_name,
             'eps_history': eps_history,
             'calculated_eps_history': calculated_eps_history,
             'net_income_annual': net_income_annual,
@@ -3787,7 +3799,7 @@ class EdgarFetcher:
             'dividend_history': dividend_history,
             'interest_expense': interest_expense,
             'effective_tax_rate': effective_tax_rate,
-            'company_facts': company_facts
+            'company_facts': raw_facts
         }
 
         return fundamentals
