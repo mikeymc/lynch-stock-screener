@@ -3334,6 +3334,162 @@ class EdgarFetcher:
             import traceback
             traceback.print_exc()
             return {}
+    def _fetch_fundamentals_from_db(self, ticker: str) -> Optional[Dict[str, Any]]:
+        """
+        Reconstruct fundamentals from parsed earnings_history in DB.
+        Bypasses raw company_facts fetch if we already have the data.
+        """
+        try:
+            # Check for basic metrics first
+            metrics = self.db.get_stock_metrics(ticker)
+            if not metrics:
+                return None
+                
+            # Get annual and quarterly history
+            annual_rows = self.db.get_earnings_history(ticker, period_type='annual')
+            quarterly_rows = self.db.get_earnings_history(ticker, period_type='quarterly')
+            
+            if not annual_rows:
+                return None
+            
+            # Helper to map DB rows to dicts
+            def map_rows(rows, val_key, out_key_val='val'):
+                return [{
+                    'year': r['year'],
+                    'quarter': r.get('period') if r.get('period') not in ['annual', None] else None,
+                    out_key_val: r.get(val_key),
+                    'fiscal_end': r.get('fiscal_end')
+                } for r in rows if r.get(val_key) is not None]
+
+            # Reconstruct lists
+            eps_history = [{
+                'year': r['year'],
+                'eps': r['eps'],
+                'fiscal_end': r['fiscal_end']
+            } for r in annual_rows if r.get('eps') is not None]
+            
+            revenue_history = [{
+                'year': r['year'],
+                'revenue': r['revenue'],
+                'fiscal_end': r['fiscal_end']
+            } for r in annual_rows if r.get('revenue') is not None]
+            
+            net_income_annual = [{
+                'year': r['year'],
+                'net_income': r['net_income'],
+                'fiscal_end': r['fiscal_end']
+            } for r in annual_rows if r.get('net_income') is not None]
+            
+            # Quarterly lists
+            net_income_quarterly = map_rows(quarterly_rows, 'net_income', 'net_income')
+            revenue_quarterly = map_rows(quarterly_rows, 'revenue', 'revenue')
+            eps_quarterly = map_rows(quarterly_rows, 'eps', 'eps')
+            cash_flow_quarterly = [{
+                'year': r['year'],
+                'quarter': r['period'],
+                'operating_cash_flow': r['operating_cash_flow'],
+                'capital_expenditures': r['capital_expenditures'],
+                'free_cash_flow': r['free_cash_flow'],
+                'fiscal_end': r['fiscal_end']
+            } for r in quarterly_rows if r.get('operating_cash_flow') is not None]
+
+            # Other annual histories
+            cash_flow_history = [{
+                'year': r['year'],
+                'operating_cash_flow': r['operating_cash_flow'],
+                'capital_expenditures': r['capital_expenditures'],
+                'free_cash_flow': r['free_cash_flow'],
+                'fiscal_end': r['fiscal_end']
+            } for r in annual_rows if r.get('operating_cash_flow') is not None]
+
+            debt_to_equity_history = [{
+                'year': r['year'],
+                'debt_to_equity': r['debt_to_equity'],
+                'fiscal_end': r['fiscal_end']
+            } for r in annual_rows if r.get('debt_to_equity') is not None]
+            
+            debt_to_equity_quarterly = [{
+                'year': r['year'],
+                'quarter': r['period'],
+                'debt_to_equity': r['debt_to_equity'],
+                'fiscal_end': r['fiscal_end']
+            } for r in quarterly_rows if r.get('debt_to_equity') is not None]
+
+            shareholder_equity_history = [{
+                'year': r['year'],
+                'shareholder_equity': r['shareholder_equity'],
+                'fiscal_end': r['fiscal_end']
+            } for r in annual_rows if r.get('shareholder_equity') is not None]
+            
+            shareholder_equity_quarterly = [{
+                'year': r['year'],
+                'quarter': r['period'],
+                'shareholder_equity': r['shareholder_equity'],
+                'fiscal_end': r['fiscal_end']
+            } for r in quarterly_rows if r.get('shareholder_equity') is not None]
+
+            shares_outstanding_history = [{
+                'year': r['year'],
+                'shares': r['shares_outstanding'],
+                'fiscal_end': r['fiscal_end']
+            } for r in annual_rows if r.get('shares_outstanding') is not None]
+            
+            shares_outstanding_quarterly = [{
+                'year': r['year'],
+                'quarter': r['period'],
+                'shares': r['shares_outstanding'],
+                'fiscal_end': r['fiscal_end']
+            } for r in quarterly_rows if r.get('shares_outstanding') is not None]
+
+            dividend_history = [{
+                'year': r['year'],
+                'amount': r['dividend_amount'],
+                'fiscal_end': r['fiscal_end']
+            } for r in annual_rows if r.get('dividend_amount') is not None]
+
+            cash_equivalents_history = [{
+                'year': r['year'],
+                'cash_and_cash_equivalents': r['cash_and_cash_equivalents'],
+                'fiscal_end': r['fiscal_end']
+            } for r in annual_rows if r.get('cash_and_cash_equivalents') is not None]
+            
+            # Most recent debt_to_equity
+            current_de = metrics.get('debt_to_equity')
+            
+            # CIK
+            cik = self.get_cik_for_ticker(ticker)
+
+            return {
+                'ticker': ticker,
+                'cik': cik,
+                'company_name': metrics.get('company_name', ''),
+                'eps_history': eps_history,
+                'calculated_eps_history': eps_history, # Use same as reported
+                'net_income_annual': net_income_annual,
+                'shareholder_equity_history': shareholder_equity_history,
+                'shareholder_equity_quarterly': shareholder_equity_quarterly,
+                'cash_equivalents_history': cash_equivalents_history,
+                'shares_outstanding_history': shares_outstanding_history,
+                'net_income_quarterly': net_income_quarterly,
+                'revenue_quarterly': revenue_quarterly,
+                'eps_quarterly': eps_quarterly,
+                'calculated_eps_quarterly': eps_quarterly,
+                'cash_flow_quarterly': cash_flow_quarterly,
+                'debt_to_equity_quarterly': debt_to_equity_quarterly,
+                'shares_outstanding_quarterly': shares_outstanding_quarterly,
+                'revenue_history': revenue_history,
+                'debt_to_equity': current_de,
+                'debt_to_equity_history': debt_to_equity_history,
+                'cash_flow_history': cash_flow_history,
+                'dividend_history': dividend_history,
+                'interest_expense': metrics.get('interest_expense'),
+                'effective_tax_rate': metrics.get('effective_tax_rate'),
+                'company_facts': {} # Emulate empty raw data
+            }
+
+        except Exception as e:
+            logger.warning(f"[{ticker}] Failed to reconstruct fundamentals from DB: {e}")
+            return None
 
 
     def fetch_stock_fundamentals(self, ticker: str) -> Optional[Dict[str, Any]]:
@@ -3350,6 +3506,14 @@ class EdgarFetcher:
         cik = self.get_cik_for_ticker(ticker)
         if not cik:
             return None
+
+        # Try to fetch from DB first (earnings_history)
+        # This avoids redundant SEC API calls since company_facts table is unused
+        if self.db:
+            db_fundamentals = self._fetch_fundamentals_from_db(ticker)
+            if db_fundamentals:
+                logger.info(f"[{ticker}] Returning fundamentals from earnings_history DB cache")
+                return db_fundamentals
 
         # Fetch company facts
         company_facts = self.fetch_company_facts(cik)
