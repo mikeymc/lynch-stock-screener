@@ -3717,10 +3717,26 @@ def list_portfolios(user_id):
     try:
         portfolios = db.get_user_portfolios(user_id)
         
+        # Gather all symbols across all portfolios for a single batch fetch
+        all_symbols = set()
+        for p in portfolios:
+            try:
+                holdings = db.get_portfolio_holdings(p['id'])
+                for symbol in holdings.keys():
+                    all_symbols.add(symbol)
+            except Exception:
+                pass
+        
+        # Perform single batch fetch for all portfolio symbols
+        prices_map = {}
+        if all_symbols:
+            from portfolio_service import fetch_current_prices_batch
+            prices_map = fetch_current_prices_batch(list(all_symbols), db=db)
+        
         # Enrich each portfolio with computed summary data
         enriched_portfolios = []
         for portfolio in portfolios:
-            summary = db.get_portfolio_summary(portfolio['id'], use_live_prices=True)
+            summary = db.get_portfolio_summary(portfolio['id'], use_live_prices=True, prices_map=prices_map)
             if summary:
                 enriched_portfolios.append(summary)
             else:
@@ -4952,12 +4968,31 @@ def get_dashboard(user_id):
         try:
             cursor = conn.cursor(row_factory=psycopg.rows.dict_row)
 
-            # 1. Portfolio summaries
+            # 1. Portfolio summaries (batched price retrieval)
             portfolios = db.get_user_portfolios(user_id)
+            
+            # Gather all symbols across all portfolios for a single batch fetch
+            all_portfolio_symbols = set()
+            portfolio_holdings_map = {}
+            for p in portfolios:
+                try:
+                    holdings = db.get_portfolio_holdings(p['id'])
+                    portfolio_holdings_map[p['id']] = holdings
+                    for symbol in holdings.keys():
+                        all_portfolio_symbols.add(symbol)
+                except Exception:
+                    pass
+            
+            # Perform single batch fetch for all portfolio symbols
+            portfolio_prices = {}
+            if all_portfolio_symbols:
+                from portfolio_service import fetch_current_prices_batch
+                portfolio_prices = fetch_current_prices_batch(list(all_portfolio_symbols), db=db)
+            
             portfolio_summaries = []
             for p in portfolios:
                 try:
-                    summary = db.get_portfolio_summary(p['id'])
+                    summary = db.get_portfolio_summary(p['id'], prices_map=portfolio_prices)
                     portfolio_summaries.append({
                         'id': p['id'],
                         'name': p['name'],
@@ -5006,16 +5041,8 @@ def get_dashboard(user_id):
             ][:5]
 
             # 5. Upcoming earnings (watchlist + portfolio symbols)
-            # Gather all symbols from watchlist and portfolios
-            all_symbols = set(watchlist_symbols)
-            for p in portfolios:
-                try:
-                    holdings = db.get_portfolio_holdings(p['id'])
-                    # holdings is a dict of symbol -> quantity
-                    for symbol in holdings.keys():
-                        all_symbols.add(symbol)
-                except Exception:
-                    pass
+            # Gather all symbols from watchlist and portfolios (reusing already gathered portfolio symbols)
+            all_symbols = set(watchlist_symbols) | all_portfolio_symbols
 
             upcoming_earnings = []
             if all_symbols:
@@ -5040,24 +5067,10 @@ def get_dashboard(user_id):
                         'days_until': (row['next_earnings_date'] - date.today()).days if row['next_earnings_date'] else None
                     })
 
-            # 6. Aggregated news (limit API calls)
+            # 6. Aggregated news (from database cache)
             news_articles = []
-            if finnhub_client and all_symbols:
-                # Limit to top 5 symbols to avoid rate limits
-                symbols_for_news = list(all_symbols)[:5]
-                for sym in symbols_for_news:
-                    try:
-                        articles = finnhub_client.fetch_all_news(sym)
-                        for article in articles[:3]:  # 3 per symbol
-                            formatted = finnhub_client.format_article(article)
-                            formatted['symbol'] = sym
-                            news_articles.append(formatted)
-                    except Exception as e:
-                        logger.warning(f"Error fetching news for {sym}: {e}")
-
-                # Sort by datetime and limit to 10
-                news_articles.sort(key=lambda x: x.get('datetime', 0), reverse=True)
-                news_articles = news_articles[:10]
+            if all_symbols:
+                news_articles = db.get_news_articles_multi(list(all_symbols), limit=10)
 
             return jsonify({
                 'portfolios': portfolio_summaries,

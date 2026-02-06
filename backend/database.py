@@ -1772,6 +1772,11 @@ class Database:
         """)
 
         cursor.execute("""
+            CREATE INDEX IF NOT EXISTS idx_news_articles_symbol_datetime 
+            ON news_articles(symbol, datetime DESC)
+        """)
+
+        cursor.execute("""
             CREATE TABLE IF NOT EXISTS material_events (
                 id SERIAL PRIMARY KEY,
                 symbol TEXT NOT NULL,
@@ -4078,12 +4083,13 @@ class Database:
         finally:
             self.return_connection(conn)
 
-    def get_portfolio_holdings_detailed(self, portfolio_id: int, use_live_prices: bool = True) -> List[Dict[str, Any]]:
+    def get_portfolio_holdings_detailed(self, portfolio_id: int, use_live_prices: bool = True, prices_map: Optional[Dict[str, float]] = None) -> List[Dict[str, Any]]:
         """Get detailed holdings information including purchase prices and current values.
         
         Args:
             portfolio_id: Portfolio to get holdings for
             use_live_prices: If True, fetch live prices from yfinance. If False, use cached prices.
+            prices_map: Optional pre-fetched map of symbol -> price. If provided, used regardless of use_live_prices.
             
         Returns:
             List of dicts with keys: symbol, quantity, avg_purchase_price, current_price,
@@ -4119,16 +4125,38 @@ class Database:
             # Fetch current prices
             detailed_holdings = []
             
-            if use_live_prices:
+            if prices_map:
+                symbols = [row[0] for row in holdings_data]
+                # Use provided map
+                for symbol, quantity, avg_purchase_price in holdings_data:
+                    current_price = prices_map.get(symbol)
+                    
+                    if current_price and avg_purchase_price:
+                        total_cost = quantity * avg_purchase_price
+                        current_value = quantity * current_price
+                        gain_loss = current_value - total_cost
+                        gain_loss_percent = (gain_loss / total_cost * 100) if total_cost > 0 else 0.0
+                        
+                        detailed_holdings.append({
+                            'symbol': symbol,
+                            'quantity': quantity,
+                            'avg_purchase_price': avg_purchase_price,
+                            'current_price': current_price,
+                            'total_cost': total_cost,
+                            'current_value': current_value,
+                            'gain_loss': gain_loss,
+                            'gain_loss_percent': gain_loss_percent
+                        })
+            elif use_live_prices:
                 from portfolio_service import fetch_current_prices_batch
                 
                 # Get all symbols that need prices
                 symbols = [row[0] for row in holdings_data]
                 prices_map = fetch_current_prices_batch(symbols, db=self)
-                
+                    
                 for symbol, quantity, avg_purchase_price in holdings_data:
                     current_price = prices_map.get(symbol)
-                    
+                        
                     if current_price and avg_purchase_price:
                         total_cost = quantity * avg_purchase_price
                         current_value = quantity * current_price
@@ -4438,13 +4466,14 @@ class Database:
         finally:
             self.return_connection(conn)
 
-    def get_portfolio_summary(self, portfolio_id: int, use_live_prices: bool = True) -> Optional[Dict[str, Any]]:
+    def get_portfolio_summary(self, portfolio_id: int, use_live_prices: bool = True, prices_map: Optional[Dict[str, float]] = None) -> Optional[Dict[str, Any]]:
         """Get portfolio with computed cash, holdings value, and performance.
 
         Args:
             portfolio_id: Portfolio to summarize
             use_live_prices: If True, fetch live prices from yfinance for accuracy.
                              If False, use cached prices from stock_metrics (faster, for snapshots).
+            prices_map: Optional pre-fetched map of symbol -> price.
         """
         portfolio = self.get_portfolio(portfolio_id)
         if not portfolio:
@@ -4452,7 +4481,7 @@ class Database:
 
         cash = self.get_portfolio_cash(portfolio_id)
         holdings = self.get_portfolio_holdings(portfolio_id)
-        holdings_detailed = self.get_portfolio_holdings_detailed(portfolio_id, use_live_prices)
+        holdings_detailed = self.get_portfolio_holdings_detailed(portfolio_id, use_live_prices, prices_map)
 
         # Calculate holdings value from detailed holdings
         holdings_value = sum(h['current_value'] for h in holdings_detailed)
@@ -4927,6 +4956,57 @@ class Database:
             }
             for row in rows
         ]
+
+    def get_news_articles_multi(self, symbols: List[str], limit: int = 10) -> List[Dict[str, Any]]:
+        """
+        Get recent news articles across multiple symbols.
+        
+        Args:
+            symbols: List of stock symbols
+            limit: Max total articles to return
+            
+        Returns:
+            List of article dicts sorted by datetime descending
+        """
+        if not symbols:
+            return []
+            
+        conn = self.get_connection()
+        try:
+            cursor = conn.cursor()
+            
+            # Use ANY operator for efficiency with multiple symbols
+            query = """
+                SELECT id, symbol, finnhub_id, headline, summary, source, url, 
+                       image_url, category, datetime, published_date, last_updated
+                FROM news_articles
+                WHERE symbol = ANY(%s)
+                ORDER BY datetime DESC
+                LIMIT %s
+            """
+            
+            cursor.execute(query, (list(symbols), limit))
+            rows = cursor.fetchall()
+            
+            return [
+                {
+                    'id': row[0],
+                    'symbol': row[1],
+                    'finnhub_id': row[2],
+                    'headline': row[3],
+                    'summary': row[4],
+                    'source': row[5],
+                    'url': row[6],
+                    'image_url': row[7],
+                    'category': row[8],
+                    'datetime': row[9],
+                    'published_date': row[10].isoformat() if row[10] else None,
+                    'last_updated': row[11].isoformat() if row[11] else None
+                }
+                for row in rows
+            ]
+        finally:
+            self.return_connection(conn)
 
     def get_news_cache_status(self, symbol: str) -> Optional[Dict[str, Any]]:
         """

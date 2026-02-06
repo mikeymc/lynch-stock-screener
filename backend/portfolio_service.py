@@ -271,7 +271,7 @@ def fetch_current_prices_batch(symbols: list[str], db=None) -> Dict[str, float]:
     try:
         # threads=False to avoid resource contention/deadlocks on some systems
         # period="1d" gets the latest data
-        data = yf.download(unique_symbols, period="1d", progress=False, threads=False)
+        data = yf.download(unique_symbols, period="1d", progress=False, threads=False, auto_adjust=True)
         
         # Handle different return formats from yfinance
         if not data.empty:
