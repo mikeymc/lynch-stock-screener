@@ -32,6 +32,7 @@ import Strategies from './pages/Strategies'
 import StrategyDetail from './pages/StrategyDetail'
 import { screeningCache } from './utils/cache'
 import Help from './pages/Help'
+import Dashboard from './pages/Dashboard'
 import { OnboardingWizard } from './components/OnboardingWizard'
 // import './App.css' // Disabled for shadcn migration
 
@@ -1168,7 +1169,8 @@ function App() {
             activeCharacter={activeCharacter}
           />
         }>
-          <Route path="/" element={
+          <Route path="/" element={<Dashboard />} />
+          <Route path="/stocks" element={
             <StockListView
               key={activeCharacter} // Force remount when character changes
               stocks={stocks}

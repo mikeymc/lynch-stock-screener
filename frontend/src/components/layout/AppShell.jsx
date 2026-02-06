@@ -195,6 +195,8 @@ function AppShellContent({
 
     const isStockDetail = location.pathname.startsWith('/stock/')
     const isEconomyPage = location.pathname === '/economy'
+    const isDashboard = location.pathname === '/'
+    const isStocksPage = location.pathname === '/stocks'
 
     const getCount = (statusKey) => {
         if (!summary) return 0
@@ -226,7 +228,6 @@ function AppShellContent({
                         className="flex items-center gap-2 cursor-pointer"
                         onClick={() => {
                             navigate('/')
-                            setFilter('all')
                             onNavClick()
                         }}
                     >
@@ -250,10 +251,22 @@ function AppShellContent({
                                         <SidebarMenuButton
                                             onClick={() => {
                                                 navigate('/')
+                                                onNavClick()
+                                            }}
+                                            isActive={location.pathname === '/'}
+                                            className="pl-4 font-normal text-muted-foreground data-[active=true]:font-medium data-[active=true]:text-sidebar-primary"
+                                        >
+                                            <span>Dashboard</span>
+                                        </SidebarMenuButton>
+                                    </SidebarMenuItem>
+                                    <SidebarMenuItem>
+                                        <SidebarMenuButton
+                                            onClick={() => {
+                                                navigate('/stocks')
                                                 setFilter('all')
                                                 onNavClick()
                                             }}
-                                            isActive={location.pathname === '/' && filter === 'all'}
+                                            isActive={location.pathname === '/stocks' && filter === 'all'}
                                             className="pl-4 font-normal text-muted-foreground data-[active=true]:font-medium data-[active=true]:text-sidebar-primary"
                                         >
                                             <span>All Stocks</span>
@@ -262,7 +275,7 @@ function AppShellContent({
                                     <SidebarMenuItem>
                                         <SidebarMenuButton
                                             onClick={() => {
-                                                navigate('/')
+                                                navigate('/stocks')
                                                 setFilter('watchlist')
                                                 onNavClick()
                                             }}
@@ -319,8 +332,8 @@ function AppShellContent({
 
 
 
-                        {/* Filter Section - Hidden on Detail/Economy Pages */}
-                        {!isStockDetail && !isEconomyPage && (
+                        {/* Filter Section - Only show on Stocks page */}
+                        {isStocksPage && (
                             <Collapsible open={filterOpen} onOpenChange={setFilterOpen}>
                                 <SidebarGroup>
                                     <CollapsibleTrigger asChild>
@@ -336,6 +349,7 @@ function AppShellContent({
                                                 <SidebarMenuItem>
                                                     <SidebarMenuButton
                                                         onClick={() => {
+                                                            navigate('/stocks')
                                                             setFilter('STRONG_BUY')
                                                             onNavClick()
                                                         }}
@@ -349,6 +363,7 @@ function AppShellContent({
                                                 <SidebarMenuItem>
                                                     <SidebarMenuButton
                                                         onClick={() => {
+                                                            navigate('/stocks')
                                                             setFilter('BUY')
                                                             onNavClick()
                                                         }}
@@ -362,6 +377,7 @@ function AppShellContent({
                                                 <SidebarMenuItem>
                                                     <SidebarMenuButton
                                                         onClick={() => {
+                                                            navigate('/stocks')
                                                             setFilter('HOLD')
                                                             onNavClick()
                                                         }}
@@ -375,6 +391,7 @@ function AppShellContent({
                                                 <SidebarMenuItem>
                                                     <SidebarMenuButton
                                                         onClick={() => {
+                                                            navigate('/stocks')
                                                             setFilter('CAUTION')
                                                             onNavClick()
                                                         }}
@@ -388,6 +405,7 @@ function AppShellContent({
                                                 <SidebarMenuItem>
                                                     <SidebarMenuButton
                                                         onClick={() => {
+                                                            navigate('/stocks')
                                                             setFilter('AVOID')
                                                             onNavClick()
                                                         }}

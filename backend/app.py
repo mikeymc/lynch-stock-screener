@@ -18,8 +18,9 @@ import string
 import numpy as np
 import pandas as pd
 import yfinance as yf
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta, timezone, date
 from dotenv import load_dotenv
+import psycopg.rows
 from database import Database
 from email_service import send_verification_email
 
@@ -4730,6 +4731,349 @@ def get_strategy_templates():
             for k, v in FILTER_TEMPLATES.items()
         }
     })
+
+
+# ============================================================
+# Dashboard & Market Data Endpoints
+# ============================================================
+
+SUPPORTED_INDICES = {
+    '^GSPC': 'S&P 500',
+    '^IXIC': 'Nasdaq Composite',
+    '^DJI': 'Dow Jones Industrial Average'
+}
+
+
+@app.route('/api/market/index/<symbol>', methods=['GET'])
+def get_market_index(symbol):
+    """Get index price history for charting.
+
+    Supported symbols: ^GSPC (S&P 500), ^IXIC (Nasdaq), ^DJI (Dow Jones)
+    Query params: period (1d, 5d, 1mo, 3mo, ytd, 1y) - defaults to 1mo
+    """
+    if symbol not in SUPPORTED_INDICES:
+        return jsonify({
+            'error': f'Unsupported index. Supported: {list(SUPPORTED_INDICES.keys())}'
+        }), 400
+
+    period = request.args.get('period', '1mo')
+    valid_periods = ['1d', '5d', '1mo', '3mo', 'ytd', '1y']
+    if period not in valid_periods:
+        return jsonify({'error': f'Invalid period. Valid: {valid_periods}'}), 400
+
+    try:
+        ticker = yf.Ticker(symbol)
+        # Use interval based on period for appropriate granularity
+        if period == '1d':
+            hist = ticker.history(period='1d', interval='5m')
+        elif period == '5d':
+            hist = ticker.history(period='5d', interval='15m')
+        else:
+            hist = ticker.history(period=period, interval='1d')
+
+        if hist.empty:
+            return jsonify({'error': 'No data available for this index'}), 404
+
+        # Format data for chart
+        data_points = []
+        for idx, row in hist.iterrows():
+            data_points.append({
+                'timestamp': idx.isoformat(),
+                'close': float(row['Close']) if pd.notna(row['Close']) else None,
+                'open': float(row['Open']) if pd.notna(row['Open']) else None,
+                'high': float(row['High']) if pd.notna(row['High']) else None,
+                'low': float(row['Low']) if pd.notna(row['Low']) else None,
+                'volume': int(row['Volume']) if pd.notna(row['Volume']) else None
+            })
+
+        # Calculate change from first to last
+        first_close = data_points[0]['close'] if data_points else 0
+        last_close = data_points[-1]['close'] if data_points else 0
+        change = last_close - first_close
+        change_pct = (change / first_close * 100) if first_close else 0
+
+        return jsonify({
+            'symbol': symbol,
+            'name': SUPPORTED_INDICES[symbol],
+            'period': period,
+            'data': data_points,
+            'current_price': last_close,
+            'change': change,
+            'change_pct': round(change_pct, 2)
+        })
+
+    except Exception as e:
+        logger.error(f"Error fetching index {symbol}: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/market/movers', methods=['GET'])
+def get_market_movers():
+    """Get top gainers and losers from screened stocks.
+
+    Query params:
+      - period: 1d, 1w, 1m, ytd (default: 1d)
+      - limit: number of stocks per category (default: 5)
+    """
+    period = request.args.get('period', '1d')
+    limit = min(int(request.args.get('limit', 5)), 20)
+
+    try:
+        conn = db.get_connection()
+        try:
+            cursor = conn.cursor(row_factory=psycopg.rows.dict_row)
+
+            if period == '1d':
+                # Use price_change_pct from stock_metrics
+                cursor.execute("""
+                    SELECT
+                        sm.symbol,
+                        s.company_name,
+                        sm.price,
+                        sm.price_change_pct as change_pct
+                    FROM stock_metrics sm
+                    JOIN stocks s ON sm.symbol = s.symbol
+                    WHERE sm.price_change_pct IS NOT NULL
+                      AND sm.price IS NOT NULL
+                      AND NOT (sm.price_change_pct = 'NaN')
+                      AND s.country = 'US'
+                    ORDER BY sm.price_change_pct DESC
+                    LIMIT %s
+                """, (limit,))
+                gainers = cursor.fetchall()
+
+                cursor.execute("""
+                    SELECT
+                        sm.symbol,
+                        s.company_name,
+                        sm.price,
+                        sm.price_change_pct as change_pct
+                    FROM stock_metrics sm
+                    JOIN stocks s ON sm.symbol = s.symbol
+                    WHERE sm.price_change_pct IS NOT NULL
+                      AND sm.price IS NOT NULL
+                      AND NOT (sm.price_change_pct = 'NaN')
+                      AND s.country = 'US'
+                    ORDER BY sm.price_change_pct ASC
+                    LIMIT %s
+                """, (limit,))
+                losers = cursor.fetchall()
+
+            else:
+                # Calculate from weekly_prices for longer periods
+                if period == '1w':
+                    days_back = 7
+                elif period == '1m':
+                    days_back = 30
+                elif period == 'ytd':
+                    days_back = (datetime.now() - datetime(datetime.now().year, 1, 1)).days
+                else:
+                    days_back = 7
+
+                cursor.execute("""
+                    WITH price_change AS (
+                        SELECT
+                            wp.symbol,
+                            s.company_name,
+                            sm.price,
+                            (sm.price - wp.price) / wp.price * 100 as change_pct
+                        FROM weekly_prices wp
+                        JOIN stocks s ON wp.symbol = s.symbol
+                        JOIN stock_metrics sm ON wp.symbol = sm.symbol
+                        WHERE wp.week_ending = (
+                            SELECT MAX(week_ending)
+                            FROM weekly_prices
+                            WHERE week_ending <= CURRENT_DATE - INTERVAL '%s days'
+                        )
+                        AND sm.price IS NOT NULL
+                        AND s.country = 'US'
+                    )
+                    SELECT * FROM price_change
+                    WHERE change_pct IS NOT NULL
+                    ORDER BY change_pct DESC
+                    LIMIT %s
+                """, (days_back, limit))
+                gainers = cursor.fetchall()
+
+                cursor.execute("""
+                    WITH price_change AS (
+                        SELECT
+                            wp.symbol,
+                            s.company_name,
+                            sm.price,
+                            (sm.price - wp.price) / wp.price * 100 as change_pct
+                        FROM weekly_prices wp
+                        JOIN stocks s ON wp.symbol = s.symbol
+                        JOIN stock_metrics sm ON wp.symbol = sm.symbol
+                        WHERE wp.week_ending = (
+                            SELECT MAX(week_ending)
+                            FROM weekly_prices
+                            WHERE week_ending <= CURRENT_DATE - INTERVAL '%s days'
+                        )
+                        AND sm.price IS NOT NULL
+                        AND s.country = 'US'
+                    )
+                    SELECT * FROM price_change
+                    WHERE change_pct IS NOT NULL
+                    ORDER BY change_pct ASC
+                    LIMIT %s
+                """, (days_back, limit))
+                losers = cursor.fetchall()
+
+            return jsonify({
+                'period': period,
+                'gainers': [dict(g) for g in gainers],
+                'losers': [dict(l) for l in losers]
+            })
+
+        finally:
+            db.return_connection(conn)
+
+    except Exception as e:
+        logger.error(f"Error getting market movers: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/dashboard', methods=['GET'])
+@require_user_auth
+def get_dashboard(user_id):
+    """Get aggregated dashboard data for the current user.
+
+    Returns:
+      - portfolios: User's portfolio summaries
+      - watchlist: Watchlist symbols with current prices
+      - alerts: Recent alerts (triggered + pending)
+      - strategies: Active strategy summaries
+      - upcoming_earnings: Next 2 weeks of earnings for watched/held stocks
+      - news: 10 recent articles across watchlist/portfolio symbols
+    """
+    try:
+        conn = db.get_connection()
+        try:
+            cursor = conn.cursor(row_factory=psycopg.rows.dict_row)
+
+            # 1. Portfolio summaries
+            portfolios = db.get_user_portfolios(user_id)
+            portfolio_summaries = []
+            for p in portfolios:
+                try:
+                    summary = db.get_portfolio_summary(p['id'])
+                    portfolio_summaries.append({
+                        'id': p['id'],
+                        'name': p['name'],
+                        'total_value': summary.get('total_value', 0),
+                        'total_gain_loss': summary.get('gain_loss', 0),
+                        'total_gain_loss_pct': summary.get('gain_loss_percent', 0),
+                        'top_holdings': summary.get('holdings_detailed', [])[:3]
+                    })
+                except Exception as e:
+                    logger.warning(f"Error getting portfolio summary for {p['id']}: {e}")
+
+            # 2. Watchlist with prices
+            watchlist_symbols = db.get_watchlist(user_id)
+            watchlist_data = []
+            if watchlist_symbols:
+                cursor.execute("""
+                    SELECT
+                        sm.symbol,
+                        s.company_name,
+                        sm.price,
+                        sm.price_change_pct
+                    FROM stock_metrics sm
+                    JOIN stocks s ON sm.symbol = s.symbol
+                    WHERE sm.symbol = ANY(%s)
+                """, (watchlist_symbols,))
+                watchlist_data = [dict(row) for row in cursor.fetchall()]
+
+            # 3. Alerts (recent triggered + pending)
+            alerts = db.get_alerts(user_id)
+            alert_summary = {
+                'triggered': [a for a in alerts if a.get('status') == 'triggered'][:5],
+                'pending': [a for a in alerts if a.get('status') == 'pending'][:5]
+            }
+
+            # 4. Active strategies
+            strategies = db.get_user_strategies(user_id)
+            strategy_summaries = [
+                {
+                    'id': s['id'],
+                    'name': s['name'],
+                    'enabled': s.get('enabled', True),
+                    'last_run': s.get('last_run_at'),
+                    'last_status': s.get('last_run_status')
+                }
+                for s in strategies if s.get('enabled', True)
+            ][:5]
+
+            # 5. Upcoming earnings (watchlist + portfolio symbols)
+            # Gather all symbols from watchlist and portfolios
+            all_symbols = set(watchlist_symbols)
+            for p in portfolios:
+                try:
+                    holdings = db.get_portfolio_holdings(p['id'])
+                    # holdings is a dict of symbol -> quantity
+                    for symbol in holdings.keys():
+                        all_symbols.add(symbol)
+                except Exception:
+                    pass
+
+            upcoming_earnings = []
+            if all_symbols:
+                cursor.execute("""
+                    SELECT
+                        sm.symbol,
+                        s.company_name,
+                        sm.next_earnings_date
+                    FROM stock_metrics sm
+                    JOIN stocks s ON sm.symbol = s.symbol
+                    WHERE sm.symbol = ANY(%s)
+                      AND sm.next_earnings_date IS NOT NULL
+                      AND sm.next_earnings_date BETWEEN CURRENT_DATE AND CURRENT_DATE + INTERVAL '14 days'
+                    ORDER BY sm.next_earnings_date ASC
+                    LIMIT 10
+                """, (list(all_symbols),))
+                for row in cursor.fetchall():
+                    upcoming_earnings.append({
+                        'symbol': row['symbol'],
+                        'company_name': row['company_name'],
+                        'earnings_date': row['next_earnings_date'].isoformat() if row['next_earnings_date'] else None,
+                        'days_until': (row['next_earnings_date'] - date.today()).days if row['next_earnings_date'] else None
+                    })
+
+            # 6. Aggregated news (limit API calls)
+            news_articles = []
+            if finnhub_client and all_symbols:
+                # Limit to top 5 symbols to avoid rate limits
+                symbols_for_news = list(all_symbols)[:5]
+                for sym in symbols_for_news:
+                    try:
+                        articles = finnhub_client.fetch_all_news(sym)
+                        for article in articles[:3]:  # 3 per symbol
+                            formatted = finnhub_client.format_article(article)
+                            formatted['symbol'] = sym
+                            news_articles.append(formatted)
+                    except Exception as e:
+                        logger.warning(f"Error fetching news for {sym}: {e}")
+
+                # Sort by datetime and limit to 10
+                news_articles.sort(key=lambda x: x.get('datetime', 0), reverse=True)
+                news_articles = news_articles[:10]
+
+            return jsonify({
+                'portfolios': portfolio_summaries,
+                'watchlist': watchlist_data,
+                'alerts': alert_summary,
+                'strategies': strategy_summaries,
+                'upcoming_earnings': upcoming_earnings,
+                'news': news_articles
+            })
+
+        finally:
+            db.return_connection(conn)
+
+    except Exception as e:
+        logger.error(f"Error getting dashboard data: {e}")
+        return jsonify({'error': str(e)}), 500
 
 
 if __name__ == '__main__':
