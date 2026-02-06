@@ -1,0 +1,64 @@
+{
+  "enabled": true,
+  "description": "Configuration for nightly stock data refresh batch process",
+
+  "scheduling": {
+    "run_time": "02:00",
+    "timezone": "America/New_York",
+    "comment": "Run at 2 AM ET when markets are closed"
+  },
+
+  "processing": {
+    "batch_size": 100,
+    "delay_between_batches_seconds": 5,
+    "max_workers": 1,
+    "force_refresh": true,
+    "comment": "Force refresh bypasses 24-hour cache to ensure fresh data"
+  },
+
+  "rate_limiting": {
+    "edgar_requests_per_second": 9,
+    "yfinance_delay_seconds": 0.5,
+    "comment": "Conservative limits to respect API rate limits"
+  },
+
+  "logging": {
+    "log_directory": "logs",
+    "log_file": "batch_refresh.log",
+    "max_log_size_mb": 50,
+    "backup_count": 10,
+    "log_level": "INFO",
+    "console_output": false
+  },
+
+  "notifications": {
+    "enabled": false,
+    "email": {
+      "enabled": false,
+      "smtp_server": "smtp.gmail.com",
+      "smtp_port": 587,
+      "from_address": "",
+      "to_addresses": [],
+      "on_error_only": true
+    }
+  },
+
+  "database": {
+    "path": "stocks.db",
+    "backup_before_run": true,
+    "backup_directory": "backups"
+  },
+
+  "error_handling": {
+    "max_consecutive_failures": 50,
+    "retry_failed_stocks": true,
+    "max_retries_per_stock": 2,
+    "continue_on_error": true
+  },
+
+  "reporting": {
+    "generate_summary": true,
+    "summary_directory": "reports",
+    "keep_last_n_reports": 30
+  }
+}
