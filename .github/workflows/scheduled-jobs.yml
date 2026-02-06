@@ -85,6 +85,8 @@ on:
           - price_update
           - strategy_execution
           - benchmark_snapshot
+          - historical_fundamentals_cache
+          - quarterly_fundamentals_cache
 
 jobs:
   trigger-job:
@@ -167,7 +169,7 @@ jobs:
              # Default to US for speed, can be expanded if needed
              PARAMS='{"regions": ["us"]}'
           elif [ "$JOB_TYPE" = "full_screening" ]; then
-            PARAMS='{"force_refresh": true}'
+            PARAMS='{}'
           elif [ "$JOB_TYPE" = "strategy_execution" ]; then
             # Run all enabled strategies
             PARAMS='{}'

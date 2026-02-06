@@ -240,6 +240,10 @@ class BackgroundWorker:
             self._run_thesis_refresher(job_id, params)
         elif job_type == 'benchmark_snapshot':
             self._run_benchmark_snapshot(job_id, params)
+        elif job_type == 'historical_fundamentals_cache':
+            self._run_historical_fundamentals_cache(job_id, params)
+        elif job_type == 'quarterly_fundamentals_cache':
+            self._run_quarterly_fundamentals_cache(job_id, params)
         else:
             raise ValueError(f"Unknown job type: {job_type}")
 
@@ -257,6 +261,319 @@ class BackgroundWorker:
         except Exception as e:
             logger.error(f"Benchmark snapshot failed: {e}")
             self.db.fail_job(job_id, str(e))
+
+    def _run_historical_fundamentals_cache(self, job_id: int, params: Dict[str, Any]):
+        """
+        Cold storage job: Fetch >2 year historical fundamental data via company_facts API.
+
+        This job runs infrequently (quarterly) to populate historical earnings_history data.
+        It fetches ONLY from company_facts (not 10-Q filings), storing data older than 2 years.
+
+        Params:
+            limit: Optional max number of stocks to process
+            region: Region filter (us, north-america, europe, asia, all)
+            symbols: Optional list of specific symbols to process
+            force_refresh: If True, re-fetch even if historical data exists
+        """
+        limit = params.get('limit')
+        region = params.get('region', 'us')
+        specific_symbols = params.get('symbols')
+        force_refresh = params.get('force_refresh', False)
+
+        logger.info(f"Starting historical_fundamentals_cache job {job_id} (region={region})")
+
+        from tradingview_fetcher import TradingViewFetcher
+        from edgar_fetcher import EdgarFetcher
+
+        # Get stock list
+        if specific_symbols:
+            all_symbols = specific_symbols
+            logger.info(f"Processing specific symbols: {all_symbols}")
+            self.db.update_job_progress(job_id, progress_pct=5, progress_message=f'Processing {len(all_symbols)} specific symbols...')
+        else:
+            region_mapping = {
+                'us': ['us'],
+                'north-america': ['north_america'],
+                'south-america': ['south_america'],
+                'europe': ['europe'],
+                'asia': ['asia'],
+                'all': None
+            }
+            tv_regions = region_mapping.get(region, ['us'])
+
+            self.db.update_job_progress(job_id, progress_pct=5, progress_message=f'Fetching stock list from TradingView ({region})...')
+            tv_fetcher = TradingViewFetcher()
+            market_data_cache = tv_fetcher.fetch_all_stocks(limit=20000, regions=tv_regions)
+            all_symbols = list(market_data_cache.keys())
+
+            if limit and limit < len(all_symbols):
+                all_symbols = all_symbols[:limit]
+
+        total = len(all_symbols)
+        self.db.update_job_progress(job_id, progress_pct=10, progress_message=f'Caching historical data for {total} stocks...',
+                                    total_count=total)
+
+        logger.info(f"Processing {total} stocks for historical fundamentals")
+
+        edgar_fetcher = EdgarFetcher(self.db)
+
+        def process_stock(symbol):
+            try:
+                # Check if we already have historical data (skip if not force_refresh)
+                if not force_refresh:
+                    annual_rows = self.db.get_earnings_history(symbol, period_type='annual')
+                    if annual_rows and len(annual_rows) >= 5:
+                        logger.info(f"[{symbol}] Already has {len(annual_rows)} years of historical data - skipping")
+                        return {'symbol': symbol, 'status': 'cached'}
+
+                # Get CIK
+                cik = edgar_fetcher.get_cik_for_ticker(symbol)
+                if not cik:
+                    return None
+
+                # Fetch company_facts (historical data)
+                company_facts = edgar_fetcher.fetch_company_facts(cik)
+                if not company_facts:
+                    return None
+
+                # Parse annual historical data ONLY (skip quarterly - that's handled by quarterly job)
+                eps_history = edgar_fetcher.parse_eps_history(company_facts)
+                revenue_history = edgar_fetcher.parse_revenue_history(company_facts)
+                net_income_annual = edgar_fetcher.parse_net_income_history(company_facts)
+                debt_to_equity_history = edgar_fetcher.parse_debt_to_equity_history(company_facts)
+                shareholder_equity_history = edgar_fetcher.parse_shareholder_equity_history(company_facts)
+                cash_flow_history = edgar_fetcher.parse_cash_flow_history(company_facts)
+
+                # Store annual data to earnings_history table
+                # This uses the same storage logic as the full screening job
+                from data_fetcher import DataFetcher
+                data_fetcher = DataFetcher(self.db)
+
+                # Create a minimal edgar_data dict with just annual data
+                edgar_data = {
+                    'eps_history': eps_history,
+                    'revenue_history': revenue_history,
+                    'net_income_annual': net_income_annual,
+                    'debt_to_equity_history': debt_to_equity_history,
+                    'shareholder_equity_history': shareholder_equity_history,
+                    'cash_flow_history': cash_flow_history,
+                }
+
+                # Store to DB (this populates earnings_history table)
+                data_fetcher._store_edgar_earnings(symbol, edgar_data, price_history=None)
+
+                logger.info(f"[{symbol}] Cached {len(revenue_history)} years of historical data")
+                return {'symbol': symbol, 'status': 'success', 'years': len(revenue_history)}
+
+            except Exception as e:
+                logger.error(f"[{symbol}] Error caching historical data: {e}")
+                return None
+
+        # Process stocks with reduced parallelism to avoid DB pressure
+        from concurrent.futures import ThreadPoolExecutor
+        processed_count = 0
+        success_count = 0
+        cached_count = 0
+        failed_count = 0
+
+        BATCH_SIZE = 10
+        MAX_WORKERS = 4  # Reduced for heavy company_facts calls
+
+        with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
+            for i in range(0, total, BATCH_SIZE):
+                batch = all_symbols[i:i + BATCH_SIZE]
+                futures = {executor.submit(process_stock, symbol): symbol for symbol in batch}
+
+                for future in futures:
+                    result = future.result()
+                    processed_count += 1
+
+                    if result:
+                        if result.get('status') == 'cached':
+                            cached_count += 1
+                        else:
+                            success_count += 1
+                    else:
+                        failed_count += 1
+
+                    if processed_count % 10 == 0:
+                        progress_pct = 10 + int((processed_count / total) * 85)
+                        self.db.update_job_progress(
+                            job_id,
+                            progress_pct=progress_pct,
+                            progress_message=f'Processed {processed_count}/{total} stocks (success: {success_count}, cached: {cached_count}, failed: {failed_count})',
+                            processed_count=processed_count
+                        )
+                        self._send_heartbeat(job_id)
+
+        # Complete
+        result_message = f"Historical fundamentals cached: {success_count} new, {cached_count} already cached, {failed_count} failed out of {total} stocks"
+        self.db.complete_job(job_id, result=result_message)
+        logger.info(result_message)
+
+    def _run_quarterly_fundamentals_cache(self, job_id: int, params: Dict[str, Any]):
+        """
+        Hot data job: Fetch recent quarterly data via 10-Q filing parsing.
+
+        This job runs nightly with smart caching to only fetch new quarters when available.
+        It uses edgar_fetcher._needs_quarterly_refresh() to detect stale data.
+
+        Params:
+            limit: Optional max number of stocks to process
+            region: Region filter (us, north-america, europe, asia, all)
+            symbols: Optional list of specific symbols to process
+            force_refresh: If True, re-fetch even if quarterly data is current
+        """
+        limit = params.get('limit')
+        region = params.get('region', 'us')
+        specific_symbols = params.get('symbols')
+        force_refresh = params.get('force_refresh', False)
+
+        logger.info(f"Starting quarterly_fundamentals_cache job {job_id} (region={region})")
+
+        from tradingview_fetcher import TradingViewFetcher
+        from edgar_fetcher import EdgarFetcher
+
+        # Get stock list
+        if specific_symbols:
+            all_symbols = specific_symbols
+            logger.info(f"Processing specific symbols: {all_symbols}")
+            self.db.update_job_progress(job_id, progress_pct=5, progress_message=f'Processing {len(all_symbols)} specific symbols...')
+        else:
+            region_mapping = {
+                'us': ['us'],
+                'north-america': ['north_america'],
+                'south-america': ['south_america'],
+                'europe': ['europe'],
+                'asia': ['asia'],
+                'all': None
+            }
+            tv_regions = region_mapping.get(region, ['us'])
+
+            self.db.update_job_progress(job_id, progress_pct=5, progress_message=f'Fetching stock list from TradingView ({region})...')
+            tv_fetcher = TradingViewFetcher()
+            market_data_cache = tv_fetcher.fetch_all_stocks(limit=20000, regions=tv_regions)
+            all_symbols = list(market_data_cache.keys())
+
+            if limit and limit < len(all_symbols):
+                all_symbols = all_symbols[:limit]
+
+        total = len(all_symbols)
+        self.db.update_job_progress(job_id, progress_pct=10, progress_message=f'Caching quarterly data for {total} stocks...',
+                                    total_count=total)
+
+        logger.info(f"Processing {total} stocks for quarterly fundamentals")
+
+        edgar_fetcher = EdgarFetcher(self.db)
+
+        def process_stock(symbol):
+            try:
+                # Check if we need to refresh quarterly data (smart caching)
+                if not force_refresh:
+                    needs_refresh = edgar_fetcher._needs_quarterly_refresh(symbol)
+                    if not needs_refresh:
+                        logger.info(f"[{symbol}] Quarterly data is current - skipping")
+                        return {'symbol': symbol, 'status': 'current'}
+
+                # Fetch quarterly data from 10-Q filings (last 8 quarters)
+                quarterly_10q_data = edgar_fetcher.get_quarterly_financials_from_10q(symbol, num_quarters=8)
+
+                if not quarterly_10q_data or not quarterly_10q_data.get('revenue_quarterly'):
+                    logger.warning(f"[{symbol}] No quarterly data found in 10-Q filings")
+                    return None
+
+                # Store quarterly data to earnings_history table
+                from data_fetcher import DataFetcher
+                data_fetcher = DataFetcher(self.db)
+
+                # The 10-Q data is already in the right format for storage
+                # We just need to save each quarter to the DB
+                revenue_quarterly = quarterly_10q_data.get('revenue_quarterly', [])
+                net_income_quarterly = quarterly_10q_data.get('net_income_quarterly', [])
+                eps_quarterly = quarterly_10q_data.get('eps_quarterly', [])
+                cash_flow_quarterly = quarterly_10q_data.get('cash_flow_quarterly', [])
+
+                quarters_stored = 0
+                for i in range(len(revenue_quarterly)):
+                    year = revenue_quarterly[i]['year']
+                    quarter = revenue_quarterly[i]['quarter']
+                    period = f'Q{quarter}'
+
+                    # Get corresponding data from other metrics
+                    revenue = revenue_quarterly[i].get('revenue')
+                    net_income = net_income_quarterly[i].get('net_income') if i < len(net_income_quarterly) else None
+                    eps = eps_quarterly[i].get('eps') if i < len(eps_quarterly) else None
+
+                    operating_cash_flow = None
+                    capital_expenditures = None
+                    free_cash_flow = None
+                    if i < len(cash_flow_quarterly):
+                        operating_cash_flow = cash_flow_quarterly[i].get('operating_cash_flow')
+                        capital_expenditures = cash_flow_quarterly[i].get('capital_expenditures')
+                        free_cash_flow = cash_flow_quarterly[i].get('free_cash_flow')
+
+                    # Save to earnings_history
+                    self.db.save_earnings_history(
+                        symbol=symbol,
+                        year=year,
+                        eps=eps,
+                        revenue=revenue,
+                        period=period,
+                        net_income=net_income,
+                        operating_cash_flow=operating_cash_flow,
+                        capital_expenditures=capital_expenditures,
+                        free_cash_flow=free_cash_flow
+                    )
+                    quarters_stored += 1
+
+                logger.info(f"[{symbol}] Cached {quarters_stored} quarters from 10-Q filings")
+                return {'symbol': symbol, 'status': 'success', 'quarters': quarters_stored}
+
+            except Exception as e:
+                logger.error(f"[{symbol}] Error caching quarterly data: {e}")
+                return None
+
+        # Process stocks with moderate parallelism
+        from concurrent.futures import ThreadPoolExecutor
+        processed_count = 0
+        success_count = 0
+        current_count = 0
+        failed_count = 0
+
+        BATCH_SIZE = 10
+        MAX_WORKERS = 6  # Moderate for 10-Q parsing
+
+        with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
+            for i in range(0, total, BATCH_SIZE):
+                batch = all_symbols[i:i + BATCH_SIZE]
+                futures = {executor.submit(process_stock, symbol): symbol for symbol in batch}
+
+                for future in futures:
+                    result = future.result()
+                    processed_count += 1
+
+                    if result:
+                        if result.get('status') == 'current':
+                            current_count += 1
+                        else:
+                            success_count += 1
+                    else:
+                        failed_count += 1
+
+                    if processed_count % 10 == 0:
+                        progress_pct = 10 + int((processed_count / total) * 85)
+                        self.db.update_job_progress(
+                            job_id,
+                            progress_pct=progress_pct,
+                            progress_message=f'Processed {processed_count}/{total} stocks (updated: {success_count}, current: {current_count}, failed: {failed_count})',
+                            processed_count=processed_count
+                        )
+                        self._send_heartbeat(job_id)
+
+        # Complete
+        result_message = f"Quarterly fundamentals cached: {success_count} updated, {current_count} already current, {failed_count} failed out of {total} stocks"
+        self.db.complete_job(job_id, result=result_message)
+        logger.info(result_message)
 
     def _send_heartbeat(self, job_id: int):
         """Send heartbeat to extend job claim"""

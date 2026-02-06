@@ -3492,6 +3492,106 @@ class EdgarFetcher:
             return None
 
 
+    def _needs_quarterly_refresh(self, ticker: str) -> bool:
+        """
+        Check if we need to refresh quarterly data from 10-Q filings.
+        Returns True if the cached quarterly data is missing the most recent quarter.
+
+        Args:
+            ticker: Stock ticker symbol
+
+        Returns:
+            True if quarterly data needs refresh, False if cached data is current
+        """
+        if not self.db:
+            return True  # No DB means we need to fetch
+
+        try:
+            from datetime import datetime, timedelta
+
+            # Get most recent quarterly earnings from DB
+            quarterly_rows = self.db.get_earnings_history(ticker, period_type='quarterly')
+            if not quarterly_rows:
+                logger.info(f"[{ticker}] No quarterly data in DB - needs refresh")
+                return True
+
+            # Find the most recent quarter in DB
+            most_recent = max(quarterly_rows, key=lambda r: (r['year'], r.get('period', 'Q1')))
+            db_year = most_recent['year']
+            db_quarter = most_recent.get('period', 'Q1')  # e.g., 'Q1', 'Q2', 'Q3', 'Q4'
+            db_quarter_num = int(db_quarter.replace('Q', ''))
+
+            # Get fiscal year end from most recent annual data to determine fiscal calendar
+            annual_rows = self.db.get_earnings_history(ticker, period_type='annual')
+            if not annual_rows:
+                logger.info(f"[{ticker}] No annual data to determine fiscal year end - needs refresh")
+                return True
+
+            # Get fiscal year end (e.g., '2024-12-31')
+            most_recent_annual = max(annual_rows, key=lambda r: r['year'])
+            fiscal_end_str = most_recent_annual.get('fiscal_end')
+            if not fiscal_end_str:
+                logger.info(f"[{ticker}] No fiscal_end date available - needs refresh")
+                return True
+
+            # Parse fiscal year end to get the month/day (e.g., Dec 31 -> 12-31)
+            fiscal_end_date = datetime.strptime(fiscal_end_str, '%Y-%m-%d')
+            fiscal_month = fiscal_end_date.month
+            fiscal_day = fiscal_end_date.day
+
+            # Calculate what the expected current quarter should be
+            today = datetime.now()
+
+            # Determine the current fiscal year based on fiscal year end
+            if (today.month, today.day) >= (fiscal_month, fiscal_day):
+                current_fiscal_year = today.year
+            else:
+                current_fiscal_year = today.year - 1
+
+            # Calculate quarter end dates for this fiscal year
+            # Fiscal Q4 ends on fiscal_end (e.g., Dec 31)
+            # Fiscal Q3 ends 3 months before
+            # Fiscal Q2 ends 6 months before
+            # Fiscal Q1 ends 9 months before
+            q4_end = datetime(current_fiscal_year, fiscal_month, fiscal_day)
+            q3_end = q4_end - timedelta(days=90)  # Approximate
+            q2_end = q3_end - timedelta(days=90)
+            q1_end = q2_end - timedelta(days=90)
+
+            # Determine which quarter we should have data for
+            # Companies typically file 10-Q within 45 days after quarter end
+            filing_delay = timedelta(days=45)
+
+            if today >= q4_end + filing_delay:
+                expected_quarter = 4
+                expected_year = current_fiscal_year
+            elif today >= q3_end + filing_delay:
+                expected_quarter = 3
+                expected_year = current_fiscal_year
+            elif today >= q2_end + filing_delay:
+                expected_quarter = 2
+                expected_year = current_fiscal_year
+            elif today >= q1_end + filing_delay:
+                expected_quarter = 1
+                expected_year = current_fiscal_year
+            else:
+                # We're before Q1 filing, so expect Q4 of previous fiscal year
+                expected_quarter = 4
+                expected_year = current_fiscal_year - 1
+
+            # Check if we have the expected quarter in DB
+            if db_year < expected_year or (db_year == expected_year and db_quarter_num < expected_quarter):
+                logger.info(f"[{ticker}] Quarterly data stale: DB has {db_year} Q{db_quarter_num}, expected {expected_year} Q{expected_quarter} - needs refresh")
+                return True
+
+            logger.info(f"[{ticker}] Quarterly data current: DB has {db_year} Q{db_quarter_num}, expected {expected_year} Q{expected_quarter} - no refresh needed")
+            return False
+
+        except Exception as e:
+            logger.warning(f"[{ticker}] Error checking quarterly freshness: {e} - will refresh to be safe")
+            return True
+
+
     def fetch_stock_fundamentals(self, ticker: str) -> Optional[Dict[str, Any]]:
         """
         Fetch complete fundamental data for a stock
@@ -3509,39 +3609,61 @@ class EdgarFetcher:
 
         # Try to fetch from DB first (earnings_history)
         # This avoids redundant SEC API calls since company_facts table is unused
+        has_cached_data = False
+        db_fundamentals = None
         if self.db:
             db_fundamentals = self._fetch_fundamentals_from_db(ticker)
             if db_fundamentals:
-                logger.info(f"[{ticker}] Returning fundamentals from earnings_history DB cache")
-                return db_fundamentals
+                has_cached_data = True
+                # We have cached data, but check if quarterly data needs updating
+                needs_quarterly_refresh = self._needs_quarterly_refresh(ticker)
+                if not needs_quarterly_refresh:
+                    logger.info(f"[{ticker}] Returning fundamentals from earnings_history DB cache (quarterly data current)")
+                    return db_fundamentals
+                else:
+                    logger.info(f"[{ticker}] DB cache exists but quarterly data is stale - will refresh recent quarters only")
 
-        # Fetch company facts
-        company_facts = self.fetch_company_facts(cik)
-        if not company_facts:
-            return None
+        # Fetch company facts (skip if we have cached historical data and only need quarterly refresh)
+        company_facts = None
+        if not has_cached_data:
+            company_facts = self.fetch_company_facts(cik)
+            if not company_facts:
+                return None
 
-        # Parse all fundamental data
-        eps_history = self.parse_eps_history(company_facts)
-        revenue_history = self.parse_revenue_history(company_facts)
-        debt_to_equity = self.parse_debt_to_equity(company_facts)
-        debt_to_equity_history = self.parse_debt_to_equity_history(company_facts)
-        shareholder_equity_history = self.parse_shareholder_equity_history(company_facts)
-        # shareholder_equity_quarterly now comes from 10-Q parsing above
-        cash_equivalents_history = self.parse_cash_equivalents_history(company_facts)
-        cash_flow_history = self.parse_cash_flow_history(company_facts)
-        
-        # Extract Interest Expense and Tax Rate
-        interest_expense = self.parse_interest_expense(company_facts)
-        effective_tax_rate = self.parse_effective_tax_rate(company_facts)
-        
-        # Calculate split-adjusted EPS from Net Income / Shares Outstanding
+        # Parse all fundamental data (skip if using cached data)
+        if not has_cached_data:
+            eps_history = self.parse_eps_history(company_facts)
+            revenue_history = self.parse_revenue_history(company_facts)
+            debt_to_equity = self.parse_debt_to_equity(company_facts)
+            debt_to_equity_history = self.parse_debt_to_equity_history(company_facts)
+            shareholder_equity_history = self.parse_shareholder_equity_history(company_facts)
+            # shareholder_equity_quarterly now comes from 10-Q parsing above
+            cash_equivalents_history = self.parse_cash_equivalents_history(company_facts)
+            cash_flow_history = self.parse_cash_flow_history(company_facts)
 
+            # Extract Interest Expense and Tax Rate
+            interest_expense = self.parse_interest_expense(company_facts)
+            effective_tax_rate = self.parse_effective_tax_rate(company_facts)
 
-        # Calculate split-adjusted EPS from Net Income / Shares Outstanding
-        calculated_eps_history = self.calculate_split_adjusted_annual_eps_history(company_facts)
+            # Calculate split-adjusted EPS from Net Income / Shares Outstanding
+            calculated_eps_history = self.calculate_split_adjusted_annual_eps_history(company_facts)
 
-        # Extract Net Income directly for storage
-        net_income_annual = self.parse_net_income_history(company_facts)
+            # Extract Net Income directly for storage
+            net_income_annual = self.parse_net_income_history(company_facts)
+        else:
+            # Use data from cached DB fundamentals
+            logger.info(f"[{ticker}] Using historical data from DB cache, only refreshing quarterly")
+            eps_history = db_fundamentals.get('eps_history', [])
+            revenue_history = db_fundamentals.get('revenue_history', [])
+            debt_to_equity = db_fundamentals.get('debt_to_equity')
+            debt_to_equity_history = db_fundamentals.get('debt_to_equity_history', [])
+            shareholder_equity_history = db_fundamentals.get('shareholder_equity_history', [])
+            cash_equivalents_history = db_fundamentals.get('cash_equivalents_history', [])
+            cash_flow_history = db_fundamentals.get('cash_flow_history', [])
+            interest_expense = db_fundamentals.get('interest_expense')
+            effective_tax_rate = db_fundamentals.get('effective_tax_rate')
+            calculated_eps_history = db_fundamentals.get('calculated_eps_history', eps_history)
+            net_income_annual = db_fundamentals.get('net_income_annual', [])
         
         
         # HYBRID APPROACH: Combine 10-Q parsing (accurate recent data) with company_facts (complete historical data)
@@ -3558,14 +3680,23 @@ class EdgarFetcher:
         # was found from the cover page. This has been fixed above.
         
 
-        # 2. Get historical quarters from company_facts
-        logger.info(f"[{ticker}] Fetching historical quarterly data from company_facts...")
-        historical_revenue_quarterly = self.parse_quarterly_revenue_history(company_facts)
-        historical_net_income_quarterly = self.parse_quarterly_net_income_history(company_facts)
-        historical_cash_flow_quarterly = self.parse_quarterly_cash_flow_history(company_facts)
-        historical_debt_to_equity_quarterly = self.parse_quarterly_debt_to_equity_history(company_facts)
-        historical_shares_outstanding_quarterly = self.parse_quarterly_shares_outstanding_history(company_facts)
-        historical_shareholder_equity_quarterly = self.parse_quarterly_shareholder_equity_history(company_facts)
+        # 2. Get historical quarters from company_facts (or from DB cache)
+        if not has_cached_data:
+            logger.info(f"[{ticker}] Fetching historical quarterly data from company_facts...")
+            historical_revenue_quarterly = self.parse_quarterly_revenue_history(company_facts)
+            historical_net_income_quarterly = self.parse_quarterly_net_income_history(company_facts)
+            historical_cash_flow_quarterly = self.parse_quarterly_cash_flow_history(company_facts)
+            historical_debt_to_equity_quarterly = self.parse_quarterly_debt_to_equity_history(company_facts)
+            historical_shares_outstanding_quarterly = self.parse_quarterly_shares_outstanding_history(company_facts)
+            historical_shareholder_equity_quarterly = self.parse_quarterly_shareholder_equity_history(company_facts)
+        else:
+            logger.info(f"[{ticker}] Using historical quarterly data from DB cache...")
+            historical_revenue_quarterly = db_fundamentals.get('revenue_quarterly', [])
+            historical_net_income_quarterly = db_fundamentals.get('net_income_quarterly', [])
+            historical_cash_flow_quarterly = db_fundamentals.get('cash_flow_quarterly', [])
+            historical_debt_to_equity_quarterly = db_fundamentals.get('debt_to_equity_quarterly', [])
+            historical_shares_outstanding_quarterly = db_fundamentals.get('shares_outstanding_quarterly', [])
+            historical_shareholder_equity_quarterly = db_fundamentals.get('shareholder_equity_quarterly', [])
         
         # 3. Merge: 10-Q data takes precedence for recent quarters
         def merge_quarterly_data(recent_data, historical_data):
