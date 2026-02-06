@@ -2703,20 +2703,6 @@ Return JSON only:
             if limit and limit < len(all_symbols):
                 all_symbols = all_symbols[:limit]
         
-        total = len(all_symbols)
-        logger.info(f"Caching transcripts for {total} stocks (region={region}, sorted by score)")
-        
-        self.db.update_job_progress(job_id, progress_pct=10,
-                                    progress_message=f'Caching transcripts for {total} stocks...',
-                                    processed_count=0,
-                                    total_count=total)
-        
-        # Initialize scraper (Playwright session) - runs async
-        processed = 0
-        cached = 0
-        skipped = 0
-        errors = 0
-        
         # Pre-compute skip list BEFORE entering async context to avoid blocking DB calls
         # This keeps all synchronous DB work outside the async function
         skip_set = set()
@@ -2774,6 +2760,27 @@ Return JSON only:
                 logger.error(f"Error pre-computing skip list: {e}")
             
             logger.info(f"Will skip {len(skip_set)} stocks based on earnings dates")
+
+        # Filter all_symbols to only include those that need processing
+        # This ensures the progress bar reflects the actual work to be done
+        initial_count = len(all_symbols)
+        symbols_to_process = [s for s in all_symbols if s not in skip_set]
+        
+        total = len(symbols_to_process)
+        skipped_initial = initial_count - total
+        
+        logger.info(f"Caching transcripts for {total} stocks (skipping {skipped_initial} based on cache/earnings dates)")
+        
+        self.db.update_job_progress(job_id, progress_pct=10,
+                                    progress_message=f'Caching transcripts for {total} stocks (skipped {skipped_initial})...',
+                                    processed_count=0,
+                                    total_count=total)
+        
+        # Initialize scraper (Playwright session) - runs async
+        processed = 0
+        cached = 0
+        skipped = skipped_initial # Track total skipped including pre-skipped
+        errors = 0
         
         async def run_transcript_caching():
             nonlocal processed, cached, skipped, errors
@@ -2782,7 +2789,7 @@ Return JSON only:
             async with TranscriptScraper() as scraper:
                 logger.info("Browser started successfully")
                 
-                for symbol in all_symbols:
+                for symbol in symbols_to_process:
                     logger.info(f"[{symbol}] Processing...")
                     
                     # Check for shutdown/cancellation
@@ -2795,14 +2802,6 @@ Return JSON only:
                     if job_status and job_status.get('status') == 'cancelled':
                         logger.info(f"Job {job_id} was cancelled, stopping")
                         break
-                    
-                    # Skip if already cached (using pre-computed set)
-                    if symbol in skip_set:
-                        skipped += 1
-                        processed += 1
-                        if processed % 50 == 0:
-                            logger.info(f"Transcript cache progress: {processed}/{total} (cached: {cached}, skipped: {skipped}, errors: {errors})")
-                        continue
                     
                     try:
                         logger.info(f"[{symbol}] Fetching transcript from MarketBeat...")
