@@ -27,6 +27,65 @@ ChartJS.register(
     Filler
 )
 
+// Plugin to draw a dashed zero line
+const zeroLinePlugin = {
+    id: 'zeroLine',
+    beforeDraw: (chart) => {
+        const ctx = chart.ctx;
+        const yAxis = chart.scales.y;
+        const xAxis = chart.scales.x;
+
+        // Check if 0 is visible on the y-axis
+        if (yAxis && yAxis.min <= 0 && yAxis.max >= 0) {
+            const y = yAxis.getPixelForValue(0);
+
+            ctx.save();
+            ctx.beginPath();
+            ctx.moveTo(xAxis.left, y);
+            ctx.lineTo(xAxis.right, y);
+            ctx.lineWidth = 2;
+            ctx.strokeStyle = 'rgba(255, 255, 255, 0.2)';
+            ctx.setLineDash([6, 4]);
+            ctx.stroke();
+            ctx.restore();
+        }
+    }
+};
+
+// Plugin to draw synchronized crosshair
+const crosshairPlugin = {
+    id: 'crosshair',
+    afterDraw: (chart) => {
+        // Get activeIndex from options
+        const index = chart.config.options.plugins.crosshair?.activeIndex;
+
+        if (index === null || index === undefined || index === -1) return;
+
+        const ctx = chart.ctx;
+        const yAxis = chart.scales.y;
+
+        // Ensure dataset meta exists
+        const meta = chart.getDatasetMeta(0);
+        if (!meta || !meta.data) return;
+
+        const point = meta.data[index];
+
+        if (point) {
+            const x = point.x;
+
+            ctx.save();
+            ctx.beginPath();
+            ctx.moveTo(x, yAxis.top);
+            ctx.lineTo(x, yAxis.bottom);
+            ctx.lineWidth = 1;
+            ctx.strokeStyle = 'rgba(255, 255, 255, 0.8)'; // Bright white line
+            ctx.setLineDash([5, 5]);
+            ctx.stroke();
+            ctx.restore();
+        }
+    }
+};
+
 const INDICES = [
     { symbol: '^GSPC', name: 'S&P 500' },
     { symbol: '^IXIC', name: 'Nasdaq' },
@@ -48,6 +107,17 @@ export default function IndexChart() {
     const [data, setData] = useState(null)
     const [loading, setLoading] = useState(true)
     const [error, setError] = useState(null)
+    const [activeIndex, setActiveIndex] = useState(null)
+
+    const handleHover = (event, elements) => {
+        if (elements && elements.length > 0) {
+            setActiveIndex(elements[0].index)
+        }
+    }
+
+    const handleMouseLeave = () => {
+        setActiveIndex(null)
+    }
 
     useEffect(() => {
         const fetchIndexData = async () => {
@@ -84,15 +154,17 @@ export default function IndexChart() {
                 ? 'rgba(34, 197, 94, 0.1)'
                 : 'rgba(239, 68, 68, 0.1)',
             fill: true,
-            tension: 0.3,
-            pointRadius: 0,
-            pointHoverRadius: 4
+            tension: 0.1,
+            pointRadius: activeIndex !== null ? 3 : 0,
+            pointHoverRadius: 5,
+            borderWidth: 1.5
         }]
     } : null
 
     const chartOptions = {
         responsive: true,
         maintainAspectRatio: false,
+        onHover: handleHover,
         plugins: {
             legend: { display: false },
             tooltip: {
@@ -101,28 +173,35 @@ export default function IndexChart() {
                 callbacks: {
                     label: (context) => `$${context.raw?.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
                 }
+            },
+            crosshair: {
+                activeIndex: activeIndex
             }
         },
         scales: {
             x: {
                 display: true,
-                grid: { display: false },
+                grid: {
+                    color: 'rgba(100, 116, 139, 0.1)'
+                },
                 ticks: {
                     maxTicksLimit: 6,
                     font: { size: 10 },
-                    color: 'hsl(var(--muted-foreground))'
+                    color: '#64748b'
                 }
             },
             y: {
                 display: true,
                 position: 'right',
                 grid: {
-                    color: 'hsl(var(--border))',
-                    drawBorder: false
+                    color: (context) => {
+                        if (Math.abs(context.tick.value) < 0.00001) return 'transparent';
+                        return 'rgba(100, 116, 139, 0.1)';
+                    }
                 },
                 ticks: {
                     font: { size: 10 },
-                    color: 'hsl(var(--muted-foreground))',
+                    color: '#64748b',
                     callback: (value) => value.toLocaleString()
                 }
             }
@@ -187,8 +266,8 @@ export default function IndexChart() {
                         {error}
                     </div>
                 ) : chartData ? (
-                    <div className="h-48">
-                        <Line data={chartData} options={chartOptions} />
+                    <div className="h-48" onMouseLeave={handleMouseLeave}>
+                        <Line data={chartData} options={chartOptions} plugins={[zeroLinePlugin, crosshairPlugin]} />
                     </div>
                 ) : null}
             </CardContent>
