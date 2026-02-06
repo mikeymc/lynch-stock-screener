@@ -2385,15 +2385,28 @@ class EdgarFetcher:
             Debt-to-equity ratio or None if data unavailable
         """
         try:
-            facts = company_facts['facts']['us-gaap']
+            facts = None
+            if 'us-gaap' in company_facts.get('facts', {}):
+                facts = company_facts['facts']['us-gaap']
+            elif 'ifrs-full' in company_facts.get('facts', {}):
+                facts = company_facts['facts']['ifrs-full']
+            
+            if facts is None:
+                return None
 
             # Get most recent equity value
-            equity_data = facts.get('StockholdersEquity', {}).get('units', {}).get('USD', [])
+            equity_tags = ['StockholdersEquity', 'Equity', 'StockholdersEquityIncludingPortionAttributableToNoncontrollingInterest']
+            equity_data = []
+            for tag in equity_tags:
+                equity_data = facts.get(tag, {}).get('units', {}).get('USD', [])
+                if equity_data:
+                    break
+            
             if not equity_data:
                 return None
 
-            # Find most recent 10-K entry
-            equity_entries = [e for e in equity_data if e.get('form') == '10-K']
+            # Find most recent 10-K or 20-F entry
+            equity_entries = [e for e in equity_data if e.get('form') in ['10-K', '20-F']]
             if not equity_entries:
                 return None
 
@@ -2401,28 +2414,39 @@ class EdgarFetcher:
             equity = equity_entries[0].get('val')
             fiscal_end = equity_entries[0].get('end', '')
 
-            # Get total debt (long-term + short-term)
             # LongTermDebtNoncurrent = long-term debt
-            long_term_debt_data = facts.get('LongTermDebtNoncurrent', {}).get('units', {}).get('USD', [])
-            if not long_term_debt_data:
-                # Fallback: try LongTermDebt which might include both
-                long_term_debt_data = facts.get('LongTermDebt', {}).get('units', {}).get('USD', [])
+            lt_tags = [
+                'LongTermDebtNoncurrent', 
+                'LongTermDebt', 
+                'NonCurrentBorrowings', # IFRS
+                'NonCurrentFinancialLiabilities', # IFRS
+                'InterestBearingLoansAndBorrowingsNonCurrent' # IFRS
+            ]
+            long_term_debt = 0
+            for tag in lt_tags:
+                tag_data = facts.get(tag, {}).get('units', {}).get('USD', [])
+                if tag_data:
+                    matching_entries = [e for e in tag_data if e.get('form') in ['10-K', '20-F'] and e.get('end', '') == fiscal_end]
+                    if matching_entries:
+                        long_term_debt = matching_entries[0].get('val', 0)
+                        break
 
             # LongTermDebtCurrent = current portion of long-term debt (short-term)
-            short_term_debt_data = facts.get('LongTermDebtCurrent', {}).get('units', {}).get('USD', [])
-
-            # Get values matching the same fiscal period as equity
-            long_term_debt = None
-            if long_term_debt_data:
-                matching_entries = [e for e in long_term_debt_data if e.get('form') == '10-K' and e.get('end', '') == fiscal_end]
-                if matching_entries:
-                    long_term_debt = matching_entries[0].get('val', 0)
-
-            short_term_debt = None
-            if short_term_debt_data:
-                matching_entries = [e for e in short_term_debt_data if e.get('form') == '10-K' and e.get('end', '') == fiscal_end]
-                if matching_entries:
-                    short_term_debt = matching_entries[0].get('val', 0)
+            st_tags = [
+                'LongTermDebtCurrent', 
+                'DebtCurrent', 
+                'CurrentBorrowings', # IFRS
+                'CurrentFinancialLiabilities', # IFRS
+                'InterestBearingLoansAndBorrowingsCurrent' # IFRS
+            ]
+            short_term_debt = 0
+            for tag in st_tags:
+                tag_data = facts.get(tag, {}).get('units', {}).get('USD', [])
+                if tag_data:
+                    matching_entries = [e for e in tag_data if e.get('form') in ['10-K', '20-F'] and e.get('end', '') == fiscal_end]
+                    if matching_entries:
+                        short_term_debt = matching_entries[0].get('val', 0)
+                        break
 
             # Calculate total debt
             total_debt = 0
@@ -2451,11 +2475,19 @@ class EdgarFetcher:
             List of dictionaries with year, debt_to_equity, and fiscal_end values
         """
         try:
-            facts = company_facts['facts']['us-gaap']
+            facts = None
+            if 'us-gaap' in company_facts.get('facts', {}):
+                facts = company_facts['facts']['us-gaap']
+            elif 'ifrs-full' in company_facts.get('facts', {}):
+                facts = company_facts['facts']['ifrs-full']
+            
+            if facts is None:
+                return []
 
             # Get equity data - try multiple tags in order of preference
             equity_tags = [
                 'StockholdersEquity',
+                'Equity', # IFRS
                 'StockholdersEquityIncludingPortionAttributableToNoncontrollingInterest',
                 'CommonStockholdersEquity',
                 'LiabilitiesAndStockholdersEquity'  # Last resort - total assets
@@ -2478,6 +2510,9 @@ class EdgarFetcher:
             lt_debt_tags = [
                 'LongTermDebtNoncurrent', 
                 'LongTermDebt',
+                'NonCurrentBorrowings', # IFRS
+                'NonCurrentFinancialLiabilities', # IFRS
+                'InterestBearingLoansAndBorrowingsNonCurrent', # IFRS
                 'SeniorLongTermNotes',
                 'ConvertibleDebt',
                 'ConvertibleLongTermNotesPayable',
@@ -2499,6 +2534,9 @@ class EdgarFetcher:
             st_debt_tags = [
                 'LongTermDebtCurrent',
                 'DebtCurrent',
+                'CurrentBorrowings', # IFRS
+                'CurrentFinancialLiabilities', # IFRS
+                'InterestBearingLoansAndBorrowingsCurrent', # IFRS
                 'NotesPayableCurrent',
                 'ConvertibleNotesPayableCurrent',
                 'ShortTermBorrowings',
@@ -2514,10 +2552,10 @@ class EdgarFetcher:
                 if data:
                     short_term_debt_data.extend(data)
 
-            # Filter for 10-K entries and create lookup by fiscal year and end date
+            # Filter for annual reports (10-K for US, 20-F for foreign) and create lookup by fiscal year and end date
             equity_by_year = {}
             for entry in equity_data:
-                if entry.get('form') == '10-K':
+                if entry.get('form') in ['10-K', '20-F']:
                     year = entry.get('fy')
                     fiscal_end = entry.get('end')
                     val = entry.get('val')
@@ -2528,7 +2566,7 @@ class EdgarFetcher:
             long_term_debt_by_year = {}
             if long_term_debt_data:
                 for entry in long_term_debt_data:
-                    if entry.get('form') == '10-K':
+                    if entry.get('form') in ['10-K', '20-F']:
                         year = entry.get('fy')
                         fiscal_end = entry.get('end')
                         val = entry.get('val')
@@ -2539,7 +2577,7 @@ class EdgarFetcher:
             short_term_debt_by_year = {}
             if short_term_debt_data:
                 for entry in short_term_debt_data:
-                    if entry.get('form') == '10-K':
+                    if entry.get('form') in ['10-K', '20-F']:
                         year = entry.get('fy')
                         fiscal_end = entry.get('end')
                         val = entry.get('val')
@@ -2594,11 +2632,19 @@ class EdgarFetcher:
             List of dictionaries with year, quarter, debt_to_equity, and fiscal_end values
         """
         try:
-            facts = company_facts['facts']['us-gaap']
+            facts = None
+            if 'us-gaap' in company_facts.get('facts', {}):
+                facts = company_facts['facts']['us-gaap']
+            elif 'ifrs-full' in company_facts.get('facts', {}):
+                facts = company_facts['facts']['ifrs-full']
+            
+            if facts is None:
+                return []
 
             # Get equity data
             equity_tags = [
                 'StockholdersEquity',
+                'Equity', # IFRS
                 'StockholdersEquityIncludingPortionAttributableToNoncontrollingInterest',
                 'CommonStockholdersEquity',
                 'LiabilitiesAndStockholdersEquity'
@@ -2617,6 +2663,9 @@ class EdgarFetcher:
             lt_debt_tags = [
                 'LongTermDebtNoncurrent', 
                 'LongTermDebt',
+                'NonCurrentBorrowings', # IFRS
+                'NonCurrentFinancialLiabilities', # IFRS
+                'InterestBearingLoansAndBorrowingsNonCurrent', # IFRS
                 'SeniorLongTermNotes',
                 'ConvertibleDebt',
                 'ConvertibleLongTermNotesPayable',
@@ -2742,16 +2791,24 @@ class EdgarFetcher:
             Most recent annual effective tax rate (as decimal, e.g. 0.21) or None
         """
         # Fetch Income Tax Provision
-        tax_tags = ['IncomeTaxExpenseBenefit', 'IncomeTaxExpenseBenefitContinuingOperations']
+        tax_tags = ['IncomeTaxExpenseBenefit', 'IncomeTaxExpenseBenefitContinuingOperations', 'IncomeTaxExpenseContinunigOperations', 'IncomeTaxExpense']
         tax_data = []
         
         try:
-            if 'us-gaap' in company_facts['facts']:
+            target_facts = None
+            if 'us-gaap' in company_facts.get('facts', {}):
+                target_facts = company_facts['facts']['us-gaap']
+            elif 'ifrs-full' in company_facts.get('facts', {}):
+                target_facts = company_facts['facts']['ifrs-full']
+                
+            if target_facts:
                 for tag in tax_tags:
-                    if tag in company_facts['facts']['us-gaap']:
-                        units = company_facts['facts']['us-gaap'][tag]['units']
-                        if 'USD' in units:
-                            tax_data.extend(units['USD'])
+                    if tag in target_facts:
+                        units = target_facts[tag]['units']
+                        # Find USD or first currency
+                        currency_unit = 'USD' if 'USD' in units else next(iter(u for u in units.keys() if len(u) == 3 and u.isupper()), None)
+                        if currency_unit:
+                            tax_data.extend(units[currency_unit])
         except (KeyError, TypeError):
             pass
             
@@ -2759,17 +2816,19 @@ class EdgarFetcher:
         pretax_tags = [
             'IncomeLossFromContinuingOperationsBeforeIncomeTaxesExtraordinaryItemsNoncontrollingInterest',
             'IncomeLossFromContinuingOperationsBeforeIncomeTaxesMinorityInterestAndIncomeLossFromEquityMethodInvestments',
-            'IncomeLossFromContinuingOperationsBeforeIncomeTaxes'
+            'IncomeLossFromContinuingOperationsBeforeIncomeTaxes',
+            'ProfitLossBeforeTax' # IFRS
         ]
         pretax_data = []
         
         try:
-             if 'us-gaap' in company_facts['facts']:
+            if target_facts:
                 for tag in pretax_tags:
-                    if tag in company_facts['facts']['us-gaap']:
-                        units = company_facts['facts']['us-gaap'][tag]['units']
-                        if 'USD' in units:
-                            pretax_data.extend(units['USD'])
+                    if tag in target_facts:
+                        units = target_facts[tag]['units']
+                        currency_unit = 'USD' if 'USD' in units else next(iter(u for u in units.keys() if len(u) == 3 and u.isupper()), None)
+                        if currency_unit:
+                            pretax_data.extend(units[currency_unit])
         except (KeyError, TypeError):
              pass
              

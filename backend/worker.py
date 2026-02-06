@@ -315,7 +315,8 @@ class BackgroundWorker:
 
         logger.info(f"Processing {total} stocks for historical fundamentals")
 
-        edgar_fetcher = EdgarFetcher(self.db)
+        sec_user_agent = os.environ.get('SEC_USER_AGENT', 'Lynch Stock Screener mikey@example.com')
+        edgar_fetcher = EdgarFetcher(user_agent=sec_user_agent, db=self.db)
 
         def process_stock(symbol):
             try:
@@ -464,7 +465,8 @@ class BackgroundWorker:
 
         logger.info(f"Processing {total} stocks for quarterly fundamentals")
 
-        edgar_fetcher = EdgarFetcher(self.db)
+        sec_user_agent = os.environ.get('SEC_USER_AGENT', 'Lynch Stock Screener mikey@example.com')
+        edgar_fetcher = EdgarFetcher(user_agent=sec_user_agent, db=self.db)
 
         def process_stock(symbol):
             try:
