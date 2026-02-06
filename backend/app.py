@@ -42,7 +42,7 @@ from stock_vectors import StockVectors, DEFAULT_ALGORITHM_CONFIG
 from sec_8k_client import SEC8KClient
 from material_event_summarizer import MaterialEventSummarizer, SUMMARIZABLE_ITEM_CODES
 from fly_machines import get_fly_manager
-from auth import init_oauth_client, require_user_auth
+from auth import init_oauth_client, require_user_auth, DEV_AUTH_BYPASS
 from characters import get_character, list_characters
 from fred_service import get_fred_service, SUPPORTED_SERIES, CATEGORIES
 
@@ -564,6 +564,11 @@ def check_for_api_token():
     if 'user_id' in session:
         return None  # Authorized via OAuth
     
+    # Check if dev bypass is enabled
+    if DEV_AUTH_BYPASS:
+        logger.info("[APP] Bypassing API token check (DEV_AUTH_BYPASS=True)")
+        return None
+        
     # Check if request has valid API token
     if API_AUTH_TOKEN:
         auth_header = request.headers.get('Authorization', '')
