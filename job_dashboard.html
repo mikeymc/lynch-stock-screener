@@ -1,0 +1,1116 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Background Jobs Dashboard</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+    <script
+        src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            background: linear-gradient(135deg, #0f0f23 0%, #1a1a2e 100%);
+            color: #e0e0e0;
+            padding: 20px;
+            min-height: 100vh;
+        }
+
+        .container {
+            max-width: 1600px;
+            margin: 0 auto;
+        }
+
+        header {
+            background: rgba(255, 255, 255, 0.05);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 16px;
+            padding: 24px 32px;
+            margin-bottom: 24px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+        }
+
+        h1 {
+            font-size: 32px;
+            font-weight: 700;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            margin-bottom: 8px;
+        }
+
+        .subtitle {
+            color: #a0a0a0;
+            font-size: 14px;
+        }
+
+        .controls {
+            background: rgba(255, 255, 255, 0.05);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 16px;
+            padding: 20px;
+            margin-bottom: 24px;
+            display: flex;
+            gap: 16px;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+
+        .control-group {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .control-group label {
+            font-size: 12px;
+            color: #a0a0a0;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            font-weight: 600;
+        }
+
+        select,
+        input,
+        button {
+            background: rgba(255, 255, 255, 0.08);
+            border: 1px solid rgba(255, 255, 255, 0.15);
+            border-radius: 8px;
+            padding: 10px 16px;
+            color: #e0e0e0;
+            font-size: 14px;
+            transition: all 0.3s ease;
+        }
+
+        select:hover,
+        input:hover {
+            background: rgba(255, 255, 255, 0.12);
+            border-color: rgba(255, 255, 255, 0.25);
+        }
+
+        select:focus,
+        input:focus {
+            outline: none;
+            border-color: #667eea;
+            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.2);
+        }
+
+        button {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border: none;
+            cursor: pointer;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            transition: all 0.3s ease;
+        }
+
+        button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 16px rgba(102, 126, 234, 0.4);
+        }
+
+        button:active {
+            transform: translateY(0);
+        }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 20px;
+            margin-bottom: 24px;
+        }
+
+        .stat-card {
+            background: rgba(255, 255, 255, 0.05);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 16px;
+            padding: 24px;
+            transition: all 0.3s ease;
+        }
+
+        .stat-card:hover {
+            transform: translateY(-4px);
+            box-shadow: 0 12px 24px rgba(0, 0, 0, 0.3);
+            border-color: rgba(255, 255, 255, 0.2);
+        }
+
+        .stat-label {
+            font-size: 12px;
+            color: #a0a0a0;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 8px;
+            font-weight: 600;
+        }
+
+        .stat-value {
+            font-size: 36px;
+            font-weight: 700;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .stat-subtext {
+            font-size: 13px;
+            color: #808080;
+            margin-top: 4px;
+        }
+
+        .dashboard-grid {
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 24px;
+        }
+
+        .panel {
+            background: rgba(255, 255, 255, 0.05);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 16px;
+            padding: 24px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+        }
+
+        .panel-header {
+            font-size: 18px;
+            font-weight: 700;
+            margin-bottom: 20px;
+            color: #fff;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .panel-icon {
+            width: 32px;
+            height: 32px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 18px;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        th {
+            text-align: left;
+            padding: 12px;
+            font-size: 12px;
+            color: #a0a0a0;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            font-weight: 600;
+            border-bottom: 2px solid rgba(255, 255, 255, 0.1);
+        }
+
+        td {
+            padding: 16px 12px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+            font-size: 14px;
+        }
+
+        tr:hover {
+            background: rgba(255, 255, 255, 0.03);
+        }
+
+        .status-badge {
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 12px;
+            font-size: 11px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .status-completed {
+            background: rgba(16, 185, 129, 0.2);
+            color: #10b981;
+            border: 1px solid rgba(16, 185, 129, 0.3);
+        }
+
+        .status-failed {
+            background: rgba(239, 68, 68, 0.2);
+            color: #ef4444;
+            border: 1px solid rgba(239, 68, 68, 0.3);
+        }
+
+        .status-running {
+            background: rgba(59, 130, 246, 0.2);
+            color: #3b82f6;
+            border: 1px solid rgba(59, 130, 246, 0.3);
+        }
+
+        .status-pending {
+            background: rgba(251, 191, 36, 0.2);
+            color: #fbbf24;
+            border: 1px solid rgba(251, 191, 36, 0.3);
+        }
+
+        .timeline {
+            position: relative;
+            height: 600px;
+            overflow-y: auto;
+            margin-top: 20px;
+        }
+
+        .timeline-row {
+            position: relative;
+            height: 40px;
+            margin-bottom: 8px;
+            display: flex;
+            align-items: center;
+        }
+
+        .timeline-label {
+            width: 200px;
+            font-size: 12px;
+            font-weight: 600;
+            color: #a0a0a0;
+            padding-right: 16px;
+            flex-shrink: 0;
+        }
+
+        .timeline-track {
+            flex: 1;
+            height: 32px;
+            background: rgba(255, 255, 255, 0.03);
+            border-radius: 8px;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .timeline-bar {
+            position: absolute;
+            height: 100%;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border-radius: 6px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            display: flex;
+            align-items: center;
+            padding: 0 8px;
+            font-size: 10px;
+            color: white;
+            font-weight: 600;
+        }
+
+        .timeline-bar:hover {
+            transform: scaleY(1.1);
+            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.5);
+            z-index: 10;
+        }
+
+        .timeline-bar.failed {
+            background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+        }
+
+        .timeline-bar.running {
+            background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+            animation: pulse 2s ease-in-out infinite;
+        }
+
+        @keyframes pulse {
+
+            0%,
+            100% {
+                opacity: 1;
+            }
+
+            50% {
+                opacity: 0.7;
+            }
+        }
+
+        .overlap-indicator {
+            position: absolute;
+            top: 0;
+            height: 100%;
+            background: rgba(251, 191, 36, 0.3);
+            border-left: 2px solid #fbbf24;
+            border-right: 2px solid #fbbf24;
+            pointer-events: none;
+        }
+
+        .chart-container {
+            height: 300px;
+            margin-top: 20px;
+            position: relative;
+            margin-bottom: 40px;
+        }
+
+        .loading {
+            text-align: center;
+            padding: 40px;
+            color: #a0a0a0;
+            font-size: 14px;
+        }
+
+        .spinner {
+            border: 3px solid rgba(255, 255, 255, 0.1);
+            border-top: 3px solid #667eea;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 16px;
+        }
+
+        @keyframes spin {
+            0% {
+                transform: rotate(0deg);
+            }
+
+            100% {
+                transform: rotate(360deg);
+            }
+        }
+
+        .error {
+            background: rgba(239, 68, 68, 0.1);
+            border: 1px solid rgba(239, 68, 68, 0.3);
+            border-radius: 12px;
+            padding: 16px;
+            color: #ef4444;
+            margin: 20px 0;
+        }
+
+        .tooltip {
+            position: absolute;
+            background: rgba(0, 0, 0, 0.95);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            border-radius: 8px;
+            padding: 12px;
+            font-size: 12px;
+            pointer-events: none;
+            z-index: 1000;
+            display: none;
+            max-width: 300px;
+        }
+
+        .tooltip.show {
+            display: block;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <header>
+            <h1>🚀 Background Jobs Dashboard</h1>
+            <div class="subtitle">Real-time monitoring of job execution, performance, and overlaps</div>
+        </header>
+
+        <div class="controls">
+            <div class="control-group">
+                <label>Time Range</label>
+                <select id="timeRange">
+                    <option value="1">Last 1 hour</option>
+                    <option value="6">Last 6 hours</option>
+                    <option value="24" selected>Last 24 hours</option>
+                    <option value="168">Last 7 days</option>
+                    <option value="720">Last 30 days</option>
+                    <option value="1440">Last 60 days</option>
+                </select>
+            </div>
+            <div class="control-group">
+                <label>Job Type Filter</label>
+                <select id="jobTypeFilter">
+                    <option value="all">All Jobs</option>
+                </select>
+            </div>
+            <div class="control-group">
+                <label>Auto Refresh</label>
+                <select id="autoRefresh">
+                    <option value="0">Off</option>
+                    <option value="30" selected>30 seconds</option>
+                    <option value="60">1 minute</option>
+                    <option value="300">5 minutes</option>
+                </select>
+            </div>
+            <button id="refreshBtn" style="margin-top: 20px;">🔄 Refresh Now</button>
+        </div>
+
+        <div class="stats-grid" id="statsGrid">
+            <div class="loading">
+                <div class="spinner"></div>
+                Loading statistics...
+            </div>
+        </div>
+
+        <div class="dashboard-grid">
+            <div class="panel">
+                <div class="panel-header">
+                    <div class="panel-icon">📊</div>
+                    Job Performance Summary
+                </div>
+                <div id="performanceTable"></div>
+            </div>
+
+            <div class="panel">
+                <div class="panel-header">
+                    <div class="panel-icon">⏱️</div>
+                    Job Timeline & Overlaps
+                </div>
+                <div id="timelineContainer"></div>
+            </div>
+
+            <div class="panel">
+                <div class="panel-header">
+                    <div class="panel-icon">📈</div>
+                    Duration Trends Over Time
+                </div>
+                <div class="control-group" style="margin-bottom: 16px;">
+                    <label>Select Job Types (hold Cmd/Ctrl to select multiple)</label>
+                    <select id="trendJobTypeFilter" multiple size="5" style="height: auto;">
+                    </select>
+                </div>
+                <div class="chart-container" style="height: 400px;">
+                    <canvas id="durationTrendChart"></canvas>
+                </div>
+            </div>
+
+            <div class="panel">
+                <div class="panel-header">
+                    <div class="panel-icon">📋</div>
+                    Recent Job Executions
+                </div>
+                <div id="recentJobsTable"></div>
+            </div>
+        </div>
+    </div>
+
+    <div class="tooltip" id="tooltip"></div>
+
+    <script>
+        const DB_CONFIG = {
+            host: 'localhost',
+            port: 15432,
+            database: 'lynch_stock_screener',
+            user: 'postgres'
+        };
+
+        let autoRefreshInterval = null;
+        let currentData = null;
+
+        // Fetch data from the database via Python backend
+        async function fetchJobData(hours = 24, jobType = 'all') {
+            try {
+                const response = await fetch('/api/jobs', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ hours, jobType })
+                });
+
+                if (!response.ok) {
+                    throw new Error('Failed to fetch job data');
+                }
+
+                return await response.json();
+            } catch (error) {
+                console.error('Error fetching job data:', error);
+                throw error;
+            }
+        }
+
+        // Calculate statistics
+        function calculateStats(jobs) {
+            const completed = jobs.filter(j => j.status === 'completed');
+            const failed = jobs.filter(j => j.status === 'failed');
+            const running = jobs.filter(j => j.status === 'running');
+
+            const totalDuration = completed.reduce((sum, j) => {
+                if (j.started_at && j.completed_at) {
+                    const duration = new Date(j.completed_at) - new Date(j.started_at);
+                    return sum + duration;
+                }
+                return sum;
+            }, 0);
+
+            const avgDuration = completed.length > 0 ? totalDuration / completed.length : 0;
+            const failureRate = jobs.length > 0 ? (failed.length / jobs.length * 100) : 0;
+
+            return {
+                total: jobs.length,
+                completed: completed.length,
+                failed: failed.length,
+                running: running.length,
+                avgDuration: avgDuration,
+                failureRate: failureRate
+            };
+        }
+
+        // Format duration
+        function formatDuration(ms) {
+            if (!ms || ms < 0) return 'N/A';
+            const seconds = Math.floor(ms / 1000);
+            const minutes = Math.floor(seconds / 60);
+            const hours = Math.floor(minutes / 60);
+
+            if (hours > 0) {
+                return `${hours}h ${minutes % 60}m`;
+            } else if (minutes > 0) {
+                return `${minutes}m ${seconds % 60}s`;
+            } else {
+                return `${seconds}s`;
+            }
+        }
+
+        // Format date/time
+        function formatDateTime(dateStr) {
+            if (!dateStr) return 'N/A';
+            const date = new Date(dateStr);
+            return date.toLocaleString('en-US', {
+                month: 'short',
+                day: 'numeric',
+                hour: '2-digit',
+                minute: '2-digit'
+            });
+        }
+
+        // Render statistics cards
+        function renderStats(stats) {
+            const statsGrid = document.getElementById('statsGrid');
+            statsGrid.innerHTML = `
+                <div class="stat-card">
+                    <div class="stat-label">Total Jobs</div>
+                    <div class="stat-value">${stats.total}</div>
+                    <div class="stat-subtext">in selected timeframe</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-label">Success Rate</div>
+                    <div class="stat-value">${(100 - stats.failureRate).toFixed(1)}%</div>
+                    <div class="stat-subtext">${stats.completed} completed, ${stats.failed} failed</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-label">Avg Duration</div>
+                    <div class="stat-value">${formatDuration(stats.avgDuration)}</div>
+                    <div class="stat-subtext">for completed jobs</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-label">Currently Running</div>
+                    <div class="stat-value">${stats.running}</div>
+                    <div class="stat-subtext">active jobs</div>
+                </div>
+            `;
+        }
+
+        // Render performance table
+        function renderPerformanceTable(jobs) {
+            const jobsByType = {};
+
+            jobs.forEach(job => {
+                if (!jobsByType[job.job_type]) {
+                    jobsByType[job.job_type] = [];
+                }
+                jobsByType[job.job_type].push(job);
+            });
+
+            let tableHTML = `
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Job Type</th>
+                            <th>Total Runs</th>
+                            <th>Success Rate</th>
+                            <th>Avg Duration</th>
+                            <th>Last Run</th>
+                            <th>Status</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+            `;
+
+            Object.keys(jobsByType).sort().forEach(jobType => {
+                const typeJobs = jobsByType[jobType];
+                const completed = typeJobs.filter(j => j.status === 'completed');
+                const failed = typeJobs.filter(j => j.status === 'failed');
+                const successRate = typeJobs.length > 0 ? ((completed.length / typeJobs.length) * 100).toFixed(1) : 0;
+
+                const durations = completed
+                    .filter(j => j.started_at && j.completed_at)
+                    .map(j => new Date(j.completed_at) - new Date(j.started_at));
+
+                const avgDuration = durations.length > 0
+                    ? durations.reduce((a, b) => a + b, 0) / durations.length
+                    : 0;
+
+                const lastJob = typeJobs.sort((a, b) =>
+                    new Date(b.created_at) - new Date(a.created_at)
+                )[0];
+
+                const statusClass = lastJob.status === 'completed' ? 'status-completed' :
+                    lastJob.status === 'failed' ? 'status-failed' :
+                        lastJob.status === 'running' ? 'status-running' : 'status-pending';
+
+                tableHTML += `
+                    <tr>
+                        <td><strong>${jobType}</strong></td>
+                        <td>${typeJobs.length}</td>
+                        <td>${successRate}%</td>
+                        <td>${formatDuration(avgDuration)}</td>
+                        <td>${formatDateTime(lastJob.created_at)}</td>
+                        <td><span class="status-badge ${statusClass}">${lastJob.status}</span></td>
+                    </tr>
+                `;
+            });
+
+            tableHTML += '</tbody></table>';
+            document.getElementById('performanceTable').innerHTML = tableHTML;
+        }
+
+        // Render timeline
+        function renderTimeline(jobs) {
+            const container = document.getElementById('timelineContainer');
+
+            // Group jobs by type
+            const jobsByType = {};
+            jobs.forEach(job => {
+                if (!jobsByType[job.job_type]) {
+                    jobsByType[job.job_type] = [];
+                }
+                if (job.started_at) {
+                    jobsByType[job.job_type].push(job);
+                }
+            });
+
+            // Find time range
+            const allTimes = jobs
+                .filter(j => j.started_at)
+                .map(j => new Date(j.started_at).getTime());
+
+            if (allTimes.length === 0) {
+                container.innerHTML = '<div class="loading">No job execution data available</div>';
+                return;
+            }
+
+            const minTime = Math.min(...allTimes);
+            const maxTime = Math.max(...allTimes, ...jobs
+                .filter(j => j.completed_at)
+                .map(j => new Date(j.completed_at).getTime())
+            );
+
+            const timeRange = maxTime - minTime;
+
+            let timelineHTML = '<div class="timeline">';
+
+            Object.keys(jobsByType).sort().forEach(jobType => {
+                const typeJobs = jobsByType[jobType].sort((a, b) =>
+                    new Date(a.started_at) - new Date(b.started_at)
+                );
+
+                timelineHTML += `
+                    <div class="timeline-row">
+                        <div class="timeline-label">${jobType}</div>
+                        <div class="timeline-track">
+                `;
+
+                typeJobs.forEach(job => {
+                    const startTime = new Date(job.started_at).getTime();
+                    const endTime = job.completed_at ? new Date(job.completed_at).getTime() : Date.now();
+
+                    const left = ((startTime - minTime) / timeRange) * 100;
+                    const width = ((endTime - startTime) / timeRange) * 100;
+
+                    const statusClass = job.status === 'failed' ? 'failed' :
+                        job.status === 'running' ? 'running' : '';
+
+                    const duration = formatDuration(endTime - startTime);
+
+                    timelineHTML += `
+                        <div class="timeline-bar ${statusClass}" 
+                             style="left: ${left}%; width: ${Math.max(width, 0.5)}%"
+                             data-job-id="${job.id}"
+                             data-start="${formatDateTime(job.started_at)}"
+                             data-end="${job.completed_at ? formatDateTime(job.completed_at) : 'Running'}"
+                             data-duration="${duration}"
+                             data-status="${job.status}">
+                        </div>
+                    `;
+                });
+
+                timelineHTML += '</div></div>';
+            });
+
+            timelineHTML += '</div>';
+            container.innerHTML = timelineHTML;
+
+            // Add tooltip handlers
+            const bars = container.querySelectorAll('.timeline-bar');
+            const tooltip = document.getElementById('tooltip');
+
+            bars.forEach(bar => {
+                bar.addEventListener('mouseenter', (e) => {
+                    const rect = bar.getBoundingClientRect();
+                    tooltip.innerHTML = `
+                        <strong>Job ID:</strong> ${bar.dataset.jobId}<br>
+                        <strong>Start:</strong> ${bar.dataset.start}<br>
+                        <strong>End:</strong> ${bar.dataset.end}<br>
+                        <strong>Duration:</strong> ${bar.dataset.duration}<br>
+                        <strong>Status:</strong> ${bar.dataset.status}
+                    `;
+                    tooltip.style.left = rect.left + 'px';
+                    tooltip.style.top = (rect.bottom + 10) + 'px';
+                    tooltip.classList.add('show');
+                });
+
+                bar.addEventListener('mouseleave', () => {
+                    tooltip.classList.remove('show');
+                });
+            });
+        }
+
+        // Render recent jobs table
+        function renderRecentJobs(jobs) {
+            const recentJobs = jobs
+                .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
+                .slice(0, 20);
+
+            let tableHTML = `
+                <table>
+                    <thead>
+                        <tr>
+                            <th>ID</th>
+                            <th>Job Type</th>
+                            <th>Status</th>
+                            <th>Created</th>
+                            <th>Started</th>
+                            <th>Completed</th>
+                            <th>Duration</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+            `;
+
+            recentJobs.forEach(job => {
+                const statusClass = job.status === 'completed' ? 'status-completed' :
+                    job.status === 'failed' ? 'status-failed' :
+                        job.status === 'running' ? 'status-running' : 'status-pending';
+
+                const duration = job.started_at && job.completed_at
+                    ? formatDuration(new Date(job.completed_at) - new Date(job.started_at))
+                    : 'N/A';
+
+                tableHTML += `
+                    <tr>
+                        <td>${job.id}</td>
+                        <td><strong>${job.job_type}</strong></td>
+                        <td><span class="status-badge ${statusClass}">${job.status}</span></td>
+                        <td>${formatDateTime(job.created_at)}</td>
+                        <td>${formatDateTime(job.started_at)}</td>
+                        <td>${formatDateTime(job.completed_at)}</td>
+                        <td>${duration}</td>
+                    </tr>
+                `;
+            });
+
+            tableHTML += '</tbody></table>';
+            document.getElementById('recentJobsTable').innerHTML = tableHTML;
+        }
+
+        // Duration trend chart
+        let durationChart = null;
+
+        // New renderDurationTrend function that supports multiple job types
+        function renderDurationTrend(jobTypes) {
+            if (!currentData || !jobTypes || jobTypes.length === 0) {
+                if (durationChart) {
+                    durationChart.destroy();
+                    durationChart = null;
+                }
+                return;
+            }
+
+            // Get time range in hours
+            const hours = parseInt(document.getElementById('timeRange').value);
+            const now = new Date();
+            const startTime = new Date(now.getTime() - hours * 60 * 60 * 1000);
+
+            // Color palette for different job types
+            const colors = [
+                { border: '#667eea', bg: 'rgba(102, 126, 234, 0.1)', point: '#667eea' },
+                { border: '#10b981', bg: 'rgba(16, 185, 129, 0.1)', point: '#10b981' },
+                { border: '#f59e0b', bg: 'rgba(245, 158, 11, 0.1)', point: '#f59e0b' },
+                { border: '#ec4899', bg: 'rgba(236, 72, 153, 0.1)', point: '#ec4899' },
+                { border: '#8b5cf6', bg: 'rgba(139, 92, 246, 0.1)', point: '#8b5cf6' },
+                { border: '#06b6d4', bg: 'rgba(6, 182, 212, 0.1)', point: '#06b6d4' }
+            ];
+
+            const datasets = [];
+
+            jobTypes.forEach((jobType, index) => {
+                const color = colors[index % colors.length];
+
+                // Get all jobs of this type (completed and failed)
+                const jobsOfType = currentData.jobs
+                    .filter(j => j.job_type === jobType && (j.status === 'completed' || j.status === 'failed') && j.started_at && j.completed_at)
+                    .sort((a, b) => new Date(a.started_at) - new Date(b.started_at));
+
+                if (jobsOfType.length === 0) {
+                    return;
+                }
+
+                // Create data points with full timeline
+                const dataPoints = jobsOfType.map(j => {
+                    const durationMs = new Date(j.completed_at) - new Date(j.started_at);
+                    return {
+                        x: new Date(j.started_at),
+                        y: durationMs / 1000 / 60, // Convert to minutes
+                        failed: j.status === 'failed'
+                    };
+                });
+
+                // Add dataset for successful jobs
+                datasets.push({
+                    label: jobType,
+                    data: dataPoints.filter(p => !p.failed),
+                    borderColor: color.border,
+                    backgroundColor: color.bg,
+                    borderWidth: 2,
+                    fill: true,
+                    tension: 0.4,
+                    pointRadius: 5,
+                    pointHoverRadius: 7,
+                    pointBackgroundColor: color.point,
+                    pointBorderColor: '#fff',
+                    pointBorderWidth: 2
+                });
+
+                // Add separate dataset for failed jobs (bright red dots)
+                const failedPoints = dataPoints.filter(p => p.failed);
+                if (failedPoints.length > 0) {
+                    datasets.push({
+                        label: `${jobType} (failed)`,
+                        data: failedPoints,
+                        borderColor: '#ef4444',
+                        backgroundColor: '#ef4444',
+                        borderWidth: 0,
+                        fill: false,
+                        pointRadius: 6,
+                        pointHoverRadius: 8,
+                        pointBackgroundColor: '#ef4444',
+                        pointBorderColor: '#fff',
+                        pointBorderWidth: 2,
+                        showLine: false // Don't connect failed points
+                    });
+                }
+            });
+
+            if (datasets.length === 0) {
+                const ctx = document.getElementById('durationTrendChart');
+                if (durationChart) {
+                    durationChart.destroy();
+                    durationChart = null;
+                }
+                ctx.getContext('2d').clearRect(0, 0, ctx.width, ctx.height);
+                const container = ctx.parentElement;
+                container.innerHTML = '<div class="loading">No completed jobs found for selected types in the selected timeframe</div>';
+                container.appendChild(ctx);
+                return;
+            }
+
+            // Destroy existing chart if it exists
+            if (durationChart) {
+                durationChart.destroy();
+            }
+
+            // Create new chart
+            const ctx = document.getElementById('durationTrendChart').getContext('2d');
+            durationChart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    datasets: datasets
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            display: true,
+                            labels: {
+                                color: '#e0e0e0',
+                                font: {
+                                    size: 12
+                                },
+                                usePointStyle: true,
+                                padding: 15
+                            }
+                        },
+                        tooltip: {
+                            backgroundColor: 'rgba(0, 0, 0, 0.9)',
+                            titleColor: '#fff',
+                            bodyColor: '#e0e0e0',
+                            borderColor: 'rgba(255, 255, 255, 0.2)',
+                            borderWidth: 1,
+                            padding: 12,
+                            displayColors: true,
+                            callbacks: {
+                                title: function (context) {
+                                    const date = new Date(context[0].parsed.x);
+                                    return date.toLocaleString('en-US', {
+                                        month: 'short',
+                                        day: 'numeric',
+                                        hour: '2-digit',
+                                        minute: '2-digit'
+                                    });
+                                },
+                                label: function (context) {
+                                    const minutes = context.parsed.y;
+                                    const hours = Math.floor(minutes / 60);
+                                    const mins = Math.floor(minutes % 60);
+                                    const label = context.dataset.label;
+                                    if (hours > 0) {
+                                        return `${label}: ${hours}h ${mins}m`;
+                                    } else {
+                                        return `${label}: ${mins}m`;
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    scales: {
+                        x: {
+                            type: 'time',
+                            time: {
+                                unit: hours > 168 ? 'day' : (hours > 24 ? 'hour' : 'hour'),
+                                displayFormats: {
+                                    hour: 'MM/dd HH:mm',
+                                    day: 'MM/dd'
+                                },
+                                tooltipFormat: 'MMM dd, HH:mm'
+                            },
+                            min: startTime,
+                            max: now,
+                            ticks: {
+                                color: '#a0a0a0',
+                                maxRotation: 0,
+                                minRotation: 0,
+                                font: {
+                                    size: 10
+                                },
+                                autoSkip: true,
+                                maxTicksLimit: 12
+                            },
+                            grid: {
+                                color: 'rgba(255, 255, 255, 0.05)'
+                            }
+                        },
+                        y: {
+                            ticks: {
+                                color: '#a0a0a0',
+                                callback: function (value) {
+                                    const hours = Math.floor(value / 60);
+                                    const mins = Math.floor(value % 60);
+                                    if (hours > 0) {
+                                        return `${hours}h ${mins}m`;
+                                    } else {
+                                        return `${mins}m`;
+                                    }
+                                }
+                            },
+                            grid: {
+                                color: 'rgba(255, 255, 255, 0.05)'
+                            },
+                            beginAtZero: true
+                        }
+                    }
+                }
+            });
+        }
+
+        // Update dashboard
+        async function updateDashboard() {
+            try {
+                const hours = parseInt(document.getElementById('timeRange').value);
+                const jobType = document.getElementById('jobTypeFilter').value;
+
+                const data = await fetchJobData(hours, jobType);
+                currentData = data;
+
+                const stats = calculateStats(data.jobs);
+                renderStats(stats);
+                renderPerformanceTable(data.jobs);
+                renderTimeline(data.jobs);
+                renderRecentJobs(data.jobs);
+
+                // Update job type filter options
+                const jobTypes = [...new Set(data.jobs.map(j => j.job_type))].sort();
+                const currentFilter = document.getElementById('jobTypeFilter').value;
+                const filterSelect = document.getElementById('jobTypeFilter');
+                filterSelect.innerHTML = '<option value="all">All Jobs</option>' +
+                    jobTypes.map(type => `<option value="${type}">${type}</option>`).join('');
+                filterSelect.value = currentFilter;
+
+                // Update trend chart job type options
+                const trendFilter = document.getElementById('trendJobTypeFilter');
+                const currentTrendFilter = Array.from(trendFilter.selectedOptions).map(opt => opt.value);
+                trendFilter.innerHTML = jobTypes.map(type => `<option value="${type}">${type}</option>`).join('');
+
+                // Restore previous selections if they still exist
+                Array.from(trendFilter.options).forEach(opt => {
+                    if (currentTrendFilter.includes(opt.value)) {
+                        opt.selected = true;
+                    }
+                });
+
+                // Re-render chart if there are selections
+                const selectedTypes = Array.from(trendFilter.selectedOptions).map(opt => opt.value);
+                if (selectedTypes.length > 0) {
+                    renderDurationTrend(selectedTypes);
+                }
+
+            } catch (error) {
+                document.getElementById('statsGrid').innerHTML = `
+                    <div class="error">
+                        <strong>Error loading data:</strong> ${error.message}
+                    </div>
+                `;
+            }
+        }
+
+        // Setup auto-refresh
+        function setupAutoRefresh() {
+            if (autoRefreshInterval) {
+                clearInterval(autoRefreshInterval);
+            }
+
+            const seconds = parseInt(document.getElementById('autoRefresh').value);
+            if (seconds > 0) {
+                autoRefreshInterval = setInterval(updateDashboard, seconds * 1000);
+            }
+        }
+
+        // Event listeners
+        document.getElementById('refreshBtn').addEventListener('click', updateDashboard);
+        document.getElementById('timeRange').addEventListener('change', updateDashboard);
+        document.getElementById('jobTypeFilter').addEventListener('change', updateDashboard);
+        document.getElementById('autoRefresh').addEventListener('change', setupAutoRefresh);
+        document.getElementById('trendJobTypeFilter').addEventListener('change', function () {
+            const selectedTypes = Array.from(this.selectedOptions).map(opt => opt.value);
+            renderDurationTrend(selectedTypes);
+        });
+
+        // Initial load
+        updateDashboard();
+        setupAutoRefresh();
+    </script>
+</body>
+
+</html>
