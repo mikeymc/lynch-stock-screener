@@ -1,6 +1,34 @@
+# ABOUTME: Tests for backtest API endpoint
+# ABOUTME: Validates backtest execution and response format via HTTP
+
 import pytest
 import pandas as pd
 from datetime import datetime, timedelta
+
+from app import app
+
+
+@pytest.fixture
+def client(test_db, monkeypatch):
+    """Flask test client with test database and auth disabled."""
+    import app as app_module
+    import auth
+
+    monkeypatch.setattr(app_module, 'db', test_db)
+    monkeypatch.setattr(auth, 'DEV_AUTH_BYPASS', False)
+
+    app.config['TESTING'] = True
+    with app.test_client() as client:
+        yield client
+
+
+@pytest.fixture
+def auth_client(client, test_db):
+    """Authenticated client with test user."""
+    user_id = test_db.create_user("google_123", "test@example.com", "Test User", None)
+    with client.session_transaction() as sess:
+        sess['user_id'] = user_id
+    return client
 
 
 @pytest.fixture
@@ -9,23 +37,19 @@ def mock_yfinance_history(mock_yfinance):
     mock_instance = mock_yfinance.return_value
 
     def mock_history(start=None, end=None, **kwargs):
-        # Default range if not specified
         if start is None:
             start_dt = datetime.now() - timedelta(days=365*2)
         else:
             start_dt = datetime.fromisoformat(start) if isinstance(start, str) else start
-            
+
         if end is None:
             end_dt = datetime.now()
         else:
             end_dt = datetime.fromisoformat(end) if isinstance(end, str) else end
 
-        # Generate dates
         dates = pd.date_range(start=start_dt, end=end_dt, freq='D')
-        
-        # Generate fake prices (flat with slight noise or just flat)
         prices = [150.0 + (i % 10) for i in range(len(dates))]
-        
+
         df = pd.DataFrame({'Close': prices}, index=dates)
         return df
 
@@ -33,9 +57,8 @@ def mock_yfinance_history(mock_yfinance):
     return mock_yfinance
 
 
-def test_backtest_endpoint(test_client, mock_yfinance_history, test_db):
+def test_backtest_endpoint(auth_client, mock_yfinance_history, test_db):
     """Test backtest API endpoint using Flask test client."""
-    # Setup test data
     test_db.save_stock_basic('GOOGL', 'Alphabet Inc.', 'NASDAQ', 'Technology', 'USA')
     test_db.save_stock_metrics('GOOGL', {
         'price': 150.0,
@@ -49,10 +72,8 @@ def test_backtest_endpoint(test_client, mock_yfinance_history, test_db):
         'country': 'USA'
     })
 
-    # Add earnings history for the past 3 years
-    from datetime import datetime
     current_year = datetime.now().year
-    
+
     for i in range(1, 4):
         year = current_year - i
         test_db.save_earnings_history(
@@ -65,10 +86,10 @@ def test_backtest_endpoint(test_client, mock_yfinance_history, test_db):
             period='annual',
             net_income=50000000000 * (1.1 ** i)
         )
-    
+
     test_db.flush()
 
-    response = test_client.post('/api/backtest', json={
+    response = auth_client.post('/api/backtest', json={
         'symbol': 'GOOGL',
         'years_back': 1
     })
@@ -77,14 +98,11 @@ def test_backtest_endpoint(test_client, mock_yfinance_history, test_db):
 
     data = response.json
 
-    # Verify response structure
     assert 'symbol' in data, "Response missing 'symbol' field"
     assert data['symbol'] == 'GOOGL', f"Expected symbol GOOGL, got {data['symbol']}"
-
     assert 'total_return' in data, "Response missing 'total_return' field"
     assert 'historical_score' in data, "Response missing 'historical_score' field"
 
-    # Verify data types
     if data['total_return'] is not None:
         assert isinstance(data['total_return'], (int, float)), "total_return should be numeric"
 
@@ -92,9 +110,9 @@ def test_backtest_endpoint(test_client, mock_yfinance_history, test_db):
         assert isinstance(data['historical_score'], (int, float, dict)), "historical_score should be numeric or dict"
 
 
-def test_backtest_missing_symbol(test_client):
+def test_backtest_missing_symbol(auth_client):
     """Test backtest API returns 400 when symbol is missing."""
-    response = test_client.post('/api/backtest', json={
+    response = auth_client.post('/api/backtest', json={
         'years_back': 1
     })
 

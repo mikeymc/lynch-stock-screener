@@ -1,12 +1,15 @@
 # ABOUTME: Test script to verify debt-to-equity fetching for AMD
 # ABOUTME: Ensures yfinance fallback properly fetches and stores D/E data
 
+import os
+import pytest
 from data_fetcher import DataFetcher
 from database import Database
 import logging
 
 logging.basicConfig(level=logging.INFO)
 
+@pytest.mark.skipif(not os.getenv('RUN_INTEGRATION_TESTS'), reason="RUN_INTEGRATION_TESTS not set")
 def test_amd(test_db):
     fetcher = DataFetcher(test_db)
 

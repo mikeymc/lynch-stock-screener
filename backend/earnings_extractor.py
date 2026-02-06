@@ -31,9 +31,16 @@ class EarningsExtractor:
         self._api_key = api_key or os.getenv('GEMINI_API_KEY')
         if not self._api_key:
             logger.warning("GEMINI_API_KEY not found. EarningsExtractor will fail if used.")
-        
-        self.client = genai.Client(api_key=self._api_key)
+
+        self._client = None
         self.model_name = "gemini-2.5-flash"
+
+    @property
+    def client(self):
+        """Lazy initialization of Gemini client."""
+        if self._client is None:
+            self._client = genai.Client(api_key=self._api_key)
+        return self._client
 
     def extract(self, text: str, filing_date: Optional[str] = None) -> EarningsData:
         """

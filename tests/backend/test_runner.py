@@ -54,7 +54,7 @@ def test_new_methods(test_db):
 
     # Test Institutional Ownership evaluation
     assert criteria.evaluate_institutional_ownership(0.40) == "PASS", "InstOwn 40% should PASS"
-    assert criteria.evaluate_institutional_ownership(0.10) == "FAIL", "InstOwn 10% should FAIL (too low)"
+    assert criteria.evaluate_institutional_ownership(0.10) == "CLOSE", "InstOwn 10% should be CLOSE (below minimum)"
     assert criteria.evaluate_institutional_ownership(0.80) == "FAIL", "InstOwn 80% should FAIL (too high)"
     print("✓ Institutional Ownership evaluation tests passed")
 

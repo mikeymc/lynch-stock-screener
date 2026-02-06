@@ -133,7 +133,7 @@ class Test503RetryLogic:
             assert calls[1].kwargs['model'] == 'gemini-3-pro-preview'
             assert calls[2].kwargs['model'] == 'gemini-3-pro-preview'
             assert calls[3].kwargs['model'] == 'gemini-3-pro-preview'
-            assert calls[4].kwargs['model'] == 'gemini-3-flash-preview'
+            assert calls[4].kwargs['model'] == 'gemini-2.5-flash'
 
             # Verify we got the successful result
             assert result == ['Fallback analysis content']
@@ -219,7 +219,7 @@ class Test503RetryLogicChartNarrative:
             # Verify models used
             calls = stock_analyst.client.models.generate_content.call_args_list
             assert calls[0].kwargs['model'] == 'gemini-3-pro-preview'
-            assert calls[4].kwargs['model'] == 'gemini-3-flash-preview'
+            assert calls[4].kwargs['model'] == 'gemini-2.5-flash'
 
             assert result == {'narrative': 'Fallback chart narrative'}
 

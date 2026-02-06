@@ -13,16 +13,17 @@ from worker import BackgroundWorker
 
 class TestTradingAlerts(unittest.TestCase):
     def setUp(self):
-        self.worker = BackgroundWorker()
-        
+        with patch('database.Database'):
+            self.worker = BackgroundWorker()
+
         # Mock database interactions
         self.worker.db = MagicMock()
-        self.worker.llm_client = MagicMock()
-        
+        self.worker._llm_client = MagicMock()
+
         # Mock portfolio service (it's imported in worker, so we patch it there)
         self.patcher = patch('worker.portfolio_service')
         self.mock_portfolio_service = self.patcher.start()
-        
+
     def tearDown(self):
         self.patcher.stop()
 

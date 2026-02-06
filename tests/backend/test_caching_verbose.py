@@ -24,7 +24,6 @@ def client(test_db, monkeypatch):
 def test_caching(client, test_db, monkeypatch):
     """Test chart analysis caching with verbose output"""
     import app as app_module
-    from lynch_analyst import LynchAnalyst
 
     symbol = "AMZN"
 
@@ -50,15 +49,13 @@ def test_caching(client, test_db, monkeypatch):
 
     test_db.flush()
 
-    # Mock the LynchAnalyst to return predictable responses
+    # Mock the StockAnalyst to return predictable responses
     mock_analyst = MagicMock()
     mock_analyst.generate_unified_chart_analysis.return_value = {
-        'growth': 'Test growth analysis for Amazon',
-        'cash': 'Test cash flow analysis for Amazon',
-        'valuation': 'Test valuation analysis for Amazon'
+        'narrative': 'Test unified narrative analysis for Amazon'
     }
     mock_analyst.model_version = "test-model"
-    monkeypatch.setattr(app_module, 'lynch_analyst', mock_analyst)
+    monkeypatch.setattr(app_module, 'stock_analyst', mock_analyst)
 
     # Set session user_id
     with client.session_transaction() as sess:
@@ -67,7 +64,8 @@ def test_caching(client, test_db, monkeypatch):
     print("\n1. Force refresh request...")
     resp = client.post(f'/api/stock/{symbol}/unified-chart-analysis',
                        data=json.dumps({
-                           "force_refresh": True
+                           "force_refresh": True,
+                           "character": "lynch"
                        }),
                        content_type='application/json')
 
@@ -82,7 +80,8 @@ def test_caching(client, test_db, monkeypatch):
     print("\n2. Normal request (should be cached)...")
     resp2 = client.post(f'/api/stock/{symbol}/unified-chart-analysis',
                         data=json.dumps({
-                            "force_refresh": False
+                            "force_refresh": False,
+                            "character": "lynch"
                         }),
                         content_type='application/json')
 
@@ -94,7 +93,7 @@ def test_caching(client, test_db, monkeypatch):
     assert resp2.status_code == 200
     assert data2.get('cached') is True
 
-    print("\n✅ Caching test passed!")
+    print("\n Caching test passed!")
 
 
 if __name__ == "__main__":

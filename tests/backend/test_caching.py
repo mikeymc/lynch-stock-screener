@@ -25,7 +25,6 @@ def client(test_db, monkeypatch):
 def test_caching(client, test_db, monkeypatch):
     """Test that unified chart analysis caching works correctly"""
     import app as app_module
-    from lynch_analyst import LynchAnalyst
 
     symbol = "AMZN"
 
@@ -49,15 +48,13 @@ def test_caching(client, test_db, monkeypatch):
 
     test_db.flush()
 
-    # Mock the LynchAnalyst to return predictable responses
+    # Mock the StockAnalyst to return predictable responses
     mock_analyst = MagicMock()
     mock_analyst.generate_unified_chart_analysis.return_value = {
-        'growth': 'Test growth analysis',
-        'cash': 'Test cash analysis',
-        'valuation': 'Test valuation analysis'
+        'narrative': 'Test unified narrative analysis for Amazon'
     }
     mock_analyst.model_version = "test-model"
-    monkeypatch.setattr(app_module, 'lynch_analyst', mock_analyst)
+    monkeypatch.setattr(app_module, 'stock_analyst', mock_analyst)
 
     # Set session user_id
     with client.session_transaction() as sess:
@@ -67,7 +64,8 @@ def test_caching(client, test_db, monkeypatch):
     start = time.time()
     resp = client.post(f'/api/stock/{symbol}/unified-chart-analysis',
                        data=json.dumps({
-                           "force_refresh": True
+                           "force_refresh": True,
+                           "character": "lynch"
                        }),
                        content_type='application/json')
     print(f"   Status: {resp.status_code}")
@@ -76,17 +74,15 @@ def test_caching(client, test_db, monkeypatch):
     print(f"   Time: {time.time() - start:.2f}s")
 
     assert resp.status_code == 200
-    assert 'sections' in data
-    assert 'growth' in data['sections']
-    assert 'cash' in data['sections']
-    assert 'valuation' in data['sections']
+    assert 'narrative' in data
     assert data.get('cached') is False  # First call should not be cached
 
     print("\n2. Fetching analysis again - Should be Cached...")
     start = time.time()
     resp = client.post(f'/api/stock/{symbol}/unified-chart-analysis',
                        data=json.dumps({
-                           "force_refresh": False
+                           "force_refresh": False,
+                           "character": "lynch"
                        }),
                        content_type='application/json')
     print(f"   Status: {resp.status_code}")
@@ -95,10 +91,10 @@ def test_caching(client, test_db, monkeypatch):
     print(f"   Time: {time.time() - start:.2f}s")
 
     assert resp.status_code == 200
-    assert 'sections' in data
+    assert 'narrative' in data
     assert data.get('cached') is True  # Second call should be cached
 
-    print("\n✅ SUCCESS: Caching is working via API.")
+    print("\n SUCCESS: Caching is working via API.")
 
 
 if __name__ == "__main__":

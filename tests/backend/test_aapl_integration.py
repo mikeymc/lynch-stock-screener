@@ -2,8 +2,11 @@
 # ABOUTME: Manual test script for AAPL EDGAR calculated EPS integration
 # ABOUTME: Verifies split-adjusted EPS across Apple's 2014 and 2020 stock splits
 
+import os
+import pytest
 from data_fetcher import DataFetcher
 
+@pytest.mark.skipif(not os.getenv('RUN_INTEGRATION_TESTS'), reason="RUN_INTEGRATION_TESTS not set")
 def test_aapl_edgar_eps(test_db):
     """Test AAPL with EDGAR-calculated EPS"""
 

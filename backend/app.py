@@ -4088,20 +4088,18 @@ def serve_react_app(path):
 
 @app.route('/api/backtest', methods=['POST'])
 @require_user_auth
-def run_backtest():
+def run_backtest(user_id):
     """Run a backtest for a specific stock."""
     try:
         data = request.get_json()
         symbol = data.get('symbol')
         years_back = int(data.get('years_back', 1))
-        
+
         if not symbol:
             return jsonify({'error': 'Symbol is required'}), 400
-        
+
         # Get user's active character
-        user_id = g.user['id']
-        character_setting = db.get_user_setting(user_id, 'active_character')
-        character_id = character_setting['value'] if character_setting else 'lynch'
+        character_id = db.get_user_character(user_id)
         
         # Load the saved configuration for this character
         configs = db.get_algorithm_configs()

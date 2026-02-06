@@ -52,7 +52,7 @@ def sample_wacc_data():
 
 def test_generate_dcf_recommendations_valid_response(test_db, sample_stock_data, sample_history, sample_wacc_data):
     """Test that generate_dcf_recommendations returns properly structured scenarios"""
-    with patch('lynch_analyst.genai.Client') as mock_client_class:
+    with patch('stock_analyst.genai.Client') as mock_client_class:
         # Setup mock response with valid JSON
         mock_response = Mock()
         mock_response.text = '''```json
@@ -115,7 +115,7 @@ def test_generate_dcf_recommendations_valid_response(test_db, sample_stock_data,
 
 def test_generate_dcf_recommendations_handles_raw_json(test_db, sample_stock_data, sample_history):
     """Test that raw JSON (not in code block) is also parsed correctly"""
-    with patch('lynch_analyst.genai.Client') as mock_client_class:
+    with patch('stock_analyst.genai.Client') as mock_client_class:
         mock_response = Mock()
         # Raw JSON without code block
         mock_response.text = '''{
@@ -149,7 +149,7 @@ def test_generate_dcf_recommendations_handles_raw_json(test_db, sample_stock_dat
 
 def test_generate_dcf_recommendations_missing_scenario_raises(test_db, sample_stock_data, sample_history):
     """Test that missing scenarios in response raises an exception"""
-    with patch('lynch_analyst.genai.Client') as mock_client_class:
+    with patch('stock_analyst.genai.Client') as mock_client_class:
         mock_response = Mock()
         # Missing 'optimistic' scenario
         mock_response.text = '''{

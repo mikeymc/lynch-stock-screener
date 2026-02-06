@@ -18,24 +18,24 @@ def analyzer(test_db):
 
 
 def test_calculate_cagr_positive_growth(analyzer):
-    cagr = analyzer.calculate_cagr(100, 150, 5)
+    cagr = analyzer.calculate_linear_growth_rate(100, 150, 5)
     assert cagr is not None
     assert 8 < cagr < 11
 
 
 def test_calculate_cagr_negative_growth(analyzer):
-    cagr = analyzer.calculate_cagr(150, 100, 5)
+    cagr = analyzer.calculate_linear_growth_rate(150, 100, 5)
     assert cagr is not None
     assert cagr < 0
 
 
 def test_calculate_cagr_zero_start_value(analyzer):
-    cagr = analyzer.calculate_cagr(0, 100, 5)
+    cagr = analyzer.calculate_linear_growth_rate(0, 100, 5)
     assert cagr is None
 
 
 def test_calculate_cagr_zero_years(analyzer):
-    cagr = analyzer.calculate_cagr(100, 150, 0)
+    cagr = analyzer.calculate_linear_growth_rate(100, 150, 0)
     assert cagr is None
 
 

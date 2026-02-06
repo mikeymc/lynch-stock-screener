@@ -568,6 +568,7 @@ class TestStrategyExecutorIntegration:
             'cash': 50000,
             'holdings': {}
         }
+        db.get_portfolio_holdings.return_value = {}
         db.get_portfolio_holdings_detailed.return_value = []
 
         # Benchmark
@@ -602,6 +603,8 @@ class TestStrategyExecutorIntegration:
     @pytest.fixture
     def mock_lynch_criteria(self):
         """Mock Lynch criteria that returns predictable scores."""
+        import pandas as pd
+
         criteria = Mock()
 
         def evaluate(symbol, character_id='lynch'):
@@ -611,6 +614,15 @@ class TestStrategyExecutorIntegration:
                 return {'overall_score': 80, 'overall_status': 'BUY'}
 
         criteria.evaluate_stock = Mock(side_effect=evaluate)
+
+        def evaluate_batch(df, config):
+            """Return scored DataFrame matching production evaluate_batch output."""
+            result = df[['symbol']].copy()
+            result['overall_score'] = 75.0
+            result['overall_status'] = 'BUY'
+            return result
+
+        criteria.evaluate_batch = Mock(side_effect=evaluate_batch)
         return criteria
 
     @pytest.fixture
@@ -623,6 +635,21 @@ class TestStrategyExecutorIntegration:
 
         analyst.get_or_generate_analysis = Mock(side_effect=generate)
         return analyst
+
+    def _make_stock_vectors_mock(self):
+        """Create a mock StockVectors that returns a DataFrame with AAPL and MSFT."""
+        import pandas as pd
+        mock_vectors_class = MagicMock()
+        mock_vectors_instance = MagicMock()
+        mock_vectors_instance.load_vectors.return_value = pd.DataFrame({
+            'symbol': ['AAPL', 'MSFT'],
+            'price': [150.0, 300.0],
+            'peg_ratio': [1.5, 1.2],
+            'debt_to_equity': [0.5, 0.3],
+            'institutional_ownership': [0.6, 0.7],
+        })
+        mock_vectors_class.return_value = mock_vectors_instance
+        return mock_vectors_class
 
     def test_full_pipeline_buy_decision(self, mock_db, mock_lynch_criteria, mock_analyst):
         """Test full pipeline from screening through trade execution."""
@@ -640,21 +667,23 @@ class TestStrategyExecutorIntegration:
                 mock_yf = sys.modules['yfinance']
                 mock_yf.Ticker.return_value.fast_info = {'lastPrice': 500.0}
 
-                executor = StrategyExecutor(
-                    db=mock_db,
-                    analyst=mock_analyst,
-                    lynch_criteria=mock_lynch_criteria
-                )
+                # Patch StockVectors for vectorized scoring
+                with patch('stock_vectors.StockVectors', self._make_stock_vectors_mock()):
+                    executor = StrategyExecutor(
+                        db=mock_db,
+                        analyst=mock_analyst,
+                        lynch_criteria=mock_lynch_criteria
+                    )
 
-                result = executor.execute_strategy(strategy_id=1)
+                    result = executor.execute_strategy(strategy_id=1)
 
         # Verify pipeline completed
         assert result['status'] == 'completed'
         assert result['stocks_screened'] == 2
         assert result['stocks_scored'] > 0
 
-        # Verify scoring was called
-        assert mock_lynch_criteria.evaluate_stock.call_count >= 2
+        # Verify batch scoring was called (vectorized path)
+        assert mock_lynch_criteria.evaluate_batch.call_count >= 2
 
         # Verify thesis was generated
         assert mock_analyst.get_or_generate_analysis.call_count > 0
@@ -681,13 +710,15 @@ class TestStrategyExecutorIntegration:
                 mock_yf = sys.modules['yfinance']
                 mock_yf.Ticker.return_value.fast_info = {'lastPrice': 500.0}
 
-                executor = StrategyExecutor(
-                    db=mock_db,
-                    analyst=mock_analyst,
-                    lynch_criteria=mock_lynch_criteria
-                )
+                # Patch StockVectors for vectorized scoring
+                with patch('stock_vectors.StockVectors', self._make_stock_vectors_mock()):
+                    executor = StrategyExecutor(
+                        db=mock_db,
+                        analyst=mock_analyst,
+                        lynch_criteria=mock_lynch_criteria
+                    )
 
-                result = executor.execute_strategy(strategy_id=1)
+                    result = executor.execute_strategy(strategy_id=1)
 
         # No trades should be executed because thesis verdict is AVOID, not BUY
         assert result['trades_executed'] == 0

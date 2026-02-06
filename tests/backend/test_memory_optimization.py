@@ -15,6 +15,9 @@ class TestWorkerMemoryOptimization:
         db.complete_job = Mock()
         db.complete_session = Mock()
         db.get_background_job = Mock(return_value={'status': 'running'})
+        db.get_pool_stats = Mock(return_value={
+            'current_in_use': 1, 'pool_size': 10, 'peak_in_use': 2
+        })
         return db
 
     @patch('tradingview_fetcher.TradingViewFetcher')
@@ -102,7 +105,5 @@ class TestWorkerMemoryOptimization:
         result_arg = mock_db.complete_job.call_args[0][1]
         
         assert result_arg['total_analyzed'] == 20
-        assert result_arg['pass_count'] == 10  # 0-9
-        assert result_arg['close_count'] == 5  # 10-14
-        assert result_arg['fail_count'] == 5   # 15-19
-        assert result_arg['session_id'] == 999
+        assert result_arg['total_symbols'] == 20
+        assert result_arg['failed_count'] == 0

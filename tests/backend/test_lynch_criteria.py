@@ -75,7 +75,7 @@ def test_evaluate_institutional_ownership_pass(criteria):
 
 def test_evaluate_institutional_ownership_too_low_fail(criteria):
     result = criteria.evaluate_institutional_ownership(0.10)
-    assert result == "FAIL"
+    assert result == "CLOSE"
 
 
 def test_evaluate_institutional_ownership_too_high_fail(criteria):

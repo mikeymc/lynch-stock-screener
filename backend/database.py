@@ -1099,6 +1099,33 @@ class Database:
             END $$;
         """)
 
+        # Paper trading portfolios (must be created before alerts migration that references it)
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS portfolios (
+                id SERIAL PRIMARY KEY,
+                user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                name TEXT NOT NULL,
+                initial_cash REAL DEFAULT 100000.0,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+
+        # Migration: Add dividend_preference to portfolios table
+        cursor.execute("""
+            DO $$
+            BEGIN
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                               WHERE table_name = 'portfolios' AND column_name = 'dividend_preference') THEN
+                    ALTER TABLE portfolios ADD COLUMN dividend_preference TEXT DEFAULT 'cash' CHECK (dividend_preference IN ('cash', 'reinvest'));
+                END IF;
+            END $$;
+        """)
+
+        cursor.execute("""
+            CREATE INDEX IF NOT EXISTS idx_portfolios_user
+            ON portfolios(user_id)
+        """)
+
         # Migration: Add automated trading columns to alerts
         cursor.execute("""
             DO $$
@@ -2046,33 +2073,6 @@ class Database:
                     ALTER TABLE stock_metrics ADD COLUMN last_price_updated TIMESTAMP WITH TIME ZONE;
                 END IF;
             END $$;
-        """)
-
-        # Paper trading portfolios
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS portfolios (
-                id SERIAL PRIMARY KEY,
-                user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-                name TEXT NOT NULL,
-                initial_cash REAL DEFAULT 100000.0,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
-        """)
-
-        # Migration: Add dividend_preference to portfolios table
-        cursor.execute("""
-            DO $$
-            BEGIN
-                IF NOT EXISTS (SELECT 1 FROM information_schema.columns
-                               WHERE table_name = 'portfolios' AND column_name = 'dividend_preference') THEN
-                    ALTER TABLE portfolios ADD COLUMN dividend_preference TEXT DEFAULT 'cash' CHECK (dividend_preference IN ('cash', 'reinvest'));
-                END IF;
-            END $$;
-        """)
-
-        cursor.execute("""
-            CREATE INDEX IF NOT EXISTS idx_portfolios_user
-            ON portfolios(user_id)
         """)
 
         # Portfolio transactions (source of truth for holdings and cash)
@@ -5886,8 +5886,10 @@ class Database:
         conn = self.get_connection()
         cursor = conn.cursor()
 
-        # No need to json.dumps with JSONB column and psycopg3
-        json_value = value
+        # psycopg3 auto-adapts dicts/lists to JSONB, but primitive types
+        # (bool, int, str) need explicit wrapping via Json()
+        from psycopg.types.json import Json
+        json_value = Json(value)
 
         if description:
             cursor.execute("""

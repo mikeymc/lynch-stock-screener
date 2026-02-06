@@ -17,9 +17,13 @@ from app import app
 def client(test_db, monkeypatch):
     """Flask test client with test database"""
     import app as app_module
+    import auth
 
     # Replace app's db with test_db
     monkeypatch.setattr(app_module, 'db', test_db)
+
+    # Disable dev auth bypass so auth tests work correctly
+    monkeypatch.setattr(auth, 'DEV_AUTH_BYPASS', False)
 
     app.config['TESTING'] = True
     with app.test_client() as client:
@@ -136,8 +140,8 @@ class TestGetPortfolioEndpoint:
         portfolio_id = test_db.create_portfolio(user_id, "Tech Portfolio")
         test_db.record_transaction(portfolio_id, "AAPL", "BUY", 10, 150.0)
 
-        # Mock yfinance to return our test price
-        with patch('portfolio_service.fetch_current_price', return_value=150.0):
+        # Mock batch price fetching to return our test price
+        with patch('portfolio_service.fetch_current_prices_batch', return_value={'AAPL': 150.0}):
             response = client.get(f'/api/portfolios/{portfolio_id}')
         assert response.status_code == 200
 

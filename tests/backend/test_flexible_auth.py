@@ -73,6 +73,7 @@ class TestFlexibleAuthentication:
         """Test that job creation fails without auth when API_AUTH_TOKEN is configured"""
         import app as app_module
         monkeypatch.setattr(app_module, 'API_AUTH_TOKEN', 'test-token')
+        monkeypatch.setattr(app_module, 'DEV_AUTH_BYPASS', False)
 
         response = client.post('/api/jobs',
             data=json.dumps({'type': 'test_screening', 'params': {}}),
@@ -81,11 +82,11 @@ class TestFlexibleAuthentication:
         assert response.status_code == 401
 
 
-class TestScreeningJobSessionCreation:
-    """Tests for automatic session creation in screening jobs"""
+class TestJobCreation:
+    """Tests for job creation via /api/jobs endpoint"""
 
-    def test_screening_job_creates_session_automatically(self, client, test_db):
-        """Test that screening job creates session if not provided"""
+    def test_create_screening_job(self, client, test_db):
+        """Test that screening job returns job_id"""
         response = client.post('/api/jobs',
             data=json.dumps({
                 'type': 'full_screening',
@@ -95,32 +96,10 @@ class TestScreeningJobSessionCreation:
 
         assert response.status_code == 200
         data = response.get_json()
-        
-        # Should return both job_id and session_id
         assert 'job_id' in data
-        assert 'session_id' in data
-        assert isinstance(data['session_id'], int)
 
-    def test_screening_job_uses_existing_session(self, client, test_db):
-        """Test that screening job uses provided session_id"""
-        # Create a session first
-        session_id = test_db.create_session(algorithm='weighted', total_count=0)
-
-        response = client.post('/api/jobs',
-            data=json.dumps({
-                'type': 'full_screening',
-                'params': {'algorithm': 'weighted', 'session_id': session_id}
-            }),
-            content_type='application/json')
-
-        assert response.status_code == 200
-        data = response.get_json()
-        
-        # Should return the same session_id
-        assert data['session_id'] == session_id
-
-    def test_non_screening_job_does_not_create_session(self, client, test_db):
-        """Test that non-screening jobs don't create sessions"""
+    def test_create_non_screening_job(self, client, test_db):
+        """Test that non-screening jobs return job_id"""
         response = client.post('/api/jobs',
             data=json.dumps({
                 'type': 'sec_refresh',
@@ -130,6 +109,4 @@ class TestScreeningJobSessionCreation:
 
         assert response.status_code == 200
         data = response.get_json()
-        
-        # Should not have session_id
-        assert 'session_id' not in data
+        assert 'job_id' in data

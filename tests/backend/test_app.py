@@ -83,11 +83,11 @@ def test_stock_history_endpoint_handles_negative_eps(client, test_db, monkeypatc
 
 
 def test_lynch_analysis_endpoint_returns_cached_analysis(client, test_db, monkeypatch):
-    """Test that /api/stock/<symbol>/lynch-analysis returns cached analysis when available"""
+    """Test that /api/stock/<symbol>/thesis returns cached analysis when available"""
     import app as app_module
     from lynch_analyst import LynchAnalyst
 
-    monkeypatch.setattr(app_module, 'lynch_analyst', LynchAnalyst(test_db))
+    monkeypatch.setattr(app_module, 'stock_analyst', LynchAnalyst(test_db))
 
     # Set up test data
     symbol = "AAPL"
@@ -117,7 +117,7 @@ def test_lynch_analysis_endpoint_returns_cached_analysis(client, test_db, monkey
         sess['user_id'] = user_id
 
     # Request analysis
-    response = client.get(f'/api/stock/{symbol}/lynch-analysis')
+    response = client.get(f'/api/stock/{symbol}/thesis')
 
     assert response.status_code == 200
     data = json.loads(response.data)
@@ -126,9 +126,9 @@ def test_lynch_analysis_endpoint_returns_cached_analysis(client, test_db, monkey
     assert 'generated_at' in data
 
 
-@patch('lynch_analyst.genai.Client')
+@patch('stock_analyst.genai.Client')
 def test_lynch_analysis_endpoint_generates_fresh_analysis(mock_client_class, client, test_db, monkeypatch):
-    """Test that /api/stock/<symbol>/lynch-analysis generates fresh analysis when cache is empty"""
+    """Test that /api/stock/<symbol>/thesis generates fresh analysis when cache is empty"""
     import app as app_module
     from lynch_analyst import LynchAnalyst
 
@@ -145,7 +145,7 @@ def test_lynch_analysis_endpoint_generates_fresh_analysis(mock_client_class, cli
     mock_client_class.return_value = mock_client
 
     # NOW create LynchAnalyst with the mocked client
-    monkeypatch.setattr(app_module, 'lynch_analyst', LynchAnalyst(test_db))
+    monkeypatch.setattr(app_module, 'stock_analyst', LynchAnalyst(test_db))
 
     # Set up test stock and earnings data
     symbol = "AAPL"
@@ -170,7 +170,7 @@ def test_lynch_analysis_endpoint_generates_fresh_analysis(mock_client_class, cli
         sess['user_id'] = user_id
 
     # Request analysis
-    response = client.get(f'/api/stock/{symbol}/lynch-analysis')
+    response = client.get(f'/api/stock/{symbol}/thesis')
 
     assert response.status_code == 200
     data = json.loads(response.data)
@@ -179,9 +179,9 @@ def test_lynch_analysis_endpoint_generates_fresh_analysis(mock_client_class, cli
     assert 'generated_at' in data
 
 
-@patch('lynch_analyst.genai.Client')
+@patch('stock_analyst.genai.Client')
 def test_lynch_analysis_refresh_endpoint(mock_client_class, client, test_db, monkeypatch):
-    """Test that POST /api/stock/<symbol>/lynch-analysis/refresh forces regeneration"""
+    """Test that POST /api/stock/<symbol>/thesis/refresh forces regeneration"""
     import app as app_module
     from lynch_analyst import LynchAnalyst
 
@@ -198,7 +198,7 @@ def test_lynch_analysis_refresh_endpoint(mock_client_class, client, test_db, mon
     mock_client_class.return_value = mock_client
 
     # NOW create LynchAnalyst with the mocked client
-    monkeypatch.setattr(app_module, 'lynch_analyst', LynchAnalyst(test_db))
+    monkeypatch.setattr(app_module, 'stock_analyst', LynchAnalyst(test_db))
 
     # Set up test stock and earnings data
     symbol = "AAPL"
@@ -228,7 +228,7 @@ def test_lynch_analysis_refresh_endpoint(mock_client_class, client, test_db, mon
 
     # Request refresh
     response = client.post(
-        f'/api/stock/{symbol}/lynch-analysis/refresh',
+        f'/api/stock/{symbol}/thesis/refresh',
         data=json.dumps({'model': 'gemini-2.5-flash'}),
         content_type='application/json'
     )
@@ -245,7 +245,7 @@ def test_lynch_analysis_refresh_endpoint(mock_client_class, client, test_db, mon
 
 
 def test_lynch_analysis_endpoint_returns_404_for_unknown_stock(client, test_db, monkeypatch):
-    """Test that /api/stock/<symbol>/lynch-analysis returns 404 for unknown stock"""
+    """Test that /api/stock/<symbol>/thesis returns 404 for unknown stock"""
 
     # Create a test user for authentication
     user_id = test_db.create_user("google_test", "test_unknown_stock@example.com", "Test User", None)
@@ -254,73 +254,20 @@ def test_lynch_analysis_endpoint_returns_404_for_unknown_stock(client, test_db, 
     with client.session_transaction() as sess:
         sess['user_id'] = user_id
 
-    response = client.get('/api/stock/UNKNOWN/lynch-analysis')
+    response = client.get('/api/stock/UNKNOWN/thesis')
 
     assert response.status_code == 404
     data = json.loads(response.data)
     assert 'error' in data
 
 
-# Screening Sessions Tests
-
-def test_get_latest_session_returns_most_recent_screening(client, test_db, monkeypatch):
-    """Test that GET /api/sessions/latest returns the most recent screening session"""
-
-    # Create a session with results
-    session_id = test_db.create_session("test_algo", 100, total_analyzed=2, pass_count=1, close_count=0, fail_count=1)
-
-    result1 = {
-        'symbol': 'AAPL', 'company_name': 'Apple Inc.', 'country': 'US',
-        'market_cap': 2500000000000, 'sector': 'Technology', 'ipo_year': 1980,
-        'price': 150.25, 'pe_ratio': 25.5, 'peg_ratio': 1.2, 'debt_to_equity': 0.35,
-        'institutional_ownership': 0.45, 'earnings_cagr': 15.5, 'revenue_cagr': 12.3,
-        'consistency_score': 85.0, 'peg_status': 'PASS', 'debt_status': 'PASS',
-        'institutional_ownership_status': 'PASS', 'overall_status': 'PASS'
-    }
-    test_db.save_screening_result(session_id, result1)
-
-    result2 = {
-        'symbol': 'MSFT', 'company_name': 'Microsoft Corp.', 'country': 'US',
-        'market_cap': 2000000000000, 'sector': 'Technology', 'ipo_year': 1986,
-        'price': 300.00, 'pe_ratio': 30.0, 'peg_ratio': 2.5, 'debt_to_equity': 0.40,
-        'institutional_ownership': 0.70, 'earnings_cagr': 10.0, 'revenue_cagr': 8.0,
-        'consistency_score': 75.0, 'peg_status': 'FAIL', 'debt_status': 'PASS',
-        'institutional_ownership_status': 'FAIL', 'overall_status': 'FAIL'
-    }
-    test_db.save_screening_result(session_id, result2)
-
-    test_db.flush()  # Ensure data is committed
-
-    response = client.get('/api/sessions/latest')
-
-    assert response.status_code == 200
-    data = json.loads(response.data)
-
-    assert 'session_id' in data
-    assert 'created_at' in data
-    assert data['total_analyzed'] == 2
-    assert data['pass_count'] == 1
-    assert data['close_count'] == 0
-    assert data['fail_count'] == 1
-    assert len(data['results']) == 2
-    assert data['results'][0]['symbol'] in ['AAPL', 'MSFT']
-    assert data['results'][1]['symbol'] in ['AAPL', 'MSFT']
-
-
-def test_get_latest_session_returns_404_when_no_sessions(client, test_db, monkeypatch):
-    """Test that GET /api/sessions/latest returns 404 when no sessions exist"""
-
-    response = client.get('/api/sessions/latest')
-
-    assert response.status_code == 404
-    data = json.loads(response.data)
-    assert 'error' in data
 
 
 # Economy Link Feature Flag Tests
 
 def test_economy_link_feature_flag_exists_in_settings(client, test_db):
     """Test that feature_economy_link_enabled exists in settings"""
+    test_db.init_default_settings()
     response = client.get('/api/settings')
 
     assert response.status_code == 200

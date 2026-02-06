@@ -66,9 +66,11 @@ class TestOptimizerLogic(unittest.TestCase):
         self.assertGreaterEqual(fixed['peg_fair'], fixed['peg_good'] + 0.4)
 
     def test_low_peg_bounds(self):
-        # Case 4: Low PEG (New lower bound 0.05)
+        # Case 4: Low PEG below min_bound (min_bound=0.5)
         # Raw: Exc=0.05, Good=0.1, Fair=0.2
-        # Sep=0.4 -> Good >= 0.45, Fair >= 0.85
+        # Sep=0.4 -> Good=0.45, Fair=0.85
+        # Sliding window: excess_low = 0.5 - 0.05 = 0.45, slide up
+        # Final: Exc=0.5, Good=0.9, Fair=1.3
         config = {
             'peg_excellent': 0.05,
             'peg_good': 0.1,
@@ -77,12 +79,12 @@ class TestOptimizerLogic(unittest.TestCase):
             'inst_own_max': 0.5
         }
         fixed = self.optimizer._enforce_threshold_constraints(config, 'lynch')
-        
+
         print(f"\n[Test Case 4 (Low PEG)] Input: {config}\nOutput: {fixed}")
-        
-        self.assertEqual(fixed['peg_excellent'], 0.05)
-        self.assertGreaterEqual(fixed['peg_good'], 0.45)
-        self.assertGreaterEqual(fixed['peg_fair'], 0.85)
+
+        self.assertEqual(fixed['peg_excellent'], 0.5)
+        self.assertGreaterEqual(fixed['peg_good'], 0.9)
+        self.assertGreaterEqual(fixed['peg_fair'], 1.3)
 
 if __name__ == '__main__':
     unittest.main()

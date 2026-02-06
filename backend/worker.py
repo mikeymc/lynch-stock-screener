@@ -132,9 +132,8 @@ class BackgroundWorker:
             password=os.environ.get('DB_PASSWORD', 'lynch_dev_password')
         )
         
-        # Initialize LLM client for alert evaluation
-        from google import genai
-        self.llm_client = genai.Client(api_key=os.environ.get('GEMINI_API_KEY'))
+        # LLM client for alert evaluation (lazy initialized)
+        self._llm_client = None
 
         # Setup signal handlers for graceful shutdown
         signal.signal(signal.SIGTERM, self._handle_shutdown)
@@ -158,6 +157,14 @@ class BackgroundWorker:
         if self.current_job_id:
             logger.info(f"Releasing job {self.current_job_id} back to pending")
             self.db.release_job(self.current_job_id)
+
+    @property
+    def llm_client(self):
+        """Lazy initialization of Gemini client."""
+        if self._llm_client is None:
+            from google import genai
+            self._llm_client = genai.Client(api_key=os.environ.get('GEMINI_API_KEY'))
+        return self._llm_client
 
     def run(self):
         """Main worker loop"""

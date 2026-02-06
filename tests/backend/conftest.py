@@ -143,13 +143,13 @@ def test_db(shared_db):
         'message_sources', 'messages', 'conversations',
         'watchlist', 'weekly_prices', 'stock_metrics', 'earnings_history',
         'lynch_analyses', 'chart_analyses', 'news_articles', 'material_events',
-        'filing_sections', 'sec_filings', 'screening_results',
+        'filing_sections', 'sec_filings',
         'insider_trades', 'dcf_recommendations', 'backtest_results',
         'optimization_runs', 'algorithm_configurations',
         # Paper trading tables
         'portfolio_value_snapshots', 'portfolio_transactions', 'portfolios',
         # Parent tables last
-        'screening_sessions', 'background_jobs', 'app_settings',
+        'background_jobs', 'app_settings',
         'stocks', 'users'
     ]
 
@@ -157,8 +157,8 @@ def test_db(shared_db):
         try:
             cursor.execute(f'DELETE FROM {table}')
         except Exception:
-            # Table doesn't exist yet, skip
-            pass
+            # Table doesn't exist yet - rollback to recover transaction state
+            conn.rollback()
 
     conn.commit()
     cursor.close()
@@ -177,8 +177,8 @@ def test_db(shared_db):
         try:
             cursor.execute(f'DELETE FROM {table}')
         except Exception:
-            # Table doesn't exist, skip
-            pass
+            # Table doesn't exist - rollback to recover transaction state
+            conn.rollback()
 
     conn.commit()
     cursor.close()
