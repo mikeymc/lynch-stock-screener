@@ -540,7 +540,7 @@ class BackgroundWorker:
         processed_count = 0
         error_count = 0
         
-        with ThreadPoolExecutor(max_workers=10) as executor:
+        with ThreadPoolExecutor(max_workers=5) as executor:
             future_to_item = {
                 executor.submit(
                     self._refresh_thesis_for_symbol, 
@@ -1104,8 +1104,8 @@ Return JSON only:
         failed_symbols = []
 
         BATCH_SIZE = 10
-        MAX_WORKERS = 20  # Reduced from 40 to prevent DB pool exhaustion when multiple jobs run
-        BATCH_DELAY = 0.5
+        MAX_WORKERS = 8  # Reduced from 20 to prevent DB pool exhaustion
+        BATCH_DELAY = 1.0 # Increased from 0.5 to reduce write pressure
 
         with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
             for batch_start in range(0, total, BATCH_SIZE):
@@ -2322,7 +2322,7 @@ Return JSON only:
         
         # Process stocks - use moderate parallelism since we're hitting yfinance
         BATCH_SIZE = 20
-        MAX_WORKERS = 8
+        MAX_WORKERS = 5 # Reduced from 8 to reduce DB pressure
         
         def fetch_outlook_data(symbol: str) -> bool:
             """Fetch forward metrics and insider trades for a single symbol."""
