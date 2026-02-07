@@ -434,13 +434,15 @@ class BackgroundWorker:
             region: Region filter (us, north-america, europe, asia, all)
             symbols: Optional list of specific symbols to process
             force_refresh: If True, re-fetch even if quarterly data is current
+            use_rss: If True, use RSS feed to pre-filter to only stocks with new filings
         """
         limit = params.get('limit')
         region = params.get('region', 'us')
         specific_symbols = params.get('symbols')
         force_refresh = params.get('force_refresh', False)
+        use_rss = params.get('use_rss', False)
 
-        logger.info(f"Starting quarterly_fundamentals_cache job {job_id} (region={region})")
+        logger.info(f"Starting quarterly_fundamentals_cache job {job_id} (region={region}, use_rss={use_rss})")
 
         from tradingview_fetcher import TradingViewFetcher
         from edgar_fetcher import EdgarFetcher
@@ -466,8 +468,28 @@ class BackgroundWorker:
             market_data_cache = tv_fetcher.fetch_all_stocks(limit=20000, regions=tv_regions)
             all_symbols = list(market_data_cache.keys())
 
-            if limit and limit < len(all_symbols):
-                all_symbols = all_symbols[:limit]
+        # RSS-based optimization: only process stocks with new filings
+        if use_rss and not force_refresh and not specific_symbols:
+            from sec_rss_client import SECRSSClient
+            self.db.update_job_progress(job_id, progress_pct=9, progress_message='Checking RSS feed for new 10-Q/10-K filings...')
+            
+            sec_user_agent = os.environ.get('SEC_USER_AGENT', 'Lynch Stock Screener mikey@example.com')
+            rss_client = SECRSSClient(sec_user_agent)
+            
+            # Get tickers with new 10-Q OR 10-K filings from RSS (with pagination)
+            known_tickers = set(all_symbols)
+            tickers_10q = rss_client.get_tickers_with_new_filings_paginated('10-Q', known_tickers=known_tickers, db=self.db)
+            tickers_10k = rss_client.get_tickers_with_new_filings_paginated('10-K', known_tickers=known_tickers, db=self.db)
+            tickers_with_filings = tickers_10q | tickers_10k
+            
+            if tickers_with_filings:
+                # Filter to only stocks with new filings, preserving order
+                all_symbols = [s for s in all_symbols if s in tickers_with_filings]
+                logger.info(f"RSS optimization: reduced from {len(known_tickers)} to {len(all_symbols)} stocks with new 10-Q/10-K filings")
+            else:
+                logger.info("RSS optimization: No new 10-Q/10-K filings found today - nothing to update")
+                self.db.complete_job(job_id, {'total_stocks': 0, 'processed': 0, 'updated': 0, 'rss_optimized': True})
+                return
 
         total = len(all_symbols)
         self.db.update_job_progress(job_id, progress_pct=10, progress_message=f'Caching quarterly data for {total} stocks...',
@@ -480,36 +502,52 @@ class BackgroundWorker:
 
         def process_stock(symbol):
             try:
+                from datetime import datetime, timedelta
                 # Check if we need to refresh quarterly data (smart caching)
                 if not force_refresh:
+                    # Check if DB already has the expected data
                     needs_refresh = edgar_fetcher._needs_quarterly_refresh(symbol)
                     if not needs_refresh:
                         logger.info(f"[{symbol}] Quarterly data is current - skipping")
                         return {'symbol': symbol, 'status': 'current'}
 
-                # Fetch quarterly data from 10-Q filings (last 8 quarters)
-                quarterly_10q_data = edgar_fetcher.get_quarterly_financials_from_10q(symbol, num_quarters=8)
+                # Record this check in DB even if it fails, to prevent perpetual refresh attempts
+                self.db.record_cache_check(symbol, 'quarterly_financials')
 
-                if not quarterly_10q_data or not quarterly_10q_data.get('revenue_quarterly'):
-                    logger.warning(f"[{symbol}] No quarterly data found in 10-Q filings")
+                # Fetch quarterly data from 10-Q/10-K filings (last 8 filings)
+                quarterly_data = edgar_fetcher.get_quarterly_financials_from_filings(symbol, num_quarters=8)
+
+                if not quarterly_data or not quarterly_data.get('revenue_quarterly'):
+                    logger.warning(f"[{symbol}] No quarterly data found in 10-K/10-Q filings")
                     return None
+
+                # Get CIK for URL generation
+                cik = edgar_fetcher.get_cik_for_ticker(symbol)
+
+                # Sync filings to DB so RSS client knows we've processed them
+                filings_metadata = quarterly_data.get('filings_metadata', [])
+                for filing in filings_metadata:
+                    self.db.save_sec_filing(
+                        symbol, filing['form'], filing['date'], 
+                        f"https://www.sec.gov/Archives/edgar/data/{cik}/{filing['accession_number'].replace('-', '')}/{filing['accession_number']}-index.html",
+                        filing['accession_number']
+                    )
 
                 # Store quarterly data to earnings_history table
                 from data_fetcher import DataFetcher
                 data_fetcher = DataFetcher(self.db)
 
-                # The 10-Q data is already in the right format for storage
-                # We just need to save each quarter to the DB
-                revenue_quarterly = quarterly_10q_data.get('revenue_quarterly', [])
-                net_income_quarterly = quarterly_10q_data.get('net_income_quarterly', [])
-                eps_quarterly = quarterly_10q_data.get('eps_quarterly', [])
-                cash_flow_quarterly = quarterly_10q_data.get('cash_flow_quarterly', [])
+                # The data is already in the right format for storage
+                revenue_quarterly = quarterly_data.get('revenue_quarterly', [])
+                net_income_quarterly = quarterly_data.get('net_income_quarterly', [])
+                eps_quarterly = quarterly_data.get('eps_quarterly', [])
+                cash_flow_quarterly = quarterly_data.get('cash_flow_quarterly', [])
 
                 quarters_stored = 0
                 for i in range(len(revenue_quarterly)):
                     year = revenue_quarterly[i]['year']
                     quarter = revenue_quarterly[i]['quarter']
-                    period = f'Q{quarter}'
+                    period = quarter  # quarter is already 'Q1', 'Q2', etc.
 
                     # Get corresponding data from other metrics
                     revenue = revenue_quarterly[i].get('revenue')
@@ -538,7 +576,7 @@ class BackgroundWorker:
                     )
                     quarters_stored += 1
 
-                logger.info(f"[{symbol}] Cached {quarters_stored} quarters from 10-Q filings")
+                logger.info(f"[{symbol}] Cached {quarters_stored} quarters from 10-K/10-Q filings")
                 return {'symbol': symbol, 'status': 'success', 'quarters': quarters_stored}
 
             except Exception as e:

@@ -3000,22 +3000,23 @@ class EdgarFetcher:
 
 
 
-    def get_quarterly_financials_from_10q(self, ticker: str, num_quarters: int = 8) -> Dict[str, List[Dict[str, Any]]]:
+    def get_quarterly_financials_from_filings(self, ticker: str, num_quarters: int = 8) -> Dict[str, Any]:
         """
-        Extract quarterly financials directly from 10-Q filings using edgartools.
+        Extract quarterly financials directly from 10-Q and 10-K filings using edgartools.
         
-        This method bypasses the outdated company_facts API and parses 10-Q filings
+        This method bypasses the outdated company_facts API and parses filings
         directly to extract all quarterly financial metrics. This solves issues with:
         - Missing data for companies like AAPL/MSFT (company_facts is outdated)
         - Incorrect data for companies like NFLX (prior-year comparatives)
         - Inconsistent XBRL tags across companies
+        - Missing Q4 data (now extracted from 10-K)
         
         Args:
             ticker: Stock ticker symbol
-            num_quarters: Number of recent quarters to extract (default: 8 = 2 years)
+            num_quarters: Number of recent filings to extract (default: 8)
         
         Returns:
-            Dictionary containing quarterly data lists:
+            Dictionary containing quarterly data lists and metadata:
             - revenue_quarterly: List of {year, quarter, revenue, fiscal_end}
             - eps_quarterly: List of {year, quarter, eps, fiscal_end}
             - net_income_quarterly: List of {year, quarter, net_income, fiscal_end}
@@ -3023,6 +3024,7 @@ class EdgarFetcher:
             - debt_to_equity_quarterly: List of {year, quarter, debt_to_equity, fiscal_end}
             - shares_outstanding_quarterly: List of {year, quarter, shares, fiscal_end}
             - shareholder_equity_quarterly: List of {year, quarter, shareholder_equity, fiscal_end}
+            - filings_metadata: List of {accession_number, form, date} for processed filings
         """
         try:
             # Get company object
@@ -3036,14 +3038,14 @@ class EdgarFetcher:
                 logger.warning(f"[{ticker}] Could not create Company object")
                 return {}
             
-            # Get recent 10-Q filings
-            filings = company.get_filings(form="10-Q").head(num_quarters)
+            # Get recent 10-Q and 10-K filings
+            filings = company.get_filings(form=["10-K", "10-Q"]).head(num_quarters)
             
             if not filings or len(filings) == 0:
-                logger.warning(f"[{ticker}] No 10-Q filings found")
+                logger.warning(f"[{ticker}] No 10-K/10-Q filings found")
                 return {}
             
-            logger.info(f"[{ticker}] Found {len(filings)} 10-Q filings for extraction")
+            logger.info(f"[{ticker}] Found {len(filings)} filings (10-K/10-Q) for extraction")
             
             # Initialize result lists
             revenue_quarterly = []
@@ -3053,6 +3055,7 @@ class EdgarFetcher:
             debt_to_equity_quarterly = []
             shares_outstanding_quarterly = []
             shareholder_equity_quarterly = []
+            filings_metadata = []
             
             # Process each filing
             for filing in filings:
@@ -3097,8 +3100,21 @@ class EdgarFetcher:
                                 if data_cols:
                                     fiscal_end = row.get(data_cols[0])
                     
+                    # Capture filing metadata
+                    filings_metadata.append({
+                        'accession_number': filing.accession_number,
+                        'form': filing.form,
+                        'date': filing.filing_date
+                    })
+
                     # Fallback: extract from income statement column name if not in cover page
                     if not fiscal_year or not fiscal_quarter:
+                        # 10-K is always Q4
+                        if filing.form == '10-K':
+                            fiscal_quarter = 'Q4'
+                            # Use filing year if year focus is missing (usually filing year - 1)
+                            # But wait, we try to get it from income statement below if possible
+                        
                         # Try to get fiscal_end from income statement column
                         income = statements.income_statement()
                         if income:
@@ -3385,11 +3401,12 @@ class EdgarFetcher:
                 'cash_flow_quarterly': cash_flow_quarterly,
                 'debt_to_equity_quarterly': debt_to_equity_quarterly,
                 'shares_outstanding_quarterly': shares_outstanding_quarterly,
-                'shareholder_equity_quarterly': shareholder_equity_quarterly
+                'shareholder_equity_quarterly': shareholder_equity_quarterly,
+                'filings_metadata': filings_metadata
             }
         
         except Exception as e:
-            logger.error(f"[{ticker}] Error in get_quarterly_financials_from_10q: {e}")
+            logger.error(f"[{ticker}] Error in get_quarterly_financials_from_filings: {e}")
             import traceback
             traceback.print_exc()
             return {}
@@ -3730,9 +3747,9 @@ class EdgarFetcher:
         # - Use company_facts for historical data (complete coverage, even if slightly outdated)
         logger.info(f"[{ticker}] Extracting quarterly data using hybrid approach...")
         
-        # 1. Get recent quarters from 10-Q filings (last 8 quarters, ~2 years)
-        logger.info(f"[{ticker}] Fetching recent 8 quarters from 10-Q filings...")
-        quarterly_10q_data = self.get_quarterly_financials_from_10q(ticker, num_quarters=8)
+        # 1. Get recent quarters from 10-K/10-Q filings (last 8 quarters, ~2 years)
+        logger.info(f"[{ticker}] Fetching recent 8 quarters from 10-K/10-Q filings...")
+        quarterly_filing_data = self.get_quarterly_financials_from_filings(ticker, num_quarters=8)
         
         # NOTE: The cumulative revenue fix below was removed - the root cause was that
         # income = statements.income_statement() was not being called when fiscal info
@@ -3777,34 +3794,34 @@ class EdgarFetcher:
         
         # Merge each metric
         revenue_quarterly = merge_quarterly_data(
-            quarterly_10q_data.get('revenue_quarterly', []),
+            quarterly_filing_data.get('revenue_quarterly', []),
             historical_revenue_quarterly or []
         )
         
         net_income_quarterly = merge_quarterly_data(
-            quarterly_10q_data.get('net_income_quarterly', []),
+            quarterly_filing_data.get('net_income_quarterly', []),
             historical_net_income_quarterly or []
         )
         
-        eps_quarterly = quarterly_10q_data.get('eps_quarterly', [])  # Only from 10-Q (more accurate)
+        eps_quarterly = quarterly_filing_data.get('eps_quarterly', [])  # Only from 10-Q (more accurate)
         
         cash_flow_quarterly = merge_quarterly_data(
-            quarterly_10q_data.get('cash_flow_quarterly', []),
+            quarterly_filing_data.get('cash_flow_quarterly', []),
             historical_cash_flow_quarterly or []
         )
         
         debt_to_equity_quarterly = merge_quarterly_data(
-            quarterly_10q_data.get('debt_to_equity_quarterly', []),
+            quarterly_filing_data.get('debt_to_equity_quarterly', []),
             historical_debt_to_equity_quarterly or []
         )
         
         shares_outstanding_quarterly = merge_quarterly_data(
-            quarterly_10q_data.get('shares_outstanding_quarterly', []),
+            quarterly_filing_data.get('shares_outstanding_quarterly', []),
             historical_shares_outstanding_quarterly or []
         )
         
         shareholder_equity_quarterly = merge_quarterly_data(
-            quarterly_10q_data.get('shareholder_equity_quarterly', []),
+            quarterly_filing_data.get('shareholder_equity_quarterly', []),
             historical_shareholder_equity_quarterly or []
         )
         

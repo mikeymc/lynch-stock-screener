@@ -1166,6 +1166,7 @@ def quarterly(
     region: str = typer.Option("us", "--region", "-r",
                                help="Region to cache: us, north-america, south-america, europe, asia, all"),
     force: bool = typer.Option(False, "--force", "-f", help="Force refresh (re-fetch even if quarterly data is current)"),
+    use_rss: bool = typer.Option(True, "--use-rss/--no-rss", help="Use RSS feed to pre-filter stocks with new filings"),
 ):
     """Cache recent quarterly data (last 8 quarters) via 10-Q parsing with smart caching (runs nightly)"""
     if action == "start":
@@ -1185,6 +1186,8 @@ def quarterly(
             console.print(f"[dim]Processing specific symbols: {params['symbols']}[/dim]")
         if force:
             params["force_refresh"] = True
+        if use_rss:
+            params["use_rss"] = True
 
         # Determine API URL
         api_url = API_URL if prod else "http://localhost:5001"
@@ -1197,7 +1200,7 @@ def quarterly(
         }
 
         console.print(f"[bold blue]🚀 Starting quarterly fundamentals cache ({region})...[/bold blue]")
-        console.print("[dim]Caching: last 8 quarters via 10-Q parsing (smart cache: only new quarters)[/dim]")
+        console.print(f"[dim]Caching: last 8 quarters via 10-K/10-Q parsing (smart cache: only new quarters, RSS={use_rss})[/dim]")
 
         payload = {
             "type": "quarterly_fundamentals_cache",
