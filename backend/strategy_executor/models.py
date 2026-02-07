@@ -1,0 +1,34 @@
+# ABOUTME: Data classes for strategy execution results
+# ABOUTME: Defines ConsensusResult, PositionSize, and ExitSignal
+
+from dataclasses import dataclass
+from typing import Optional
+
+
+@dataclass
+class ConsensusResult:
+    """Result of consensus evaluation between characters."""
+    verdict: str  # BUY, WATCH, AVOID, VETO
+    score: float
+    reasoning: str
+    lynch_contributed: bool
+    buffett_contributed: bool
+
+
+@dataclass
+class PositionSize:
+    """Calculated position size for a trade."""
+    shares: int
+    estimated_value: float
+    position_pct: float
+    reasoning: str
+
+
+@dataclass
+class ExitSignal:
+    """Signal to exit a position."""
+    symbol: str
+    quantity: int
+    reason: str
+    current_value: float
+    gain_pct: float
