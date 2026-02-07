@@ -21,7 +21,7 @@ def stock_analyst(mock_db):
     """Create StockAnalyst instance with mocked dependencies."""
     from stock_analyst import StockAnalyst
 
-    with patch('stock_analyst.genai.Client') as mock_client_class:
+    with patch('stock_analyst.core.genai.Client') as mock_client_class:
         analyst = StockAnalyst(mock_db, api_key='test_key')
         # Mock the client property
         analyst._client = MagicMock()
