@@ -10,6 +10,7 @@ import SearchPopover from '@/components/SearchPopover'
 import UserAvatar from '@/components/UserAvatar'
 import { FeedbackWidget } from '@/components/FeedbackWidget'
 import { useChatContext } from '@/context/ChatContext'
+import { useAuth } from '@/context/AuthContext'
 import { useTheme } from '../theme-provider'
 import {
     Sidebar,
@@ -51,9 +52,11 @@ function AppShellContent({
     activeCharacter = 'lynch'
 }) {
     const { isMobile, setOpenMobile } = useSidebar()
+    const { user } = useAuth()
     const { conversations, removeConversation, activeConversationId, setActiveConversationId } = useChatContext()
     const { theme } = useTheme()
     const [feedbackOpen, setFeedbackOpen] = useState(false)
+    const [alertsCount, setAlertsCount] = useState(0)
 
     // ... existing content ...
 
@@ -108,9 +111,9 @@ function AppShellContent({
     const [screenerOpen, setScreenerOpen] = useState(true)
     const [filterOpen, setFilterOpen] = useState(true)
     const [analysisOpen, setAnalysisOpen] = useState(true)
-    const [alertsCount, setAlertsCount] = useState(0)
     const [alertsEnabled, setAlertsEnabled] = useState(false)
     const [economyLinkEnabled, setEconomyLinkEnabled] = useState(false)
+    const [dashboardEnabled, setDashboardEnabled] = useState(false)
     const [redditEnabled, setRedditEnabled] = useState(false)
     const [chatsOpen, setChatsOpen] = useState(true) // State for chat history collapsible
 
@@ -123,9 +126,11 @@ function AppShellContent({
                     // Default to false if not present, check value string
                     const alertsOn = settings.feature_alerts_enabled?.value === true
                     const economyLinkOn = settings.feature_economy_link_enabled?.value === true
+                    const dashboardOn = settings.feature_dashboard_enabled?.value === true
                     const redditOn = settings.feature_reddit_enabled?.value === true || settings.feature_reddit_enabled?.value === 'true'
                     setAlertsEnabled(alertsOn)
                     setEconomyLinkEnabled(economyLinkOn)
+                    setDashboardEnabled(dashboardOn)
                     setRedditEnabled(redditOn)
                 }
             } catch (error) {
@@ -195,8 +200,8 @@ function AppShellContent({
 
     const isStockDetail = location.pathname.startsWith('/stock/')
     const isEconomyPage = location.pathname === '/economy'
-    const isDashboard = location.pathname === '/'
-    const isStocksPage = location.pathname === '/stocks'
+    const isDashboard = location.pathname === '/dashboard'
+    const isStocksPage = location.pathname === '/'
 
     const getCount = (statusKey) => {
         if (!summary) return 0
@@ -251,22 +256,10 @@ function AppShellContent({
                                         <SidebarMenuButton
                                             onClick={() => {
                                                 navigate('/')
-                                                onNavClick()
-                                            }}
-                                            isActive={location.pathname === '/'}
-                                            className="pl-4 font-normal text-muted-foreground data-[active=true]:font-medium data-[active=true]:text-sidebar-primary"
-                                        >
-                                            <span>Dashboard</span>
-                                        </SidebarMenuButton>
-                                    </SidebarMenuItem>
-                                    <SidebarMenuItem>
-                                        <SidebarMenuButton
-                                            onClick={() => {
-                                                navigate('/stocks')
                                                 setFilter('all')
                                                 onNavClick()
                                             }}
-                                            isActive={location.pathname === '/stocks' && filter === 'all'}
+                                            isActive={isStocksPage && filter === 'all'}
                                             className="pl-4 font-normal text-muted-foreground data-[active=true]:font-medium data-[active=true]:text-sidebar-primary"
                                         >
                                             <span>All Stocks</span>
@@ -275,7 +268,7 @@ function AppShellContent({
                                     <SidebarMenuItem>
                                         <SidebarMenuButton
                                             onClick={() => {
-                                                navigate('/stocks')
+                                                navigate('/')
                                                 setFilter('watchlist')
                                                 onNavClick()
                                             }}
@@ -326,6 +319,20 @@ function AppShellContent({
                                             </SidebarMenuButton>
                                         </SidebarMenuItem>
                                     )}
+                                    {dashboardEnabled && (
+                                        <SidebarMenuItem>
+                                            <SidebarMenuButton
+                                                onClick={() => {
+                                                    navigate('/dashboard')
+                                                    onNavClick()
+                                                }}
+                                                isActive={isDashboard}
+                                                className="pl-4 font-normal text-muted-foreground data-[active=true]:font-medium data-[active=true]:text-sidebar-primary"
+                                            >
+                                                <span>Dashboard</span>
+                                            </SidebarMenuButton>
+                                        </SidebarMenuItem>
+                                    )}
                                 </SidebarMenu>
                             </SidebarGroupContent>
                         </SidebarGroup>
@@ -349,7 +356,7 @@ function AppShellContent({
                                                 <SidebarMenuItem>
                                                     <SidebarMenuButton
                                                         onClick={() => {
-                                                            navigate('/stocks')
+                                                            navigate('/')
                                                             setFilter('STRONG_BUY')
                                                             onNavClick()
                                                         }}
@@ -363,7 +370,7 @@ function AppShellContent({
                                                 <SidebarMenuItem>
                                                     <SidebarMenuButton
                                                         onClick={() => {
-                                                            navigate('/stocks')
+                                                            navigate('/')
                                                             setFilter('BUY')
                                                             onNavClick()
                                                         }}
@@ -377,7 +384,7 @@ function AppShellContent({
                                                 <SidebarMenuItem>
                                                     <SidebarMenuButton
                                                         onClick={() => {
-                                                            navigate('/stocks')
+                                                            navigate('/')
                                                             setFilter('HOLD')
                                                             onNavClick()
                                                         }}
@@ -391,7 +398,7 @@ function AppShellContent({
                                                 <SidebarMenuItem>
                                                     <SidebarMenuButton
                                                         onClick={() => {
-                                                            navigate('/stocks')
+                                                            navigate('/')
                                                             setFilter('CAUTION')
                                                             onNavClick()
                                                         }}
@@ -405,7 +412,7 @@ function AppShellContent({
                                                 <SidebarMenuItem>
                                                     <SidebarMenuButton
                                                         onClick={() => {
-                                                            navigate('/stocks')
+                                                            navigate('/')
                                                             setFilter('AVOID')
                                                             onNavClick()
                                                         }}

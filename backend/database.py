@@ -2374,6 +2374,15 @@ class Database:
             CREATE INDEX IF NOT EXISTS idx_perf_strategy
             ON strategy_performance(strategy_id, snapshot_date)
         """)
+        
+        # Initialize feature_dashboard_enabled setting (default: false)
+        cursor.execute("SELECT 1 FROM app_settings WHERE key = 'feature_dashboard_enabled'")
+        if not cursor.fetchone():
+            cursor.execute("""
+                INSERT INTO app_settings (key, value, description)
+                VALUES ('feature_dashboard_enabled', 'false', 'Show Dashboard link in navigation sidebar')
+            """)
+            conn.commit()
 
         conn.commit()
 

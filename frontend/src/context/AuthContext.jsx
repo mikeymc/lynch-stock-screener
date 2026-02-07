@@ -24,6 +24,9 @@ const DEV_MOCK_USER = {
   name: 'Dev User',
   is_admin: true,
   has_completed_onboarding: true,
+  feature_flags: {
+    dashboard: false
+  }
 };
 
 export function AuthProvider({ children }) {

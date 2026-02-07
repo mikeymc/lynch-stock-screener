@@ -346,6 +346,7 @@ def get_current_user():
         'email': user['email'],
         'name': user['name'],
         'picture': user['picture'],
+        'feature_flags': user.get('feature_flags') or {},
         'has_completed_onboarding': user.get('has_completed_onboarding', False)
     })
 
@@ -4939,21 +4940,24 @@ def get_market_movers():
                     days_back = 7
 
                 cursor.execute("""
-                    WITH price_change AS (
+                    WITH latest_reference_prices AS (
+                        SELECT DISTINCT ON (symbol)
+                            symbol,
+                            price as historical_price
+                        FROM weekly_prices
+                        WHERE week_ending <= CURRENT_DATE - INTERVAL '%s days'
+                        ORDER BY symbol, week_ending DESC
+                    ),
+                    price_change AS (
                         SELECT
-                            wp.symbol,
+                            rp.symbol,
                             s.company_name,
                             sm.price,
-                            (sm.price - wp.price) / wp.price * 100 as change_pct
-                        FROM weekly_prices wp
-                        JOIN stocks s ON wp.symbol = s.symbol
-                        JOIN stock_metrics sm ON wp.symbol = sm.symbol
-                        WHERE wp.week_ending = (
-                            SELECT MAX(week_ending)
-                            FROM weekly_prices
-                            WHERE week_ending <= CURRENT_DATE - INTERVAL '%s days'
-                        )
-                        AND sm.price IS NOT NULL
+                            (sm.price - rp.historical_price) / rp.historical_price * 100 as change_pct
+                        FROM latest_reference_prices rp
+                        JOIN stocks s ON rp.symbol = s.symbol
+                        JOIN stock_metrics sm ON rp.symbol = sm.symbol
+                        WHERE sm.price IS NOT NULL
                         AND s.country = 'US'
                     )
                     SELECT * FROM price_change
@@ -4964,21 +4968,24 @@ def get_market_movers():
                 gainers = cursor.fetchall()
 
                 cursor.execute("""
-                    WITH price_change AS (
+                    WITH latest_reference_prices AS (
+                        SELECT DISTINCT ON (symbol)
+                            symbol,
+                            price as historical_price
+                        FROM weekly_prices
+                        WHERE week_ending <= CURRENT_DATE - INTERVAL '%s days'
+                        ORDER BY symbol, week_ending DESC
+                    ),
+                    price_change AS (
                         SELECT
-                            wp.symbol,
+                            rp.symbol,
                             s.company_name,
                             sm.price,
-                            (sm.price - wp.price) / wp.price * 100 as change_pct
-                        FROM weekly_prices wp
-                        JOIN stocks s ON wp.symbol = s.symbol
-                        JOIN stock_metrics sm ON wp.symbol = sm.symbol
-                        WHERE wp.week_ending = (
-                            SELECT MAX(week_ending)
-                            FROM weekly_prices
-                            WHERE week_ending <= CURRENT_DATE - INTERVAL '%s days'
-                        )
-                        AND sm.price IS NOT NULL
+                            (sm.price - rp.historical_price) / rp.historical_price * 100 as change_pct
+                        FROM latest_reference_prices rp
+                        JOIN stocks s ON rp.symbol = s.symbol
+                        JOIN stock_metrics sm ON rp.symbol = sm.symbol
+                        WHERE sm.price IS NOT NULL
                         AND s.country = 'US'
                     )
                     SELECT * FROM price_change

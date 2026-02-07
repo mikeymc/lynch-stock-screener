@@ -1169,8 +1169,7 @@ function App() {
             activeCharacter={activeCharacter}
           />
         }>
-          <Route path="/" element={<Dashboard />} />
-          <Route path="/stocks" element={
+          <Route path="/" element={
             <StockListView
               key={activeCharacter} // Force remount when character changes
               stocks={stocks}
@@ -1201,6 +1200,8 @@ function App() {
               user={user}
             />
           } />
+          <Route path="/stocks" element={<Navigate to="/" replace />} />
+          <Route path="/dashboard" element={<Dashboard />} />
           <Route path="/stock/:symbol" element={
             <StockDetail
               watchlist={watchlist}
