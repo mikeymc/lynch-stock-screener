@@ -64,18 +64,19 @@ class FlyMachineManager:
             logger.error(f"Failed to list machines: {e}")
             return []
 
-    def get_worker_machines(self) -> List[Dict[str, Any]]:
-        """Get all worker machines"""
-        return self.list_machines(role='worker')
+    def get_worker_machines(self, tier: str = None) -> List[Dict[str, Any]]:
+        """Get all worker machines, optionally filtered by tier"""
+        role = f'worker-{tier}' if tier else 'worker'
+        return self.list_machines(role=role)
 
-    def get_running_workers(self) -> List[Dict[str, Any]]:
-        """Get running worker machines"""
-        workers = self.get_worker_machines()
+    def get_running_workers(self, tier: str = None) -> List[Dict[str, Any]]:
+        """Get running worker machines, optionally filtered by tier"""
+        workers = self.get_worker_machines(tier=tier)
         return [w for w in workers if w.get('state') == 'started']
 
-    def get_stopped_workers(self) -> List[Dict[str, Any]]:
-        """Get stopped worker machines"""
-        workers = self.get_worker_machines()
+    def get_stopped_workers(self, tier: str = None) -> List[Dict[str, Any]]:
+        """Get stopped worker machines, optionally filtered by tier"""
+        workers = self.get_worker_machines(tier=tier)
         return [w for w in workers if w.get('state') == 'stopped']
 
     def start_machine(self, machine_id: str) -> bool:
@@ -150,8 +151,8 @@ class FlyMachineManager:
             'FINNHUB_API_KEY': os.environ.get('FINNHUB_API_KEY', ''),
         }
 
-    def create_worker_machine(self) -> Optional[str]:
-        """Create a new worker machine"""
+    def create_worker_machine(self, tier: str = 'light') -> Optional[str]:
+        """Create a new worker machine with the specified tier ('light' or 'beefy')"""
         if not self._is_configured():
             logger.warning("Cannot create worker - Fly.io not configured")
             return None
@@ -161,24 +162,38 @@ class FlyMachineManager:
             logger.error("Cannot create worker - unable to determine app image")
             return None
 
+        # Define specs based on tier
+        if tier == 'beefy':
+            guest_config = {
+                'cpu_kind': 'performance',  # No throttling
+                'cpus': 1,                 # 1 Performance CPU is very powerful
+                'memory_mb': 4096          # 4GB for heavy jobs
+            }
+        else:
+            guest_config = {
+                'cpu_kind': 'shared',
+                'cpus': 1,
+                'memory_mb': 512           # Scale down light workers to save money
+            }
+
         try:
+            env = self.get_env_vars()
+            env['WORKER_TIER'] = tier
+
             config = {
                 'region': self.region,
                 'config': {
                     'image': image,
-                    'env': self.get_env_vars(),
-                    'guest': {
-                        'cpu_kind': 'shared',
-                        'cpus': 2,  # 2 vCPUs to allow 4GB memory (shared-cpu-1x max is 2GB)
-                        'memory_mb': 4096  # 4GB for Form 4, price_history, transcript jobs
-                    },
+                    'env': env,
+                    'guest': guest_config,
                     'auto_destroy': True,  # Destroy when process exits
                     'restart': {
                         'policy': 'on-failure',  # Restart on crash (e.g., OOM)
                         'max_retries': 3  # Limit retries to prevent infinite loops
                     },
                     'metadata': {
-                        'role': 'worker'
+                        'role': f'worker-{tier}',
+                        'tier': tier
                     },
                     'init': {
                         'cmd': ['python', '-u', 'worker.py']
@@ -238,15 +253,13 @@ class FlyMachineManager:
         machine_id = self.start_worker_if_needed()
         return machine_id is not None
 
-    def start_worker_for_job(self, max_workers: int = 4) -> Optional[str]:
+    def start_worker_for_job(self, tier: str = 'light', max_workers: int = 4) -> Optional[str]:
         """
-        Start a worker for a new job, respecting the max worker limit.
-        
-        Unlike ensure_worker_running() which reuses existing workers,
-        this creates a new worker for each job to enable parallel processing.
+        Start a worker for a new job, respecting the max worker limit and tier.
         
         Args:
-            max_workers: Maximum number of concurrent workers (default 4)
+            tier: Worker tier ('light' or 'beefy')
+            max_workers: Maximum number of concurrent workers for this tier (default 4)
             
         Returns:
             Machine ID of the started/created worker, or None if at limit
@@ -255,25 +268,25 @@ class FlyMachineManager:
             logger.info("Fly.io not configured - worker will not be started")
             return None
 
-        # Count running workers
-        running = self.get_running_workers()
+        # Count running workers for this specific tier
+        running = self.get_running_workers(tier=tier)
         running_count = len(running)
         
         if running_count >= max_workers:
-            logger.info(f"At max workers ({running_count}/{max_workers}), job will be queued")
-            return running[0]['id']  # Return existing worker ID
+            logger.info(f"At max {tier} workers ({running_count}/{max_workers}), job will be queued")
+            return running[0]['id'] if running else None
         
-        # Check for stopped workers to restart first (cheaper than creating new)
-        stopped = self.get_stopped_workers()
+        # Check for stopped workers of this tier to restart
+        stopped = self.get_stopped_workers(tier=tier)
         if stopped:
             machine_id = stopped[0]['id']
-            logger.info(f"Restarting stopped worker: {machine_id} ({running_count + 1}/{max_workers})")
+            logger.info(f"Restarting stopped {tier} worker: {machine_id} ({running_count + 1}/{max_workers})")
             if self.start_machine(machine_id):
                 return machine_id
         
         # Create new worker
-        logger.info(f"Creating new worker ({running_count + 1}/{max_workers})")
-        return self.create_worker_machine()
+        logger.info(f"Creating new {tier} worker ({running_count + 1}/{max_workers})")
+        return self.create_worker_machine(tier=tier)
 
 
 # Global instance for convenience

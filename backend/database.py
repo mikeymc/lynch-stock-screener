@@ -1619,10 +1619,22 @@ class Database:
                 total_count INTEGER DEFAULT 0,
                 result JSONB,
                 error_message TEXT,
+                tier TEXT DEFAULT 'light',
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 started_at TIMESTAMP,
                 completed_at TIMESTAMP
             )
+        """)
+
+        # Migration: Add tier column to background_jobs if it doesn't exist
+        cursor.execute("""
+            DO $$
+            BEGIN
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns 
+                               WHERE table_name = 'background_jobs' AND column_name = 'tier') THEN
+                    ALTER TABLE background_jobs ADD COLUMN tier TEXT DEFAULT 'light';
+                END IF;
+            END $$;
         """)
 
         cursor.execute("""
@@ -6240,16 +6252,16 @@ class Database:
 
     # Background Jobs Methods
 
-    def create_background_job(self, job_type: str, params: Dict[str, Any]) -> int:
+    def create_background_job(self, job_type: str, params: Dict[str, Any], tier: str = 'light') -> int:
         """Create a new background job and return its ID"""
         conn = self.get_connection()
         try:
             cursor = conn.cursor()
             cursor.execute("""
-                INSERT INTO background_jobs (job_type, params, status, created_at)
-                VALUES (%s, %s, 'pending', NOW())
+                INSERT INTO background_jobs (job_type, params, status, tier, created_at)
+                VALUES (%s, %s, 'pending', %s, NOW())
                 RETURNING id
-            """, (job_type, json.dumps(params)))
+            """, (job_type, json.dumps(params), tier))
             job_id = cursor.fetchone()[0]
             conn.commit()
             return job_id
@@ -6333,7 +6345,7 @@ class Database:
         finally:
             self.return_connection(conn)
 
-    def claim_pending_job(self, worker_id: str, claim_minutes: int = 10) -> Optional[Dict[str, Any]]:
+    def claim_pending_job(self, worker_id: str, tier: str = 'light', claim_minutes: int = 10) -> Optional[Dict[str, Any]]:
         """
         Atomically claim a pending job using FOR UPDATE SKIP LOCKED.
         Returns the claimed job or None if no pending jobs available.
@@ -6346,6 +6358,7 @@ class Database:
                 WITH claimable AS (
                     SELECT id FROM background_jobs
                     WHERE status = 'pending'
+                    AND tier = %s
                     ORDER BY created_at ASC
                     LIMIT 1
                     FOR UPDATE SKIP LOCKED
@@ -6358,8 +6371,8 @@ class Database:
                 WHERE id = (SELECT id FROM claimable)
                 RETURNING id, job_type, status, claimed_by, claimed_at, claim_expires_at,
                           params, progress_pct, progress_message, processed_count, total_count,
-                          result, error_message, created_at, started_at, completed_at
-            """, (worker_id, claim_minutes))
+                          result, error_message, created_at, started_at, completed_at, tier
+            """, (tier, worker_id, claim_minutes))
 
             row = cursor.fetchone()
             conn.commit()
@@ -6383,7 +6396,8 @@ class Database:
                 'error_message': row[12],
                 'created_at': row[13],
                 'started_at': row[14],
-                'completed_at': row[15]
+                'completed_at': row[15],
+                "tier": row[16]
             }
         finally:
             self.return_connection(conn)

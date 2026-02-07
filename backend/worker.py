@@ -146,7 +146,10 @@ class BackgroundWorker:
         from data_fetcher import DataFetcher
         self.data_fetcher = DataFetcher(self.db)
 
-        logger.info(f"Worker {self.worker_id} initialized")
+        # Worker tier (default to light)
+        self.tier = os.environ.get('WORKER_TIER', 'light')
+
+        logger.info(f"Worker {self.worker_id} initialized (Tier: {self.tier})")
 
     def _handle_shutdown(self, signum, frame):
         """Handle shutdown signal gracefully"""
@@ -168,7 +171,7 @@ class BackgroundWorker:
 
     def run(self):
         """Main worker loop"""
-        logger.info(f"Worker {self.worker_id} starting main loop")
+        logger.info(f"Worker {self.worker_id} starting main loop (Tier: {self.tier})")
         if IDLE_SHUTDOWN_SECONDS > 0:
             logger.info(f"Idle shutdown: {IDLE_SHUTDOWN_SECONDS}s, Poll interval: {POLL_INTERVAL}s")
         else:
@@ -182,8 +185,8 @@ class BackgroundWorker:
                     logger.info(f"Idle for {idle_time:.0f}s (limit: {IDLE_SHUTDOWN_SECONDS}s), shutting down")
                     break
 
-            # Try to claim a job
-            job = self.db.claim_pending_job(self.worker_id)
+            # Try to claim a job (filtered by tier)
+            job = self.db.claim_pending_job(self.worker_id, tier=self.tier)
 
             if job:
                 self.current_job_id = job['id']

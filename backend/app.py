@@ -597,6 +597,18 @@ def create_job():
 
         job_type = data['type']
         params = data.get('params', {})
+        tier = data.get('tier', 'light')  # Default to light if not specified
+
+        # AUTO-ASSIGN BEEFY TIER for known heavy jobs
+        heavy_jobs = {
+            'historical_fundamentals_cache', 
+            'transcript_cache', 
+            'quarterly_fundamentals_cache',
+            'strategy_execution',
+            'outlook_cache'
+        }
+        if job_type in heavy_jobs:
+            tier = 'beefy'
 
         # Check connection pool health before creating job
         pool_stats = db.get_pool_stats()
@@ -607,13 +619,13 @@ def create_job():
                 'pool_stats': pool_stats
             }), 503
 
-        logger.info(f"Creating background job: type={job_type}, params={params}")
-        job_id = db.create_background_job(job_type, params)
+        logger.info(f"Creating background job: type={job_type}, params={params}, tier={tier}")
+        job_id = db.create_background_job(job_type, params, tier=tier)
         logger.info(f"Created background job {job_id}")
 
         # Start worker machine if configured (spawns new worker up to max for parallel jobs)
         fly_manager = get_fly_manager()
-        worker_id = fly_manager.start_worker_for_job(max_workers=4)
+        worker_id = fly_manager.start_worker_for_job(tier=tier, max_workers=4)
         logger.info(f"Worker startup triggered: {worker_id}")
 
         response_data = {
@@ -805,10 +817,11 @@ def manual_run_strategy(user_id, strategy_id):
         if strategy['user_id'] != user_id:
             return jsonify({'error': 'Unauthorized'}), 403
 
-        # Create background job for strategy execution
+        # Create background job for strategy execution (beefy tier)
         job_id = db.create_background_job(
             job_type='strategy_execution',
-            params={'strategy_id': strategy_id}
+            params={'strategy_id': strategy_id},
+            tier='beefy'
         )
 
         logger.info(f"Manual strategy run queued: strategy_id={strategy_id}, job_id={job_id}")
