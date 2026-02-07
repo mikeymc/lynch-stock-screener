@@ -4776,16 +4776,19 @@ SUPPORTED_INDICES = {
 }
 
 
-@app.route('/api/market/index/<symbol>', methods=['GET'])
-def get_market_index(symbol):
+@app.route('/api/market/index/<symbols>', methods=['GET'])
+def get_market_index(symbols):
     """Get index price history for charting.
 
     Supported symbols: ^GSPC (S&P 500), ^IXIC (Nasdaq), ^DJI (Dow Jones)
     Query params: period (1d, 5d, 1mo, 3mo, ytd, 1y) - defaults to 1mo
+    Multiple symbols can be provided comma-separated.
     """
-    if symbol not in SUPPORTED_INDICES:
+    symbol_list = [s.strip() for s in symbols.split(',')]
+    invalid_symbols = [s for s in symbol_list if s not in SUPPORTED_INDICES]
+    if invalid_symbols:
         return jsonify({
-            'error': f'Unsupported index. Supported: {list(SUPPORTED_INDICES.keys())}'
+            'error': f'Unsupported indices: {invalid_symbols}. Supported: {list(SUPPORTED_INDICES.keys())}'
         }), 400
 
     period = request.args.get('period', '1mo')
@@ -4794,48 +4797,76 @@ def get_market_index(symbol):
         return jsonify({'error': f'Invalid period. Valid: {valid_periods}'}), 400
 
     try:
-        ticker = yf.Ticker(symbol)
         # Use interval based on period for appropriate granularity
         if period == '1d':
-            hist = ticker.history(period='1d', interval='5m')
+            interval = '5m'
         elif period == '5d':
-            hist = ticker.history(period='5d', interval='15m')
+            interval = '15m'
         else:
-            hist = ticker.history(period=period, interval='1d')
+            interval = '1d'
 
-        if hist.empty:
-            return jsonify({'error': 'No data available for this index'}), 404
+        # Fetch data for all symbols
+        if len(symbol_list) > 1:
+            # Multi-symbol download
+            hist_data = yf.download(symbol_list, period=period, interval=interval, group_by='ticker', progress=False)
+        else:
+            # Single symbol - keep behavior consistent
+            ticker = yf.Ticker(symbol_list[0])
+            hist_data = ticker.history(period=period, interval=interval)
 
-        # Format data for chart
-        data_points = []
-        for idx, row in hist.iterrows():
-            data_points.append({
-                'timestamp': idx.isoformat(),
-                'close': float(row['Close']) if pd.notna(row['Close']) else None,
-                'open': float(row['Open']) if pd.notna(row['Open']) else None,
-                'high': float(row['High']) if pd.notna(row['High']) else None,
-                'low': float(row['Low']) if pd.notna(row['Low']) else None,
-                'volume': int(row['Volume']) if pd.notna(row['Volume']) else None
-            })
+        results = {}
+        for symbol in symbol_list:
+            if len(symbol_list) > 1:
+                hist = hist_data[symbol]
+            else:
+                hist = hist_data
 
-        # Calculate change from first to last
-        first_close = data_points[0]['close'] if data_points else 0
-        last_close = data_points[-1]['close'] if data_points else 0
-        change = last_close - first_close
-        change_pct = (change / first_close * 100) if first_close else 0
+            if hist.empty:
+                results[symbol] = {'error': 'No data available'}
+                continue
 
-        return jsonify({
-            'symbol': symbol,
-            'name': SUPPORTED_INDICES[symbol],
-            'period': period,
-            'data': data_points,
-            'current_price': last_close,
-            'change': change,
-            'change_pct': round(change_pct, 2)
-        })
+            # Format data for chart
+            data_points = []
+            for idx, row in hist.iterrows():
+                if pd.isna(row['Close']):
+                    continue
+                data_points.append({
+                    'timestamp': idx.isoformat(),
+                    'close': float(row['Close']),
+                    'open': float(row['Open']) if 'Open' in row else None,
+                    'high': float(row['High']) if 'High' in row else None,
+                    'low': float(row['Low']) if 'Low' in row else None,
+                    'volume': int(row['Volume']) if 'Volume' in row and pd.notna(row['Volume']) else None
+                })
+
+            if not data_points:
+                results[symbol] = {'error': 'No valid data points'}
+                continue
+
+            # Calculate change from first to last
+            first_close = data_points[0]['close']
+            last_close = data_points[-1]['close']
+            change = last_close - first_close
+            change_pct = (change / first_close * 100) if first_close else 0
+
+            results[symbol] = {
+                'symbol': symbol,
+                'name': SUPPORTED_INDICES[symbol],
+                'period': period,
+                'data': data_points,
+                'current_price': last_close,
+                'change': change,
+                'change_pct': round(change_pct, 2)
+            }
+
+        # If only one symbol was requested, return it directly for backward compatibility
+        if len(symbol_list) == 1:
+            return jsonify(results[symbol_list[0]])
+        
+        return jsonify(results)
 
     except Exception as e:
-        logger.error(f"Error fetching index {symbol}: {e}")
+        logger.error(f"Error fetching indices {symbols}: {e}")
         return jsonify({'error': str(e)}), 500
 
 

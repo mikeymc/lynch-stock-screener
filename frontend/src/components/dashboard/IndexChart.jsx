@@ -1,12 +1,11 @@
 // ABOUTME: Market index chart with selector for S&P 500, Nasdaq, Dow Jones
 // ABOUTME: Shows price history with period toggles (1D, 1W, 1M, 3M, YTD, 1Y)
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Skeleton } from "@/components/ui/skeleton"
-import { TrendingUp, TrendingDown } from 'lucide-react'
+import { TrendingUp, TrendingDown, Check } from 'lucide-react'
 import { Line } from 'react-chartjs-2'
 import {
     Chart as ChartJS,
@@ -15,7 +14,8 @@ import {
     PointElement,
     LineElement,
     Tooltip,
-    Filler
+    Filler,
+    Legend
 } from 'chart.js'
 
 ChartJS.register(
@@ -24,7 +24,8 @@ ChartJS.register(
     PointElement,
     LineElement,
     Tooltip,
-    Filler
+    Filler,
+    Legend
 )
 
 // Plugin to draw a dashed zero line
@@ -43,7 +44,7 @@ const zeroLinePlugin = {
             ctx.beginPath();
             ctx.moveTo(xAxis.left, y);
             ctx.lineTo(xAxis.right, y);
-            ctx.lineWidth = 2;
+            ctx.lineWidth = 1;
             ctx.strokeStyle = 'rgba(255, 255, 255, 0.2)';
             ctx.setLineDash([6, 4]);
             ctx.stroke();
@@ -52,44 +53,10 @@ const zeroLinePlugin = {
     }
 };
 
-// Plugin to draw synchronized crosshair
-const crosshairPlugin = {
-    id: 'crosshair',
-    afterDraw: (chart) => {
-        // Get activeIndex from options
-        const index = chart.config.options.plugins.crosshair?.activeIndex;
-
-        if (index === null || index === undefined || index === -1) return;
-
-        const ctx = chart.ctx;
-        const yAxis = chart.scales.y;
-
-        // Ensure dataset meta exists
-        const meta = chart.getDatasetMeta(0);
-        if (!meta || !meta.data) return;
-
-        const point = meta.data[index];
-
-        if (point) {
-            const x = point.x;
-
-            ctx.save();
-            ctx.beginPath();
-            ctx.moveTo(x, yAxis.top);
-            ctx.lineTo(x, yAxis.bottom);
-            ctx.lineWidth = 1;
-            ctx.strokeStyle = 'rgba(255, 255, 255, 0.8)'; // Bright white line
-            ctx.setLineDash([5, 5]);
-            ctx.stroke();
-            ctx.restore();
-        }
-    }
-};
-
 const INDICES = [
-    { symbol: '^GSPC', name: 'S&P 500' },
-    { symbol: '^IXIC', name: 'Nasdaq' },
-    { symbol: '^DJI', name: 'Dow Jones' }
+    { symbol: '^GSPC', name: 'S&P 500', color: '#22c55e' },
+    { symbol: '^IXIC', name: 'Nasdaq', color: '#3b82f6' },
+    { symbol: '^DJI', name: 'Dow Jones', color: '#f97316' }
 ]
 
 const PERIODS = [
@@ -102,12 +69,22 @@ const PERIODS = [
 ]
 
 export default function IndexChart() {
-    const [selectedIndex, setSelectedIndex] = useState('^GSPC')
+    const [selectedSymbols, setSelectedSymbols] = useState(['^GSPC'])
     const [selectedPeriod, setSelectedPeriod] = useState('1mo')
     const [data, setData] = useState(null)
     const [loading, setLoading] = useState(true)
     const [error, setError] = useState(null)
     const [activeIndex, setActiveIndex] = useState(null)
+
+    const toggleSymbol = (symbol) => {
+        setSelectedSymbols(prev => {
+            if (prev.includes(symbol)) {
+                if (prev.length === 1) return prev // Keep at least one
+                return prev.filter(s => s !== symbol)
+            }
+            return [...prev, symbol]
+        })
+    }
 
     const handleHover = (event, elements) => {
         if (elements && elements.length > 0) {
@@ -121,10 +98,17 @@ export default function IndexChart() {
 
     useEffect(() => {
         const fetchIndexData = async () => {
+            if (selectedSymbols.length === 0) {
+                setData(null)
+                setLoading(false)
+                return
+            }
+
             setLoading(true)
             setError(null)
             try {
-                const response = await fetch(`/api/market/index/${selectedIndex}?period=${selectedPeriod}`)
+                const symbols = INDICES.map(idx => idx.symbol).join(',')
+                const response = await fetch(`/api/market/index/${symbols}?period=${selectedPeriod}`)
                 if (response.ok) {
                     const result = await response.json()
                     setData(result)
@@ -141,41 +125,80 @@ export default function IndexChart() {
         }
 
         fetchIndexData()
-    }, [selectedIndex, selectedPeriod])
+    }, [selectedSymbols, selectedPeriod])
 
-    const isPositive = data && data.change >= 0
+    const chartData = useMemo(() => {
+        if (!data) return null
 
-    const chartData = data ? {
-        labels: data.data.map(d => formatLabel(d.timestamp, selectedPeriod)),
-        datasets: [{
-            data: data.data.map(d => d.close),
-            borderColor: isPositive ? '#22c55e' : '#ef4444',
-            backgroundColor: isPositive
-                ? 'rgba(34, 197, 94, 0.1)'
-                : 'rgba(239, 68, 68, 0.1)',
-            fill: true,
-            tension: 0.1,
-            pointRadius: activeIndex !== null ? 3 : 0,
-            pointHoverRadius: 5,
-            borderWidth: 1.5
-        }]
-    } : null
+        // Detect data shape: single symbol vs multi-symbol dictionary
+        const isSingleSymbolResponse = data && typeof data === 'object' && 'symbol' in data
+        const datasetsMap = isSingleSymbolResponse
+            ? { [data.symbol]: data }
+            : data
+
+        // Only process keys that correspond to our indices AND have valid data
+        const symbols = Object.keys(datasetsMap).filter(s =>
+            INDICES.some(idx => idx.symbol === s) &&
+            datasetsMap[s] &&
+            !datasetsMap[s].error &&
+            Array.isArray(datasetsMap[s].data)
+        )
+
+        if (symbols.length === 0) return null
+
+        // Use the first symbol's data for labels
+        const firstSymbol = symbols[0]
+        const labels = datasetsMap[firstSymbol].data.map(d => formatLabel(d.timestamp, selectedPeriod))
+
+        const datasets = symbols.map(symbol => {
+            const indexInfo = INDICES.find(i => i.symbol === symbol)
+            const symbolData = datasetsMap[symbol]
+            const rawData = symbolData.data.map(d => d.close)
+
+            // Normalize if we have multiple indices
+            const isMulti = symbols.length > 1
+            const firstVal = rawData[0] || 1
+            const processedData = isMulti
+                ? rawData.map(v => ((v - firstVal) / firstVal) * 100)
+                : rawData
+
+            return {
+                label: indexInfo.name,
+                data: processedData,
+                borderColor: indexInfo.color,
+                backgroundColor: `${indexInfo.color}1a`, // 10% opacity
+                fill: !isMulti, // Only fill if single index for cleaner view
+                tension: 0.1,
+                pointRadius: activeIndex !== null ? 3 : 0,
+                pointHoverRadius: 5,
+                borderWidth: 1.5
+            }
+        })
+
+        return { labels, datasets }
+    }, [data, selectedSymbols, selectedPeriod, activeIndex])
 
     const chartOptions = {
         responsive: true,
         maintainAspectRatio: false,
         onHover: handleHover,
         plugins: {
-            legend: { display: false },
+            legend: {
+                display: false // We'll show our own legend via checkboxes
+            },
             tooltip: {
                 mode: 'index',
                 intersect: false,
                 callbacks: {
-                    label: (context) => `$${context.raw?.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                    label: (context) => {
+                        const isMulti = selectedSymbols.length > 1
+                        const val = context.raw
+                        if (isMulti) {
+                            return `${context.dataset.label}: ${val >= 0 ? '+' : ''}${val.toFixed(2)}%`
+                        }
+                        return `${context.dataset.label}: $${val?.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                    }
                 }
-            },
-            crosshair: {
-                activeIndex: activeIndex
             }
         },
         scales: {
@@ -194,15 +217,16 @@ export default function IndexChart() {
                 display: true,
                 position: 'right',
                 grid: {
-                    color: (context) => {
-                        if (Math.abs(context.tick.value) < 0.00001) return 'transparent';
-                        return 'rgba(100, 116, 139, 0.1)';
-                    }
+                    color: 'rgba(100, 116, 139, 0.1)'
                 },
                 ticks: {
                     font: { size: 10 },
                     color: '#64748b',
-                    callback: (value) => value.toLocaleString()
+                    callback: (value) => {
+                        const isMulti = selectedSymbols.length > 1
+                        if (isMulti) return `${value >= 0 ? '+' : ''}${value}%`
+                        return value.toLocaleString()
+                    }
                 }
             }
         },
@@ -213,35 +237,12 @@ export default function IndexChart() {
     }
 
     return (
-        <Card>
-            <CardHeader className="pb-2">
+        <Card className="h-full">
+            <CardHeader className="pb-2 space-y-0">
                 <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                        <Select value={selectedIndex} onValueChange={setSelectedIndex}>
-                            <SelectTrigger className="w-[140px] h-8">
-                                <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent>
-                                {INDICES.map(idx => (
-                                    <SelectItem key={idx.symbol} value={idx.symbol}>
-                                        {idx.name}
-                                    </SelectItem>
-                                ))}
-                            </SelectContent>
-                        </Select>
-
-                        {data && !loading && (
-                            <div className="flex items-center gap-2">
-                                <span className="text-lg font-semibold">
-                                    {data.current_price?.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                                </span>
-                                <span className={`flex items-center text-sm ${isPositive ? 'text-green-500' : 'text-red-500'}`}>
-                                    {isPositive ? <TrendingUp className="h-4 w-4 mr-1" /> : <TrendingDown className="h-4 w-4 mr-1" />}
-                                    {isPositive ? '+' : ''}{data.change_pct?.toFixed(2)}%
-                                </span>
-                            </div>
-                        )}
-                    </div>
+                    <CardTitle className="text-base font-medium flex items-center gap-2">
+                        Market Indices
+                    </CardTitle>
 
                     <div className="flex gap-1">
                         {PERIODS.map(p => (
@@ -260,16 +261,54 @@ export default function IndexChart() {
             </CardHeader>
             <CardContent>
                 {loading ? (
-                    <Skeleton className="h-48 w-full" />
+                    <div className="h-48 w-full flex flex-col gap-2">
+                        <Skeleton className="h-full w-full rounded-xl" />
+                    </div>
                 ) : error ? (
-                    <div className="h-48 flex items-center justify-center text-muted-foreground">
+                    <div className="h-48 flex items-center justify-center text-sm text-muted-foreground bg-muted/20 rounded-xl border border-dashed">
                         {error}
                     </div>
                 ) : chartData ? (
                     <div className="h-48" onMouseLeave={handleMouseLeave}>
-                        <Line data={chartData} options={chartOptions} plugins={[zeroLinePlugin, crosshairPlugin]} />
+                        <Line data={chartData} options={chartOptions} plugins={[zeroLinePlugin]} />
                     </div>
                 ) : null}
+
+                <div className="mt-4 flex flex-col">
+                    {INDICES.map(idx => {
+                        const isSelected = selectedSymbols.includes(idx.symbol)
+                        const symbolData = data && !loading && !data.error ? data[idx.symbol] : null
+
+                        return (
+                            <div key={idx.symbol} className="flex items-center justify-between h-8 px-1 rounded-md hover:bg-accent/50 transition-colors">
+                                <button
+                                    onClick={() => toggleSymbol(idx.symbol)}
+                                    className={`flex items-center gap-2 text-xs font-medium transition-colors hover:text-foreground text-left ${isSelected ? 'text-foreground' : 'text-muted-foreground'}`}
+                                >
+                                    <div
+                                        className={`w-4 h-4 rounded border flex items-center justify-center transition-all ${isSelected ? 'border-none' : 'border-muted'}`}
+                                        style={{ backgroundColor: isSelected ? idx.color : 'transparent' }}
+                                    >
+                                        {isSelected && <Check className="h-3 w-3 text-white" />}
+                                    </div>
+                                    {idx.name}
+                                </button>
+
+                                {symbolData && !symbolData.error && (
+                                    <div className="flex items-center gap-3 text-xs font-medium">
+                                        <span className="text-foreground">
+                                            {symbolData.current_price?.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                        </span>
+                                        <span className={`flex items-center ${symbolData.change >= 0 ? 'text-green-500' : 'text-red-500'}`}>
+                                            {symbolData.change >= 0 ? <TrendingUp className="h-3 w-3 mr-0.5" /> : <TrendingDown className="h-3 w-3 mr-0.5" />}
+                                            {symbolData.change_pct}%
+                                        </span>
+                                    </div>
+                                )}
+                            </div>
+                        )
+                    })}
+                </div>
             </CardContent>
         </Card>
     )
@@ -280,7 +319,9 @@ function formatLabel(timestamp, period) {
     if (period === '1d') {
         return date.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })
     } else if (period === '5d') {
-        return date.toLocaleDateString('en-US', { weekday: 'short', hour: 'numeric' })
+        const day = date.toLocaleDateString('en-US', { weekday: 'short' })
+        const time = date.toLocaleTimeString('en-US', { hour: 'numeric' })
+        return `${day} ${time}`
     } else {
         return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
     }
