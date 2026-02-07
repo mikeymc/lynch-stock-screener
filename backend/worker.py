@@ -3619,8 +3619,9 @@ Return JSON only:
 
 def main():
     """Entry point for worker process"""
+    tier = os.environ.get('WORKER_TIER', 'light')
     logger.info("=" * 60)
-    logger.info("Lynch Stock Screener - Background Worker")
+    logger.info(f"Lynch Stock Screener - Background Worker ({tier.upper()} TIER)")
     logger.info("=" * 60)
     
     # Configure global SEC rate limiter
