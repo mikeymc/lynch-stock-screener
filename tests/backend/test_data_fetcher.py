@@ -45,7 +45,7 @@ def test_fetch_stock_data_from_cache(fetcher, test_db):
     assert result['pe_ratio'] > 0
 
 
-@patch('data_fetcher.yf.Ticker')
+@patch('data_fetcher.core.yf.Ticker')
 def test_fetch_stock_data_not_cached(mock_ticker, fetcher):
     from edgar_fetcher import EdgarFetcher
     with patch.object(EdgarFetcher, 'fetch_stock_fundamentals', return_value=None):
@@ -81,7 +81,7 @@ def test_fetch_stock_data_not_cached(mock_ticker, fetcher):
         assert result['price'] == 380.50
 
 
-@patch('data_fetcher.yf.Ticker')
+@patch('data_fetcher.core.yf.Ticker')
 def test_fetch_stock_data_force_refresh(mock_ticker, fetcher, test_db):
     from edgar_fetcher import EdgarFetcher
     with patch.object(EdgarFetcher, 'fetch_stock_fundamentals', return_value=None):
@@ -121,7 +121,7 @@ def test_fetch_stock_data_force_refresh(mock_ticker, fetcher, test_db):
         assert result['price'] == 155.75
 
 
-@patch('data_fetcher.yf.Ticker')
+@patch('data_fetcher.core.yf.Ticker')
 def test_fetch_stock_data_missing_info(mock_ticker, fetcher):
     mock_stock = MagicMock()
     mock_stock.info = {}
@@ -136,7 +136,7 @@ def test_fetch_stock_data_missing_info(mock_ticker, fetcher):
     assert result is None
 
 
-@patch('data_fetcher.yf.Ticker')
+@patch('data_fetcher.core.yf.Ticker')
 def test_fetch_multiple_stocks(mock_ticker, fetcher):
     from edgar_fetcher import EdgarFetcher
     with patch.object(EdgarFetcher, 'fetch_stock_fundamentals', return_value=None):
@@ -174,7 +174,7 @@ def test_fetch_multiple_stocks(mock_ticker, fetcher):
 def test_fetch_stock_data_stores_in_db(fetcher, test_db):
     from edgar_fetcher import EdgarFetcher
     with patch.object(EdgarFetcher, 'fetch_stock_fundamentals', return_value=None):
-        with patch('data_fetcher.yf.Ticker') as mock_ticker:
+        with patch('data_fetcher.core.yf.Ticker') as mock_ticker:
             mock_stock = MagicMock()
             mock_stock.info = {
                 'symbol': 'TEST',
@@ -204,7 +204,7 @@ def test_fetch_stock_data_stores_in_db(fetcher, test_db):
             assert cached['price'] == 50.0
 
 
-@patch('data_fetcher.pd.read_csv')
+@patch('data_fetcher.core.pd.read_csv')
 def test_get_nyse_nasdaq_symbols_returns_list(mock_read_csv, fetcher):
     mock_df_nyse = MagicMock()
     mock_df_nyse.__getitem__.return_value.tolist.return_value = ['AAPL', 'IBM', 'MSFT']
@@ -222,7 +222,7 @@ def test_get_nyse_nasdaq_symbols_returns_list(mock_read_csv, fetcher):
     assert 'GOOGL' in symbols
 
 
-@patch('data_fetcher.yf.Ticker')
+@patch('data_fetcher.core.yf.Ticker')
 def test_hybrid_fetch_uses_edgar_for_fundamentals(mock_ticker, test_db):
     from edgar_fetcher import EdgarFetcher
     with patch.object(EdgarFetcher, 'fetch_stock_fundamentals') as mock_edgar:
@@ -287,7 +287,7 @@ def test_hybrid_fetch_uses_edgar_for_fundamentals(mock_ticker, test_db):
         assert metrics['debt_to_equity'] == 4.67
 
 
-@patch('data_fetcher.yf.Ticker')
+@patch('data_fetcher.core.yf.Ticker')
 def test_hybrid_fallback_to_yfinance_when_edgar_fails(mock_ticker, test_db):
     from edgar_fetcher import EdgarFetcher
     with patch.object(EdgarFetcher, 'fetch_stock_fundamentals') as mock_edgar:
@@ -318,7 +318,7 @@ def test_hybrid_fallback_to_yfinance_when_edgar_fails(mock_ticker, test_db):
         assert result['debt_to_equity'] == 0.3
 
 
-@patch('data_fetcher.yf.Ticker')
+@patch('data_fetcher.core.yf.Ticker')
 def test_logging_edgar_attempt(mock_ticker, test_db, caplog):
     """Test that EDGAR fetch attempts are logged"""
     from edgar_fetcher import EdgarFetcher
@@ -349,7 +349,7 @@ def test_logging_edgar_attempt(mock_ticker, test_db, caplog):
         assert any("Attempting EDGAR fetch" in record.message for record in caplog.records)
 
 
-@patch('data_fetcher.yf.Ticker')
+@patch('data_fetcher.core.yf.Ticker')
 def test_logging_edgar_success_with_year_counts(mock_ticker, test_db, caplog):
     """Test that successful EDGAR fetch logs the number of years retrieved"""
     from edgar_fetcher import EdgarFetcher
@@ -420,7 +420,7 @@ def test_logging_edgar_success_with_year_counts(mock_ticker, test_db, caplog):
         assert any("EDGAR returned" in record.message and "10" in record.message for record in caplog.records)
 
 
-@patch('data_fetcher.yf.Ticker')
+@patch('data_fetcher.core.yf.Ticker')
 def test_logging_fallback_to_yfinance_with_reason(mock_ticker, test_db, caplog):
     """Test that fallback to yfinance is logged with the reason"""
     from edgar_fetcher import EdgarFetcher
@@ -451,7 +451,7 @@ def test_logging_fallback_to_yfinance_with_reason(mock_ticker, test_db, caplog):
         assert any("EDGAR fetch failed" in record.message or "Using yfinance" in record.message for record in caplog.records)
 
 
-@patch('data_fetcher.yf.Ticker')
+@patch('data_fetcher.core.yf.Ticker')
 def test_logging_yfinance_data_completeness_warning(mock_ticker, test_db, caplog):
     """Test that warnings are logged when yfinance returns limited years"""
     from edgar_fetcher import EdgarFetcher
@@ -489,7 +489,7 @@ def test_logging_yfinance_data_completeness_warning(mock_ticker, test_db, caplog
         assert any("only 3 years" in record.message or "limited" in record.message.lower() for record in caplog.records)
 
 
-@patch('data_fetcher.yf.Ticker')
+@patch('data_fetcher.core.yf.Ticker')
 def test_hybrid_partial_edgar_data_uses_available_years(mock_ticker, test_db):
     """Test that when EDGAR has mismatched EPS/revenue years, we store what we can"""
     from edgar_fetcher import EdgarFetcher
@@ -565,7 +565,7 @@ def test_hybrid_partial_edgar_data_uses_available_years(mock_ticker, test_db):
         assert earnings[7]['year'] == 2016
 
 
-@patch('data_fetcher.yf.Ticker')
+@patch('data_fetcher.core.yf.Ticker')
 def test_hybrid_uses_edgar_when_sufficient_years(mock_ticker, test_db):
     """Test that EDGAR is used when it has >= 5 years of matched data"""
     from edgar_fetcher import EdgarFetcher
@@ -624,7 +624,7 @@ def test_hybrid_uses_edgar_when_sufficient_years(mock_ticker, test_db):
         assert len(earnings) == 5
 
 
-@patch('data_fetcher.yf.Ticker')
+@patch('data_fetcher.core.yf.Ticker')
 def test_hybrid_falls_back_when_insufficient_edgar_years(mock_ticker, test_db):
     """Test that we fall back to yfinance when EDGAR has < 5 years"""
     from edgar_fetcher import EdgarFetcher
