@@ -136,9 +136,9 @@ export default function IndexChart() {
             ? { [data.symbol]: data }
             : data
 
-        // Only process keys that correspond to our indices AND have valid data
+        // Only process keys that are selected AND have valid data
         const symbols = Object.keys(datasetsMap).filter(s =>
-            INDICES.some(idx => idx.symbol === s) &&
+            selectedSymbols.includes(s) &&
             datasetsMap[s] &&
             !datasetsMap[s].error &&
             Array.isArray(datasetsMap[s].data)
