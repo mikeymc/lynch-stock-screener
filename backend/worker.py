@@ -32,6 +32,10 @@ from dotenv import load_dotenv
 load_dotenv()  # Load from .env in current directory
 load_dotenv('../.env')  # Also try parent directory
 
+# CRITICAL: Disable EDGAR caching BEFORE any other imports that use edgartools
+from sec_rate_limiter import configure_edgartools_rate_limit
+configure_edgartools_rate_limit()
+
 import os
 import sys
 import time
@@ -56,7 +60,7 @@ from dividend_manager import DividendManager
 import portfolio_service  # Import portfolio service for automated trading
 
 # Import global rate limiter for SEC API (shared across all threads)
-from sec_rate_limiter import SEC_RATE_LIMITER, configure_edgartools_rate_limit
+from sec_rate_limiter import SEC_RATE_LIMITER
 
 # Setup logging
 logging.basicConfig(
@@ -3624,8 +3628,7 @@ def main():
     logger.info(f"Lynch Stock Screener - Background Worker ({tier.upper()} TIER)")
     logger.info("=" * 60)
     
-    # Configure global SEC rate limiter
-    configure_edgartools_rate_limit()
+    # Configure global SEC rate limiter done at top level
     logger.info(f"SEC Rate Limiter: {SEC_RATE_LIMITER.get_stats()}")
 
     worker = BackgroundWorker()

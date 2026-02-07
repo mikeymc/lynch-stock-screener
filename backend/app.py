@@ -26,6 +26,10 @@ from email_service import send_verification_email
 
 # Load environment variables from .env file
 load_dotenv()
+
+# CRITICAL: Disable EDGAR caching BEFORE any other imports that use edgartools
+from sec_rate_limiter import configure_edgartools_rate_limit
+configure_edgartools_rate_limit()
 from data_fetcher import DataFetcher
 from earnings_analyzer import EarningsAnalyzer
 from lynch_criteria import LynchCriteria, ALGORITHM_METADATA
