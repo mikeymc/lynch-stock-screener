@@ -609,6 +609,7 @@ def create_job():
             'transcript_cache', 
             'quarterly_fundamentals_cache',
             'strategy_execution',
+            'thesis_refresher',
             'outlook_cache'
         }
         if job_type in heavy_jobs:
