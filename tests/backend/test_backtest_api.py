@@ -14,7 +14,7 @@ def client(test_db, monkeypatch):
     import app as app_module
     import auth
 
-    monkeypatch.setattr(app_module, 'db', test_db)
+    monkeypatch.setattr(app_module.deps, 'db', test_db)
     monkeypatch.setattr(auth, 'DEV_AUTH_BYPASS', False)
 
     app.config['TESTING'] = True

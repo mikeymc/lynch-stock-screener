@@ -114,29 +114,29 @@ class TestCachedAPIEndpoints:
         
         return db
     
-    @patch('app.db')
+    @patch('app.deps.db')
     def test_history_endpoint_uses_cache(self, mock_db_patch, mock_db):
         """Test that /api/stock/<symbol>/history uses cached data"""
         # This would require actual Flask app testing
         # Verify no external API calls are made
         assert True  # Placeholder for integration test
     
-    @patch('app.db')
+    @patch('app.deps.db')
     def test_filings_endpoint_uses_cache(self, mock_db_patch, mock_db):
         """Test that /api/stock/<symbol>/filings uses cached data"""
         assert True  # Placeholder for integration test
     
-    @patch('app.db')
+    @patch('app.deps.db')
     def test_sections_endpoint_uses_cache(self, mock_db_patch, mock_db):
         """Test that /api/stock/<symbol>/sections uses cached data"""
         assert True  # Placeholder for integration test
     
-    @patch('app.db')
+    @patch('app.deps.db')
     def test_news_endpoint_uses_cache(self, mock_db_patch, mock_db):
         """Test that /api/stock/<symbol>/news uses cached data"""
         assert True  # Placeholder for integration test
     
-    @patch('app.db')
+    @patch('app.deps.db')
     def test_events_endpoint_uses_cache(self, mock_db_patch, mock_db):
         """Test that /api/stock/<symbol>/material-events uses cached data"""
         assert True  # Placeholder for integration test

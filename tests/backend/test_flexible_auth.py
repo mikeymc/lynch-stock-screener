@@ -18,10 +18,10 @@ def client(test_db, monkeypatch):
     import app as app_module
 
     # Replace app's db with test_db
-    monkeypatch.setattr(app_module, 'db', test_db)
+    monkeypatch.setattr(app_module.deps, 'db', test_db)
     
     # Disable API token authentication by default (tests can override)
-    monkeypatch.setattr(app_module, 'API_AUTH_TOKEN', None)
+    monkeypatch.setattr(app_module.deps, 'API_AUTH_TOKEN', None)
 
     app.config['TESTING'] = True
     with app.test_client() as client:
@@ -34,7 +34,7 @@ class TestFlexibleAuthentication:
     def test_create_job_without_auth_when_no_token_configured(self, client, test_db, monkeypatch):
         """Test that job creation works without auth when API_AUTH_TOKEN not configured"""
         import app as app_module
-        monkeypatch.setattr(app_module, 'API_AUTH_TOKEN', None)
+        monkeypatch.setattr(app_module.deps, 'API_AUTH_TOKEN', None)
 
         response = client.post('/api/jobs',
             data=json.dumps({'type': 'test_screening', 'params': {}}),
@@ -45,7 +45,7 @@ class TestFlexibleAuthentication:
     def test_create_job_with_oauth_session(self, client, test_db, monkeypatch):
         """Test that job creation works with OAuth session"""
         import app as app_module
-        monkeypatch.setattr(app_module, 'API_AUTH_TOKEN', 'test-token')
+        monkeypatch.setattr(app_module.deps, 'API_AUTH_TOKEN', 'test-token')
 
         # Simulate OAuth session
         with client.session_transaction() as sess:
@@ -60,7 +60,7 @@ class TestFlexibleAuthentication:
     def test_create_job_with_api_token(self, client, test_db, monkeypatch):
         """Test that job creation works with API token"""
         import app as app_module
-        monkeypatch.setattr(app_module, 'API_AUTH_TOKEN', 'test-token')
+        monkeypatch.setattr(app_module.deps, 'API_AUTH_TOKEN', 'test-token')
 
         response = client.post('/api/jobs',
             data=json.dumps({'type': 'test_screening', 'params': {}}),
@@ -72,8 +72,9 @@ class TestFlexibleAuthentication:
     def test_create_job_fails_without_auth_when_token_configured(self, client, test_db, monkeypatch):
         """Test that job creation fails without auth when API_AUTH_TOKEN is configured"""
         import app as app_module
-        monkeypatch.setattr(app_module, 'API_AUTH_TOKEN', 'test-token')
-        monkeypatch.setattr(app_module, 'DEV_AUTH_BYPASS', False)
+        monkeypatch.setattr(app_module.deps, 'API_AUTH_TOKEN', 'test-token')
+        import app.jobs as app_jobs_module
+        monkeypatch.setattr(app_jobs_module, 'DEV_AUTH_BYPASS', False)
 
         response = client.post('/api/jobs',
             data=json.dumps({'type': 'test_screening', 'params': {}}),

@@ -19,7 +19,7 @@ def client(test_db, monkeypatch):
     import app as app_module
 
     # Replace app's db with test_db
-    monkeypatch.setattr(app_module, 'db', test_db)
+    monkeypatch.setattr(app_module.deps, 'db', test_db)
 
     app.config['TESTING'] = True
     with app.test_client() as client:
@@ -87,7 +87,7 @@ def test_lynch_analysis_endpoint_returns_cached_analysis(client, test_db, monkey
     import app as app_module
     from lynch_analyst import LynchAnalyst
 
-    monkeypatch.setattr(app_module, 'stock_analyst', LynchAnalyst(test_db))
+    monkeypatch.setattr(app_module.deps, 'stock_analyst', LynchAnalyst(test_db))
 
     # Set up test data
     symbol = "AAPL"
@@ -145,7 +145,7 @@ def test_lynch_analysis_endpoint_generates_fresh_analysis(mock_client_class, cli
     mock_client_class.return_value = mock_client
 
     # NOW create LynchAnalyst with the mocked client
-    monkeypatch.setattr(app_module, 'stock_analyst', LynchAnalyst(test_db))
+    monkeypatch.setattr(app_module.deps, 'stock_analyst', LynchAnalyst(test_db))
 
     # Set up test stock and earnings data
     symbol = "AAPL"
@@ -198,7 +198,7 @@ def test_lynch_analysis_refresh_endpoint(mock_client_class, client, test_db, mon
     mock_client_class.return_value = mock_client
 
     # NOW create LynchAnalyst with the mocked client
-    monkeypatch.setattr(app_module, 'stock_analyst', LynchAnalyst(test_db))
+    monkeypatch.setattr(app_module.deps, 'stock_analyst', LynchAnalyst(test_db))
 
     # Set up test stock and earnings data
     symbol = "AAPL"
@@ -334,7 +334,7 @@ def test_fred_api_accessible_regardless_of_ui_flag(client, test_db, monkeypatch)
         'unemployment': {'value': 3.7, 'date': '2024-01-01'}
     }
 
-    with patch('app.get_fred_service', return_value=mock_fred_service):
+    with patch('app.dashboard.get_fred_service', return_value=mock_fred_service):
         # FRED API endpoint should still work
         response = client.get('/api/fred/summary')
 

@@ -235,7 +235,7 @@ class TestHistoryEndpointIntegration:
         import app as app_module
 
         # Replace app's db with test_db
-        monkeypatch.setattr(app_module, 'db', test_db)
+        monkeypatch.setattr(app_module.deps, 'db', test_db)
 
         from app import app
         app.config['TESTING'] = True

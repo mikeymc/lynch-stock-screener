@@ -15,7 +15,7 @@ def client(test_db, monkeypatch):
     import app as app_module
 
     # Replace app's db with test_db
-    monkeypatch.setattr(app_module, 'db', test_db)
+    monkeypatch.setattr(app_module.deps, 'db', test_db)
 
     app.config['TESTING'] = True
     with app.test_client() as client:
@@ -54,7 +54,7 @@ def test_caching(client, test_db, monkeypatch):
         'narrative': 'Test unified narrative analysis for Amazon'
     }
     mock_analyst.model_version = "test-model"
-    monkeypatch.setattr(app_module, 'stock_analyst', mock_analyst)
+    monkeypatch.setattr(app_module.deps, 'stock_analyst', mock_analyst)
 
     # Set session user_id
     with client.session_transaction() as sess:

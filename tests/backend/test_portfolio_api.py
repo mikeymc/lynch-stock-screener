@@ -20,7 +20,7 @@ def client(test_db, monkeypatch):
     import auth
 
     # Replace app's db with test_db
-    monkeypatch.setattr(app_module, 'db', test_db)
+    monkeypatch.setattr(app_module.deps, 'db', test_db)
 
     # Disable dev auth bypass so auth tests work correctly
     monkeypatch.setattr(auth, 'DEV_AUTH_BYPASS', False)
