@@ -114,9 +114,9 @@ class TestSQLQuery:
         """
         # Read the actual SQL from the function
         import re
-        with open(PROJECT_ROOT / 'backend' / 'database.py', 'r') as f:
+        with open(PROJECT_ROOT / 'backend' / 'database' / 'stocks.py', 'r') as f:
             content = f.read()
-        
+
         # Find the has_recent_insider_trades function
         match = re.search(
             r'def has_recent_insider_trades\(.*?\n(.*?)(?=\n    def |\nclass |\Z)',
@@ -143,9 +143,9 @@ class TestSQLQuery:
         ```
         """
         import re
-        with open(PROJECT_ROOT / 'backend' / 'database.py', 'r') as f:
+        with open(PROJECT_ROOT / 'backend' / 'database' / 'stocks.py', 'r') as f:
             content = f.read()
-        
+
         # Find the function and check return statement
         match = re.search(
             r'def has_recent_insider_trades\(.*?\n(.*?)(?=\n    def |\nclass |\Z)',
