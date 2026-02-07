@@ -20,8 +20,8 @@ class TestTradingAlerts(unittest.TestCase):
         self.worker.db = MagicMock()
         self.worker._llm_client = MagicMock()
 
-        # Mock portfolio service (it's imported in worker, so we patch it there)
-        self.patcher = patch('worker.portfolio_service')
+        # Mock portfolio service (it's imported in worker.alert_jobs, so we patch it there)
+        self.patcher = patch('worker.alert_jobs.portfolio_service')
         self.mock_portfolio_service = self.patcher.start()
 
     def tearDown(self):

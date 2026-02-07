@@ -126,7 +126,7 @@ def test_lynch_analysis_endpoint_returns_cached_analysis(client, test_db, monkey
     assert 'generated_at' in data
 
 
-@patch('stock_analyst.genai.Client')
+@patch('stock_analyst.core.genai.Client')
 def test_lynch_analysis_endpoint_generates_fresh_analysis(mock_client_class, client, test_db, monkeypatch):
     """Test that /api/stock/<symbol>/thesis generates fresh analysis when cache is empty"""
     import app as app_module
@@ -179,7 +179,7 @@ def test_lynch_analysis_endpoint_generates_fresh_analysis(mock_client_class, cli
     assert 'generated_at' in data
 
 
-@patch('stock_analyst.genai.Client')
+@patch('stock_analyst.core.genai.Client')
 def test_lynch_analysis_refresh_endpoint(mock_client_class, client, test_db, monkeypatch):
     """Test that POST /api/stock/<symbol>/thesis/refresh forces regeneration"""
     import app as app_module

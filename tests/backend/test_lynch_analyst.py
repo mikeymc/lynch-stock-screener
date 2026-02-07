@@ -98,7 +98,7 @@ def test_format_prompt_requests_specific_length(test_db, sample_stock_data, samp
     assert '1000' in prompt
 
 
-@patch('stock_analyst.genai.Client')
+@patch('stock_analyst.core.genai.Client')
 def test_generate_analysis_calls_gemini_api(mock_client_class, test_db, sample_stock_data, sample_history):
     """Test that analysis generation properly calls Gemini API stream"""
     # Setup mock
@@ -141,7 +141,7 @@ def test_generate_analysis_calls_gemini_api(mock_client_class, test_db, sample_s
     assert "This is a Peter Lynch style analysis of Apple." in result
 
 
-@patch('stock_analyst.genai.Client')
+@patch('stock_analyst.core.genai.Client')
 def test_generate_analysis_handles_api_error(mock_client_class, test_db, sample_stock_data, sample_history):
     """Test that analysis generation handles API errors gracefully"""
     # Setup mock to raise an error
@@ -187,7 +187,7 @@ def test_get_or_generate_uses_cache(test_db, sample_stock_data, sample_history):
     assert result == cached_text
 
 
-@patch('stock_analyst.genai.Client')
+@patch('stock_analyst.core.genai.Client')
 def test_get_or_generate_bypasses_cache_when_requested(mock_client_class, test_db, sample_stock_data, sample_history):
     """Test that get_or_generate_analysis can bypass cache"""
     # Create a test user
@@ -223,7 +223,7 @@ def test_get_or_generate_bypasses_cache_when_requested(mock_client_class, test_d
     assert "Fresh new analysis" in result
 
 
-@patch('stock_analyst.genai.Client')
+@patch('stock_analyst.core.genai.Client')
 def test_get_or_generate_saves_to_cache(mock_client_class, test_db, sample_stock_data, sample_history):
     """Test that newly generated analysis is saved to cache"""
     # Create a test user

@@ -163,8 +163,8 @@ class TestWorkerIntegration:
     """Test the worker code integration."""
     
     def test_worker_has_skip_logic(self):
-        """Verify the worker.py has the skip logic implemented."""
-        with open(PROJECT_ROOT / 'backend' / 'worker.py', 'r') as f:
+        """Verify the worker has the skip logic implemented."""
+        with open(PROJECT_ROOT / 'backend' / 'worker' / 'sec_jobs.py', 'r') as f:
             content = f.read()
         
         # Check for the skip logic in _run_form4_cache
@@ -177,7 +177,7 @@ class TestWorkerIntegration:
     
     def test_worker_force_refresh_support(self):
         """Verify the worker supports force_refresh parameter."""
-        with open(PROJECT_ROOT / 'backend' / 'worker.py', 'r') as f:
+        with open(PROJECT_ROOT / 'backend' / 'worker' / 'sec_jobs.py', 'r') as f:
             content = f.read()
         
         # Check for force_refresh handling
