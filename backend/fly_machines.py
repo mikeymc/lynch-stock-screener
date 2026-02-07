@@ -149,6 +149,7 @@ class FlyMachineManager:
             'SEC_USER_AGENT': os.environ.get('SEC_USER_AGENT', ''),
             'EDGAR_IDENTITY': os.environ.get('SEC_USER_AGENT', ''),  # edgartools requires this specific name
             'FINNHUB_API_KEY': os.environ.get('FINNHUB_API_KEY', ''),
+            'EDGAR_USE_LOCAL_DATA': 'False',
         }
 
     def create_worker_machine(self, tier: str = 'light') -> Optional[str]:

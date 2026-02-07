@@ -81,8 +81,12 @@ def configure_edgartools_rate_limit():
     it to be conservative so our global limiter is the bottleneck.
     """
     try:
-        from edgar import set_identity
+        from edgar import set_identity, use_local_storage
         from edgar.httprequests import rate_limiter
+        
+        # Disable local filesystem caching to prevent disk space exhaustion
+        use_local_storage(False)
+        logger.info("Disabled edgartools local storage")
         
         # edgartools uses its own rate limiter - set it to be slightly faster
         # than ours so that our global limiter is the true bottleneck
