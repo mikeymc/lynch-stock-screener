@@ -5,7 +5,7 @@ import requests
 import time
 import logging
 from typing import Dict, List, Optional, Any
-from edgar import Company, set_identity, get_connection
+from edgar import Company, set_identity
 from sec_rate_limiter import SEC_RATE_LIMITER
 import hishel
 
@@ -50,8 +50,6 @@ class EdgarFetcher:
 
         # Set identity for edgartools
         set_identity(user_agent)
-        connection = get_connection()
-        connection.storage = hishel.InMemoryStorage(capacity=50)
 
     def initialize_sec_cache(self, force: bool = False) -> bool:
         """
