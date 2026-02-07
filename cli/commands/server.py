@@ -21,12 +21,12 @@ def start():
     project_root = Path(__file__).parent.parent.parent
     backend_dir = project_root / "backend"
     
-    if not (backend_dir / "app.py").exists():
-        console.print("[bold red]✗ Could not find backend/app.py[/bold red]")
+    if not (backend_dir / "app" / "__init__.py").exists():
+        console.print("[bold red]✗ Could not find backend/app/ package[/bold red]")
         raise typer.Exit(1)
-    
-    if not (backend_dir / "worker.py").exists():
-        console.print("[bold red]✗ Could not find backend/worker.py[/bold red]")
+
+    if not (backend_dir / "worker" / "__init__.py").exists():
+        console.print("[bold red]✗ Could not find backend/worker/ package[/bold red]")
         raise typer.Exit(1)
     
     console.print("[bold blue]🚀 Starting Flask app and worker in split panes...[/bold blue]")
@@ -38,14 +38,14 @@ tell application "iTerm"
         -- Name and start Flask app in current pane
         set name to "local dev server"
         write text "cd {backend_dir}"
-        write text "uv run app.py"
+        write text "uv run python -m app"
         
         -- Split pane horizontally and start worker
         set newSession to (split horizontally with default profile)
         tell newSession
             set name to "local dev worker"
             write text "cd {backend_dir}"
-            write text "export WORKER_IDLE_TIMEOUT=0 && uv run python worker.py"
+            write text "export WORKER_IDLE_TIMEOUT=0 && uv run python -m worker"
         end tell
     end tell
 end tell
@@ -75,7 +75,7 @@ def stop():
         result1 = subprocess.run(['pkill', '-f', 'npm run dev'], capture_output=True)
         
         # Kill worker processes
-        result2 = subprocess.run(['pkill', '-f', 'python worker.py'], capture_output=True)
+        result2 = subprocess.run(['pkill', '-f', 'python -m worker'], capture_output=True)
         
         console.print("[bold green]✓ Stopped all server processes[/bold green]")
         

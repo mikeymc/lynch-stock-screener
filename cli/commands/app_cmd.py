@@ -100,7 +100,7 @@ def start_app_logic(name: str, root_dir: Path, backend_port: Optional[int] = Non
     
     try:
         # 1. Backend
-        backend_cmd = ["uv", "run", "app.py"]
+        backend_cmd = ["uv", "run", "python", "-m", "app"]
         console.print(f"[dim]Starting Backend...[/dim]")
         be_proc = subprocess.Popen(
             backend_cmd, 
@@ -118,7 +118,7 @@ def start_app_logic(name: str, root_dir: Path, backend_port: Optional[int] = Non
         threads.append(t_be)
 
         # 2. Worker
-        worker_cmd = ["uv", "run", "python", "worker.py"]
+        worker_cmd = ["uv", "run", "python", "-m", "worker"]
         console.print(f"[dim]Starting Worker...[/dim]")
         worker_proc = subprocess.Popen(
             worker_cmd, 

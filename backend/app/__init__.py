@@ -208,20 +208,3 @@ app.register_blueprint(agent_bp)
 app.register_blueprint(backtesting_bp)
 app.register_blueprint(dashboard_bp)
 
-
-if __name__ == '__main__':
-    # Start debugpy if ENABLE_DEBUGPY environment variable is set
-    if os.environ.get('ENABLE_DEBUGPY', 'false').lower() == 'true':
-        import debugpy
-        debugpy.listen(('0.0.0.0', 15679))
-        print("⚠️  Debugpy listening on port 15679 - ready for debugger to attach", flush=True)
-
-    try:
-        # Always run the app, even when debugging
-        port = int(os.environ.get('PORT', 8080))
-        print(f"Starting Flask app on port {port}...", flush=True)
-        app.run(debug=False, host='0.0.0.0', port=port)
-    except Exception as e:
-        print(f"CRITICAL ERROR IN MAIN: {e}", flush=True)
-        import time
-        time.sleep(3600)
