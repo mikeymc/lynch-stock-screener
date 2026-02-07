@@ -625,7 +625,7 @@ class BackgroundWorker:
                         self._send_heartbeat(job_id)
 
         # Complete
-        result_message = f"Quarterly fundamentals cached: {success_count} updated, {current_count} already current, {failed_count} failed out of {total} stocks"
+        result_message = f" : {success_count} updated, {current_count} already current, {failed_count} failed out of {total} stocks"
         self.db.complete_job(job_id, result=result_message)
         logger.info(result_message)
 
@@ -3568,7 +3568,7 @@ Return JSON only:
 
                     # Execute the strategy
                     limit = params.get('limit')
-                    result = executor.execute_strategy(strategy_id, limit=limit)
+                    result = executor.execute_strategy(strategy_id, limit=limit, job_id=job_id)
                     results.append({
                         'strategy_id': strategy_id,
                         'name': strategy_name,

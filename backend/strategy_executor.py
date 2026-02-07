@@ -5,6 +5,7 @@ import logging
 from datetime import datetime, date
 from typing import Dict, Any, List, Optional
 from dataclasses import dataclass
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from google import genai
 
 logger = logging.getLogger(__name__)
@@ -899,12 +900,13 @@ class StrategyExecutor:
             )
         return self._holding_reevaluator
 
-    def execute_strategy(self, strategy_id: int, limit: Optional[int] = None) -> Dict[str, Any]:
+    def execute_strategy(self, strategy_id: int, limit: Optional[int] = None, job_id: Optional[int] = None) -> Dict[str, Any]:
         """Execute a strategy run.
         
         Args:
             strategy_id: ID of strategy to run
             limit: Optional limit on number of stocks to score
+            job_id: Optional job ID for progress reporting
             
         Returns:
             Summary of the run with statistics
@@ -994,17 +996,18 @@ class StrategyExecutor:
             self.db.update_strategy_run(run_id, stocks_scored=len(scored))
             print(f"✓ Scored {len(scored)} stocks that passed requirements\n")
 
-            # Phase 3: Generate theses (if required)
+            # Phase 3: Thesis Generation (with parallel processing)
+            # Phase 3: Thesis Generation (with parallel processing)
             print("=" * 60)
             print("PHASE 3: THESIS GENERATION")
             print("=" * 60)
             if conditions.get('require_thesis', False):
                 user_id = strategy.get('user_id')
-                enriched = self._generate_theses(scored, run_id, user_id)
+                enriched = self._generate_theses(scored, run_id, user_id, job_id=job_id)
                 self.db.update_strategy_run(run_id, theses_generated=len(enriched))
-                print(f"✓ Generated {len(enriched)} theses\n")
+                print(f"✓ Generated {len(enriched)} theses\\n")
             else:
-                print("Skipping (thesis not required)\n")
+                print("Skipping (thesis not required)\\n")
                 enriched = scored
 
             # Phase 4: Deliberate (Lynch and Buffett discuss their theses)
@@ -1012,8 +1015,8 @@ class StrategyExecutor:
             print("PHASE 4: DELIBERATION")
             print("=" * 60)
             user_id = strategy.get('user_id')
-            decisions = self._deliberate(enriched, run_id, conditions, user_id)
-            print(f"✓ {len(decisions)} BUY decisions made\n")
+            decisions = self._deliberate(enriched, run_id, conditions, user_id, job_id=job_id)
+            print(f"✓ {len(decisions)} BUY decisions made\\n")
 
             # Phase 4.5: Process dividends (ensures cash reflects latest dividends before trades)
             print("=" * 60)
@@ -1330,9 +1333,10 @@ class StrategyExecutor:
         self,
         scored: List[Dict[str, Any]],
         run_id: int,
-        user_id: int
+        user_id: int,
+        job_id: Optional[int] = None
     ) -> List[Dict[str, Any]]:
-        """Generate investment theses for scored stocks.
+        """Generate investment theses for scored stocks (Parallelized).
 
         Generates theses from BOTH Lynch and Buffett characters, each with
         their own verdict (BUY/WATCH/AVOID).
@@ -1341,17 +1345,21 @@ class StrategyExecutor:
             scored: List of scored stock data
             run_id: Current run ID for logging
             user_id: User ID who owns the strategy (for saving analyses)
+            job_id: Optional job ID for progress reporting
 
         Returns:
             List of stocks enriched with thesis data from both characters
         """
-        self._log_event(run_id, f"Generating theses for {len(scored)} stocks")
+        total = len(scored)
+        self._log_event(run_id, f"Generating theses for {total} stocks")
         enriched = []
 
-        for stock in scored:
+        if not scored:
+            return []
+            
+        # Helper function for parallel execution
+        def process_stock(stock):
             symbol = stock['symbol']
-            print(f"  Generating theses for {symbol}...")
-
             try:
                 # Get stock data for thesis generation
                 stock_metrics = self.db.get_stock_metrics(symbol)
@@ -1359,14 +1367,12 @@ class StrategyExecutor:
                     logger.warning(f"No metrics for {symbol}, skipping thesis")
                     stock['lynch_thesis_verdict'] = None
                     stock['buffett_thesis_verdict'] = None
-                    enriched.append(stock)
-                    continue
+                    return stock
 
                 # Get earnings history
                 history = self.db.get_earnings_history(symbol)
 
                 # Generate Lynch thesis
-                print(f"    - Generating Lynch thesis...")
                 lynch_thesis_text = ""
                 for chunk in self.analyst.get_or_generate_analysis(
                     user_id=user_id,
@@ -1386,10 +1392,7 @@ class StrategyExecutor:
                 lynch_meta = self.db.get_lynch_analysis(user_id, symbol, character_id='lynch')
                 stock['lynch_thesis_timestamp'] = lynch_meta.get('generated_at') if lynch_meta else None
                 
-                print(f"      Lynch verdict: {lynch_verdict}")
-
                 # Generate Buffett thesis
-                print(f"    - Generating Buffett thesis...")
                 buffett_thesis_text = ""
                 for chunk in self.analyst.get_or_generate_analysis(
                     user_id=user_id,
@@ -1409,16 +1412,41 @@ class StrategyExecutor:
                 buffett_meta = self.db.get_lynch_analysis(user_id, symbol, character_id='buffett')
                 stock['buffett_thesis_timestamp'] = buffett_meta.get('generated_at') if buffett_meta else None
                 
-                print(f"      Buffett verdict: {buffett_verdict}")
-
                 logger.debug(f"{symbol}: Lynch={lynch_verdict}, Buffett={buffett_verdict}")
-                enriched.append(stock)
+                return stock
 
             except Exception as e:
                 logger.warning(f"Failed to generate thesis for {symbol}: {e}")
                 stock['lynch_thesis_verdict'] = None
                 stock['buffett_thesis_verdict'] = None
-                enriched.append(stock)
+                return stock
+
+        # Execute in parallel
+        completed = 0
+        with ThreadPoolExecutor(max_workers=10) as executor:
+            futures = {executor.submit(process_stock, stock): stock for stock in scored}
+            
+            for future in as_completed(futures):
+                try:
+                    result = future.result()
+                    enriched.append(result)
+                except Exception as e:
+                    logger.error(f"Thesis generation worker failed: {e}")
+                
+                completed += 1
+                
+                # Report progress every 10 items
+                if job_id and (completed % 10 == 0 or completed == total):
+                    pct = 20 + int((completed / total) * 40) # Phase 3 is 20-60% of total job
+                    self.db.update_job_progress(
+                        job_id,
+                        progress_pct=pct,
+                        progress_message=f'Generated theses for {completed}/{total} stocks',
+                        processed_count=completed,
+                        total_count=total
+                    )
+                    # Log every 10 completions
+                    print(f"  Generated theses for {completed}/{total} stocks")
 
         self._log_event(run_id, f"Thesis generation complete for {len(enriched)} stocks")
         return enriched
@@ -1613,9 +1641,10 @@ Reasoning: [Brief explanation of their final decision]
         enriched: List[Dict[str, Any]],
         run_id: int,
         conditions: Dict[str, Any] = None,
-        user_id: int = None
+        user_id: int = None,
+        job_id: Optional[int] = None
     ) -> List[Dict[str, Any]]:
-        """Apply consensus logic to determine final decisions.
+        """Apply consensus logic to determine final decisions (Parallelized).
 
         For stocks with theses, conducts deliberation between Lynch and Buffett.
         Otherwise, uses score-based consensus evaluation.
@@ -1625,6 +1654,7 @@ Reasoning: [Brief explanation of their final decision]
             run_id: Current run ID for logging
             conditions: Strategy conditions (for thesis_verdict_required filtering)
             user_id: User ID who owns the strategy
+            job_id: Optional job ID for progress reporting
 
         Returns:
             List of stocks with BUY decisions
@@ -1632,8 +1662,11 @@ Reasoning: [Brief explanation of their final decision]
         decisions = []
         conditions = conditions or {}
         thesis_verdicts_required = conditions.get('thesis_verdict_required', [])
-
-        for stock in enriched:
+        
+        total = len(enriched)
+        
+        # Helper for parallel execution
+        def process_deliberation(stock):
             symbol = stock['symbol']
 
             # If we have both theses, conduct deliberation
@@ -1641,7 +1674,7 @@ Reasoning: [Brief explanation of their final decision]
             buffett_thesis = stock.get('buffett_thesis')
 
             if lynch_thesis and buffett_thesis:
-                print(f"  Conducting deliberation for {symbol}...")
+                # print(f"  Conducting deliberation for {symbol}...") # Reduced logging noise
 
                 try:
                     deliberation_text, final_verdict = self._conduct_deliberation(
@@ -1657,14 +1690,13 @@ Reasoning: [Brief explanation of their final decision]
 
                     stock['deliberation'] = deliberation_text
                     stock['final_verdict'] = final_verdict
-                    print(f"    Final verdict after deliberation: {final_verdict}")
-                    print(f"    Deliberation text length: {len(deliberation_text) if deliberation_text else 0} chars")
+                    # print(f"    Final verdict after deliberation: {final_verdict}")
 
                 except Exception as e:
                     logger.error(f"Deliberation failed for {symbol}: {e}")
                     stock['final_verdict'] = None
                     stock['deliberation'] = None
-                    print(f"    Deliberation FAILED: {e}")
+                    # print(f"    Deliberation FAILED: {e}")
 
                 # Check if final verdict meets requirements
                 if thesis_verdicts_required:
@@ -1686,14 +1718,12 @@ Reasoning: [Brief explanation of their final decision]
                             final_decision='SKIP',
                             decision_reasoning=f"Deliberation verdict '{final_verdict}' not in required: {thesis_verdicts_required}"
                         )
-                        continue
+                        return None # Not a BUY decision
 
-                # If verdict is BUY, add to decisions
+                # If verdict is BUY, return it
+                final_decision = 'SKIP'
                 if stock.get('final_verdict') == 'BUY':
-                    decisions.append(stock)
                     final_decision = 'BUY'
-                else:
-                    final_decision = 'SKIP'
 
                 # Record decision
                 self.db.create_strategy_decision(
@@ -1711,11 +1741,13 @@ Reasoning: [Brief explanation of their final decision]
                     final_decision=final_decision,
                     decision_reasoning=f"Deliberation result: {stock.get('final_verdict')}"
                 )
+                
+                return stock if final_decision == 'BUY' else None
 
             else:
                 # No theses available - SKIP
                 # We now strictly require AI deliberation to trade.
-                print(f"    ⚠ Skipping {symbol}: No theses generated for deliberation")
+                # print(f"    ⚠ Skipping {symbol}: No theses generated for deliberation")
                 self.db.create_strategy_decision(
                     run_id=run_id,
                     symbol=symbol,
@@ -1731,6 +1763,35 @@ Reasoning: [Brief explanation of their final decision]
                     final_decision='SKIP',
                     decision_reasoning="Skipped: No theses generated for AI deliberation"
                 )
+                return None
+
+        # Execute in parallel
+        completed = 0
+        with ThreadPoolExecutor(max_workers=10) as executor:
+            futures = {executor.submit(process_deliberation, stock): stock for stock in enriched}
+            
+            for future in as_completed(futures):
+                try:
+                    result = future.result()
+                    if result:
+                        decisions.append(result)
+                except Exception as e:
+                    logger.error(f"Deliberation worker failed: {e}")
+                
+                completed += 1
+                
+                # Report progress every 10 items
+                if job_id and (completed % 10 == 0 or completed == total):
+                    pct = 60 + int((completed / total) * 30) # Phase 4 is 60-90% of total job
+                    self.db.update_job_progress(
+                        job_id,
+                        progress_pct=pct,
+                        progress_message=f'Deliberated on {completed}/{total} stocks ({len(decisions)} BUYs)',
+                        processed_count=completed,
+                        total_count=total
+                    )
+                    # Log every 10 completions
+                    print(f"  Deliberated on {completed}/{total} stocks")
 
         return decisions
 
