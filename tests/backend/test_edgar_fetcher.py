@@ -23,7 +23,7 @@ def edgar_fetcher():
 
 def test_ticker_to_cik_mapping(edgar_fetcher):
     """Test that ticker symbols can be mapped to CIK numbers"""
-    with patch('edgar_fetcher.requests.get') as mock_get:
+    with patch('edgar_fetcher.core.requests.get') as mock_get:
         mock_response = MagicMock()
         mock_response.json.return_value = {
             "0": {"cik_str": 320193, "ticker": "AAPL", "title": "Apple Inc."},
@@ -38,7 +38,7 @@ def test_ticker_to_cik_mapping(edgar_fetcher):
 
 def test_ticker_to_cik_not_found(edgar_fetcher):
     """Test handling when ticker is not found"""
-    with patch('edgar_fetcher.requests.get') as mock_get:
+    with patch('edgar_fetcher.core.requests.get') as mock_get:
         mock_response = MagicMock()
         mock_response.json.return_value = {
             "0": {"cik_str": 320193, "ticker": "AAPL", "title": "Apple Inc."}
@@ -52,7 +52,7 @@ def test_ticker_to_cik_not_found(edgar_fetcher):
 
 def test_fetch_company_facts(edgar_fetcher):
     """Test fetching company facts from SEC EDGAR API"""
-    with patch('edgar_fetcher.requests.get') as mock_get:
+    with patch('edgar_fetcher.core.requests.get') as mock_get:
         mock_response = MagicMock()
         mock_response.json.return_value = {
             "cik": 320193,
@@ -183,7 +183,7 @@ def test_rate_limiting(edgar_fetcher):
     """Test that rate limiting is enforced (10 requests/sec max)"""
     import time
 
-    with patch('edgar_fetcher.requests.get') as mock_get:
+    with patch('edgar_fetcher.core.requests.get') as mock_get:
         mock_response = MagicMock()
         mock_response.json.return_value = {"cik": 320193, "facts": {}}
         mock_get.return_value = mock_response
@@ -228,7 +228,7 @@ def test_missing_revenue_data(edgar_fetcher):
 
 def test_user_agent_required(edgar_fetcher):
     """Test that User-Agent header is included in requests"""
-    with patch('edgar_fetcher.requests.get') as mock_get:
+    with patch('edgar_fetcher.core.requests.get') as mock_get:
         mock_response = MagicMock()
         mock_response.json.return_value = {"cik": 320193, "facts": {}}
         mock_get.return_value = mock_response
@@ -244,7 +244,7 @@ def test_user_agent_required(edgar_fetcher):
 
 def test_fetch_stock_fundamentals(edgar_fetcher):
     """Test complete flow: ticker -> CIK -> facts -> parsed data"""
-    with patch('edgar_fetcher.requests.get') as mock_get:
+    with patch('edgar_fetcher.core.requests.get') as mock_get:
         # Mock ticker-to-CIK response
         ticker_response = MagicMock()
         ticker_response.json.return_value = {
