@@ -7,7 +7,6 @@ import logging
 from typing import Dict, List, Optional, Any
 from edgar import Company, set_identity
 from sec_rate_limiter import SEC_RATE_LIMITER
-import hishel
 
 logger = logging.getLogger(__name__)
 
