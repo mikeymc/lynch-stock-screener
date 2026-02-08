@@ -273,7 +273,7 @@ class StrategyExecutor:
             try:
                 from dividend_manager import DividendManager
                 dividend_mgr = DividendManager(self.db)
-                dividend_mgr.process_all_portfolios()
+                dividend_mgr.process_portfolio(portfolio_id)
                 print("✓ Dividend processing complete\n")
                 self._log_event(run_id, "Processed dividends for all portfolios")
             except Exception as e:

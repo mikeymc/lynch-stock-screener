@@ -259,3 +259,78 @@ class DividendManager:
         else:
             logger.info(f"[DividendManager] Reinvestment amount ${total_value:.2f} insufficient for 1 share of {symbol} @ ${price:.2f}")
 
+    def process_portfolio(self, portfolio_id: int, target_date: date = None):
+        """
+        Process dividends for a specific portfolio.
+        """
+        if target_date is None:
+            target_date = date.today()
+
+        logger.info(f"[DividendManager] Starting dividend processing for portfolio {portfolio_id} on {target_date}")
+
+        # 1. Get unique symbols in this portfolio
+        symbols = self._get_portfolio_symbols(portfolio_id)
+        logger.info(f"[DividendManager] Found {len(symbols)} active symbols in portfolio {portfolio_id}")
+
+        # 2. Update cache and find payouts due
+        for symbol in symbols:
+            self.fetch_upcoming_dividends(symbol)
+
+        # 3. Process payouts
+        payouts_due = self._get_payouts_for_date(target_date)
+        
+        # Filter payouts to only those relevant for this portfolio's symbols
+        # (Optimization: _get_payouts_for_date gets ALL payouts for the date, 
+        # so we filter in memory or we could update the SQL to filter by symbol list)
+        portfolio_payouts = [p for p in payouts_due if p['symbol'] in symbols]
+        
+        logger.info(f"[DividendManager] Found {len(portfolio_payouts)} payouts due for portfolio {portfolio_id}")
+
+        for payout in portfolio_payouts:
+            # We use _process_single_payout directly or _apply_payout_to_portfolios 
+            # BUT _apply_payout_to_portfolios iterates all portfolios. 
+            # We should probably just process for this portfolio.
+            self._apply_payout_to_specific_portfolio(payout, portfolio_id)
+
+    def _get_portfolio_symbols(self, portfolio_id: int) -> List[str]:
+        """Get active symbols for a specific portfolio."""
+        conn = self.db.get_connection()
+        try:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT DISTINCT symbol 
+                FROM (
+                    SELECT symbol, SUM(CASE WHEN transaction_type = 'BUY' THEN quantity ELSE -quantity END) as qty
+                    FROM portfolio_transactions
+                    WHERE portfolio_id = %s
+                    GROUP BY symbol
+                    HAVING SUM(CASE WHEN transaction_type = 'BUY' THEN quantity ELSE -quantity END) > 0
+                ) as active_holdings
+            """, (portfolio_id,))
+            return [row[0] for row in cursor.fetchall()]
+        finally:
+            self.db.return_connection(conn)
+
+    def _apply_payout_to_specific_portfolio(self, payout: Dict[str, Any], portfolio_id: int):
+        """Apply a payout to a single portfolio."""
+        symbol = payout['symbol']
+        amount_per_share = payout['amount']
+
+        # Get quantity for this portfolio
+        conn = self.db.get_connection()
+        try:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT SUM(CASE WHEN transaction_type = 'BUY' THEN quantity ELSE -quantity END) as qty
+                FROM portfolio_transactions
+                WHERE portfolio_id = %s AND symbol = %s
+                GROUP BY portfolio_id
+                HAVING SUM(CASE WHEN transaction_type = 'BUY' THEN quantity ELSE -quantity END) > 0
+            """, (portfolio_id, symbol))
+            
+            row = cursor.fetchone()
+            if row:
+                qty = int(row[0])
+                self._process_single_payout(portfolio_id, symbol, qty, amount_per_share)
+        finally:
+            self.db.return_connection(conn)
