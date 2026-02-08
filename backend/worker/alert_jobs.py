@@ -94,7 +94,25 @@ class AlertJobsMixin:
                                     )
 
                                     if trade_result['success']:
-                                        trade_result_msg = f" [Auto-Trade: Executed {transaction_type} {quantity} shares @ ${trade_result['price_per_share']:.2f}]"
+                                        trade_price = trade_result['price_per_share']
+                                        transaction_id = trade_result.get('transaction_id')
+                                        trade_result_msg = f" [Auto-Trade: Executed {transaction_type} {quantity} shares @ ${trade_price:.2f}]"
+                                        
+                                        # Link trade back to Strategy Decision if applicable
+                                        decision_id = action_payload.get('decision_id')
+                                        if decision_id:
+                                            try:
+                                                self.db.update_strategy_decision(
+                                                    decision_id=decision_id,
+                                                    transaction_id=transaction_id,
+                                                    trade_price=trade_price,
+                                                    position_value=quantity * trade_price,
+                                                    shares_traded=quantity,
+                                                    decision_reasoning=f"{alert.get('message', '')} [Executed via Alert {alert['id']}]"
+                                                )
+                                                logger.info(f"Linked Alert Trade {transaction_id} to Decision {decision_id}")
+                                            except Exception as e:
+                                                logger.error(f"Failed to link trade to decision {decision_id}: {e}")
                                     else:
                                         trade_result_msg = f" [Auto-Trade Failed: {trade_result.get('error')}]"
                                 else:

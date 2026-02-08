@@ -974,7 +974,7 @@ Reasoning: [Brief explanation of their final decision]
                     final_decision = 'BUY'
 
                 # Record decision
-                self.db.create_strategy_decision(
+                decision_id = self.db.create_strategy_decision(
                     run_id=run_id,
                     symbol=symbol,
                     lynch_score=stock.get('lynch_score'),
@@ -990,7 +990,11 @@ Reasoning: [Brief explanation of their final decision]
                     decision_reasoning=f"Deliberation result: {stock.get('final_verdict')}"
                 )
                 
-                return stock if final_decision == 'BUY' else None
+                if final_decision == 'BUY':
+                    stock['id'] = decision_id
+                    stock['decision_id'] = decision_id
+                    return stock
+                return None
 
             else:
                 # No theses available - SKIP
@@ -1283,6 +1287,16 @@ Reasoning: [Brief explanation of their final decision]
                             )
                             print(f"    ✓ Trade executed successfully")
                             print(f"    Cash after: ${running_cash:,.2f}")
+
+                            # Update decision with trade details
+                            if decision.get('id'):
+                                self.db.update_strategy_decision(
+                                    decision_id=decision['id'],
+                                    shares_traded=position.shares,
+                                    trade_price=position.estimated_value / position.shares if position.shares > 0 else 0,
+                                    position_value=position.estimated_value,
+                                    transaction_id=result.get('transaction_id')
+                                )
                         else:
                             error = result.get('error', 'Unknown error')
                             print(f"    ✗ Trade failed: {error}")
@@ -1296,21 +1310,40 @@ Reasoning: [Brief explanation of their final decision]
                             condition_params={'threshold': 0},
                             condition_description=f"Strategy Queue: Buy {position.shares} {symbol} at Open",
                             action_type='market_buy',
-                            action_payload={'quantity': position.shares},
+                            action_payload={'quantity': position.shares, 'decision_id': decision.get('id')},
                             portfolio_id=portfolio_id,
                             action_note=f"Queued Strategy Buy (Run {run_id}): {decision.get('consensus_reasoning', '')}"
                         )
                         logger.info(f"Queued buy alert {alert_id} for {symbol}")
-                        self._log_event(
-                            run_id,
-                            f"QUEUED BUY {symbol}: {position.shares} shares (Alert {alert_id})"
-                        )
-                        print(f"    ✓ Trade queued for market open (Alert {alert_id})")
+                        self._log_event(run_id, f"QUEUED BUY {symbol}: {position.shares} shares (Alert {alert_id})")
                         trades_executed += 1
+
+                        # Update decision to reflect queued status (optional but good)
+                        # Update decision to reflect queued status (optional but good)
+                        if decision.get('id'):
+                             self.db.update_strategy_decision(
+                                decision_id=decision['id'],
+                                shares_traded=position.shares,
+                                trade_price=position.estimated_value / position.shares if position.shares > 0 else 0,
+                                position_value=position.estimated_value,
+                                decision_reasoning=f"{decision.get('decision_reasoning', '')} [QUEUED via Alert {alert_id}]"
+                            )
+                        print(f"    ✓ Trade queued for market open (Alert {alert_id})")
                         running_cash -= position.estimated_value
                 else:
-                    print(f"    ⚠ Skipping trade: {position.reasoning}")
-                    logger.info(f"Skipping {symbol} buy: {position.reasoning}")
+                    reason = position.reasoning
+                    print(f"    ⚠ Skipping trade: {reason}")
+                    logger.info(f"Skipping {symbol} buy: {reason}")
+                    self._log_event(run_id, f"Skipped {symbol}: {reason}")
+                    
+                    # Update decision to reflect skip
+                    if decision.get('id'):
+                        current_reason = decision.get('decision_reasoning', '')
+                        self.db.update_strategy_decision(
+                            decision_id=decision['id'],
+                            shares_traded=0,
+                            decision_reasoning=f"{current_reason} [Skipped Execution: {reason}]"
+                        )
         else:
             print("\n  No buy positions to execute")
 
