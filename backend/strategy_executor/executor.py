@@ -791,6 +791,7 @@ Reasoning: [Brief explanation of their final decision]
         # Retry configuration
         models = ['gemini-3-flash-preview', 'gemini-2.5-flash']
         max_retries = 3
+        base_delay = 2  # Initialize base delay for exponential backoff
         client = genai.Client(api_key=os.getenv('GEMINI_API_KEY'))
 
         for model in models:
@@ -816,7 +817,8 @@ Reasoning: [Brief explanation of their final decision]
                     return text, verdict
 
                 except Exception as e:
-                    logger.warning(f"[Deliberation] {model} failed (attempt {retry_count+1}/{max_retries + 1}): {e}. Retrying in {2 * (retry_count + 1)}s...")
+                    error_msg = str(e)  # Capture error message for logging
+                    logger.warning(f"[Deliberation] {model} failed (attempt {retry_count+1}/{max_retries + 1}): {error_msg}. Retrying in {2 * (retry_count + 1)}s...")
                     retry_count += 1
 
                     if retry_count <= max_retries:
