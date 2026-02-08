@@ -1,13 +1,15 @@
 # ABOUTME: Background job queue management for async task processing
 # ABOUTME: Handles job creation, claiming, progress tracking, and completion
-
-import logging
-from datetime import datetime, timezone
 from typing import Optional, Dict, Any, List
+import logging
+from datetime import datetime, timezone, date
 import json
 
-logger = logging.getLogger(__name__)
-
+class DateTimeEncoder(json.JSONEncoder):
+    def default(self, obj):
+        if isinstance(obj, (datetime, date)):
+            return obj.isoformat()
+        return super().default(obj)
 
 class JobsMixin:
 
@@ -20,7 +22,7 @@ class JobsMixin:
                 INSERT INTO background_jobs (job_type, params, status, tier, created_at)
                 VALUES (%s, %s, 'pending', %s, NOW())
                 RETURNING id
-            """, (job_type, json.dumps(params), tier))
+            """, (job_type, json.dumps(params, cls=DateTimeEncoder), tier))
             job_id = cursor.fetchone()[0]
             conn.commit()
             return job_id
@@ -38,8 +40,7 @@ class JobsMixin:
                         page_url: Optional[str] = None,
                         metadata: Optional[Dict[str, Any]] = None) -> int:
         """Create a new feedback entry"""
-        import json
-
+        
         conn = self.get_connection()
         try:
             cursor = conn.cursor()
@@ -54,7 +55,7 @@ class JobsMixin:
                 feedback_text,
                 screenshot_data,
                 page_url,
-                json.dumps(metadata) if metadata else None
+                json.dumps(metadata, cls=DateTimeEncoder) if metadata else None
             ))
             feedback_id = cursor.fetchone()[0]
             conn.commit()
@@ -237,7 +238,7 @@ class JobsMixin:
                     completed_at = NOW(),
                     progress_pct = 100
                 WHERE id = %s
-            """, (json.dumps(result), job_id))
+            """, (json.dumps(result, cls=DateTimeEncoder), job_id))
             conn.commit()
         finally:
             self.return_connection(conn)
