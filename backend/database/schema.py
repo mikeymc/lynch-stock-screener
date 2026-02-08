@@ -1299,6 +1299,40 @@ class SchemaMixin:
             END $$;
         """)
 
+        # Migration: Fix earnings_date for "NO_TRANSCRIPT" markers (future-proofing and repairing bad data)
+        cursor.execute("""
+            WITH calculated_dates AS (
+                SELECT
+                    t.symbol,
+                    CASE
+                        -- Strategy 1: Next Earnings Date
+                        WHEN m.next_earnings_date IS NOT NULL AND m.next_earnings_date > CURRENT_DATE THEN
+                            (m.next_earnings_date - INTERVAL '91 days')::DATE
+                        WHEN m.next_earnings_date IS NOT NULL THEN
+                            m.next_earnings_date
+                        -- Strategy 2: Latest History
+                        ELSE (
+                            SELECT fiscal_end::DATE
+                            FROM earnings_history h
+                            WHERE h.symbol = t.symbol AND h.period != 'annual'
+                            ORDER BY h.year DESC, h.period DESC
+                            LIMIT 1
+                        )
+                    END as estimated_date
+                FROM earnings_transcripts t
+                LEFT JOIN stock_metrics m ON t.symbol = m.symbol
+                WHERE t.transcript_text = 'NO_TRANSCRIPT_AVAILABLE'
+            )
+            UPDATE earnings_transcripts t
+            SET earnings_date = c.estimated_date,
+                last_updated = NOW()
+            FROM calculated_dates c
+            WHERE t.symbol = c.symbol
+              AND t.transcript_text = 'NO_TRANSCRIPT_AVAILABLE'
+              AND c.estimated_date IS NOT NULL
+              AND (t.earnings_date IS NULL OR t.earnings_date != c.estimated_date);
+        """)
+
         # Material event summaries (AI-generated summaries for 8-K filings)
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS material_event_summaries (

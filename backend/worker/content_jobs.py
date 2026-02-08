@@ -651,6 +651,15 @@ class ContentJobsMixin:
                         # Allow 10 days buffer (e.g. if transcript is dated slightly before official earnings date)
                         if last_date >= (target_date - timedelta(days=10)):
                             should_skip = True
+                            
+                            # RETRY LOGIC: If the last attempt was a failure (placeholder) AND
+                            # we are still within the 7-day retry window, force a retry.
+                            is_placeholder = meta.get('latest_is_placeholder', False)
+                            days_since_target = (today - target_date).days
+                            
+                            if is_placeholder and days_since_target <= 7:
+                                should_skip = False
+
                     elif last_date and not target_date:
                         # If we have a transcript but no next date info, rely on age
                         # Skip if less than 75 days old
@@ -731,15 +740,48 @@ class ContentJobsMixin:
                             cached += 1
                             logger.info(f"[{symbol}] Cached transcript successfully")
                         else:
+                            # Determine the best estimated earnings date for the marker
+                            marker_date = datetime.now().date()
+                            try:
+                                # Strategy 1: Use next_earnings_date - 91 days (if likely just missed previous)
+                                metrics = self.db.get_stock_metrics(symbol)
+                                next_date = metrics.get('next_earnings_date') if metrics else None
+                                
+                                if next_date:
+                                    if next_date > marker_date:
+                                        marker_date = next_date - timedelta(days=91)
+                                    else:
+                                        marker_date = next_date
+                                else:
+                                    # Strategy 2: Use most recent fiscal_end from earnings history
+                                    history = self.db.get_earnings_history(symbol, period_type='quarterly')
+                                    if history and len(history) > 0:
+                                        # History is ordered by year DESC, period (ASC by default in DB)
+                                        # We want the most recent one so we re-sort to be safe
+                                        # Sort by year DESC, period DESC (Q4 > Q1)
+                                        history.sort(key=lambda x: (x['year'], x['period']), reverse=True)
+                                        
+                                        latest = history[0]
+                                        if latest.get('fiscal_end'):
+                                            # fiscal_end is usually a string YYYY-MM-DD
+                                            try:
+                                                f_end = datetime.strptime(latest['fiscal_end'], '%Y-%m-%d').date()
+                                                marker_date = f_end
+                                            except:
+                                                pass
+                            except Exception as e:
+                                logger.warning(f"[{symbol}] Error estimating marker date: {e}")
+
                             # Save a marker record with "NO_TRANSCRIPT" so we skip this stock in future runs
-                            logger.info(f"[{symbol}] No transcript available - saving marker to skip in future")
+                            logger.info(f"[{symbol}] No transcript available - saving marker to skip in future (date={marker_date})")
                             self.db.save_earnings_transcript(symbol, {
                                 'quarter': 'N/A',
                                 'fiscal_year': 0,
                                 'transcript_text': 'NO_TRANSCRIPT_AVAILABLE',
                                 'has_qa': False,
                                 'participants': [],
-                                'source_url': ''
+                                'source_url': '',
+                                'earnings_date': marker_date
                             })
                             skipped += 1
                     except asyncio.TimeoutError:

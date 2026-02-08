@@ -582,21 +582,26 @@ class StocksMixin:
         try:
             cursor = conn.cursor()
             cursor.execute("""
-                SELECT
+                SELECT DISTINCT ON (m.symbol)
                     m.symbol,
                     m.next_earnings_date,
-                    MAX(t.earnings_date) as last_transcript_date
+                    t.earnings_date as last_transcript_date,
+                    t.transcript_text
                 FROM stock_metrics m
                 LEFT JOIN earnings_transcripts t ON m.symbol = t.symbol
-                GROUP BY m.symbol, m.next_earnings_date
+                ORDER BY m.symbol, t.earnings_date DESC NULLS LAST
             """)
 
             result = {}
             for row in cursor.fetchall():
                 symbol = row[0]
+                transcript_text = row[3]
+                is_placeholder = (transcript_text == 'NO_TRANSCRIPT_AVAILABLE')
+                
                 result[symbol] = {
                     'next_earnings_date': row[1],
-                    'last_transcript_date': row[2]
+                    'last_transcript_date': row[2],
+                    'latest_is_placeholder': is_placeholder
                 }
             return result
         finally:
