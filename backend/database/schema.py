@@ -1554,6 +1554,20 @@ class SchemaMixin:
             END $$;
         """)
 
+        # Migration: Add dividend_payment_date to portfolio_transactions
+        cursor.execute("""
+            DO $$
+            BEGIN
+                IF NOT EXISTS (
+                    SELECT 1 FROM information_schema.columns
+                    WHERE table_name = 'portfolio_transactions'
+                    AND column_name = 'dividend_payment_date'
+                ) THEN
+                    ALTER TABLE portfolio_transactions ADD COLUMN dividend_payment_date DATE;
+                END IF;
+            END $$;
+        """)
+
         # Cache for dividend payouts to avoid excessive API calls
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS dividend_payouts (

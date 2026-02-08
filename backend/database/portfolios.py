@@ -94,7 +94,8 @@ class PortfoliosMixin:
         quantity: int,
         price_per_share: float,
         note: str = None,
-        position_type: str = None
+        position_type: str = None,
+        dividend_payment_date: date = None
     ) -> int:
         """Record a buy or sell transaction
 
@@ -106,6 +107,7 @@ class PortfoliosMixin:
             price_per_share: Price per share
             note: Optional note
             position_type: Optional 'new', 'addition', or 'exit' for tracking
+            dividend_payment_date: Optional specific payment date for DIVIDEND (for idempotency)
         """
         from datetime import date
         total_value = quantity * price_per_share
@@ -114,10 +116,10 @@ class PortfoliosMixin:
             cursor = conn.cursor()
             cursor.execute("""
                 INSERT INTO portfolio_transactions
-                (portfolio_id, symbol, transaction_type, quantity, price_per_share, total_value, note, position_type)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                (portfolio_id, symbol, transaction_type, quantity, price_per_share, total_value, note, position_type, dividend_payment_date)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
                 RETURNING id
-            """, (portfolio_id, symbol, transaction_type, quantity, price_per_share, total_value, note, position_type))
+            """, (portfolio_id, symbol, transaction_type, quantity, price_per_share, total_value, note, position_type, dividend_payment_date))
             tx_id = cursor.fetchone()[0]
 
             # Track position entry for BUY transactions

@@ -179,18 +179,21 @@ class DividendManager:
             
             affected = cursor.fetchall()
             for portfolio_id, qty in affected:
-                self._process_single_payout(portfolio_id, symbol, int(qty), amount_per_share)
+                self._process_single_payout(portfolio_id, symbol, int(qty), amount_per_share, payout.get('date'))
         finally:
             self.db.return_connection(conn)
 
-    def _process_single_payout(self, portfolio_id: int, symbol: str, quantity: int, amount_per_share: float):
+    def _process_single_payout(self, portfolio_id: int, symbol: str, quantity: int, amount_per_share: float, payment_date: date = None):
+        if payment_date is None:
+            payment_date = date.today()
+
         # 1. Record DIVIDEND transaction
         total_payout = quantity * amount_per_share
-        logger.info(f"[DividendManager] Processing payout for portfolio {portfolio_id}: {quantity} {symbol} @ {amount_per_share} = ${total_payout:.2f}")
+        logger.info(f"[DividendManager] Processing payout for portfolio {portfolio_id}: {quantity} {symbol} @ {amount_per_share} = ${total_payout:.2f} (Date: {payment_date})")
         
         # Check if already processed (idempotency)
-        if self._is_dividend_already_recorded(portfolio_id, symbol, date.today()):
-            logger.info(f"[DividendManager] Dividend already recorded for {symbol} in portfolio {portfolio_id}, skipping")
+        if self._is_dividend_already_recorded(portfolio_id, symbol, payment_date):
+            logger.info(f"[DividendManager] Dividend already recorded for {symbol} in portfolio {portfolio_id} on {payment_date}, skipping")
             return
 
         tx_id = self.db.record_transaction(
@@ -199,7 +202,8 @@ class DividendManager:
             transaction_type='DIVIDEND',
             quantity=quantity,
             price_per_share=amount_per_share,
-            note=f"Dividend Payout: ${amount_per_share}/share"
+            note=f"Dividend Payout: ${amount_per_share}/share",
+            dividend_payment_date=payment_date
         )
         
         # 2. Handle DRIP
@@ -216,8 +220,11 @@ class DividendManager:
                 WHERE portfolio_id = %s 
                 AND symbol = %s 
                 AND transaction_type = 'DIVIDEND'
-                AND executed_at::date = %s
-            """, (portfolio_id, symbol, check_date))
+                AND (
+                    dividend_payment_date = %s
+                    OR (dividend_payment_date IS NULL AND executed_at::date = %s)
+                )
+            """, (portfolio_id, symbol, check_date, check_date))
             return cursor.fetchone() is not None
         finally:
             self.db.return_connection(conn)
@@ -331,6 +338,6 @@ class DividendManager:
             row = cursor.fetchone()
             if row:
                 qty = int(row[0])
-                self._process_single_payout(portfolio_id, symbol, qty, amount_per_share)
+                self._process_single_payout(portfolio_id, symbol, qty, amount_per_share, payout.get('date'))
         finally:
             self.db.return_connection(conn)
