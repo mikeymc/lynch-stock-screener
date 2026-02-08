@@ -107,7 +107,7 @@ class PortfolioJobsMixin:
         try:
             self.db.update_job_progress(job_id, progress_pct=80, progress_message='Snapshotting portfolios...')
             results['snapshots'] = self._snapshot_portfolio_values()
-            logger.info(f"Snapshotted {results['snapshots']} portfolios")
+            logger.info(f"All done! Snapshotted {results['snapshots']} portfolios")
         except Exception as e:
             msg = f"Portfolio snapshot failed: {e}"
             logger.error(msg)
