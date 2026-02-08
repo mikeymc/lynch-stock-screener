@@ -175,10 +175,8 @@ class StrategyExecutor:
         print(f"✓ Created run record: {run_id}\n")
 
         try:
-            # Record benchmark
-            print("Recording benchmark (SPY price)...")
-            self.benchmark_tracker.record_daily_benchmark()
-            print("✓ Benchmark recorded\n")
+            # Benchmark recorded by portfolio_sweep job
+            print("Skipping benchmark recording (handled by portfolio_sweep)\n")
 
             # Get portfolio state
             portfolio_id = strategy['portfolio_id']
@@ -266,19 +264,19 @@ class StrategyExecutor:
             decisions = self._deliberate(enriched, run_id, conditions, user_id, job_id=job_id)
             print(f"✓ {len(decisions)} BUY decisions made\\n")
 
-            # Phase 4.5: Process dividends (ensures cash reflects latest dividends before trades)
-            print("=" * 60)
-            print("PHASE 4.5: DIVIDEND PROCESSING")
-            print("=" * 60)
-            try:
-                from dividend_manager import DividendManager
-                dividend_mgr = DividendManager(self.db)
-                dividend_mgr.process_portfolio(portfolio_id)
-                print("✓ Dividend processing complete\n")
-                self._log_event(run_id, "Processed dividends for all portfolios")
-            except Exception as e:
-                logger.warning(f"Dividend processing failed (non-critical): {e}")
-                print(f"⚠ Dividend processing failed: {e}\n")
+            # Phase 4.5: Process dividends - REMOVED (Handled by portfolio_sweep)
+            # print("=" * 60)
+            # print("PHASE 4.5: DIVIDEND PROCESSING")
+            # print("=" * 60)
+             # try:
+            #     from dividend_manager import DividendManager
+            #     dividend_mgr = DividendManager(self.db)
+            #     dividend_mgr.process_portfolio(portfolio_id)
+            #     print("✓ Dividend processing complete\n")
+            #     self._log_event(run_id, "Processed dividends for all portfolios")
+            # except Exception as e:
+            #     logger.warning(f"Dividend processing failed (non-critical): {e}")
+            #     print(f"⚠ Dividend processing failed: {e}\n")
 
             # Phase 5: Check exits
             print("=" * 60)

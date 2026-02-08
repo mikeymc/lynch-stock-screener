@@ -60,3 +60,61 @@ class PortfolioJobsMixin:
         except Exception as e:
             logger.error(f"Benchmark snapshot failed: {e}")
             self.db.fail_job(job_id, str(e))
+    def _run_portfolio_sweep(self, job_id: int, params: Dict[str, Any]):
+        """
+        Daily portfolio maintenance job (Market Close/After Hours).
+        
+        Tasks:
+        1. Record daily SPY benchmark price
+        2. Process dividends for all portfolios
+        3. Snapshot portfolio values
+        """
+        logger.info(f"Running portfolio_sweep job {job_id}")
+        
+        results = {
+            'benchmark': None,
+            'dividends': None,
+            'snapshots': 0,
+            'errors': []
+        }
+
+        # 1. Benchmark Recording
+        try:
+            from strategy_executor import BenchmarkTracker
+            self.db.update_job_progress(job_id, progress_pct=10, progress_message='Recording benchmark...')
+            tracker = BenchmarkTracker(self.db)
+            results['benchmark'] = tracker.record_daily_benchmark()
+            logger.info(f"Benchmark recorded: {results['benchmark']}")
+        except Exception as e:
+            msg = f"Benchmark recording failed: {e}"
+            logger.error(msg)
+            results['errors'].append(msg)
+
+        # 2. Dividend Processing
+        try:
+            self.db.update_job_progress(job_id, progress_pct=40, progress_message='Processing dividends...')
+            # Using the process_all_portfolios wrapper (or direct manager call)
+            # We use the manager directly here since it's a dedicated sweep
+            self.dividend_manager.process_all_portfolios()
+            results['dividends'] = 'completed'
+            logger.info("Dividend processing completed")
+        except Exception as e:
+            msg = f"Dividend processing failed: {e}"
+            logger.error(msg)
+            results['errors'].append(msg)
+
+        # 3. Portfolio Snapshots
+        try:
+            self.db.update_job_progress(job_id, progress_pct=80, progress_message='Snapshotting portfolios...')
+            results['snapshots'] = self._snapshot_portfolio_values()
+            logger.info(f"Snapshotted {results['snapshots']} portfolios")
+        except Exception as e:
+            msg = f"Portfolio snapshot failed: {e}"
+            logger.error(msg)
+            results['errors'].append(msg)
+
+        # Complete
+        if results['errors']:
+            self.db.complete_job(job_id, result=results) # Complete with partial errors
+        else:
+            self.db.complete_job(job_id, result=results)

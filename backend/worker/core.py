@@ -212,6 +212,8 @@ class BackgroundWorkerCore:
             self._run_historical_fundamentals_cache(job_id, params)
         elif job_type == 'quarterly_fundamentals_cache':
             self._run_quarterly_fundamentals_cache(job_id, params)
+        elif job_type == 'portfolio_sweep':
+            self._run_portfolio_sweep(job_id, params)
         else:
             raise ValueError(f"Unknown job type: {job_type}")
 
