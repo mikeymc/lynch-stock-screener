@@ -1304,21 +1304,24 @@ class SchemaMixin:
             WITH calculated_dates AS (
                 SELECT
                     t.symbol,
-                    CASE
-                        -- Strategy 1: Next Earnings Date
-                        WHEN m.next_earnings_date IS NOT NULL AND m.next_earnings_date > CURRENT_DATE THEN
-                            (m.next_earnings_date - INTERVAL '91 days')::DATE
-                        WHEN m.next_earnings_date IS NOT NULL THEN
-                            m.next_earnings_date
-                        -- Strategy 2: Latest History
-                        ELSE (
-                            SELECT fiscal_end::DATE
-                            FROM earnings_history h
-                            WHERE h.symbol = t.symbol AND h.period != 'annual'
-                            ORDER BY h.year DESC, h.period DESC
-                            LIMIT 1
-                        )
-                    END as estimated_date
+                    COALESCE(
+                        CASE
+                            -- Strategy 1: Next Earnings Date
+                            WHEN m.next_earnings_date IS NOT NULL AND m.next_earnings_date > CURRENT_DATE THEN
+                                (m.next_earnings_date - INTERVAL '91 days')::DATE
+                            WHEN m.next_earnings_date IS NOT NULL THEN
+                                m.next_earnings_date
+                            -- Strategy 2: Latest History
+                            ELSE (
+                                SELECT fiscal_end::DATE
+                                FROM earnings_history h
+                                WHERE h.symbol = t.symbol AND h.period != 'annual'
+                                ORDER BY h.year DESC, h.period DESC
+                                LIMIT 1
+                            )
+                        END,
+                        CURRENT_DATE
+                    ) as estimated_date
                 FROM earnings_transcripts t
                 LEFT JOIN stock_metrics m ON t.symbol = m.symbol
                 WHERE t.transcript_text = 'NO_TRANSCRIPT_AVAILABLE'
