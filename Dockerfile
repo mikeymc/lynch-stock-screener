@@ -60,7 +60,7 @@ RUN playwright install chromium
 COPY backend/ ./
 
 # Copy frontend build from stage 1
-COPY --from=frontend-builder /frontend/dist ./static
+COPY --from=frontend-builder /frontend/dist ./app/static
 
 # Expose port
 EXPOSE 8080
