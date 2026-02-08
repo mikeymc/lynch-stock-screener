@@ -9,7 +9,10 @@ import json
 logger = logging.getLogger(__name__)
 
 
+
 class AnalysisMixin:
+    
+    SYSTEM_USER_ID = 0
 
     def save_lynch_analysis(self, user_id: int, symbol: str, analysis_text: str, model_version: str, character_id: str = 'lynch'):
         conn = self.get_connection()
@@ -28,19 +31,29 @@ class AnalysisMixin:
         finally:
             self.return_connection(conn)
 
-    def get_lynch_analysis(self, user_id: int, symbol: str, character_id: Optional[str] = None) -> Optional[Dict[str, Any]]:
+    def get_lynch_analysis(self, user_id: int, symbol: str, character_id: Optional[str] = None, allow_fallback: bool = False) -> Optional[Dict[str, Any]]:
         if character_id is None:
             character_id = self.get_user_character(user_id)
 
         conn = self.get_connection()
         try:
             cursor = conn.cursor()
+            # Try specific user first
             cursor.execute("""
                 SELECT symbol, analysis_text, generated_at, model_version, character_id
                 FROM lynch_analyses
                 WHERE user_id = %s AND symbol = %s AND character_id = %s
             """, (user_id, symbol, character_id))
             row = cursor.fetchone()
+
+            # Fallback to system user if allowed and not found
+            if not row and allow_fallback and user_id != self.SYSTEM_USER_ID:
+                cursor.execute("""
+                    SELECT symbol, analysis_text, generated_at, model_version, character_id
+                    FROM lynch_analyses
+                    WHERE user_id = %s AND symbol = %s AND character_id = %s
+                """, (self.SYSTEM_USER_ID, symbol, character_id))
+                row = cursor.fetchone()
 
             if not row:
                 return None
@@ -74,7 +87,7 @@ class AnalysisMixin:
         finally:
             self.return_connection(conn)
 
-    def get_deliberation(self, user_id: int, symbol: str) -> Optional[Dict[str, Any]]:
+    def get_deliberation(self, user_id: int, symbol: str, allow_fallback: bool = False) -> Optional[Dict[str, Any]]:
         """Get cached deliberation for a stock."""
         conn = self.get_connection()
         try:
@@ -85,6 +98,15 @@ class AnalysisMixin:
                 WHERE user_id = %s AND symbol = %s
             """, (user_id, symbol))
             row = cursor.fetchone()
+
+            # Fallback to system user if allowed and not found
+            if not row and allow_fallback and user_id != self.SYSTEM_USER_ID:
+                cursor.execute("""
+                    SELECT symbol, deliberation_text, final_verdict, generated_at, model_version
+                    FROM deliberations
+                    WHERE user_id = %s AND symbol = %s
+                """, (self.SYSTEM_USER_ID, symbol))
+                row = cursor.fetchone()
 
             if not row:
                 return None

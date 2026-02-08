@@ -1818,4 +1818,37 @@ class SchemaMixin:
             """)
             conn.commit()
 
+        # System User Migration (Shared Cache)
+        # 1. Ensure System User (ID 0) exists
+        cursor.execute("""
+            INSERT INTO users (id, google_id, email, name)
+            VALUES (0, 'system_user', 'system@lynch.app', 'System')
+            ON CONFLICT (id) DO NOTHING;
+        """)
+
+        # 2. Migrate existing theses from User 1 to User 0 (if not conflicting)
+        cursor.execute("""
+            UPDATE lynch_analyses
+            SET user_id = 0
+            WHERE user_id = 1
+            AND NOT EXISTS (
+                SELECT 1 FROM lynch_analyses target
+                WHERE target.user_id = 0
+                AND target.symbol = lynch_analyses.symbol
+                AND target.character_id = lynch_analyses.character_id
+            );
+        """)
+
+        # 3. Migrate existing deliberations from User 1 to User 0
+        cursor.execute("""
+            UPDATE deliberations
+            SET user_id = 0
+            WHERE user_id = 1
+            AND NOT EXISTS (
+                SELECT 1 FROM deliberations target
+                WHERE target.user_id = 0
+                AND target.symbol = deliberations.symbol
+            );
+        """)
+
         conn.commit()

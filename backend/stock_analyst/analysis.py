@@ -157,7 +157,7 @@ class AnalysisMixin:
 
         # Check cache
         if use_cache:
-            cached = self.db.get_lynch_analysis(user_id, symbol, character_id=character_id)
+            cached = self.db.get_lynch_analysis(user_id, symbol, character_id=character_id, allow_fallback=True)
             if cached:
                 is_stale = False
 

@@ -379,7 +379,7 @@ class ThesisJobsMixin:
 
             # 1. Lynch
             for _ in analyst.get_or_generate_analysis(
-                user_id=1, # System/Admin user context (or job owner?) - Default to 1 for generic cache
+                user_id=0, # System User 0 for shared cache
                 symbol=symbol,
                 stock_data=stock_data,
                 history=history or [],
@@ -391,7 +391,7 @@ class ThesisJobsMixin:
 
             # 2. Buffett
             for _ in analyst.get_or_generate_analysis(
-                user_id=1,
+                user_id=0, # System User 0 for shared cache
                 symbol=symbol,
                 stock_data=stock_data,
                 history=history or [],

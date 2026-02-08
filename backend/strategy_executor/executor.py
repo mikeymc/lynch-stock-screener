@@ -592,7 +592,7 @@ class StrategyExecutor:
         Args:
             scored: List of scored stock data
             run_id: Current run ID for logging
-            user_id: User ID who owns the strategy (for saving analyses)
+            user_id: User ID (ignored, uses System User 0 for shared cache)
             job_id: Optional job ID for progress reporting
 
         Returns:
@@ -620,10 +620,10 @@ class StrategyExecutor:
                 # Get earnings history
                 history = self.db.get_earnings_history(symbol)
 
-                # Generate Lynch thesis
+                # Generate Lynch thesis (Force System User 0)
                 lynch_thesis_text = ""
                 for chunk in self.analyst.get_or_generate_analysis(
-                    user_id=user_id,
+                    user_id=0, # Force System User for shared cache
                     symbol=symbol,
                     stock_data=stock_metrics,
                     history=history or [],
@@ -636,14 +636,14 @@ class StrategyExecutor:
                 stock['lynch_thesis'] = lynch_thesis_text
                 stock['lynch_thesis_verdict'] = lynch_verdict
 
-                # Fetch timestamp for cache invalidation
-                lynch_meta = self.db.get_lynch_analysis(user_id, symbol, character_id='lynch')
+                # Fetch timestamp for cache invalidation (Force System User 0)
+                lynch_meta = self.db.get_lynch_analysis(0, symbol, character_id='lynch')
                 stock['lynch_thesis_timestamp'] = lynch_meta.get('generated_at') if lynch_meta else None
 
-                # Generate Buffett thesis
+                # Generate Buffett thesis (Force System User 0)
                 buffett_thesis_text = ""
                 for chunk in self.analyst.get_or_generate_analysis(
-                    user_id=user_id,
+                    user_id=0, # Force System User for shared cache
                     symbol=symbol,
                     stock_data=stock_metrics,
                     history=history or [],
@@ -656,8 +656,8 @@ class StrategyExecutor:
                 stock['buffett_thesis'] = buffett_thesis_text
                 stock['buffett_thesis_verdict'] = buffett_verdict
 
-                # Fetch timestamp for cache invalidation
-                buffett_meta = self.db.get_lynch_analysis(user_id, symbol, character_id='buffett')
+                # Fetch timestamp for cache invalidation (Force System User 0)
+                buffett_meta = self.db.get_lynch_analysis(0, symbol, character_id='buffett')
                 stock['buffett_thesis_timestamp'] = buffett_meta.get('generated_at') if buffett_meta else None
 
                 logger.debug(f"{symbol}: Lynch={lynch_verdict}, Buffett={buffett_verdict}")
@@ -713,7 +713,7 @@ class StrategyExecutor:
         """Conduct deliberation between Lynch and Buffett to reach consensus.
 
         Args:
-            user_id: User ID who owns the strategy
+            user_id: User ID (ignored, uses System User 0 for shared cache)
             symbol: Stock symbol
             lynch_thesis: Lynch's full thesis text
             lynch_verdict: Lynch's verdict (BUY/WATCH/AVOID)
@@ -729,9 +729,8 @@ class StrategyExecutor:
         import time
         from google.genai.types import GenerateContentConfig
 
-        # Check cache first
-        # Check cache first
-        cached = self.db.get_deliberation(user_id, symbol)
+        # Check cache first (Force System User 0)
+        cached = self.db.get_deliberation(0, symbol)
         if cached:
             # Check for invalidation based on timestamps
             is_stale = False
@@ -798,40 +797,28 @@ Reasoning: [Brief explanation of their final decision]
 
         for model in models:
             retry_count = 0
-            base_delay = 1
-
-            while retry_count <= max_retries:
+            while retry_count < max_retries:
                 try:
-                    logger.info(f"[Deliberation] Sending request to {model} (attempt {retry_count + 1}/{max_retries + 1})...")
                     response = client.models.generate_content(
                         model=model,
                         contents=prompt,
-                        config=GenerateContentConfig(
-                            temperature=0.7,
-                            top_p=0.95,
-                            max_output_tokens=8192
-                        )
+                        config=GenerateContentConfig(temperature=0.7)
                     )
+                    
+                    text = response.text
+                    
+                    # Extract verdict
+                    import re
+                    match = re.search(r'\*\*\[?(BUY|WATCH|AVOID)\]?\*\*', text, re.IGNORECASE)
+                    verdict = match.group(1).upper() if match else "WATCH" # Default to WATCH if unclear
 
-                    deliberation_text = response.text
-
-                    # Extract final verdict
-                    final_verdict = self._extract_thesis_verdict(deliberation_text)
-
-                    # Cache the deliberation
-                    self.db.save_deliberation(
-                        user_id=user_id,
-                        symbol=symbol,
-                        deliberation_text=deliberation_text,
-                        final_verdict=final_verdict,
-                        model_version=model
-                    )
-
-                    logger.info(f"[Deliberation] Success with {model}, cached for future use")
-                    return deliberation_text, final_verdict
+                    # Save to cache (Force System User 0)
+                    self.db.save_deliberation(0, symbol, text, verdict, model)
+                    
+                    return text, verdict
 
                 except Exception as e:
-                    error_msg = str(e)
+                    logger.warning(f"[Deliberation] {model} failed (attempt {retry_count+1}/{max_retries + 1}): {e}. Retrying in {2 * (retry_count + 1)}s...")
                     retry_count += 1
 
                     if retry_count <= max_retries:
