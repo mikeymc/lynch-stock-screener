@@ -33,7 +33,7 @@ logging.getLogger('hpack').setLevel(logging.WARNING)
 logger = logging.getLogger(__name__)
 
 # Configuration
-IDLE_SHUTDOWN_SECONDS = int(os.environ.get('WORKER_IDLE_TIMEOUT', 300))  # 5 minutes
+IDLE_SHUTDOWN_SECONDS = int(os.environ.get('WORKER_IDLE_TIMEOUT', 30))  # Default 30s for quick scale-down
 HEARTBEAT_INTERVAL = 60  # Extend claim every 60 seconds
 POLL_INTERVAL = 5  # Check for new jobs every 5 seconds
 

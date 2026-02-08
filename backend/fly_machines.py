@@ -145,7 +145,7 @@ class FlyMachineManager:
             'DB_NAME': os.environ.get('DB_NAME', ''),
             'DB_USER': os.environ.get('DB_USER', ''),
             'DB_PASSWORD': os.environ.get('DB_PASSWORD', ''),
-            'WORKER_IDLE_TIMEOUT': os.environ.get('WORKER_IDLE_TIMEOUT', '300'),
+            'WORKER_IDLE_TIMEOUT': os.environ.get('WORKER_IDLE_TIMEOUT', '30'),
             'SEC_USER_AGENT': os.environ.get('SEC_USER_AGENT', ''),
             'EDGAR_IDENTITY': os.environ.get('SEC_USER_AGENT', ''),  # edgartools requires this specific name
             'FINNHUB_API_KEY': os.environ.get('FINNHUB_API_KEY', ''),
