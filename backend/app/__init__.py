@@ -1,6 +1,9 @@
 # ABOUTME: Flask application factory with middleware, session, and service initialization
 # ABOUTME: Registers all route blueprints and re-exports app/db for backward compatibility
 
+from dotenv import load_dotenv
+load_dotenv()  # Load environment variables from .env file
+
 from flask import Flask, jsonify, send_from_directory
 from flask_cors import CORS
 from flask_session import Session
