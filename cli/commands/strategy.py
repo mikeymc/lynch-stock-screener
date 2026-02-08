@@ -25,7 +25,7 @@ def get_api_token() -> str:
 
 @app.command()
 def run(
-    strategy_id: int = typer.Argument(..., help="ID of the strategy to run"),
+    strategy_id: int = typer.Option(None, "--strategy-id", "-s", help="ID of the strategy to run"),
     limit: int = typer.Option(None, "--limit", "-l", help="Limit number of stocks to process"),
     prod: bool = typer.Option(False, "--prod", help="Trigger production API instead of local"),
 ):
@@ -44,13 +44,16 @@ def run(
     else:
         console.print(f"[bold blue]🚀 Starting local strategy run for ID {strategy_id}...[/bold blue]")
         api_url = LOCAL_URL
+    
+    params = {}
+    if strategy_id:
+        params["strategy_ids"] = [strategy_id]
+    if limit:
+        params["limit"] = limit
         
     payload = {
         "type": "strategy_execution",
-        "params": {
-            "strategy_ids": [strategy_id],
-            "limit": limit
-        }
+        "params": params
     }
     
     try:
