@@ -180,8 +180,42 @@ class FlyMachineManager:
             }
 
         try:
-            env = self.get_env_vars()
-            env['WORKER_TIER'] = tier
+            # Helper to get safe idle timeout
+            def get_safe_idle_timeout():
+                val = os.environ.get('WORKER_IDLE_TIMEOUT', '30')
+                try:
+                    # If set to 0 (disabled) or negative, force it to 30s for on-demand workers
+                    # This prevents zombie workers if the env var is accidentally set to 0
+                    if int(val) <= 0:
+                        logger.warning(f"WORKER_IDLE_TIMEOUT set to {val}, forcing to 30s for on-demand worker")
+                        return '30'
+                    return val
+                except ValueError:
+                    return '30'
+
+            # Set environment variables
+            env = {
+                'WORKER_TIER': tier,
+                'DB_POOL_SIZE': '20' if tier == 'light' else '50',
+                # Pass all current env vars that might be needed
+                'DB_HOST': os.environ.get('DB_HOST', ''),
+                'DB_PORT': os.environ.get('DB_PORT', '5432'),
+                'DB_NAME': os.environ.get('DB_NAME', ''),
+                'DB_USER': os.environ.get('DB_USER', ''),
+                'DB_PASSWORD': os.environ.get('DB_PASSWORD', ''),
+                'SEC_USER_AGENT': os.environ.get('SEC_USER_AGENT', ''),
+                'EDGAR_IDENTITY': os.environ.get('SEC_USER_AGENT', ''),
+                'FINNHUB_API_KEY': os.environ.get('FINNHUB_API_KEY', ''),
+                'EDGAR_USE_LOCAL_DATA': 'False',
+                'EDGAR_USE_CACHE': 'False',
+                'EXIT_ON_EMPTY': 'false',
+                'FLY_APP_NAME': self.app_name,
+                'FLY_API_TOKEN': self.api_token,
+                'FLY_REGION': self.region,
+                # Force a safe idle timeout
+                'WORKER_IDLE_TIMEOUT': get_safe_idle_timeout(),
+                # Add specific job params if needed
+            }
 
             config = {
                 'region': self.region,

@@ -286,7 +286,7 @@ class ThesisJobsMixin:
         processed_count = 0
         error_count = 0
 
-        with ThreadPoolExecutor(max_workers=5) as executor:
+        with ThreadPoolExecutor(max_workers=2) as executor:
             future_to_item = {
                 executor.submit(
                     self._refresh_thesis_for_symbol,

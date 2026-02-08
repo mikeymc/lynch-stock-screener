@@ -3,6 +3,7 @@
 
 import json
 import logging
+import os
 from datetime import datetime, date
 from typing import Dict, Any
 
@@ -168,20 +169,46 @@ class AlertJobsMixin:
             prompt = self._construct_alert_prompt(symbol, condition_description, metrics, context)
 
             logger.debug(f"[LLM Debug] Evaluating {symbol} alert. Condition: {condition_description}")
-            logger.debug(f"[LLM Debug] Prompt: {prompt}")
+            # logger.debug(f"[LLM Debug] Prompt: {prompt}")
 
-            response = self.llm_client.models.generate_content(
-                model='gemini-2.0-flash-exp',
-                contents=prompt,
-                config={
-                    'response_mime_type': 'application/json'
-                }
-            )
+            # Generate analysis using Gemini
+            model_name = 'gemini-2.0-flash'
+            
+            try:
+                # Configure the client
+                # We need to use the genai library directly as in other parts of the codebase
+                import google.generativeai as genai
+                
+                if not os.getenv('GEMINI_API_KEY'):
+                    logger.error("GEMINI_API_KEY not found")
+                    return False, "GEMINI_API_KEY not found"
+                    
+                genai.configure(api_key=os.getenv('GEMINI_API_KEY'))
+                model = genai.GenerativeModel(model_name)
+                
+                response = model.generate_content(prompt)
+                
+                if not response or not response.text:
+                    logger.error(f"Empty response from LLM for alert {symbol}")
+                    return False, "Empty response from LLM"
 
-            result = json.loads(response.text)
-            logger.debug(f"[LLM Debug] Result: {result}")
+                # Parse the response (extract JSON)
+                response_text = response.text
+                start_idx = response_text.find('{')
+                end_idx = response_text.rfind('}')
+                
+                if start_idx != -1 and end_idx != -1:
+                    json_str = response_text[start_idx:end_idx+1]
+                    result = json.loads(json_str)
+                    logger.debug(f"[LLM Debug] Result: {result}")
+                    return result.get('triggered', False), result.get('reason', '')
+                else:
+                    logger.error(f"Could not find JSON in LLM response: {response_text}")
+                    return False, "Invalid LLM response format"
 
-            return result.get('triggered', False), result.get('reason', '')
+            except Exception as e:
+                logger.error(f"Error calling Gemini: {e}")
+                return False, f"LLM Error: {str(e)}"
 
         except Exception as e:
             logger.error(f"Error evaluating alert with LLM: {e}")
