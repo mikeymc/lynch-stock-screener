@@ -959,7 +959,7 @@ Reasoning: [Brief explanation of their final decision]
                             buffett_score=stock.get('buffett_score'),
                             buffett_status=stock.get('buffett_status'),
                             consensus_score=None,
-                            consensus_verdict=final_verdict,
+                            consensus_verdict=None,  # Was 'SKIP' - violated constraint
                             thesis_verdict=final_verdict,
                             thesis_summary=stock.get('deliberation', '')[:500] if stock.get('deliberation') else None,
                             thesis_full=stock.get('deliberation'),
@@ -1004,7 +1004,7 @@ Reasoning: [Brief explanation of their final decision]
                     buffett_score=stock.get('buffett_score'),
                     buffett_status=stock.get('buffett_status'),
                     consensus_score=None,
-                    consensus_verdict='SKIP',
+                    consensus_verdict=None,  # Was 'SKIP' - violated constraint
                     thesis_verdict=None,
                     thesis_summary=None,
                     thesis_full=None,
