@@ -181,7 +181,7 @@ class DataJobsMixin:
         region = params.get('region', 'us')
         specific_symbols = params.get('symbols')
         force_refresh = params.get('force_refresh', False)
-        use_rss = params.get('use_rss', False)
+        use_rss = params.get('use_rss', True)
 
         logger.info(f"Starting quarterly_fundamentals_cache job {job_id} (region={region}, use_rss={use_rss})")
 
