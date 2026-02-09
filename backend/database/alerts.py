@@ -76,7 +76,8 @@ class AlertsMixin:
             cursor = conn.cursor()
             query = """
                 SELECT id, symbol, condition_type, condition_params, frequency, status,
-                       created_at, last_checked, triggered_at, message, condition_description
+                       created_at, last_checked, triggered_at, message, condition_description,
+                       action_type, portfolio_id
                 FROM alerts
                 WHERE user_id = %s
             """

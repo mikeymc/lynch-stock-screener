@@ -1172,9 +1172,17 @@ Reasoning: [Brief explanation of their final decision]
                 # We can either return or attempt to process (which will fail for trades).
                 # Let's proceed but warn.
 
+        existing_alerts = []
         if not is_market_open:
             print(f"   Market is closed. Queuing trades for next open via Alerts.")
             self._log_event(run_id, "Market closed. Queuing transactions for next market open.")
+            
+            if user_id:
+                try:
+                    existing_alerts = self.db.get_alerts(user_id, status='active')
+                    logger.info(f"Fetched {len(existing_alerts)} existing active alerts for idempotency check.")
+                except Exception as e:
+                    logger.error(f"Failed to fetch existing alerts for user {user_id}: {e}")
 
         # Execute sells first (to free up cash)
         print("\n  Executing SELL orders...")
@@ -1198,6 +1206,19 @@ Reasoning: [Brief explanation of their final decision]
                         print(f"    ✓ SOLD {exit_signal.symbol}: {exit_signal.quantity} shares "
                               f"(freed ${exit_signal.current_value:,.2f})")
                 elif user_id:
+                    # Idempotency check: Don't queue duplicate sell alert
+                    is_duplicate = any(
+                        a['symbol'] == exit_signal.symbol and 
+                        a['action_type'] == 'market_sell' and
+                        a.get('portfolio_id') == portfolio_id
+                        for a in existing_alerts
+                    )
+                    
+                    if is_duplicate:
+                        print(f"    ⚠ Skipped {exit_signal.symbol}: Sell alert already queued.")
+                        self._log_event(run_id, f"DUPLICATE SELL SKIP: {exit_signal.symbol} already queued.")
+                        continue
+
                     alert_id = self.db.create_alert(
                         user_id=user_id,
                         symbol=exit_signal.symbol,
@@ -1290,6 +1311,21 @@ Reasoning: [Brief explanation of their final decision]
                             logger.warning(f"Trade execution failed for {symbol}: {error}")
                             self._log_event(run_id, f"BUY {symbol} FAILED: {error}")
                     elif user_id:
+                        # Idempotency check: Don't queue duplicate buy alert
+                        is_duplicate = any(
+                            a['symbol'] == symbol and 
+                            a['action_type'] == 'market_buy' and
+                            a.get('portfolio_id') == portfolio_id
+                            for a in existing_alerts
+                        )
+                        
+                        if is_duplicate:
+                            print(f"    ⚠ Skipped {symbol}: Buy alert already queued.")
+                            self._log_event(run_id, f"DUPLICATE BUY SKIP: {symbol} already queued.")
+                            # Still count as "executed" (or at least processed) for the summary
+                            trades_executed += 1
+                            continue
+
                         alert_id = self.db.create_alert(
                             user_id=user_id,
                             symbol=symbol,
