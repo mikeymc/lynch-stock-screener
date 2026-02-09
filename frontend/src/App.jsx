@@ -123,6 +123,8 @@ function StockListView({
   watchlist, toggleWatchlist,
   algorithm, setAlgorithm,
   showAdvancedFilters, setShowAdvancedFilters,
+  advancedFilters, setAdvancedFilters,
+  usStocksOnly, setUsStocksOnly,
   activeCharacter, setActiveCharacter,
   user
 }) {
@@ -135,16 +137,6 @@ function StockListView({
   const [error, setError] = useState(null)
   const itemsPerPage = 100
 
-  // Advanced filters state
-  const [advancedFilters, setAdvancedFilters] = useState({
-    countries: [],
-    institutionalOwnership: { max: null },
-    revenueGrowth: { min: null },
-    incomeGrowth: { min: null },
-    debtToEquity: { max: null },
-    marketCap: { max: null },
-    peRatio: { max: null }
-  })
 
   // Debounced search state
   const [searchLoading, setSearchLoading] = useState(false)
@@ -225,36 +217,6 @@ function StockListView({
   }, [algorithm])
 
 
-  // Load advanced filters on mount
-  const [usStocksOnly, setUsStocksOnly] = useState(true) // Default to true
-  useEffect(() => {
-    const controller = new AbortController()
-    const signal = controller.signal
-
-    const loadAdvancedFilters = async () => {
-      try {
-        const response = await fetch(`${API_BASE}/settings`, { signal })
-        if (response.ok) {
-          const settings = await response.json()
-          if (settings.advanced_filters && settings.advanced_filters.value) {
-            setAdvancedFilters(prev => ({ ...prev, ...settings.advanced_filters.value }))
-          }
-          // Load us_stocks_only setting
-          if (settings.us_stocks_only && settings.us_stocks_only.value !== undefined) {
-            setUsStocksOnly(settings.us_stocks_only.value)
-          }
-        }
-      } catch (err) {
-        if (err.name !== 'AbortError') {
-          console.error('Error loading advanced filters:', err)
-        }
-      }
-    }
-
-    loadAdvancedFilters()
-
-    return () => controller.abort()
-  }, [])
 
   // Start with empty state (don't load cached session since algorithm may have changed)
   const [loadingSession, setLoadingSession] = useState(stocks.length === 0 && !summary)
@@ -1005,6 +967,65 @@ function App() {
   const [watchlist, setWatchlist] = useState(new Set())
   const [algorithm, setAlgorithm] = useState('weighted')
   const [showAdvancedFilters, setShowAdvancedFilters] = useState(false)
+  const [usStocksOnly, setUsStocksOnly] = useState(true) // Default to true
+  // Advanced filters state lifted from StockListView
+  const [advancedFilters, setAdvancedFilters] = useState({
+    countries: [],
+    institutionalOwnership: { max: null },
+    revenueGrowth: { min: null },
+    incomeGrowth: { min: null },
+    debtToEquity: { max: null },
+    marketCap: { max: null },
+    peRatio: { max: null }
+  })
+  const [featureFlags, setFeatureFlags] = useState({
+    alertsEnabled: false,
+    economyLinkEnabled: false,
+    dashboardEnabled: false,
+    redditEnabled: false
+  })
+
+  // Load all settings on mount
+  useEffect(() => {
+    const controller = new AbortController()
+    const signal = controller.signal
+
+    const loadSettings = async () => {
+      try {
+        const response = await fetch(`${API_BASE}/settings`, { signal })
+        if (response.ok) {
+          const settings = await response.json()
+
+          // Load advanced filters defaults
+          if (settings.advanced_filters && settings.advanced_filters.value) {
+            setAdvancedFilters(prev => ({ ...prev, ...settings.advanced_filters.value }))
+          }
+
+          // Load us_stocks_only setting
+          if (settings.us_stocks_only && settings.us_stocks_only.value !== undefined) {
+            setUsStocksOnly(settings.us_stocks_only.value)
+          }
+
+          // Load feature flags
+          setFeatureFlags({
+            alertsEnabled: settings.feature_alerts_enabled?.value === true,
+            economyLinkEnabled: settings.feature_economy_link_enabled?.value === true,
+            dashboardEnabled: settings.feature_dashboard_enabled?.value === true,
+            redditEnabled: settings.feature_reddit_enabled?.value === true || settings.feature_reddit_enabled?.value === 'true'
+          })
+        }
+      } catch (err) {
+        if (err.name !== 'AbortError') {
+          console.error('Error loading settings:', err)
+        }
+      }
+    }
+
+    loadSettings()
+
+    return () => controller.abort()
+  }, [])
+
   const [activeCharacter, setActiveCharacter] = useState(() => localStorage.getItem('activeCharacter') || 'lynch')
   const [showOnboarding, setShowOnboarding] = useState(false)
 
@@ -1145,8 +1166,13 @@ function App() {
             setAlgorithm={setAlgorithm}
             summary={summary}
             watchlistCount={watchlist.size}
+            featureFlags={featureFlags}
             showAdvancedFilters={showAdvancedFilters}
             setShowAdvancedFilters={setShowAdvancedFilters}
+            advancedFilters={advancedFilters}
+            setAdvancedFilters={setAdvancedFilters}
+            usStocksOnly={usStocksOnly}
+            setUsStocksOnly={setUsStocksOnly}
             activeCharacter={activeCharacter}
           />
         }>
@@ -1173,8 +1199,13 @@ function App() {
               toggleWatchlist={toggleWatchlist}
               algorithm={algorithm}
               setAlgorithm={setAlgorithm}
+              featureFlags={featureFlags}
               showAdvancedFilters={showAdvancedFilters}
               setShowAdvancedFilters={setShowAdvancedFilters}
+              advancedFilters={advancedFilters}
+              setAdvancedFilters={setAdvancedFilters}
+              usStocksOnly={usStocksOnly}
+              setUsStocksOnly={setUsStocksOnly}
               activeCharacter={activeCharacter}
               setActiveCharacter={setActiveCharacter}
               user={user}

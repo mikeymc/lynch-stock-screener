@@ -48,7 +48,8 @@ function AppShellContent({
     summary = {},
     watchlistCount = 0,
     showAdvancedFilters, setShowAdvancedFilters,
-    activeCharacter = 'lynch'
+    activeCharacter = 'lynch',
+    featureFlags = {}
 }) {
     const { isMobile, setOpenMobile } = useSidebar()
     const { user } = useAuth()
@@ -110,34 +111,13 @@ function AppShellContent({
     const [screenerOpen, setScreenerOpen] = useState(true)
     const [filterOpen, setFilterOpen] = useState(true)
     const [analysisOpen, setAnalysisOpen] = useState(true)
-    const [alertsEnabled, setAlertsEnabled] = useState(false)
-    const [economyLinkEnabled, setEconomyLinkEnabled] = useState(false)
-    const [dashboardEnabled, setDashboardEnabled] = useState(false)
-    const [redditEnabled, setRedditEnabled] = useState(false)
     const [chatsOpen, setChatsOpen] = useState(true) // State for chat history collapsible
-
-    useEffect(() => {
-        const fetchSettings = async () => {
-            try {
-                const response = await fetch('/api/settings')
-                if (response.ok) {
-                    const settings = await response.json()
-                    // Default to false if not present, check value string
-                    const alertsOn = settings.feature_alerts_enabled?.value === true
-                    const economyLinkOn = settings.feature_economy_link_enabled?.value === true
-                    const dashboardOn = settings.feature_dashboard_enabled?.value === true
-                    const redditOn = settings.feature_reddit_enabled?.value === true || settings.feature_reddit_enabled?.value === 'true'
-                    setAlertsEnabled(alertsOn)
-                    setEconomyLinkEnabled(economyLinkOn)
-                    setDashboardEnabled(dashboardOn)
-                    setRedditEnabled(redditOn)
-                }
-            } catch (error) {
-                console.error('Failed to fetch settings:', error)
-            }
-        }
-        fetchSettings()
-    }, [])
+    const {
+        alertsEnabled = false,
+        economyLinkEnabled = false,
+        dashboardEnabled = false,
+        redditEnabled = false
+    } = featureFlags
 
     const lastSyncRef = useRef(null)
 
