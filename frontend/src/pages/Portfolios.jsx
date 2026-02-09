@@ -171,7 +171,7 @@ export default function Portfolios() {
             if (response.ok) {
                 setPortfolios(portfolios.filter(p => p.id !== portfolioId))
                 if (selectedPortfolio?.id === portfolioId) {
-                    setSelectedPortfolio(null)
+                    navigate('/portfolios')
                 }
             } else {
                 throw new Error('Failed to delete portfolio')
@@ -181,16 +181,8 @@ export default function Portfolios() {
         }
     }
 
-    const selectPortfolio = async (portfolio) => {
-        try {
-            const response = await fetch(`/api/portfolios/${portfolio.id}`)
-            if (response.ok) {
-                const data = await response.json()
-                setSelectedPortfolio(data)
-            }
-        } catch (err) {
-            console.error('Error fetching portfolio details:', err)
-        }
+    const selectPortfolio = (portfolio) => {
+        navigate(`/portfolios/${portfolio.id}`)
     }
 
     const refreshSelectedPortfolio = async () => {
