@@ -14,9 +14,10 @@ from database.jobs import JobsMixin
 from database.settings import SettingsMixin
 from database.social import SocialMixin
 from database.strategies import StrategiesMixin
+from database.watchlist import WatchlistMixin
 
 
 class Database(DatabaseCore, SchemaMixin, AlertsMixin, StocksMixin, AnalysisMixin,
                FilingsMixin, UsersMixin, PortfoliosMixin, ScreeningMixin,
-               JobsMixin, SettingsMixin, SocialMixin, StrategiesMixin):
+               JobsMixin, SettingsMixin, SocialMixin, StrategiesMixin, WatchlistMixin):
     pass

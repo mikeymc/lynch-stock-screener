@@ -1,4 +1,4 @@
-# ABOUTME: Portfolio and watchlist management endpoints for paper trading
+# ABOUTME: Portfolio management endpoints for paper trading
 # ABOUTME: Handles portfolio CRUD, trade execution, and value history tracking
 
 from flask import Blueprint, jsonify, request, session
@@ -9,39 +9,6 @@ import logging
 logger = logging.getLogger(__name__)
 
 portfolios_bp = Blueprint('portfolios', __name__)
-
-
-@portfolios_bp.route('/api/watchlist', methods=['GET'])
-@require_user_auth
-def get_watchlist(user_id):
-    try:
-        symbols = deps.db.get_watchlist(user_id)
-        return jsonify({'symbols': symbols})
-    except Exception as e:
-        print(f"Error getting watchlist: {e}")
-        return jsonify({'error': str(e)}), 500
-
-
-@portfolios_bp.route('/api/watchlist/<symbol>', methods=['POST'])
-@require_user_auth
-def add_to_watchlist(symbol, user_id):
-    try:
-        deps.db.add_to_watchlist(user_id, symbol.upper())
-        return jsonify({'success': True})
-    except Exception as e:
-        print(f"Error adding {symbol} to watchlist: {e}")
-        return jsonify({'error': str(e)}), 500
-
-
-@portfolios_bp.route('/api/watchlist/<symbol>', methods=['DELETE'])
-@require_user_auth
-def remove_from_watchlist(symbol, user_id):
-    try:
-        deps.db.remove_from_watchlist(user_id, symbol.upper())
-        return jsonify({'success': True})
-    except Exception as e:
-        print(f"Error removing {symbol} from watchlist: {e}")
-        return jsonify({'error': str(e)}), 500
 
 
 @portfolios_bp.route('/api/portfolios', methods=['GET'])
