@@ -759,3 +759,29 @@ class StocksMixin:
             return [row[0] for row in rows]
         finally:
             self.return_connection(conn)
+
+    def get_prices_batch(self, symbols: List[str]) -> Dict[str, float]:
+        """Batch fetch prices from stock_metrics for multiple symbols.
+
+        Args:
+            symbols: List of stock symbols
+
+        Returns:
+            Dict mapping symbol -> price for symbols that have prices in cache
+        """
+        if not symbols:
+            return {}
+
+        conn = self.get_connection()
+        try:
+            cursor = conn.cursor()
+            # Use ANY for efficient batch lookup
+            cursor.execute("""
+                SELECT symbol, price
+                FROM stock_metrics
+                WHERE symbol = ANY(%s) AND price IS NOT NULL
+            """, (symbols,))
+
+            return {row[0]: float(row[1]) for row in cursor.fetchall()}
+        finally:
+            self.return_connection(conn)

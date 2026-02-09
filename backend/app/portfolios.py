@@ -61,16 +61,16 @@ def list_portfolios(user_id):
             except Exception:
                 pass
 
-        # Perform single batch fetch for all portfolio symbols
+        # Batch fetch prices from stock_metrics (cached prices, very fast)
         prices_map = {}
         if all_symbols:
-            from portfolio_service import fetch_current_prices_batch
-            prices_map = fetch_current_prices_batch(list(all_symbols), db=deps.db)
+            prices_map = deps.db.get_prices_batch(list(all_symbols))
 
         # Enrich each portfolio with computed summary data
         enriched_portfolios = []
-        for portfolio in portfolios:
+        for i, portfolio in enumerate(portfolios):
             summary = deps.db.get_portfolio_summary(portfolio['id'], use_live_prices=True, prices_map=prices_map)
+
             if summary:
                 enriched_portfolios.append(summary)
             else:
@@ -114,7 +114,14 @@ def get_portfolio(portfolio_id, user_id):
         if not portfolio or (portfolio['user_id'] != user_id and not is_admin):
             return jsonify({'error': 'Portfolio not found'}), 404
 
-        summary = deps.db.get_portfolio_summary(portfolio_id)
+        # Pre-fetch prices for all holdings to avoid network latency
+        holdings = deps.db.get_portfolio_holdings(portfolio_id)
+        prices_map = {}
+        if holdings:
+            from portfolio_service import fetch_current_prices_batch
+            prices_map = fetch_current_prices_batch(list(holdings.keys()), db=deps.db)
+
+        summary = deps.db.get_portfolio_summary(portfolio_id, use_live_prices=True, prices_map=prices_map)
         return jsonify(summary)
     except Exception as e:
         logger.error(f"Error getting portfolio {portfolio_id}: {e}")

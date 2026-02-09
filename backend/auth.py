@@ -95,8 +95,6 @@ def require_user_auth(f):
         elif DEV_AUTH_BYPASS:
             # Dev bypass enabled - use mock user
             kwargs['user_id'] = 'dev-user-bypass'
-            # Treat bypass user as admin for testing convenience
-            session['user_type'] = 'admin'
         else:
             # No auth and no bypass - reject
             return jsonify({'error': 'Unauthorized', 'message': 'Please log in'}), 401

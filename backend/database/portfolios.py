@@ -464,24 +464,37 @@ class PortfoliosMixin:
         finally:
             self.return_connection(conn)
 
-    def get_portfolio_performance_with_attribution(self, portfolio_id: int) -> Dict[str, Any]:
+    def get_portfolio_performance_with_attribution(
+        self,
+        portfolio_id: int,
+        holdings_value: float = None,
+        cash: float = None,
+        initial_cash: float = None
+    ) -> Dict[str, Any]:
         """Calculate portfolio performance with dividend attribution.
 
         Separates total return into:
         - Capital gains/losses from price changes
         - Dividend income
         - Realized gains from sells
+
+        Args:
+            portfolio_id: Portfolio ID
+            holdings_value: Pre-computed holdings value (optional, computed if not provided)
+            cash: Pre-computed cash balance (optional, computed if not provided)
+            initial_cash: Pre-computed initial cash (optional, computed if not provided)
         """
         conn = self.get_connection()
         try:
             cursor = conn.cursor()
 
-            # Get initial cash
-            cursor.execute("SELECT initial_cash FROM portfolios WHERE id = %s", (portfolio_id,))
-            row = cursor.fetchone()
-            if not row:
-                return None
-            initial_cash = row[0]
+            # Get initial cash if not provided
+            if initial_cash is None:
+                cursor.execute("SELECT initial_cash FROM portfolios WHERE id = %s", (portfolio_id,))
+                row = cursor.fetchone()
+                if not row:
+                    return None
+                initial_cash = row[0]
 
             # Get transaction breakdown
             cursor.execute("""
@@ -494,10 +507,13 @@ class PortfoliosMixin:
             """, (portfolio_id,))
             total_bought, total_sold, dividend_income = cursor.fetchone()
 
-            # Calculate current portfolio value directly (avoid circular reference with get_portfolio_summary)
-            cash = self.get_portfolio_cash(portfolio_id)
-            holdings_detailed = self.get_portfolio_holdings_detailed(portfolio_id, use_live_prices=False)
-            holdings_value = sum(h['current_value'] for h in holdings_detailed)
+            # Use pre-computed values or calculate if not provided
+            if cash is None:
+                cash = self.get_portfolio_cash(portfolio_id)
+            if holdings_value is None:
+                holdings_detailed = self.get_portfolio_holdings_detailed(portfolio_id, use_live_prices=False)
+                holdings_value = sum(h['current_value'] for h in holdings_detailed)
+
             current_value = cash + holdings_value
 
             # Calculate realized gains (money from sells minus cost basis)
@@ -610,7 +626,14 @@ class PortfoliosMixin:
 
         # Get dividend metrics
         dividend_summary = self.get_portfolio_dividend_summary(portfolio_id)
-        performance_attribution = self.get_portfolio_performance_with_attribution(portfolio_id)
+
+        # Pass pre-computed values to avoid redundant calculations
+        performance_attribution = self.get_portfolio_performance_with_attribution(
+            portfolio_id,
+            holdings_value=holdings_value,
+            cash=cash,
+            initial_cash=initial_cash
+        )
 
         return {
             'id': portfolio['id'],
