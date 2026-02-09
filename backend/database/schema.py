@@ -1902,4 +1902,32 @@ class SchemaMixin:
             );
         """)
 
+        # User Interaction Logging
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS user_events (
+                id SERIAL PRIMARY KEY,
+                user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+                event_type TEXT,
+                path TEXT,
+                method TEXT,
+                query_params JSONB,
+                request_body JSONB,
+                ip_address TEXT,
+                user_agent TEXT,
+                status_code INTEGER,
+                duration_ms INTEGER,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+
+        cursor.execute("""
+            CREATE INDEX IF NOT EXISTS idx_user_events_user
+            ON user_events(user_id)
+        """)
+
+        cursor.execute("""
+            CREATE INDEX IF NOT EXISTS idx_user_events_created
+            ON user_events(created_at)
+        """)
+
         conn.commit()

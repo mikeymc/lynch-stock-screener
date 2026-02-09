@@ -4,13 +4,15 @@
 from dotenv import load_dotenv
 load_dotenv()  # Load environment variables from .env file
 
-from flask import Flask, jsonify, send_from_directory
+from flask import Flask, jsonify, send_from_directory, g, request
 from flask_cors import CORS
 from flask_session import Session
 from flask_sqlalchemy import SQLAlchemy
 from werkzeug.middleware.proxy_fix import ProxyFix
 import os
 import logging
+import time
+import json
 from datetime import timedelta
 
 from app import deps
@@ -178,6 +180,91 @@ deps.optimization_jobs = {}
 
 # Backward compat: export db at module level for tests that monkeypatch app.db
 db = deps.db
+
+# =============================================================================
+# Request Logging Middleware
+# =============================================================================
+
+def scrub_sensitive_data(data):
+    """Deep scrub of sensitive keys from dictionaries/lists"""
+    if not isinstance(data, (dict, list)):
+        return data
+
+    SENSITIVE_KEYS = {
+        'password', 'old_password', 'new_password', 'confirm_password',
+        'google_id', 'client_secret', 'token', 'access_token', 'refresh_token',
+        'api_key', 'API_AUTH_TOKEN'
+    }
+
+    if isinstance(data, list):
+        return [scrub_sensitive_data(item) for item in data]
+
+    scrubbed = {}
+    for k, v in data.items():
+        if k in SENSITIVE_KEYS:
+            scrubbed[k] = '[REDACTED]'
+        elif isinstance(v, (dict, list)):
+            scrubbed[k] = scrub_sensitive_data(v)
+        else:
+            scrubbed[k] = v
+    return scrubbed
+
+@app.before_request
+def start_timer():
+    """Start timer and capture request data before handling it"""
+    g.start_time = time.time()
+
+@app.after_request
+def log_request_event(response):
+    """Log the request details to the database after it's processed"""
+    # Exclude non-API routes and noise endpoints
+    if not request.path.startswith('/api'):
+        return response
+
+    EXCLUDED_PATHS = {'/api/health'}
+    if request.path in EXCLUDED_PATHS:
+        return response
+
+    try:
+        # Calculate duration
+        duration_ms = None
+        if hasattr(g, 'start_time'):
+            duration_ms = int((time.time() - g.start_time) * 1000)
+
+        # Get user_id from session (or g if set by auth decorator)
+        from flask import session
+        user_id = session.get('user_id')
+
+        # Capture request data
+        query_params = request.args.to_dict()
+
+        request_body = None
+        if request.is_json:
+            try:
+                request_body = request.get_json(silent=True)
+                if request_body:
+                    request_body = scrub_sensitive_data(request_body)
+            except Exception:
+                pass
+
+        # Log event
+        deps.db.log_user_event(
+            user_id=user_id,
+            event_type='api_call',
+            path=request.path,
+            method=request.method,
+            query_params=query_params if query_params else None,
+            request_body=request_body if request_body else None,
+            ip_address=request.remote_addr,
+            user_agent=request.user_agent.string,
+            status_code=response.status_code,
+            duration_ms=duration_ms
+        )
+    except Exception as e:
+        # Don't let logging failures crash the actual request
+        logger.error(f"Failed to log user event: {e}")
+
+    return response
 
 # Health check route (stays in __init__)
 @app.route('/api/health', methods=['GET'])

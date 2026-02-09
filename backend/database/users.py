@@ -2,6 +2,7 @@
 # ABOUTME: Handles authentication, watchlists, and user settings like theme and character
 
 import logging
+import json
 from datetime import datetime, timezone
 from typing import Optional, Dict, Any, List
 
@@ -213,12 +214,38 @@ class UsersMixin:
         finally:
             self.return_connection(conn)
 
-    def is_in_watchlist(self, user_id: int, symbol: str) -> bool:
-        conn = self.get_connection()
-        try:
-            cursor = conn.cursor()
-            cursor.execute("SELECT 1 FROM watchlist WHERE user_id = %s AND symbol = %s", (user_id, symbol))
-            result = cursor.fetchone()
-            return result is not None
-        finally:
-            self.return_connection(conn)
+    def log_user_event(self, user_id: Optional[int], event_type: str, path: str, method: str,
+                       query_params: Optional[Dict[str, Any]] = None,
+                       request_body: Optional[Dict[str, Any]] = None,
+                       ip_address: Optional[str] = None,
+                       user_agent: Optional[str] = None,
+                       status_code: Optional[int] = None,
+                       duration_ms: Optional[int] = None):
+        """Log a user interaction event to the database asynchronously"""
+        sql = """
+            INSERT INTO user_events (
+                user_id, event_type, path, method, query_params,
+                request_body, ip_address, user_agent, status_code, duration_ms
+            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+        """
+
+        # Convert Dict to JSON string for Postgres JSONB columns
+        # psycopg3 handles dict -> jsonb automatically if we use standard dumpers,
+        # but here we're using raw SQL with parameters.
+        # Actually, psycopg3 handles dicts as JSON by default if the column is JSONB.
+        # But we'll be safe and ensure they are JSON strings or None.
+
+        args = (
+            user_id,
+            event_type,
+            path,
+            method,
+            json.dumps(query_params) if query_params else None,
+            json.dumps(request_body) if request_body else None,
+            ip_address,
+            user_agent,
+            status_code,
+            duration_ms
+        )
+
+        self.write_queue.put((sql, args))
