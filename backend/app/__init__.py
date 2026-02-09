@@ -222,7 +222,7 @@ def log_request_event(response):
         return response
 
     EXCLUDED_PATHS = {'/api/health'}
-    if request.path in EXCLUDED_PATHS:
+    if request.path in EXCLUDED_PATHS or request.path.startswith('/api/alerts'):
         return response
 
     try:
