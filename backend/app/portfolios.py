@@ -114,12 +114,11 @@ def get_portfolio(portfolio_id, user_id):
         if not portfolio or (portfolio['user_id'] != user_id and not is_admin):
             return jsonify({'error': 'Portfolio not found'}), 404
 
-        # Pre-fetch prices for all holdings to avoid network latency
+        # Pre-fetch prices for all holdings from cached prices
         holdings = deps.db.get_portfolio_holdings(portfolio_id)
         prices_map = {}
         if holdings:
-            from portfolio_service import fetch_current_prices_batch
-            prices_map = fetch_current_prices_batch(list(holdings.keys()), db=deps.db)
+            prices_map = deps.db.get_prices_batch(list(holdings.keys()))
 
         summary = deps.db.get_portfolio_summary(portfolio_id, use_live_prices=True, prices_map=prices_map)
         return jsonify(summary)
