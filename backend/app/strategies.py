@@ -158,6 +158,12 @@ def manual_run_strategy(user_id, strategy_id):
 
         logger.info(f"Manual strategy run queued: strategy_id={strategy_id}, job_id={job_id}")
 
+        # Start worker machine if configured
+        from fly_machines import get_fly_manager
+        fly_manager = get_fly_manager()
+        worker_id = fly_manager.start_worker_for_job(tier='beefy', max_workers=4)
+        logger.info(f"Worker startup triggered: {worker_id}")
+
         return jsonify({
             'message': 'Strategy run queued',
             'job_id': job_id,
