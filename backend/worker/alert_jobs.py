@@ -177,7 +177,7 @@ class AlertJobsMixin:
             try:
                 # Configure the client
                 # We need to use the genai library directly as in other parts of the codebase
-                import google.generativeai as genai
+                from google import genai
                 
                 if not os.getenv('GEMINI_API_KEY'):
                     logger.error("GEMINI_API_KEY not found")
