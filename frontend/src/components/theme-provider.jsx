@@ -10,6 +10,7 @@ export function ThemeProvider({
     children,
     defaultTheme = "light",
     storageKey = "vite-ui-theme",
+    disableFetch = false,
     ...props
 }) {
     const [theme, setTheme] = useState(
@@ -29,6 +30,12 @@ export function ThemeProvider({
 
     // Fetch user's theme from backend on mount
     useEffect(() => {
+        // Skip fetch if disabled
+        if (disableFetch) {
+            setIsLoading(false)
+            return
+        }
+
         // Wait for auth check to complete
         if (authLoading) return
 
@@ -117,6 +124,11 @@ export function ThemeProvider({
                 // Still works locally even if backend save fails
             })
         },
+        // Sync theme from external source (like backend load) without saving back
+        syncTheme: (newTheme) => {
+            localStorage.setItem(storageKey, newTheme)
+            setTheme(newTheme)
+        }
     }
 
     return (

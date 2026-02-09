@@ -1,7 +1,7 @@
 # ABOUTME: Application settings, algorithm config, and user preference endpoints
 # ABOUTME: Manages characters, themes, expertise levels, and country selections
 
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, jsonify, request, session
 from app import deps
 from auth import require_user_auth
 from characters import get_character, list_characters
@@ -31,6 +31,15 @@ def get_settings():
     """Get all application settings."""
     try:
         settings = deps.db.get_all_settings()
+        
+        # If user is authenticated, include their theme preference
+        if 'user_id' in session:
+            user_id = session['user_id']
+            # Get theme directly from DB (simpler than calling the endpoint logic)
+            user_theme = deps.db.get_user_theme(user_id)
+            if user_theme:
+                settings['user_theme'] = user_theme
+                
         return jsonify(settings)
     except Exception as e:
         print(f"Error getting settings: {e}")

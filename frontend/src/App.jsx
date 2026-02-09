@@ -35,6 +35,7 @@ import Help from './pages/Help'
 import Dashboard from './pages/Dashboard'
 import { OnboardingWizard } from './components/OnboardingWizard'
 // import './App.css' // Disabled for shadcn migration
+import { useTheme } from './components/theme-provider'
 
 ChartJS.register(
   CategoryScale,
@@ -954,6 +955,7 @@ function StockListView({
 
 function App() {
   const { user, loading, checkAuth } = useAuth()
+  const { setTheme, syncTheme } = useTheme()
   const navigate = useNavigate()
   const location = useLocation()
   const [stocks, setStocks] = useState([])
@@ -1004,6 +1006,11 @@ function App() {
           // Load us_stocks_only setting
           if (settings.us_stocks_only && settings.us_stocks_only.value !== undefined) {
             setUsStocksOnly(settings.us_stocks_only.value)
+          }
+
+          // Load user theme
+          if (settings.user_theme) {
+            syncTheme(settings.user_theme)
           }
 
           // Load feature flags
