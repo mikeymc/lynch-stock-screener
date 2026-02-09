@@ -71,7 +71,8 @@ def create_job():
             'quarterly_fundamentals_cache',
             'strategy_execution',
             'thesis_refresher',
-            'outlook_cache'
+            'outlook_cache',
+            '10k_cache'
         }
         if job_type in heavy_jobs:
             tier = 'beefy'
