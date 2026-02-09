@@ -12,21 +12,6 @@ logger = logging.getLogger(__name__)
 
 
 # Algorithm metadata for UI display
-ALGORITHM_METADATA = {
-    'weighted': {
-        'name': 'Weighted',
-        'short_desc': 'Balanced approach weighting PEG ratio most heavily with earnings quality',
-        'description': '''Assigns weighted importance to each metric based on Lynch's priorities:
-        • PEG Ratio: 50% (Lynch's primary valuation metric)
-        • Earnings Consistency: 25% (quality of growth matters)
-        • Debt-to-Equity: 15% (important but contextual)
-        • Institutional Ownership: 10% (minor consideration)
-
-        Produces a 0-100 score: Strong Buy (80+), Buy (60-80), Hold (40-60), Caution (20-40), Avoid (0-20).
-        Best for: Balanced evaluation that prioritizes what Lynch cared about most.''',
-        'recommended': True
-    }
-}
 
 
 SCORE_THRESHOLDS = {

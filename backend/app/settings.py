@@ -4,7 +4,6 @@
 from flask import Blueprint, jsonify, request
 from app import deps
 from auth import require_user_auth
-from lynch_criteria import ALGORITHM_METADATA
 from characters import get_character, list_characters
 import logging
 
@@ -16,11 +15,6 @@ settings_bp = Blueprint('settings', __name__)
 AVAILABLE_AI_MODELS = ["gemini-2.5-flash", "gemini-3-flash-preview", "gemini-3-pro-preview"]
 DEFAULT_AI_MODEL = "gemini-3-pro-preview"
 
-
-@settings_bp.route('/api/algorithms', methods=['GET'])
-def get_algorithms():
-    """Return metadata for all available scoring algorithms."""
-    return jsonify(ALGORITHM_METADATA)
 
 
 @settings_bp.route('/api/ai-models', methods=['GET'])

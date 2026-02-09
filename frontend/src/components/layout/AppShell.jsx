@@ -45,7 +45,6 @@ const TrendingUp = () => <span>📈</span>
 function AppShellContent({
     filter, setFilter,
     algorithm, setAlgorithm,
-    algorithms = {},
     summary = {},
     watchlistCount = 0,
     showAdvancedFilters, setShowAdvancedFilters,

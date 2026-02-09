@@ -122,7 +122,6 @@ function StockListView({
   sortDir, setSortDir,
   watchlist, toggleWatchlist,
   algorithm, setAlgorithm,
-  algorithms,
   showAdvancedFilters, setShowAdvancedFilters,
   activeCharacter, setActiveCharacter,
   user
@@ -1005,7 +1004,6 @@ function App() {
   const [sortDir, setSortDir] = useState('desc')
   const [watchlist, setWatchlist] = useState(new Set())
   const [algorithm, setAlgorithm] = useState('weighted')
-  const [algorithms, setAlgorithms] = useState({})
   const [showAdvancedFilters, setShowAdvancedFilters] = useState(false)
   const [activeCharacter, setActiveCharacter] = useState(() => localStorage.getItem('activeCharacter') || 'lynch')
   const [showOnboarding, setShowOnboarding] = useState(false)
@@ -1059,22 +1057,6 @@ function App() {
     }
   }, [user, loading])
 
-  // Fetch algorithm metadata
-  useEffect(() => {
-    const controller = new AbortController()
-    // Fetch algorithm metadata from API
-    fetch(`${API_BASE}/algorithms`, { signal: controller.signal, credentials: 'include' })
-      .then(res => res.json())
-      .then(data => {
-        setAlgorithms(data)
-      })
-      .catch(err => {
-        if (err.name !== 'AbortError') {
-          console.error('Error fetching algorithms:', err)
-        }
-      })
-    return () => controller.abort()
-  }, [])
 
   // Load watchlist on mount
   useEffect(() => {
@@ -1161,7 +1143,6 @@ function App() {
             setFilter={setFilter}
             algorithm={algorithm}
             setAlgorithm={setAlgorithm}
-            algorithms={algorithms}
             summary={summary}
             watchlistCount={watchlist.size}
             showAdvancedFilters={showAdvancedFilters}
@@ -1192,7 +1173,6 @@ function App() {
               toggleWatchlist={toggleWatchlist}
               algorithm={algorithm}
               setAlgorithm={setAlgorithm}
-              algorithms={algorithms}
               showAdvancedFilters={showAdvancedFilters}
               setShowAdvancedFilters={setShowAdvancedFilters}
               activeCharacter={activeCharacter}
@@ -1207,7 +1187,6 @@ function App() {
               watchlist={watchlist}
               toggleWatchlist={toggleWatchlist}
               algorithm={algorithm}
-              algorithms={algorithms}
               activeCharacter={activeCharacter}
             />
           } />
