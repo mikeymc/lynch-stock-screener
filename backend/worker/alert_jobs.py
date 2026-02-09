@@ -176,18 +176,45 @@ class AlertJobsMixin:
             
             try:
                 # Configure the client
-                # We need to use the genai library directly as in other parts of the codebase
                 from google import genai
-                
+                import time
+
                 if not os.getenv('GEMINI_API_KEY'):
                     logger.error("GEMINI_API_KEY not found")
                     return False, "GEMINI_API_KEY not found"
                     
-                genai.configure(api_key=os.getenv('GEMINI_API_KEY'))
-                model = genai.GenerativeModel(model_name)
+                client = genai.Client(api_key=os.getenv('GEMINI_API_KEY'))
                 
-                response = model.generate_content(prompt)
+                # Retry logic for Gemini API calls
+                max_retries = 10
+                retry_count = 0
+                base_delay = 1
+                response = None
                 
+                while retry_count <= max_retries:
+                    try:
+                        # New SDK syntax: client.models.generate_content
+                        response = client.models.generate_content(
+                            model=model_name,
+                            contents=prompt
+                        )
+                        break  # Success, exit loop
+                        
+                    except Exception as e:
+                        error_str = str(e).lower()
+                        is_retryable = "429" in error_str or "resource_exhausted" in error_str or \
+                                      "503" in error_str or "overloaded" in error_str
+                        
+                        if is_retryable and retry_count < max_retries:
+                            sleep_time = base_delay * (2 ** retry_count)
+                            logger.warning(f"Gemini API ({model_name}) error: {e}. Retrying in {sleep_time}s (attempt {retry_count + 1}/{max_retries})")
+                            time.sleep(sleep_time)
+                            retry_count += 1
+                            continue
+                        else:
+                            # Not retryable or max retries reached
+                            raise e
+
                 if not response or not response.text:
                     logger.error(f"Empty response from LLM for alert {symbol}")
                     return False, "Empty response from LLM"

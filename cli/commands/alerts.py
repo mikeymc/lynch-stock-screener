@@ -86,16 +86,23 @@ def check(
     
     # Create the background job via API
     try:
-        # Get token (always required, matching cache commands)
+        # Get token (required for prod, optional for local if backend allows)
         api_token = os.environ.get('API_AUTH_TOKEN')
-        if not api_token:
-            console.print("[red]ERROR: API_AUTH_TOKEN not set[/red]")
-            raise typer.Exit(1)
         
+        # In prod, strict token requirement
+        if prod and not api_token:
+            console.print("[red]ERROR: API_AUTH_TOKEN not set for production[/red]")
+            raise typer.Exit(1)
+            
         headers = {
-            "Content-Type": "application/json",
-            "Authorization": f"Bearer {api_token}"
+            "Content-Type": "application/json"
         }
+        
+        # Add auth header if token exists
+        if api_token:
+            headers["Authorization"] = f"Bearer {api_token}"
+        elif not prod:
+            console.print("[dim]⚠️  No API_AUTH_TOKEN found, attempting unauthenticated request (local dev)[/dim]")
         
         response = requests.post(
             f"{api_url}/api/jobs",
