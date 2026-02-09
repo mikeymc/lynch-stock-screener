@@ -284,6 +284,7 @@ from app.portfolios import portfolios_bp
 from app.agent import agent_bp
 from app.backtesting import backtesting_bp
 from app.dashboard import dashboard_bp
+from app.admin import admin_bp
 
 app.register_blueprint(auth_bp)
 app.register_blueprint(jobs_bp)
@@ -297,4 +298,5 @@ app.register_blueprint(portfolios_bp)
 app.register_blueprint(agent_bp)
 app.register_blueprint(backtesting_bp)
 app.register_blueprint(dashboard_bp)
+app.register_blueprint(admin_bp)
 

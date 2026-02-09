@@ -1,11 +1,13 @@
 import React, { useState, useRef, useEffect, useLayoutEffect } from 'react';
 import { createPortal } from 'react-dom';
+import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 
 const API_BASE = '/api';
 
 export default function UserAvatar() {
   const { user, logout } = useAuth();
+  const navigate = useNavigate();
   const [showDropdown, setShowDropdown] = useState(false);
   const dropdownRef = useRef(null);
   const buttonRef = useRef(null);
@@ -98,6 +100,17 @@ export default function UserAvatar() {
             left: `${dropdownPosition.left}px`
           }}
         >
+          {user.user_type === 'admin' && (
+            <button
+              onClick={() => {
+                navigate('/admin');
+                setShowDropdown(false);
+              }}
+              className="block w-full text-left px-4 py-2 text-sm transition-colors whitespace-nowrap text-slate-100 bg-transparent hover:bg-slate-700"
+            >
+              Admin Panel
+            </button>
+          )}
           <button
             onClick={handleLogout}
             className="block w-full text-left px-4 py-2 text-sm transition-colors whitespace-nowrap text-slate-100 bg-transparent hover:bg-slate-700"

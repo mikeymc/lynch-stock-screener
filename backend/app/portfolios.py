@@ -1,7 +1,7 @@
 # ABOUTME: Portfolio and watchlist management endpoints for paper trading
 # ABOUTME: Handles portfolio CRUD, trade execution, and value history tracking
 
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, jsonify, request, session
 from app import deps
 from auth import require_user_auth
 import logging
@@ -110,7 +110,8 @@ def get_portfolio(portfolio_id, user_id):
     """Get portfolio details with computed values."""
     try:
         portfolio = deps.db.get_portfolio(portfolio_id)
-        if not portfolio or portfolio['user_id'] != user_id:
+        is_admin = session.get('user_type') == 'admin'
+        if not portfolio or (portfolio['user_id'] != user_id and not is_admin):
             return jsonify({'error': 'Portfolio not found'}), 404
 
         summary = deps.db.get_portfolio_summary(portfolio_id)
@@ -126,7 +127,8 @@ def update_portfolio(portfolio_id, user_id):
     """Update portfolio (currently only name)."""
     try:
         portfolio = deps.db.get_portfolio(portfolio_id)
-        if not portfolio or portfolio['user_id'] != user_id:
+        is_admin = session.get('user_type') == 'admin'
+        if not portfolio or (portfolio['user_id'] != user_id and not is_admin):
             return jsonify({'error': 'Portfolio not found'}), 404
 
         data = request.get_json()
@@ -145,9 +147,17 @@ def update_portfolio(portfolio_id, user_id):
 def delete_portfolio(portfolio_id, user_id):
     """Delete a portfolio and all its transactions."""
     try:
-        deleted = deps.db.delete_portfolio(portfolio_id, user_id)
-        if not deleted:
+        portfolio = deps.db.get_portfolio(portfolio_id)
+        if not portfolio:
             return jsonify({'error': 'Portfolio not found'}), 404
+
+        is_admin = session.get('user_type') == 'admin'
+        if portfolio['user_id'] != user_id and not is_admin:
+            return jsonify({'error': 'Unauthorized'}), 403
+
+        deleted = deps.db.delete_portfolio(portfolio_id, portfolio['user_id'])
+        if not deleted:
+            return jsonify({'error': 'Delete failed'}), 500
 
         return jsonify({'success': True})
     except Exception as e:
@@ -161,7 +171,8 @@ def get_portfolio_transactions(portfolio_id, user_id):
     """Get transaction history for a portfolio."""
     try:
         portfolio = deps.db.get_portfolio(portfolio_id)
-        if not portfolio or portfolio['user_id'] != user_id:
+        is_admin = session.get('user_type') == 'admin'
+        if not portfolio or (portfolio['user_id'] != user_id and not is_admin):
             return jsonify({'error': 'Portfolio not found'}), 404
 
         transactions = deps.db.get_portfolio_transactions(portfolio_id)
@@ -177,7 +188,8 @@ def execute_portfolio_trade(portfolio_id, user_id):
     """Execute a buy or sell trade."""
     try:
         portfolio = deps.db.get_portfolio(portfolio_id)
-        if not portfolio or portfolio['user_id'] != user_id:
+        is_admin = session.get('user_type') == 'admin'
+        if not portfolio or (portfolio['user_id'] != user_id and not is_admin):
             return jsonify({'error': 'Portfolio not found'}), 404
 
         data = request.get_json()
@@ -215,7 +227,8 @@ def get_portfolio_value_history(portfolio_id, user_id):
     """Get portfolio value history for charts."""
     try:
         portfolio = deps.db.get_portfolio(portfolio_id)
-        if not portfolio or portfolio['user_id'] != user_id:
+        is_admin = session.get('user_type') == 'admin'
+        if not portfolio or (portfolio['user_id'] != user_id and not is_admin):
             return jsonify({'error': 'Portfolio not found'}), 404
 
         snapshots = deps.db.get_portfolio_snapshots(portfolio_id)

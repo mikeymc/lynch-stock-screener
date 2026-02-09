@@ -1,7 +1,7 @@
 # ABOUTME: Investment strategy CRUD and execution endpoints
 # ABOUTME: Handles strategy creation, manual runs, previews, and template listing
 
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, jsonify, request, session
 from app import deps
 from auth import require_user_auth
 import logging
@@ -68,7 +68,9 @@ def update_strategy(user_id, strategy_id):
         strategy = deps.db.get_strategy(strategy_id)
         if not strategy:
             return jsonify({'error': 'Strategy not found'}), 404
-        if strategy['user_id'] != user_id:
+        
+        is_admin = session.get('user_type') == 'admin'
+        if strategy['user_id'] != user_id and not is_admin:
             return jsonify({'error': 'Unauthorized'}), 403
 
         success = deps.db.update_strategy(
@@ -117,7 +119,11 @@ def get_strategy_detail(user_id, strategy_id):
         if not strategy:
             return jsonify({'error': 'Strategy not found'}), 404
 
-        if strategy['user_id'] != user_id:
+        is_admin = session.get('user_type') == 'admin'
+        logger.info(f"[AUTH DEBUG] Strategy detail access: user_id={user_id} (type={type(user_id)}), strategy_owner={strategy['user_id']} (type={type(strategy['user_id'])}), is_admin={is_admin}")
+        
+        if strategy['user_id'] != user_id and not is_admin:
+            logger.warning(f"[AUTH DEBUG] Access DENIED for user {user_id} to strategy {strategy_id}")
             return jsonify({'error': 'Unauthorized'}), 403
 
         # Get performance series
@@ -146,7 +152,8 @@ def manual_run_strategy(user_id, strategy_id):
         if not strategy:
             return jsonify({'error': 'Strategy not found'}), 404
 
-        if strategy['user_id'] != user_id:
+        is_admin = session.get('user_type') == 'admin'
+        if strategy['user_id'] != user_id and not is_admin:
             return jsonify({'error': 'Unauthorized'}), 403
 
         # Create background job for strategy execution (beefy tier)
@@ -307,7 +314,8 @@ def get_run_decisions(user_id, run_id):
             return jsonify({'error': 'Run not found'}), 404
 
         strategy = deps.db.get_strategy(run['strategy_id'])
-        if not strategy or strategy['user_id'] != user_id:
+        is_admin = session.get('user_type') == 'admin'
+        if not strategy or (strategy['user_id'] != user_id and not is_admin):
              return jsonify({'error': 'Unauthorized'}), 403
 
         decisions = deps.db.get_run_decisions(run_id)

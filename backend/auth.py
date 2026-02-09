@@ -81,9 +81,22 @@ def require_user_auth(f):
         if 'user_id' in session:
             # Normal authenticated user
             kwargs['user_id'] = session['user_id']
+            
+            # Ensure user_type is in session for admin checks downstream
+            if 'user_type' not in session:
+                try:
+                    from app import deps
+                    user = deps.db.get_user_by_id(session['user_id'])
+                    if user:
+                        session['user_type'] = user.get('user_type', 'regular')
+                except Exception as e:
+                    print(f"Error fetching user_type for session: {e}")
+                    
         elif DEV_AUTH_BYPASS:
             # Dev bypass enabled - use mock user
             kwargs['user_id'] = 'dev-user-bypass'
+            # Treat bypass user as admin for testing convenience
+            session['user_type'] = 'admin'
         else:
             # No auth and no bypass - reject
             return jsonify({'error': 'Unauthorized', 'message': 'Please log in'}), 401

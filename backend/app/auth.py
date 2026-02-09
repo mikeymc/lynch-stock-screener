@@ -78,12 +78,14 @@ def google_auth_callback():
 
         # Create or update user in database
         user_id = deps.db.create_user(google_id, email, name, picture)
+        user = deps.db.get_user_by_id(user_id)
 
         # Set session
         session['user_id'] = user_id
         session['user_email'] = email
         session['user_name'] = name
         session['user_picture'] = picture
+        session['user_type'] = user.get('user_type', 'regular')
 
         # Clear OAuth state
         session.pop('oauth_state', None)
@@ -114,7 +116,8 @@ def get_current_user():
         'name': user['name'],
         'picture': user['picture'],
         'feature_flags': user.get('feature_flags') or {},
-        'has_completed_onboarding': user.get('has_completed_onboarding', False)
+        'has_completed_onboarding': user.get('has_completed_onboarding', False),
+        'user_type': user.get('user_type', 'regular')
     })
 
 
@@ -222,6 +225,7 @@ def login():
         session['user_email'] = user['email']
         session['user_name'] = user['name']
         session['user_picture'] = user['picture']
+        session['user_type'] = user.get('user_type', 'regular')
 
         return jsonify({
             'message': 'Login successful',

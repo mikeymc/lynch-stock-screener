@@ -557,6 +557,19 @@ class SchemaMixin:
         """)
 
         cursor.execute("""
+            DO $$
+            BEGIN
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                               WHERE table_name = 'users' AND column_name = 'user_type') THEN
+                    ALTER TABLE users ADD COLUMN user_type TEXT DEFAULT 'regular';
+                    
+                    -- Set user 1 to admin
+                    UPDATE users SET user_type = 'admin' WHERE id = 1;
+                END IF;
+            END $$;
+        """)
+
+        cursor.execute("""
             CREATE TABLE IF NOT EXISTS app_feedback (
                 id SERIAL PRIMARY KEY,
                 user_id INTEGER,
@@ -1054,6 +1067,7 @@ class SchemaMixin:
                 result JSONB,
                 error_message TEXT,
                 tier TEXT DEFAULT 'light',
+                logs JSONB DEFAULT '[]',
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 started_at TIMESTAMP,
                 completed_at TIMESTAMP
@@ -1067,6 +1081,17 @@ class SchemaMixin:
                 IF NOT EXISTS (SELECT 1 FROM information_schema.columns
                                WHERE table_name = 'background_jobs' AND column_name = 'tier') THEN
                     ALTER TABLE background_jobs ADD COLUMN tier TEXT DEFAULT 'light';
+                END IF;
+            END $$;
+        """)
+
+        # Migration: Add logs column to background_jobs if it doesn't exist
+        cursor.execute("""
+            DO $$
+            BEGIN
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                               WHERE table_name = 'background_jobs' AND column_name = 'logs') THEN
+                    ALTER TABLE background_jobs ADD COLUMN logs JSONB DEFAULT '[]';
                 END IF;
             END $$;
         """)

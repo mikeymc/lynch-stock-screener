@@ -37,6 +37,15 @@ import { OnboardingWizard } from './components/OnboardingWizard'
 // import './App.css' // Disabled for shadcn migration
 import { useTheme } from './components/theme-provider'
 
+// Admin Components
+import AdminLayout from './layouts/AdminLayout'
+import RequireAdmin from './components/RequireAdmin'
+import AdminDashboard from './pages/admin/AdminDashboard'
+import AdminConversations from './pages/admin/AdminConversations'
+import AdminStrategies from './pages/admin/AdminStrategies'
+import AdminPortfolios from './pages/admin/AdminPortfolios'
+import AdminUserActions from './pages/admin/AdminUserActions'
+
 ChartJS.register(
   CategoryScale,
   LinearScale,
@@ -1164,6 +1173,17 @@ function App() {
       />
 
       <Routes>
+
+        {/* Admin Routes */}
+        <Route element={<RequireAdmin />}>
+          <Route element={<AdminLayout />}>
+            <Route path="/admin" element={<AdminDashboard />} />
+            <Route path="/admin/conversations" element={<AdminConversations />} />
+            <Route path="/admin/strategies" element={<AdminStrategies />} />
+            <Route path="/admin/portfolios" element={<AdminPortfolios />} />
+            <Route path="/admin/user_actions" element={<AdminUserActions />} />
+          </Route>
+        </Route>
 
         <Route element={
           <AppShell

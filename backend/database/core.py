@@ -15,7 +15,9 @@ import json
 logger = logging.getLogger(__name__)
 
 
-class DatabaseCore:
+from database.schema import SchemaMixin
+
+class DatabaseCore(SchemaMixin):
     def __init__(self,
                  host: str = "localhost",
                  port: int = 5432,
