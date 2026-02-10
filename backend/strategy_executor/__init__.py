@@ -2,7 +2,7 @@
 # ABOUTME: Composes StrategyExecutor from domain-specific mixins and re-exports public API
 
 from strategy_executor.models import ConsensusResult, PositionSize, ExitSignal
-from strategy_executor.conditions import ConditionEvaluator
+from strategy_executor.universe_filter import UniverseFilter
 from strategy_executor.consensus import ConsensusEngine
 from strategy_executor.position_sizing import PositionSizer
 from strategy_executor.exit_conditions import ExitConditionChecker

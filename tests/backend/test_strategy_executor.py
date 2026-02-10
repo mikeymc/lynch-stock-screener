@@ -13,7 +13,7 @@ from strategy_executor import (
     PositionSize,
     ExitConditionChecker,
     ExitSignal,
-    ConditionEvaluator,
+    UniverseFilter,
 )
 
 
@@ -741,8 +741,8 @@ class TestStrategyExecutorIntegration:
         assert 'disabled' in result['reason'].lower()
 
 
-class TestConditionEvaluator:
-    """Tests for screening condition evaluation."""
+class TestUniverseFilter:
+    """Tests for universe filtering."""
 
     @pytest.fixture
     def mock_db(self):
@@ -751,7 +751,7 @@ class TestConditionEvaluator:
 
     @pytest.fixture
     def evaluator(self, mock_db):
-        return ConditionEvaluator(mock_db)
+        return UniverseFilter(mock_db)
 
     def test_empty_filters_returns_all_symbols(self, evaluator, mock_db):
         """No filters should return all screened symbols."""

@@ -82,7 +82,7 @@ Strategy Definition (DB)
 ├─────────────────────────────────────────────────────────────────┤
 │                                                                  │
 │  ┌──────────────────┐  ┌──────────────────┐  ┌───────────────┐  │
-│  │ ConditionEvaluator│  │  ConsensusEngine │  │ PositionSizer │  │
+│  │ UniverseFilter │  │  ConsensusEngine │  │ PositionSizer │  │
 │  │                  │  │                  │  │               │  │
 │  │ - filter_universe│  │ - both_agree    │  │ - equal_weight│  │
 │  │ - _apply_filter  │  │ - weighted_conf  │  │ - conviction  │  │
@@ -598,7 +598,7 @@ Main orchestrator containing:
    - `PositionSize`: Shares, value, position %, reasoning
    - `ExitSignal`: Symbol, quantity, reason, current value, gain %
 
-2. **ConditionEvaluator**
+2. **UniverseFilter**
    - `filter_universe()`: Apply filters to get candidate symbols
    - `_apply_filter()`: Execute single filter as SQL query
 
@@ -768,7 +768,7 @@ And case statement mapping:
 - Thesis verdict filtering
 - Disabled strategy skipped
 
-**TestConditionEvaluator (2 tests):**
+**TestUniverseFilter (2 tests):**
 - Empty filters returns all symbols
 - Price filter applied
 

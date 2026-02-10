@@ -8,7 +8,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from google import genai
 
 from strategy_executor.models import ExitSignal
-from strategy_executor.conditions import ConditionEvaluator
+from strategy_executor.universe_filter import UniverseFilter
 from strategy_executor.consensus import ConsensusEngine
 from strategy_executor.position_sizing import PositionSizer
 from strategy_executor.exit_conditions import ExitConditionChecker
@@ -24,7 +24,7 @@ class StrategyExecutorCore:
 
     def __init__(self, db, analyst=None, lynch_criteria=None):
         self.db = db
-        self.condition_evaluator = ConditionEvaluator(db)
+        self.universe_filter = UniverseFilter(db)
         self.consensus_engine = ConsensusEngine()
         self.position_sizer = PositionSizer(db)
         self.exit_checker = ExitConditionChecker(db)
@@ -59,7 +59,7 @@ class StrategyExecutorCore:
         if self._holding_reevaluator is None:
             self._holding_reevaluator = HoldingReevaluator(
                 self.db,
-                self.condition_evaluator,
+                self.universe_filter,
                 self.lynch_criteria
             )
         return self._holding_reevaluator
@@ -108,7 +108,7 @@ class StrategyExecutorCore:
             print("=" * 60)
             log_event(self.db, run_id, "Starting screening phase")
             conditions = strategy.get('conditions', {})
-            all_candidates = self.condition_evaluator.filter_universe(conditions)
+            all_candidates = self.universe_filter.filter_universe(conditions)
 
             # Apply limit if requested
             if limit and limit > 0:

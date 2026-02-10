@@ -190,12 +190,12 @@ def preview_strategy(user_id):
         conditions = data.get('conditions', {})
 
         # Import here to avoid circular dependencies
-        from strategy_executor import ConditionEvaluator
+        from strategy_executor import UniverseFilter
         from lynch_criteria import LynchCriteria
         from earnings_analyzer import EarningsAnalyzer
 
         # Initialize evaluator and scorer
-        evaluator = ConditionEvaluator(deps.db)
+        evaluator = UniverseFilter(deps.db)
         analyzer = EarningsAnalyzer(deps.db)
         lynch_criteria = LynchCriteria(deps.db, analyzer)
 

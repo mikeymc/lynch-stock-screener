@@ -8,7 +8,7 @@ from strategy_executor import (
     StrategyExecutor,
     PositionSizer,
     HoldingReevaluator,
-    ConditionEvaluator,
+    UniverseFilter,
     ExitSignal
 )
 

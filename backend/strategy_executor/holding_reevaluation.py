@@ -87,7 +87,7 @@ class HoldingReevaluator:
         """Check if position still passes universe filters."""
         try:
             # Evaluate universe with just this symbol
-            passing_symbols = self.condition_evaluator.filter_universe(conditions)
+            passing_symbols = self.condition_evaluator.filter_inverse(conditions)
 
             if symbol not in passing_symbols:
                 # Get current price for exit signal

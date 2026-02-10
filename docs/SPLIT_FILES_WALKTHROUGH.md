@@ -92,7 +92,7 @@ def get_stock(symbol):
 
 ### Pattern C: Class-per-file
 
-Used for `strategy_executor.py`, which already contained multiple distinct classes (`ConditionEvaluator`, `ConsensusEngine`, `PositionSizer`, etc.).
+Used for `strategy_executor.py`, which already contained multiple distinct classes (`UniverseFilter`, `ConsensusEngine`, `PositionSizer`, etc.).
 
 Each class moves to its own file. `__init__.py` re-exports everything.
 
@@ -114,7 +114,7 @@ Related commands are grouped into files. Each file imports the shared Typer `app
 |------|-------|----------|
 | `__init__.py` | 10 | Re-exports all classes |
 | `models.py` | 34 | `ConsensusResult`, `PositionSize`, `ExitSignal` dataclasses |
-| `conditions.py` | 99 | `ConditionEvaluator` |
+| `conditions.py` | 99 | `UniverseFilter` |
 | `consensus.py` | 161 | `ConsensusEngine` |
 | `position_sizing.py` | 190 | `PositionSizer` |
 | `exit_conditions.py` | 145 | `ExitConditionChecker` |

@@ -7,7 +7,7 @@ from typing import Dict, Any, List
 logger = logging.getLogger(__name__)
 
 
-class ConditionEvaluator:
+class UniverseFilter:
     """Parses and evaluates strategy conditions against stock data."""
 
     def __init__(self, db):
