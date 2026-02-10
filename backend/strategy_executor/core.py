@@ -156,7 +156,6 @@ class StrategyExecutorCore:
             print(f"✓ Scored {len(scored)} stocks that passed requirements\n")
 
             # Phase 3: Thesis Generation (with parallel processing)
-            # Phase 3: Thesis Generation (with parallel processing)
             print("=" * 60)
             print("PHASE 3: THESIS GENERATION")
             print("=" * 60)
