@@ -161,20 +161,21 @@ class StrategyExecutorCore:
             print("=" * 60)
             print("PHASE 4: DELIBERATION")
             print("=" * 60)
-            decisions, deliberation_exits = self._deliberate(
+            buy_decisions, deliberation_exit_decisions = self._deliberate(
                 enriched, run_id, conditions, job_id=job_id,
                 held_symbols=held_symbols, holdings=holdings
             )
-            print(f"✓ {len(decisions)} BUY decisions made\\n")
+            print(f"✓ {len(buy_decisions)} BUY decisions made in deliberation\\n")
 
             # Phase 5: Exit Detection
             print("=" * 60)
             print("PHASE 5: EXIT DETECTION")
             print("=" * 60)
             exit_conditions = strategy.get('exit_conditions', {})
-            exits = []
+            exit_decisions = []
 
             # Source 1: Universe compliance — held stocks no longer passing entry filters
+            # TODO: we already determine what's passing and failing in phase 1. this method seems like it's constructing a list of exits, not checking compliance
             universe_exits = self.exit_checker.check_universe_compliance(
                 held_failing_universe, filtered_candidates, holdings
             )
@@ -183,7 +184,7 @@ class StrategyExecutorCore:
                 for s in universe_exits:
                     print(f"    {s.symbol}: {s.reason}")
                 log_event(self.db, run_id, f"Universe compliance exits: {len(universe_exits)} positions")
-            exits.extend(universe_exits)
+            exit_decisions.extend(universe_exits)
 
             # Source 2: Price, time, and explicit score-degradation exits
             price_time_exits = self.exit_checker.check_exits(
@@ -191,7 +192,7 @@ class StrategyExecutorCore:
                 exit_conditions,
                 scoring_func=self._get_current_scores
             )
-            exits.extend(price_time_exits)
+            exit_decisions.extend(price_time_exits)
 
             # Source 3: Score fallback — only when no explicit score_degradation configured
             if not exit_conditions.get('score_degradation'):
@@ -203,24 +204,24 @@ class StrategyExecutorCore:
                     if fallback_exits:
                         print(f"  Score fallback: {len(fallback_exits)} positions degraded below entry thresholds")
                         log_event(self.db, run_id, f"Score fallback exits: {len(fallback_exits)} positions")
-                    exits.extend(fallback_exits)
+                    exit_decisions.extend(fallback_exits)
 
             # Source 4: Deliberation AVOID on held positions (computed in Phase 4)
-            if deliberation_exits:
-                print(f"  Deliberation: {len(deliberation_exits)} held positions flagged AVOID:")
-                for exit_signal in deliberation_exits:
+            if deliberation_exit_decisions:
+                print(f"  Deliberation: {len(deliberation_exit_decisions)} held positions flagged AVOID:")
+                for exit_signal in deliberation_exit_decisions:
                     print(f"    {exit_signal.symbol}: {exit_signal.reason[:80]}")
-                log_event(self.db, run_id, f"Deliberation exits: {len(deliberation_exits)} positions")
-            exits.extend(deliberation_exits)
+                log_event(self.db, run_id, f"Deliberation exits: {len(deliberation_exit_decisions)} positions")
+            exit_decisions.extend(deliberation_exit_decisions)
 
-            print(f"✓ Found {len(exits)} positions to exit\n")
+            print(f"✓ Found {len(exit_decisions)} positions to exit\n")
 
             # Phase 6: Execute trades
             print("=" * 60)
             print("PHASE 6: TRADE EXECUTION")
             print("=" * 60)
             trades_executed = self._execute_trades(
-                decisions, exits, strategy, run_id
+                buy_decisions, exit_decisions, strategy, run_id
             )
             print(f"✓ Executed {trades_executed} trades\n")
 
