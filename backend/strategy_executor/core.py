@@ -171,7 +171,10 @@ class StrategyExecutorCore:
             print("=" * 60)
             print("PHASE 4: DELIBERATION")
             print("=" * 60)
-            decisions = self._deliberate(enriched, run_id, conditions, job_id=job_id)
+            decisions, deliberation_exits = self._deliberate(
+                enriched, run_id, conditions, job_id=job_id,
+                held_symbols=held_symbols, holdings=holdings
+            )
             print(f"✓ {len(decisions)} BUY decisions made\\n")
 
             # Phase 5: Check exits
@@ -207,6 +210,14 @@ class StrategyExecutorCore:
                     print("✓ All held positions still meet criteria")
             else:
                 print("Skipping (re-evaluation not enabled)\n")
+
+            # Merge deliberation exits (held positions that received AVOID verdict)
+            if deliberation_exits:
+                print(f"  Deliberation flagged {len(deliberation_exits)} held positions for exit:")
+                for exit_signal in deliberation_exits:
+                    print(f"    {exit_signal.symbol}: {exit_signal.reason[:80]}")
+                exits.extend(deliberation_exits)
+                log_event(self.db, run_id, f"Deliberation exits: {len(deliberation_exits)} positions")
 
             # Phase 6: Execute trades
             print("=" * 60)

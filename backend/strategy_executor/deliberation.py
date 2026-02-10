@@ -147,8 +147,10 @@ class DeliberationMixin:
         run_id: int,
         conditions: Dict[str, Any] = None,
         user_id: int = None,
-        job_id: Optional[int] = None
-    ) -> List[Dict[str, Any]]:
+        job_id: Optional[int] = None,
+        held_symbols: set = None,
+        holdings: Dict[str, Any] = None
+    ) -> tuple[List[Dict[str, Any]], List]:
         """Apply consensus logic to determine final decisions (Parallelized).
 
         For stocks with theses, conducts deliberation between Lynch and Buffett.
@@ -160,11 +162,19 @@ class DeliberationMixin:
             conditions: Strategy conditions (for thesis_verdict_required filtering)
             user_id: User ID who owns the strategy
             job_id: Optional job ID for progress reporting
+            held_symbols: Set of symbols currently held in the portfolio
+            holdings: Dict of current holdings (symbol → holding data) for exit sizing
 
         Returns:
-            List of stocks with BUY decisions
+            Tuple of (buy_decisions, deliberation_exits) where deliberation_exits
+            contains ExitSignal objects for held positions that received AVOID.
         """
+        from strategy_executor.models import ExitSignal
+
         decisions = []
+        deliberation_exits = []
+        held_symbols = held_symbols or set()
+        holdings = holdings or {}
         conditions = conditions or {}
         thesis_verdicts_required = conditions.get('thesis_verdict_required', [])
         
@@ -246,11 +256,26 @@ class DeliberationMixin:
                     final_decision=final_decision,
                     decision_reasoning=f"Deliberation result: {stock.get('final_verdict')}"
                 )
-                
+
                 if final_decision == 'BUY':
                     stock['id'] = decision_id
                     stock['decision_id'] = decision_id
                     return stock
+
+                # Emit an exit signal for held positions that received AVOID
+                if stock.get('final_verdict') == 'AVOID' and symbol in held_symbols:
+                    holding = holdings.get(symbol, {})
+                    quantity = holding.get('quantity', 0)
+                    current_value = holding.get('current_value', 0.0)
+                    gain_pct = holding.get('gain_pct', 0.0)
+                    return {'_exit_signal': ExitSignal(
+                        symbol=symbol,
+                        quantity=quantity,
+                        reason=f"Deliberation AVOID: {stock.get('deliberation', '')[:200]}",
+                        current_value=current_value,
+                        gain_pct=gain_pct
+                    )}
+
                 return None
 
             else:
@@ -278,17 +303,20 @@ class DeliberationMixin:
         completed = 0
         with ThreadPoolExecutor(max_workers=10) as executor:
             futures = {executor.submit(process_deliberation, stock): stock for stock in enriched}
-            
+
             for future in as_completed(futures):
                 try:
                     result = future.result()
                     if result:
-                        decisions.append(result)
+                        if '_exit_signal' in result:
+                            deliberation_exits.append(result['_exit_signal'])
+                        else:
+                            decisions.append(result)
                 except Exception as e:
                     logger.error(f"Deliberation worker failed: {e}")
-                
+
                 completed += 1
-                
+
                 # Report progress every 10 items
                 if job_id and (completed % 10 == 0 or completed == total):
                     pct = 60 + int((completed / total) * 30) # Phase 4 is 60-90% of total job
@@ -302,4 +330,4 @@ class DeliberationMixin:
                     # Log every 10 completions
                     print(f"  Deliberated on {completed}/{total} stocks")
 
-        return decisions
+        return decisions, deliberation_exits
