@@ -2,6 +2,7 @@
 # ABOUTME: Supports price-based exits and score degradation detection
 
 import logging
+from datetime import date
 from typing import Dict, Any, List, Optional
 from strategy_executor.models import ExitSignal
 
@@ -46,9 +47,10 @@ class ExitConditionChecker:
 
         exits = []
         holdings = self.db.get_portfolio_holdings_detailed(portfolio_id, use_live_prices=False)
+        entry_dates = self.db.get_position_entry_dates(portfolio_id)
 
         for holding in holdings:
-            signal = self._check_holding(holding, exit_conditions, scoring_func)
+            signal = self._check_holding(holding, exit_conditions, scoring_func, entry_dates)
             if signal:
                 exits.append(signal)
 
@@ -58,7 +60,8 @@ class ExitConditionChecker:
         self,
         holding: Dict[str, Any],
         conditions: Dict[str, Any],
-        scoring_func
+        scoring_func,
+        entry_dates: Dict[str, Any] = None
     ) -> Optional[ExitSignal]:
         """Check a single holding against exit conditions."""
         symbol = holding['symbol']
@@ -93,8 +96,20 @@ class ExitConditionChecker:
                 gain_pct=gain_pct
             )
 
-        # Check hold duration (would need transaction dates)
-        # TODO: Implement max_hold_days check
+        # Check hold duration
+        max_hold_days = conditions.get('max_hold_days')
+        if max_hold_days and entry_dates:
+            entry_info = entry_dates.get(symbol)
+            if entry_info and entry_info.get('first_buy_date'):
+                days_held = (date.today() - entry_info['first_buy_date']).days
+                if days_held > max_hold_days:
+                    return ExitSignal(
+                        symbol=symbol,
+                        quantity=quantity,
+                        reason=f"Max hold duration reached: {days_held} days > {max_hold_days} days",
+                        current_value=current_value,
+                        gain_pct=gain_pct
+                    )
 
         # Check score degradation
         degradation = conditions.get('score_degradation')
