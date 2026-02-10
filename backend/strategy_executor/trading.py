@@ -372,6 +372,11 @@ class TradingMixin:
                 except Exception as e:
                     logger.error(f"Failed to fetch existing alerts for user {user_id}: {e}")
 
+        # Query current portfolio state
+        portfolio_summary = self.db.get_portfolio_summary(portfolio_id, use_live_prices=False)
+        portfolio_cash = portfolio_summary.get('cash', 0) if portfolio_summary else 0
+        portfolio_value = portfolio_summary.get('total_value', 0) if portfolio_summary else 0
+
         # Phase A: Process exits
         sells_executed, anticipated_proceeds = self._process_exits(
             exits=exits,
@@ -382,17 +387,12 @@ class TradingMixin:
             run_id=run_id
         )
 
-        # Query current portfolio state
-        summary = self.db.get_portfolio_summary(portfolio_id, use_live_prices=False)
-        db_cash = summary.get('cash', 0) if summary else 0
-        portfolio_value = summary.get('total_value', 0) if summary else 0
-
         # When the market is closed, sells haven't hit the DB yet — add anticipated proceeds
-        available_cash = db_cash + (anticipated_proceeds if not is_market_open else 0)
+        cash_available_to_trade = portfolio_cash + (anticipated_proceeds if not is_market_open else 0)
 
-        print(f"\n  Available cash: ${available_cash:,.2f} "
-              f"(db=${db_cash:,.2f}, anticipated=${anticipated_proceeds:,.2f})")
-        log_event(self.db, run_id, f"Available cash: ${available_cash:,.2f}")
+        print(f"\n  Processed exits. Available cash to trade: ${cash_available_to_trade:,.2f} "
+              f"(db=${portfolio_cash:,.2f}, anticipated=${anticipated_proceeds:,.2f})")
+        log_event(self.db, run_id, f"Available cash: ${cash_available_to_trade:,.2f}")
 
         # Get current holdings for position calculation context
         holdings = {}
@@ -405,7 +405,7 @@ class TradingMixin:
         prioritized_positions = self._calculate_all_positions(
             buy_decisions=buy_decisions,
             portfolio_id=portfolio_id,
-            available_cash=available_cash,
+            available_cash=cash_available_to_trade,
             holdings=holdings,
             portfolio_value=portfolio_value,
             method=method,
