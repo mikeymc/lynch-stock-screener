@@ -137,7 +137,7 @@ class TestIssueFixes:
         }
 
         # AAPL no longer passes universe filters
-        evaluator.evaluate_universe.return_value = ['MSFT']  # AAPL not in list
+        evaluator.filter_universe.return_value = ['MSFT']  # AAPL not in list
 
         # MSFT still scores well
         lynch_criteria.evaluate_stock.return_value = {'overall_score': 75}

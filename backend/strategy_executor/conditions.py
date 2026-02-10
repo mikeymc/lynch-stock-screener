@@ -13,7 +13,7 @@ class ConditionEvaluator:
     def __init__(self, db):
         self.db = db
 
-    def evaluate_universe(self, conditions: Dict[str, Any]) -> List[str]:
+    def filter_universe(self, conditions: Dict[str, Any]) -> List[str]:
         """Apply universe filters to return candidate symbols.
 
         Args:

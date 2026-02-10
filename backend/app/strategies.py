@@ -200,7 +200,7 @@ def preview_strategy(user_id):
         lynch_criteria = LynchCriteria(deps.db, analyzer)
 
         # Filter universe
-        candidates = evaluator.evaluate_universe(conditions)
+        candidates = evaluator.filter_universe(conditions)
 
         if not candidates:
             return jsonify({'candidates': []})

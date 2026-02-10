@@ -84,7 +84,7 @@ Strategy Definition (DB)
 │  ┌──────────────────┐  ┌──────────────────┐  ┌───────────────┐  │
 │  │ ConditionEvaluator│  │  ConsensusEngine │  │ PositionSizer │  │
 │  │                  │  │                  │  │               │  │
-│  │ - evaluate_universe│ │ - both_agree    │  │ - equal_weight│  │
+│  │ - filter_universe│  │ - both_agree    │  │ - equal_weight│  │
 │  │ - _apply_filter  │  │ - weighted_conf  │  │ - conviction  │  │
 │  │                  │  │ - veto_power     │  │ - fixed_pct   │  │
 │  └──────────────────┘  └──────────────────┘  │ - kelly       │  │
@@ -599,7 +599,7 @@ Main orchestrator containing:
    - `ExitSignal`: Symbol, quantity, reason, current value, gain %
 
 2. **ConditionEvaluator**
-   - `evaluate_universe()`: Apply filters to get candidate symbols
+   - `filter_universe()`: Apply filters to get candidate symbols
    - `_apply_filter()`: Execute single filter as SQL query
 
 3. **ConsensusEngine**

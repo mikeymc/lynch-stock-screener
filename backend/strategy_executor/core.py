@@ -108,7 +108,7 @@ class StrategyExecutorCore:
             print("=" * 60)
             log_event(self.db, run_id, "Starting screening phase")
             conditions = strategy.get('conditions', {})
-            all_candidates = self.condition_evaluator.evaluate_universe(conditions)
+            all_candidates = self.condition_evaluator.filter_universe(conditions)
 
             # Apply limit if requested
             if limit and limit > 0:

@@ -763,7 +763,7 @@ class TestConditionEvaluator:
         mock_db.get_connection.return_value = conn
         mock_db.return_connection = Mock()
 
-        symbols = evaluator.evaluate_universe({'universe': {'filters': []}})
+        symbols = evaluator.filter_universe({'universe': {'filters': []}})
 
         assert 'AAPL' in symbols
         assert 'MSFT' in symbols
@@ -792,7 +792,7 @@ class TestConditionEvaluator:
             }
         }
 
-        symbols = evaluator.evaluate_universe(conditions)
+        symbols = evaluator.filter_universe(conditions)
 
         # Should have called filter query
         assert len(symbols) == 2
