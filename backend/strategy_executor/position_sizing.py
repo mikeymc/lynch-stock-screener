@@ -65,7 +65,7 @@ class PositionSizer:
 
         # Get current price if not provided
         if current_price is None:
-            current_price = self._fetch_price(symbol)
+            current_price = self._fetch_price(symbol) # todo: use live prices
             if not current_price:
                 return PositionSize(0, 0.0, 0.0, f"Price unavailable for {symbol}")
 
@@ -79,7 +79,7 @@ class PositionSizer:
 
         # Room to add
         room_to_add = max_position_value - current_value
-        if room_to_add <= 0:
+        if room_to_add <= 0: # todo: shoudn't this actually be room_to_add <= price_per_share?
             return PositionSize(
                 0, 0.0, 0.0,
                 f"Already at max position ({current_shares} shares = ${current_value:.2f})"
@@ -128,8 +128,7 @@ class PositionSizer:
         portfolio_id: int,
         method: str,
         rules: Dict[str, Any],
-        holdings: Dict[str, Any] = None,
-        current_prices: Dict[str, float] = None
+        holdings: Dict[str, Any] = None
     ) -> List[Dict[str, Any]]:
         """Calculate positions for all decisions, prioritize by conviction, select within budget.
 
@@ -141,7 +140,6 @@ class PositionSizer:
             method: Position sizing method
             rules: Position sizing rules
             holdings: Post-exit holdings (exit symbols already removed); queries DB if None
-            current_prices: Optional symbol→price map to avoid per-symbol DB lookups
 
         Returns:
             List of {symbol, decision, position, conviction, priority_score} sorted by priority desc,
@@ -153,8 +151,7 @@ class PositionSizer:
         if holdings is None:
             holdings = {}
 
-        if current_prices is None:
-            current_prices = {}
+        current_prices = {}
 
         positions_data = []
         for decision in buy_decisions:
