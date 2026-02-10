@@ -2,6 +2,7 @@
 # ABOUTME: Handles Phase 4 of strategy execution with parallel deliberation
 
 import logging
+import os
 from datetime import datetime
 from typing import Dict, Any, List, Optional
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -81,28 +82,20 @@ class DeliberationMixin:
 
         print(f"    No cached deliberation found, generating new one...")
 
-        # Create deliberation prompt
-        prompt = f"""You are facilitating a discussion between Peter Lynch and Warren Buffett about {symbol}.
+        # Load deliberation prompt from file
+        current_dir = os.path.dirname(os.path.abspath(__file__))
+        prompt_path = os.path.join(current_dir, 'deliberation_prompt.md')
+        
+        with open(prompt_path, 'r') as f:
+            prompt_template = f.read()
 
-LYNCH'S THESIS (Verdict: {lynch_verdict}):
-{lynch_thesis}
-
-BUFFETT'S THESIS (Verdict: {buffett_verdict}):
-{buffett_thesis}
-
-Now have them discuss these theses together. They should:
-1. Acknowledge each other's key points
-2. Discuss where they agree or disagree
-3. Consider whether either should revise their verdict based on the other's insights
-4. Reach a final consensus verdict
-
-Format the output as a discussion between them, ending with:
-
-## Final Consensus
-**[BUY/WATCH/AVOID]**
-
-Reasoning: [Brief explanation of their final decision]
-"""
+        prompt = prompt_template.format(
+            symbol=symbol,
+            lynch_verdict=lynch_verdict,
+            lynch_thesis=lynch_thesis,
+            buffett_verdict=buffett_verdict,
+            buffett_thesis=buffett_thesis
+        )
 
         # Retry configuration
         models = ['gemini-3-flash-preview', 'gemini-2.5-flash']
