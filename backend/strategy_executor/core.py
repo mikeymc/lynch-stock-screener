@@ -108,9 +108,6 @@ class StrategyExecutorCore:
             new_candidates = [s for s in filtered_candidates if s not in held_symbols]
             held_candidates = [s for s in filtered_candidates if s in held_symbols]
 
-            # Held positions no longer in the filtered universe (computed here while data is fresh)
-            held_failing_universe = held_symbols - set(filtered_candidates)
-
             print(f"  Universe breakdown:")
             print(f"    New positions: {len(new_candidates)}")
             print(f"    Position additions: {len(held_candidates)}")
@@ -175,9 +172,8 @@ class StrategyExecutorCore:
             exit_decisions = []
 
             # Source 1: Universe compliance — held stocks no longer passing entry filters
-            # TODO: we already determine what's passing and failing in phase 1. this method seems like it's constructing a list of exits, not checking compliance
             universe_exits = self.exit_checker.check_universe_compliance(
-                held_failing_universe, filtered_candidates, holdings
+                held_symbols, filtered_candidates, holdings
             )
             if universe_exits:
                 print(f"  Universe compliance: {len(universe_exits)} positions no longer pass filters")
