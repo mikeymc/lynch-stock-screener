@@ -6,7 +6,6 @@ from strategy_executor.universe_filter import UniverseFilter
 from strategy_executor.consensus import ConsensusEngine
 from strategy_executor.position_sizing import PositionSizer
 from strategy_executor.exit_conditions import ExitConditionChecker
-from strategy_executor.holding_reevaluation import HoldingReevaluator
 from benchmark_tracker import BenchmarkTracker
 from strategy_executor.core import StrategyExecutorCore
 from strategy_executor.scoring import ScoringMixin

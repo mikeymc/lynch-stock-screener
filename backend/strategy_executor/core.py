@@ -12,7 +12,6 @@ from strategy_executor.universe_filter import UniverseFilter
 from strategy_executor.consensus import ConsensusEngine
 from strategy_executor.position_sizing import PositionSizer
 from strategy_executor.exit_conditions import ExitConditionChecker
-from strategy_executor.holding_reevaluation import HoldingReevaluator
 from benchmark_tracker import BenchmarkTracker
 from strategy_executor.utils import log_event, get_spy_price
 
@@ -33,7 +32,6 @@ class StrategyExecutorCore:
         # Lazily initialize analyst and lynch_criteria if not provided
         self._analyst = analyst
         self._lynch_criteria = lynch_criteria
-        self._holding_reevaluator = None
 
     @property
     def analyst(self):
@@ -52,17 +50,6 @@ class StrategyExecutorCore:
             analyzer = EarningsAnalyzer(self.db)
             self._lynch_criteria = LynchCriteria(self.db, analyzer)
         return self._lynch_criteria
-
-    @property
-    def holding_reevaluator(self):
-        """Lazy initialization of HoldingReevaluator."""
-        if self._holding_reevaluator is None:
-            self._holding_reevaluator = HoldingReevaluator(
-                self.db,
-                self.universe_filter,
-                self.lynch_criteria
-            )
-        return self._holding_reevaluator
 
     def execute_strategy(self, strategy_id: int, limit: Optional[int] = None, job_id: Optional[int] = None) -> Dict[str, Any]:
         """Execute a strategy run.
@@ -121,6 +108,9 @@ class StrategyExecutorCore:
             new_candidates = [s for s in filtered_candidates if s not in held_symbols]
             held_candidates = [s for s in filtered_candidates if s in held_symbols]
 
+            # Held positions no longer in the filtered universe (computed here while data is fresh)
+            held_failing_universe = held_symbols - set(filtered_candidates)
+
             print(f"  Universe breakdown:")
             print(f"    New positions: {len(new_candidates)}")
             print(f"    Position additions: {len(held_candidates)}")
@@ -177,47 +167,53 @@ class StrategyExecutorCore:
             )
             print(f"✓ {len(decisions)} BUY decisions made\\n")
 
-            # Phase 5: Check exits
+            # Phase 5: Exit Detection
             print("=" * 60)
-            print("PHASE 5: EXIT CHECKS")
+            print("PHASE 5: EXIT DETECTION")
             print("=" * 60)
             exit_conditions = strategy.get('exit_conditions', {})
-            exits = self.exit_checker.check_exits(
+            exits = []
+
+            # Source 1: Universe compliance — held stocks no longer passing entry filters
+            universe_exits = self.exit_checker.check_universe_compliance(
+                held_failing_universe, filtered_candidates, holdings
+            )
+            if universe_exits:
+                print(f"  Universe compliance: {len(universe_exits)} positions no longer pass filters")
+                for s in universe_exits:
+                    print(f"    {s.symbol}: {s.reason}")
+                log_event(self.db, run_id, f"Universe compliance exits: {len(universe_exits)} positions")
+            exits.extend(universe_exits)
+
+            # Source 2: Price, time, and explicit score-degradation exits
+            price_time_exits = self.exit_checker.check_exits(
                 portfolio_id,
                 exit_conditions,
                 scoring_func=self._get_current_scores
             )
-            print(f"✓ Found {len(exits)} positions to exit\n")
+            exits.extend(price_time_exits)
 
-            # Phase 5.5: Holding Re-evaluation (check if held positions still meet criteria)
-            print("=" * 60)
-            print("PHASE 5.5: HOLDING RE-EVALUATION")
-            print("=" * 60)
-            reevaluation_config = conditions.get('holding_reevaluation', {})
-            if reevaluation_config.get('enabled', False):
-                reevaluation_exits = self.holding_reevaluator.check_holdings(
-                    portfolio_id,
-                    conditions,
-                    reevaluation_config
-                )
-                if reevaluation_exits:
-                    print(f"✓ Re-evaluation flagged {len(reevaluation_exits)} positions for exit:")
-                    for exit_signal in reevaluation_exits:
-                        print(f"    {exit_signal.symbol}: {exit_signal.reason}")
-                    exits.extend(reevaluation_exits)
-                    log_event(self.db, run_id, f"Re-evaluation: {len(reevaluation_exits)} positions flagged for exit")
-                else:
-                    print("✓ All held positions still meet criteria")
-            else:
-                print("Skipping (re-evaluation not enabled)\n")
+            # Source 3: Score fallback — only when no explicit score_degradation configured
+            if not exit_conditions.get('score_degradation'):
+                scoring_reqs = conditions.get('scoring_requirements', [])
+                if scoring_reqs:
+                    fallback_exits = self.exit_checker.check_scoring_fallback(
+                        portfolio_id, scoring_reqs, self._get_current_scores
+                    )
+                    if fallback_exits:
+                        print(f"  Score fallback: {len(fallback_exits)} positions degraded below entry thresholds")
+                        log_event(self.db, run_id, f"Score fallback exits: {len(fallback_exits)} positions")
+                    exits.extend(fallback_exits)
 
-            # Merge deliberation exits (held positions that received AVOID verdict)
+            # Source 4: Deliberation AVOID on held positions (computed in Phase 4)
             if deliberation_exits:
-                print(f"  Deliberation flagged {len(deliberation_exits)} held positions for exit:")
+                print(f"  Deliberation: {len(deliberation_exits)} held positions flagged AVOID:")
                 for exit_signal in deliberation_exits:
                     print(f"    {exit_signal.symbol}: {exit_signal.reason[:80]}")
-                exits.extend(deliberation_exits)
                 log_event(self.db, run_id, f"Deliberation exits: {len(deliberation_exits)} positions")
+            exits.extend(deliberation_exits)
+
+            print(f"✓ Found {len(exits)} positions to exit\n")
 
             # Phase 6: Execute trades
             print("=" * 60)

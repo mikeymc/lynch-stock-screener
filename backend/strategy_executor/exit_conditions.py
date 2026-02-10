@@ -122,6 +122,107 @@ class ExitConditionChecker:
 
         return None
 
+    def check_universe_compliance(
+        self,
+        held_symbols: set,
+        filtered_candidates: List[str],
+        holdings: Dict[str, Any]
+    ) -> List[ExitSignal]:
+        """Return ExitSignals for held positions no longer in the filtered universe.
+
+        Uses set arithmetic on data already computed in Phase 1 — no extra DB call needed.
+
+        Args:
+            held_symbols: Set of currently held symbols
+            filtered_candidates: Symbols passing universe filters this run
+            holdings: Map of symbol → holding details (expects 'quantity' key)
+
+        Returns:
+            ExitSignals for held symbols absent from filtered_candidates
+        """
+        failing = held_symbols - set(filtered_candidates)
+        exits = []
+        for symbol in failing:
+            holding = holdings.get(symbol, {})
+            quantity = holding.get('quantity', 0)
+            exits.append(ExitSignal(
+                symbol=symbol,
+                quantity=quantity,
+                reason="No longer passes universe filters",
+                current_value=0.0,
+                gain_pct=0.0,
+            ))
+        return exits
+
+    def check_scoring_fallback(
+        self,
+        portfolio_id: int,
+        scoring_requirements: List[Dict],
+        scoring_func
+    ) -> List[ExitSignal]:
+        """Exit if BOTH lynch and buffett scores fall below their entry thresholds.
+
+        Called only when no explicit score_degradation exit condition is configured.
+        One character still liking the stock is sufficient to hold (OR logic).
+
+        Args:
+            portfolio_id: Portfolio to check
+            scoring_requirements: List of {character, min_score} dicts from strategy conditions
+            scoring_func: Callable(symbol) → {lynch_score, buffett_score, ...}
+
+        Returns:
+            ExitSignals for positions where both characters score below entry thresholds
+        """
+        holdings = self.db.get_portfolio_holdings_detailed(portfolio_id, use_live_prices=False)
+        if not holdings:
+            return []
+
+        # Extract per-character thresholds from scoring requirements
+        lynch_threshold = None
+        buffett_threshold = None
+        for req in scoring_requirements:
+            char = req.get('character')
+            min_score = req.get('min_score')
+            if char == 'lynch':
+                lynch_threshold = min_score
+            elif char == 'buffett':
+                buffett_threshold = min_score
+
+        exits = []
+        for holding in holdings:
+            symbol = holding['symbol']
+            quantity = holding['quantity']
+            current_value = holding.get('current_value', 0)
+            cost_basis = holding.get('total_cost', 0)
+            gain_pct = ((current_value - cost_basis) / cost_basis * 100) if cost_basis > 0 else 0
+
+            try:
+                scores = scoring_func(symbol)
+            except Exception as e:
+                logger.warning(f"Failed to get scores for {symbol} in scoring fallback: {e}")
+                continue
+
+            lynch_score = scores.get('lynch_score', 100)
+            buffett_score = scores.get('buffett_score', 100)
+
+            lynch_fails = lynch_threshold is not None and lynch_score < lynch_threshold
+            buffett_fails = buffett_threshold is not None and buffett_score < buffett_threshold
+
+            # Exit only when both fail (OR hold: one passing character is enough to keep)
+            if lynch_fails and buffett_fails:
+                exits.append(ExitSignal(
+                    symbol=symbol,
+                    quantity=quantity,
+                    reason=(
+                        f"Scores degraded (Lynch {lynch_score:.0f} < {lynch_threshold}, "
+                        f"Buffett {buffett_score:.0f} < {buffett_threshold})"
+                    ),
+                    current_value=current_value,
+                    gain_pct=gain_pct,
+                ))
+
+        return exits
+
     def _check_score_degradation(
         self,
         symbol: str,
