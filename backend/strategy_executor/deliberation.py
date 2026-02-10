@@ -149,7 +149,8 @@ class DeliberationMixin:
         user_id: int = None,
         job_id: Optional[int] = None,
         held_symbols: set = None,
-        holdings: Dict[str, Any] = None
+        holdings: Dict[str, Any] = None,
+        symbols_of_held_stocks_with_failing_scores: set = None
     ) -> tuple[List[Dict[str, Any]], List]:
         """Apply consensus logic to determine final decisions (Parallelized).
 
@@ -164,6 +165,8 @@ class DeliberationMixin:
             job_id: Optional job ID for progress reporting
             held_symbols: Set of symbols currently held in the portfolio
             holdings: Dict of current holdings (symbol → holding data) for exit sizing
+            exit_only_symbols: Symbols that are held but failed addition scoring — BUY
+                verdicts for these are treated as HOLD (not added to buy decisions)
 
         Returns:
             Tuple of (buy_decisions, deliberation_exits) where deliberation_exits
@@ -176,6 +179,7 @@ class DeliberationMixin:
         held_symbols = held_symbols or set()
         holdings = holdings or {}
         conditions = conditions or {}
+        symbols_of_held_stocks_with_failing_scores = symbols_of_held_stocks_with_failing_scores or set()
         thesis_verdicts_required = conditions.get('thesis_verdict_required', [])
         
         total = len(enriched)
@@ -258,6 +262,9 @@ class DeliberationMixin:
                 )
 
                 if final_decision == 'BUY':
+                    if symbol in symbols_of_held_stocks_with_failing_scores:
+                        # Held stock that failed addition scoring — BUY means HOLD, not an addition
+                        return None
                     stock['id'] = decision_id
                     stock['decision_id'] = decision_id
                     return stock

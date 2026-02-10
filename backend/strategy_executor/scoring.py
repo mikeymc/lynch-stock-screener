@@ -18,7 +18,7 @@ class ScoringMixin:
         conditions: Dict[str, Any],
         run_id: int,
         is_addition: bool = False
-    ) -> List[Dict[str, Any]]:
+    ) -> tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
         """Score candidates with Lynch and Buffett scoring.
 
         Args:
@@ -28,10 +28,13 @@ class ScoringMixin:
             is_addition: If True, use higher thresholds for position additions
 
         Returns:
-            List of stocks that passed scoring requirements
+            Tuple of (passing, declined). For is_addition=True, declined contains
+            held stocks that have score data but failed addition thresholds — they
+            are routed through deliberation for exit evaluation. For is_addition=False,
+            declined is always empty.
         """
         if not candidates:
-            return []
+            return [], []
 
         # 1. Determine thresholds
         lynch_req, buffett_req = self._get_scoring_thresholds(conditions, is_addition)
@@ -43,23 +46,23 @@ class ScoringMixin:
             # 2. Load Data
             df = self._load_candidate_data(candidates, run_id)
             if df is None or df.empty:
-                return []
+                return [], []
 
             # 3. Calculate Scores
             df_scores = self._calculate_batch_scores(df)
 
             # 4. Evaluate Candidates
-            scored = self._evaluate_candidates(df_scores, lynch_req, buffett_req, is_addition, run_id)
+            scored, declined = self._evaluate_candidates(df_scores, lynch_req, buffett_req, is_addition, run_id)
 
             log_event(self.db, run_id, f"Scoring complete: {len(scored)}/{len(candidates)} {position_type}s passed requirements")
-            return scored
+            return scored, declined
 
         except Exception as e:
             logger.error(f"Vectorized scoring failed: {e}")
             import traceback
             logger.error(traceback.format_exc())
             log_event(self.db, run_id, f"ERROR: Vectorized scoring failed: {e}")
-            return []
+            return [], []
 
     def _get_scoring_thresholds(self, conditions: Dict[str, Any], is_addition: bool) -> tuple[int, int]:
         """Determine Lynch and Buffett score thresholds based on conditions."""
@@ -164,8 +167,14 @@ class ScoringMixin:
         return df_merged.merge(df_buffett_scores, on='symbol', how='inner')
 
     def _evaluate_candidates(self, df_scores, lynch_req, buffett_req, is_addition, run_id):
-        """Evaluate scored candidates against requirements."""
+        """Evaluate scored candidates against requirements.
+
+        Returns:
+            Tuple of (passing, declined). declined is populated only when is_addition=True
+            and contains held stocks that have score data but failed addition thresholds.
+        """
         scored = []
+        declined = []
         df_scores['position_type'] = 'addition' if is_addition else 'new'
         type_label = "ADDITION" if is_addition else "NEW"
 
@@ -211,4 +220,8 @@ class ScoringMixin:
                 threshold_note = " (higher bar for additions)" if is_addition else ""
                 print(f"    ✗ FAILED requirements ({fail_str}){threshold_note}")
 
-        return scored
+                if is_addition:
+                    stock_data['position_type'] = 'held_exit_evaluation'
+                    declined.append(stock_data)
+
+        return scored, declined

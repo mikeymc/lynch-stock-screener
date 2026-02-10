@@ -8,6 +8,10 @@ from strategy_executor.models import ExitSignal
 
 logger = logging.getLogger(__name__)
 
+# Safety-net default: only fires when scores have catastrophically collapsed.
+# Users can override with a stricter threshold in their strategy exit_conditions config.
+DEFAULT_SCORE_DEGRADATION = {"lynch_below": 50, "buffett_below": 50}
+
 
 class ExitConditionChecker:
     """Checks existing positions against exit conditions."""
@@ -42,15 +46,16 @@ class ExitConditionChecker:
         Returns:
             List of ExitSignal for positions that should be sold
         """
-        if not exit_conditions:
-            return []
-
         exits = []
         holdings = self.db.get_portfolio_holdings_detailed(portfolio_id, use_live_prices=False)
         entry_dates = self.db.get_position_entry_dates(portfolio_id)
 
+        effective_conditions = dict(exit_conditions)
+        if 'score_degradation' not in effective_conditions:
+            effective_conditions['score_degradation'] = DEFAULT_SCORE_DEGRADATION
+
         for holding in holdings:
-            signal = self._check_holding(holding, exit_conditions, scoring_func, entry_dates)
+            signal = self._check_holding(holding, effective_conditions, scoring_func, entry_dates)
             if signal:
                 exits.append(signal)
 
@@ -154,75 +159,6 @@ class ExitConditionChecker:
             ))
         return exits
 
-    def check_scoring_fallback(
-        self,
-        portfolio_id: int,
-        scoring_requirements: List[Dict],
-        scoring_func
-    ) -> List[ExitSignal]:
-        """Exit if BOTH lynch and buffett scores fall below their entry thresholds.
-
-        Called only when no explicit score_degradation exit condition is configured.
-        One character still liking the stock is sufficient to hold (OR logic).
-
-        Args:
-            portfolio_id: Portfolio to check
-            scoring_requirements: List of {character, min_score} dicts from strategy conditions
-            scoring_func: Callable(symbol) → {lynch_score, buffett_score, ...}
-
-        Returns:
-            ExitSignals for positions where both characters score below entry thresholds
-        """
-        holdings = self.db.get_portfolio_holdings_detailed(portfolio_id, use_live_prices=False)
-        if not holdings:
-            return []
-
-        # Extract per-character thresholds from scoring requirements
-        lynch_threshold = None
-        buffett_threshold = None
-        for req in scoring_requirements:
-            char = req.get('character')
-            min_score = req.get('min_score')
-            if char == 'lynch':
-                lynch_threshold = min_score
-            elif char == 'buffett':
-                buffett_threshold = min_score
-
-        exits = []
-        for holding in holdings:
-            symbol = holding['symbol']
-            quantity = holding['quantity']
-            current_value = holding.get('current_value', 0)
-            cost_basis = holding.get('total_cost', 0)
-            gain_pct = ((current_value - cost_basis) / cost_basis * 100) if cost_basis > 0 else 0
-
-            try:
-                scores = scoring_func(symbol)
-            except Exception as e:
-                logger.warning(f"Failed to get scores for {symbol} in scoring fallback: {e}")
-                continue
-
-            lynch_score = scores.get('lynch_score', 100)
-            buffett_score = scores.get('buffett_score', 100)
-
-            lynch_fails = lynch_threshold is not None and lynch_score < lynch_threshold
-            buffett_fails = buffett_threshold is not None and buffett_score < buffett_threshold
-
-            # Exit only when both fail (OR hold: one passing character is enough to keep)
-            if lynch_fails and buffett_fails:
-                exits.append(ExitSignal(
-                    symbol=symbol,
-                    quantity=quantity,
-                    reason=(
-                        f"Scores degraded (Lynch {lynch_score:.0f} < {lynch_threshold}, "
-                        f"Buffett {buffett_score:.0f} < {buffett_threshold})"
-                    ),
-                    current_value=current_value,
-                    gain_pct=gain_pct,
-                ))
-
-        return exits
-
     def _check_score_degradation(
         self,
         symbol: str,
@@ -238,23 +174,18 @@ class ExitConditionChecker:
             lynch_threshold = degradation.get('lynch_below')
             buffett_threshold = degradation.get('buffett_below')
 
-            if lynch_threshold and scores.get('lynch_score', 100) < lynch_threshold:
+            lynch_failed = lynch_threshold and scores.get('lynch_score', 100) < lynch_threshold
+            buffett_failed = buffett_threshold and scores.get('buffett_score', 100) < buffett_threshold
+
+            if lynch_failed and buffett_failed:
                 return ExitSignal(
                     symbol=symbol,
                     quantity=quantity,
-                    reason=f"Lynch score degraded: {scores['lynch_score']:.0f} < {lynch_threshold}",
+                    reason=f"Lynch score degraded: {scores['lynch_score']:.0f} < {lynch_threshold} and Buffett score degraded: {scores['buffett_score']:.0f} < {buffett_threshold}",
                     current_value=current_value,
                     gain_pct=gain_pct
                 )
 
-            if buffett_threshold and scores.get('buffett_score', 100) < buffett_threshold:
-                return ExitSignal(
-                    symbol=symbol,
-                    quantity=quantity,
-                    reason=f"Buffett score degraded: {scores['buffett_score']:.0f} < {buffett_threshold}",
-                    current_value=current_value,
-                    gain_pct=gain_pct
-                )
         except Exception as e:
             logger.warning(f"Failed to check score degradation for {symbol}: {e}")
 

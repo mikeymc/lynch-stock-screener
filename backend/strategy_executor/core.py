@@ -103,16 +103,15 @@ class StrategyExecutorCore:
                 filtered_candidates = filtered_candidates[:limit]
 
             # Separate held vs new positions
-            holdings = self.db.get_portfolio_holdings(portfolio_id)
-            held_symbols = set(holdings.keys())
-            new_candidates = [s for s in filtered_candidates if s not in held_symbols]
-            held_candidates = [s for s in filtered_candidates if s in held_symbols]
+            current_portfolio_holdings = self.db.get_portfolio_holdings(portfolio_id)
+            current_portfolio_holdings_symbols = set(current_portfolio_holdings.keys())
+            new_candidates = [s for s in filtered_candidates if s not in current_portfolio_holdings_symbols]
+            held_candidates = [s for s in filtered_candidates if s in current_portfolio_holdings_symbols]
 
             print(f"  Universe breakdown:")
-            print(f"    New positions: {len(new_candidates)}")
-            print(f"    Position additions: {len(held_candidates)}")
+            print(f"    New candidates: {len(new_candidates)}")
             if held_candidates:
-                print(f"    Held stocks in universe: {held_candidates}")
+                print(f"    Currently held candidates: {len(held_candidates)}")
 
             self.db.update_strategy_run(run_id, stocks_screened=len(filtered_candidates))
             log_event(self.db, run_id, f"Screened {len(filtered_candidates)} candidates ({len(new_candidates)} new, {len(held_candidates)} additions)")
@@ -124,45 +123,53 @@ class StrategyExecutorCore:
             print("=" * 60)
 
             # Score new positions with standard thresholds
-            scored_new = []
+            new_stocks_with_passing_scores = []
             if new_candidates:
                 print(f"  Scoring {len(new_candidates)} new position candidates...")
-                scored_new = self._score_candidates(new_candidates, conditions, run_id, is_addition=False)
-                print(f"  ✓ {len(scored_new)} new positions passed requirements\n")
+                new_stocks_with_passing_scores, _ = self._score_candidates(new_candidates, conditions, run_id, is_addition=False)
+                print(f"  ✓ {len(new_stocks_with_passing_scores)} new positions passed requirements\n")
 
-            # Score additions with higher thresholds
-            scored_additions = []
+            # Score additions with higher thresholds; capture held stocks that declined
+            held_stocks_with_passing_scores = []
+            held_stocks_with_failing_scores = []
             if held_candidates:
                 print(f"  Scoring {len(held_candidates)} position addition candidates (higher thresholds)...")
-                scored_additions = self._score_candidates(held_candidates, conditions, run_id, is_addition=True)
-                print(f"  ✓ {len(scored_additions)} additions passed requirements\n")
+                held_stocks_with_passing_scores, held_stocks_with_failing_scores = self._score_candidates(held_candidates, conditions, run_id, is_addition=True)
+                print(f"  ✓ {len(held_stocks_with_passing_scores)} additions passed requirements\n")
+                if held_stocks_with_failing_scores:
+                    print(f"  {len(held_stocks_with_failing_scores)} held stocks with failing scores routing to deliberation for evaluation")
 
             # Combine scored candidates
-            scored = scored_new + scored_additions
-            self.db.update_strategy_run(run_id, stocks_scored=len(scored))
-            print(f"✓ Scored {len(scored)} stocks that passed requirements\n")
+            new_and_held_stocks_with_passing_scores = new_stocks_with_passing_scores + held_stocks_with_passing_scores
+            self.db.update_strategy_run(run_id, stocks_scored=len(new_and_held_stocks_with_passing_scores))
+            print(f"✓ Scored {len(new_and_held_stocks_with_passing_scores)} stocks that passed requirements\n")
 
             # Phase 3: Thesis Generation (with parallel processing)
+            # held_stocks_with_failing_scores are included so Lynch and Buffett can deliberate on whether to exit
             print("=" * 60)
             print("PHASE 3: THESIS GENERATION")
             print("=" * 60)
+            all_for_deliberation = new_and_held_stocks_with_passing_scores + held_stocks_with_failing_scores
             if conditions.get('require_thesis', False):
-                enriched = self._generate_theses(scored, run_id, job_id=job_id)
+                enriched = self._generate_theses(all_for_deliberation, run_id, job_id=job_id)
                 self.db.update_strategy_run(run_id, theses_generated=len(enriched))
                 print(f"✓ Generated {len(enriched)} theses\\n")
             else:
                 print("Skipping (thesis not required)\\n")
-                enriched = scored
+                enriched = all_for_deliberation
 
             # Phase 4: Deliberate (Lynch and Buffett discuss their theses)
             print("=" * 60)
             print("PHASE 4: DELIBERATION")
             print("=" * 60)
+            symbols_of_held_stocks_with_failing_scores = {s['symbol'] for s in held_stocks_with_failing_scores}
             buy_decisions, deliberation_exit_decisions = self._deliberate(
                 enriched, run_id, conditions, job_id=job_id,
-                held_symbols=held_symbols, holdings=holdings
+                held_symbols=current_portfolio_holdings_symbols, holdings=current_portfolio_holdings,
+                symbols_of_held_stocks_with_failing_scores=symbols_of_held_stocks_with_failing_scores
             )
             print(f"✓ {len(buy_decisions)} BUY decisions made in deliberation\\n")
+            print(f"  {len(deliberation_exit_decisions)} EXIT decisions made in deliberation\\n")
 
             # Phase 5: Exit Detection
             print("=" * 60)
@@ -173,7 +180,7 @@ class StrategyExecutorCore:
 
             # Source 1: Universe compliance — held stocks no longer passing entry filters
             universe_exits = self.exit_checker.check_universe_compliance(
-                held_symbols, filtered_candidates, holdings
+                current_portfolio_holdings_symbols, filtered_candidates, current_portfolio_holdings
             )
             if universe_exits:
                 print(f"  Universe compliance: {len(universe_exits)} positions no longer pass filters")
@@ -190,19 +197,7 @@ class StrategyExecutorCore:
             )
             exit_decisions.extend(price_time_exits)
 
-            # Source 3: Score fallback — only when no explicit score_degradation configured
-            if not exit_conditions.get('score_degradation'):
-                scoring_reqs = conditions.get('scoring_requirements', [])
-                if scoring_reqs:
-                    fallback_exits = self.exit_checker.check_scoring_fallback(
-                        portfolio_id, scoring_reqs, self._get_current_scores
-                    )
-                    if fallback_exits:
-                        print(f"  Score fallback: {len(fallback_exits)} positions degraded below entry thresholds")
-                        log_event(self.db, run_id, f"Score fallback exits: {len(fallback_exits)} positions")
-                    exit_decisions.extend(fallback_exits)
-
-            # Source 4: Deliberation AVOID on held positions (computed in Phase 4)
+            # Source 3: Deliberation AVOID on held positions (computed in Phase 4)
             if deliberation_exit_decisions:
                 print(f"  Deliberation: {len(deliberation_exit_decisions)} held positions flagged AVOID:")
                 for exit_signal in deliberation_exit_decisions:
@@ -239,7 +234,7 @@ class StrategyExecutorCore:
                 'status': 'completed',
                 'run_id': run_id,
                 'stocks_screened': len(filtered_candidates),
-                'stocks_scored': len(scored),
+                'stocks_scored': len(new_and_held_stocks_with_passing_scores),
                 'theses_generated': len(enriched) if conditions.get('require_thesis') else 0,
                 'trades_executed': trades_executed,
                 'alpha': perf.get('alpha', 0)
