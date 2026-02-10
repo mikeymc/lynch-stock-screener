@@ -22,7 +22,10 @@ class PositionSizer:
         method: str,
         rules: Dict[str, Any],
         other_buys: List[Dict[str, Any]] = None,
-        current_price: float = None
+        current_price: float = None,
+        available_cash: float = None,
+        total_value: float = None,
+        holdings: Dict[str, Any] = None
     ) -> PositionSize:
         """Calculate shares to buy based on sizing method.
 
@@ -40,6 +43,9 @@ class PositionSizer:
             rules: Position sizing rules from strategy
             other_buys: Other stocks being bought this run
             current_price: Current stock price (fetched if not provided)
+            available_cash: Post-exit cash (skips DB query when provided with total_value and holdings)
+            total_value: Total portfolio value (skips DB query when provided with available_cash and holdings)
+            holdings: Post-exit holdings dict (skips DB query when provided with available_cash and total_value)
 
         Returns:
             PositionSize with shares, value, and reasoning
@@ -47,14 +53,15 @@ class PositionSizer:
         if other_buys is None:
             other_buys = []
 
-        # Get portfolio state
-        summary = self.db.get_portfolio_summary(portfolio_id, use_live_prices=False)
-        if not summary:
-            return PositionSize(0, 0.0, 0.0, "Portfolio not found")
+        # Use provided state if all three are given; otherwise query DB
+        if available_cash is None or total_value is None or holdings is None:
+            summary = self.db.get_portfolio_summary(portfolio_id, use_live_prices=False)
+            if not summary:
+                return PositionSize(0, 0.0, 0.0, "Portfolio not found")
 
-        total_value = summary.get('total_value', 0)
-        available_cash = summary.get('cash', 0)
-        holdings = summary.get('holdings', {})
+            total_value = summary.get('total_value', 0)
+            available_cash = summary.get('cash', 0)
+            holdings = summary.get('holdings', {})
 
         # Get current price if not provided
         if current_price is None:
@@ -112,6 +119,93 @@ class PositionSizer:
             position_pct=(shares * current_price) / total_value * 100 if total_value > 0 else 0,
             reasoning=f"{method}: ${final_value:.2f} -> {shares} shares @ ${current_price:.2f}"
         )
+
+    def prioritize_positions(
+        self,
+        buy_decisions: List[Dict[str, Any]],
+        available_cash: float,
+        portfolio_value: float,
+        portfolio_id: int,
+        method: str,
+        rules: Dict[str, Any],
+        holdings: Dict[str, Any] = None,
+        current_prices: Dict[str, float] = None
+    ) -> List[Dict[str, Any]]:
+        """Calculate positions for all decisions, prioritize by conviction, select within budget.
+
+        Args:
+            buy_decisions: List of stocks with BUY decisions
+            available_cash: Post-exit cash available
+            portfolio_value: Total portfolio value
+            portfolio_id: Portfolio to trade in
+            method: Position sizing method
+            rules: Position sizing rules
+            holdings: Post-exit holdings (exit symbols already removed); queries DB if None
+            current_prices: Optional symbol→price map to avoid per-symbol DB lookups
+
+        Returns:
+            List of {symbol, decision, position, conviction, priority_score} sorted by priority desc,
+            filtered to those that fit within available_cash.
+        """
+        if not buy_decisions:
+            return []
+
+        if holdings is None:
+            holdings = {}
+
+        if current_prices is None:
+            current_prices = {}
+
+        positions_data = []
+        for decision in buy_decisions:
+            symbol = decision['symbol']
+            conviction = decision.get('consensus_score', 50)
+            price = current_prices.get(symbol)
+
+            try:
+                position = self.calculate_position(
+                    portfolio_id=portfolio_id,
+                    symbol=symbol,
+                    conviction_score=conviction,
+                    method=method,
+                    rules=rules,
+                    other_buys=[d for d in buy_decisions if d != decision],
+                    current_price=price,
+                    available_cash=available_cash,
+                    total_value=portfolio_value,
+                    holdings=holdings
+                )
+
+                priority_score = conviction - (position.position_pct * 0.1)
+
+                positions_data.append({
+                    'symbol': symbol,
+                    'decision': decision,
+                    'position': position,
+                    'conviction': conviction,
+                    'priority_score': priority_score
+                })
+
+            except Exception as e:
+                logger.error(f"Failed to calculate position for {symbol}: {e}")
+                continue
+
+        positions_data.sort(key=lambda x: x['priority_score'], reverse=True)
+
+        total_requested = sum(p['position'].estimated_value for p in positions_data)
+
+        if total_requested <= available_cash:
+            return positions_data
+
+        # Greedy selection: highest priority positions that fit within budget
+        selected = []
+        remaining_cash = available_cash
+        for pos_data in positions_data:
+            if pos_data['position'].estimated_value <= remaining_cash:
+                selected.append(pos_data)
+                remaining_cash -= pos_data['position'].estimated_value
+
+        return selected
 
     def _fetch_price(self, symbol: str) -> Optional[float]:
         """Fetch current price from database."""

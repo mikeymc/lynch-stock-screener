@@ -192,28 +192,27 @@ def test_execute_buys_market_closed(executor, mock_db):
 # ---------------------------------------------------------------------------
 
 def test_execute_trades_uses_anticipated_cash(executor, mock_db):
-    """When market closed, position sizing uses db_cash + anticipated_proceeds."""
+    """When market closed, position sizing uses db_cash + anticipated_proceeds and excludes exited holdings."""
     import portfolio_service
     portfolio_service.is_market_open.return_value = False
 
     # DB cash is 5000, we will sell 2000 worth of stock off-hours
     mock_db.get_portfolio_summary.return_value = {'cash': 5000.0, 'total_value': 20000.0}
     mock_db.create_alert.return_value = 999
+    mock_db.get_portfolio_holdings.return_value = {'TSLA': 10, 'MSFT': 5}
 
     exits = [make_exit('TSLA', quantity=10, current_value=2000.0)]
     buy_decisions = [{'symbol': 'MSFT', 'consensus_score': 80, 'id': 300, 'position_type': 'new'}]
 
-    mock_pos_sizer = executor.position_sizer
-    # Capture what available_cash was passed to calculate_position
-    captured_cash = {}
+    captured = {}
 
-    original_calc = executor._calculate_all_positions
-
-    def spy_calc(buy_decisions, portfolio_id, available_cash, holdings, portfolio_value, method, rules, run_id):
-        captured_cash['value'] = available_cash
+    def spy_prioritize(buy_decisions, available_cash, portfolio_value, portfolio_id,
+                       method, rules, holdings=None, **kwargs):
+        captured['available_cash'] = available_cash
+        captured['holdings'] = holdings
         return []
 
-    executor._calculate_all_positions = spy_calc
+    executor.position_sizer.prioritize_positions = spy_prioritize
 
     strategy = {
         'portfolio_id': 1,
@@ -228,7 +227,9 @@ def test_execute_trades_uses_anticipated_cash(executor, mock_db):
     )
 
     # Should be db_cash (5000) + anticipated_proceeds (2000) = 7000
-    assert captured_cash['value'] == 7000.0
+    assert captured['available_cash'] == 7000.0
+    # TSLA was exited, should not appear in holdings passed to prioritize_positions
+    assert 'TSLA' not in captured['holdings']
 
 
 # ---------------------------------------------------------------------------

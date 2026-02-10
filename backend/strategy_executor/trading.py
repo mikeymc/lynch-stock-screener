@@ -94,113 +94,6 @@ class TradingMixin:
 
         return count, anticipated_proceeds
 
-    def _calculate_all_positions(
-        self,
-        buy_decisions: List[Dict[str, Any]],
-        portfolio_id: int,
-        available_cash: float,
-        holdings: Dict,
-        portfolio_value: float,
-        method: str,
-        rules: Dict[str, Any],
-        run_id: int
-    ) -> List[Dict[str, Any]]:
-        """Phase 1: Calculate all positions with priority ordering.
-
-        Calculates position sizes for all buy decisions, prioritizes by conviction,
-        and ensures total doesn't exceed available cash.
-
-        Args:
-            buy_decisions: List of stocks with BUY decisions
-            portfolio_id: Portfolio to trade in
-            available_cash: Current available cash
-            holdings: Current portfolio holdings dict (reserved for future rebalancing)
-            portfolio_value: Total portfolio value (reserved for future rebalancing)
-            method: Position sizing method
-            rules: Position sizing rules
-            run_id: Current run ID for logging
-
-        Returns:
-            List of dicts with: {symbol, decision, position, priority_score}
-            Sorted by priority (highest conviction first)
-        """
-        if not buy_decisions:
-            return []
-
-        print("\n  Phase 1: Calculating all positions with priority ordering...")
-        log_event(self.db, run_id, f"Phase 1: Calculating positions for {len(buy_decisions)} buy decisions")
-
-        # Calculate positions for all decisions
-        positions_data = []
-        for decision in buy_decisions:
-            symbol = decision['symbol']
-            conviction = decision.get('consensus_score', 50)
-
-            try:
-                position = self.position_sizer.calculate_position(
-                    portfolio_id=portfolio_id,
-                    symbol=symbol,
-                    conviction_score=conviction,
-                    method=method,
-                    rules=rules,
-                    other_buys=[d for d in buy_decisions if d != decision]
-                )
-
-                # Calculate priority score
-                # Primary: conviction score (higher = more priority)
-                # Secondary: position size (smaller = more priority for diversification)
-                priority_score = conviction - (position.position_pct * 0.1)
-
-                positions_data.append({
-                    'symbol': symbol,
-                    'decision': decision,
-                    'position': position,
-                    'conviction': conviction,
-                    'priority_score': priority_score
-                })
-
-                print(f"    {symbol}: {position.shares} shares (${position.estimated_value:,.2f}), "
-                      f"conviction={conviction:.0f}, priority={priority_score:.1f}")
-
-            except Exception as e:
-                logger.error(f"Failed to calculate position for {symbol}: {e}")
-                continue
-
-        # Sort by priority (highest first)
-        positions_data.sort(key=lambda x: x['priority_score'], reverse=True)
-
-        # Calculate total cash needed
-        total_requested = sum(p['position'].estimated_value for p in positions_data)
-        print(f"\n  Total requested: ${total_requested:,.2f}, Available: ${available_cash:,.2f}")
-        log_event(self.db, run_id, f"Total requested: ${total_requested:,.2f}, Available: ${available_cash:,.2f}")
-
-        # If we exceed available cash, need to rebalance
-        if total_requested > available_cash:
-            print(f"  ⚠ Insufficient cash! Selecting highest priority positions...")
-            log_event(self.db, run_id, f"Insufficient cash. Prioritizing highest conviction positions.")
-
-            # Select positions that fit in budget (greedy by priority)
-            selected = []
-            remaining_cash = available_cash
-
-            for pos_data in positions_data:
-                if pos_data['position'].estimated_value <= remaining_cash:
-                    selected.append(pos_data)
-                    remaining_cash -= pos_data['position'].estimated_value
-                    print(f"    ✓ Selected {pos_data['symbol']} (${pos_data['position'].estimated_value:,.2f})")
-                else:
-                    print(f"    ✗ Skipped {pos_data['symbol']} (${pos_data['position'].estimated_value:,.2f}) - insufficient cash")
-                    log_event(self.db, run_id, f"Skipped {pos_data['symbol']} - insufficient cash")
-
-            positions_data = selected
-            print(f"  Selected {len(positions_data)}/{len(buy_decisions)} positions, "
-                  f"using ${available_cash - remaining_cash:,.2f} of ${available_cash:,.2f}")
-            log_event(self.db, run_id, f"Selected {len(positions_data)} positions totaling ${available_cash - remaining_cash:,.2f}")
-        else:
-            print(f"  ✓ All positions fit within available cash")
-
-        return positions_data
-
     def _execute_buys(
         self,
         prioritized_positions: List[Dict[str, Any]],
@@ -394,24 +287,32 @@ class TradingMixin:
               f"(db=${portfolio_cash:,.2f}, anticipated=${anticipated_proceeds:,.2f})")
         log_event(self.db, run_id, f"Available cash: ${cash_available_to_trade:,.2f}")
 
-        # Get current holdings for position calculation context
+        # Get current holdings and remove exited symbols to get post-exit state
         holdings = {}
         try:
             holdings = self.db.get_portfolio_holdings(portfolio_id) or {}
         except Exception as e:
             logger.warning(f"Could not fetch holdings for portfolio {portfolio_id}: {e}")
 
+        exit_symbols = {s.symbol for s in exits}
+        post_exit_holdings = {k: v for k, v in holdings.items() if k not in exit_symbols}
+
         # Phase B: Calculate all positions with priority ordering
-        prioritized_positions = self._calculate_all_positions(
+        print("\n  Phase B: Calculating all positions with priority ordering...")
+        log_event(self.db, run_id, f"Phase B: Calculating positions for {len(buy_decisions)} buy decisions")
+
+        prioritized_positions = self.position_sizer.prioritize_positions(
             buy_decisions=buy_decisions,
-            portfolio_id=portfolio_id,
             available_cash=cash_available_to_trade,
-            holdings=holdings,
             portfolio_value=portfolio_value,
+            portfolio_id=portfolio_id,
             method=method,
             rules=position_rules,
-            run_id=run_id
+            holdings=post_exit_holdings
         )
+
+        total_requested = sum(p['position'].estimated_value for p in prioritized_positions)
+        log_event(self.db, run_id, f"Total requested: ${total_requested:,.2f}, Available: ${cash_available_to_trade:,.2f}")
 
         # Phase C: Execute buys in priority order
         buys_executed = self._execute_buys(
