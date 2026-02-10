@@ -91,9 +91,6 @@ class StrategyExecutorCore:
         print(f"✓ Created run record: {run_id}\n")
 
         try:
-            # Benchmark recorded by portfolio_sweep job
-            print("Skipping benchmark recording (handled by portfolio_sweep)\n")
-
             # Get portfolio state
             portfolio_id = strategy['portfolio_id']
             summary = self.db.get_portfolio_summary(portfolio_id, use_live_prices=False)
