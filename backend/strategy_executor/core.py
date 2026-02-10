@@ -161,8 +161,7 @@ class StrategyExecutorCore:
             print("PHASE 3: THESIS GENERATION")
             print("=" * 60)
             if conditions.get('require_thesis', False):
-                user_id = strategy.get('user_id')
-                enriched = self._generate_theses(scored, run_id, user_id, job_id=job_id)
+                enriched = self._generate_theses(scored, run_id, job_id=job_id)
                 self.db.update_strategy_run(run_id, theses_generated=len(enriched))
                 print(f"✓ Generated {len(enriched)} theses\\n")
             else:

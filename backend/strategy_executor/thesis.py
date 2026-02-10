@@ -17,7 +17,6 @@ class ThesisMixin:
         self,
         scored: List[Dict[str, Any]],
         run_id: int,
-        user_id: int,
         job_id: Optional[int] = None
     ) -> List[Dict[str, Any]]:
         """Generate investment theses for scored stocks (Parallelized).
@@ -28,7 +27,6 @@ class ThesisMixin:
         Args:
             scored: List of scored stock data
             run_id: Current run ID for logging
-            user_id: User ID (ignored, uses System User 0 for shared cache)
             job_id: Optional job ID for progress reporting
 
         Returns:
