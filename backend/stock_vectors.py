@@ -105,17 +105,23 @@ class StockVectors:
 
     def _load_annual_earnings(self, symbols: List[str]) -> pd.DataFrame:
         """Bulk load annual earnings history for provided symbols."""
+        # We fetch all necessary columns for both growth and buffett metrics
+        query = """
+            SELECT 
+                symbol, year, net_income, revenue, 
+                operating_cash_flow, capital_expenditures
+            FROM earnings_history
+            WHERE period = 'annual'
+            ORDER BY symbol, year
+        """
+        
+        engine = self.db.get_sqlalchemy_engine()
+        if engine:
+            return pd.read_sql_query(query, engine)
+        
+        # Fallback to raw connection
         conn = self.db.get_connection()
         try:
-            # We fetch all necessary columns for both growth and buffett metrics
-            query = """
-                SELECT 
-                    symbol, year, net_income, revenue, 
-                    operating_cash_flow, capital_expenditures
-                FROM earnings_history
-                WHERE period = 'annual'
-                ORDER BY symbol, year
-            """
             return pd.read_sql_query(query, conn)
         finally:
             self.db.return_connection(conn)
@@ -126,37 +132,41 @@ class StockVectors:
         
         Returns DataFrame with columns from stock_metrics + stocks tables.
         """
+        # Build query with optional country filter
+        query = """
+            SELECT
+                sm.symbol,
+                sm.price,
+                sm.market_cap,
+                sm.pe_ratio,
+                sm.debt_to_equity,
+                sm.dividend_yield,
+                sm.institutional_ownership,
+                sm.total_debt,
+                sm.gross_margin,
+                sm.price_change_pct,
+                s.sector,
+                s.company_name,
+                s.country,
+                s.ipo_year
+            FROM stock_metrics sm
+            JOIN stocks s ON sm.symbol = s.symbol
+        """
+        params = []
+        
+        if country_filter:
+            query += " WHERE s.country = %s"
+            params.append(country_filter)
+        
+        engine = self.db.get_sqlalchemy_engine()
+        if engine:
+            return pd.read_sql_query(query, engine, params=tuple(params) if params else None)
+
+        # Fallback
         conn = self.db.get_connection()
         try:
-            # Build query with optional country filter
-            query = """
-                SELECT
-                    sm.symbol,
-                    sm.price,
-                    sm.market_cap,
-                    sm.pe_ratio,
-                    sm.debt_to_equity,
-                    sm.dividend_yield,
-                    sm.institutional_ownership,
-                    sm.total_debt,
-                    sm.gross_margin,
-                    sm.price_change_pct,
-                    s.sector,
-                    s.company_name,
-                    s.country,
-                    s.ipo_year
-                FROM stock_metrics sm
-                JOIN stocks s ON sm.symbol = s.symbol
-            """
-            params = []
-            
-            if country_filter:
-                query += " WHERE s.country = %s"
-                params.append(country_filter)
-            
-            df = pd.read_sql_query(query, conn, params=params if params else None)
+            df = pd.read_sql_query(query, conn, params=tuple(params) if params else None)
             return df
-            
         finally:
             self.db.return_connection(conn)
     
@@ -206,7 +216,12 @@ class StockVectors:
                            index=['earnings_cagr', 'revenue_cagr', 'income_consistency_score', 'revenue_consistency_score'])
 
         # Apply calculation (this is much faster than iterating df.loc)
-        metrics_df = grouped_hist.groupby('symbol').apply(calc_group_metrics)
+        # Apply calculation (this is much faster than iterating df.loc)
+        try:
+            metrics_df = grouped_hist.groupby('symbol').apply(calc_group_metrics, include_groups=False)
+        except TypeError:
+            # Fallback for older pandas versions
+            metrics_df = grouped_hist.groupby('symbol').apply(calc_group_metrics)
         
         # Merge back to original DF
         # metrics_df has symbol as index
@@ -369,33 +384,38 @@ class StockVectors:
         7. Agg Min/Max.
         8. Compare against Live P/E (pe_ratio column) for position.
         """
-        conn = self.db.get_connection()
-        try:
-            # 1. Load Weekly Prices (last 52 weeks) 
-            cutoff_date = (datetime.now() - pd.Timedelta(weeks=52)).strftime('%Y-%m-%d')
-            prices_query = """
-                SELECT symbol, week_ending, price as close_price
-                FROM weekly_prices 
-                WHERE week_ending >= %s
-                ORDER BY symbol, week_ending
-            """
-            prices_df = pd.read_sql_query(prices_query, conn, params=(cutoff_date,))
-            
-            # 2. Load Quarterly Net Income (fetch enough history for rolling sum)
-            # Fetching last 15 years to ensure we capture stocks with stale data (e.g. RBB last updated 2019)
-            cutoff_earnings = (datetime.now() - pd.Timedelta(weeks=15*52)).strftime('%Y-%m-%d')
-            earnings_query = """
-                SELECT symbol, fiscal_end, net_income
-                FROM earnings_history
-                WHERE period IN ('Q1', 'Q2', 'Q3', 'Q4') 
-                  AND net_income IS NOT NULL
-                  AND fiscal_end >= %s
-                ORDER BY symbol, fiscal_end
-            """
-            earnings_df = pd.read_sql_query(earnings_query, conn, params=(cutoff_earnings,))
-            
-        finally:
-            self.db.return_connection(conn)
+        # 1. Load Weekly Prices (last 52 weeks) 
+        cutoff_date = (datetime.now() - pd.Timedelta(weeks=52)).strftime('%Y-%m-%d')
+        prices_query = """
+            SELECT symbol, week_ending, price as close_price
+            FROM weekly_prices 
+            WHERE week_ending >= %s
+            ORDER BY symbol, week_ending
+        """
+        
+        # 2. Load Quarterly Net Income (fetch enough history for rolling sum)
+        # Fetching last 15 years to ensure we capture stocks with stale data (e.g. RBB last updated 2019)
+        cutoff_earnings = (datetime.now() - pd.Timedelta(weeks=15*52)).strftime('%Y-%m-%d')
+        earnings_query = """
+            SELECT symbol, fiscal_end, net_income
+            FROM earnings_history
+            WHERE period IN ('Q1', 'Q2', 'Q3', 'Q4') 
+              AND net_income IS NOT NULL
+              AND fiscal_end >= %s
+            ORDER BY symbol, fiscal_end
+        """
+
+        engine = self.db.get_sqlalchemy_engine()
+        if engine:
+            prices_df = pd.read_sql_query(prices_query, engine, params=(cutoff_date,))
+            earnings_df = pd.read_sql_query(earnings_query, engine, params=(cutoff_earnings,))
+        else:
+            conn = self.db.get_connection()
+            try:
+                prices_df = pd.read_sql_query(prices_query, conn, params=(cutoff_date,))
+                earnings_df = pd.read_sql_query(earnings_query, conn, params=(cutoff_earnings,))
+            finally:
+                self.db.return_connection(conn)
             
         if prices_df.empty or earnings_df.empty:
             df['pe_52_week_min'] = None

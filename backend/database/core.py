@@ -33,9 +33,12 @@ class DatabaseCore(SchemaMixin):
         self.host = host
         self.port = port
         self.database = database
+        self.user = user
+        self.password = password
 
         self._lock = threading.Lock()
         self._initializing = True
+        self._engine = None
 
         # Connection pool for concurrent reads
         # Pool size must accommodate parallel screening workers (40) + some overhead
@@ -401,3 +404,42 @@ class DatabaseCore(SchemaMixin):
                 self.return_connection(conn)
 
         return _connection()
+
+    def get_sqlalchemy_engine(self):
+        """
+        Get SQLAlchemy engine for Pandas integration.
+        Returns a cached engine or creates a new one if not exists.
+        """
+        if self._engine is None:
+            try:
+                from sqlalchemy import create_engine, URL
+            except ImportError:
+                logger.warning("SQLAlchemy not installed, cannot create engine")
+                return None
+
+            try:
+                # Try to use psycopg 3 (which we use for raw connections)
+                # This requires 'psycopg' (v3) to be installed
+                url = URL.create(
+                    drivername="postgresql+psycopg",
+                    username=self.user,
+                    password=self.password,
+                    host=self.host,
+                    port=self.port,
+                    database=self.database,
+                )
+                self._engine = create_engine(url)
+            except Exception as e:
+                logger.warning(f"Failed to create engine with psycopg 3: {e}. Falling back to default.")
+                # Fallback to default driver (likely psycopg2)
+                url = URL.create(
+                    drivername="postgresql",
+                    username=self.user,
+                    password=self.password,
+                    host=self.host,
+                    port=self.port,
+                    database=self.database,
+                )
+                self._engine = create_engine(url)
+                
+        return self._engine
