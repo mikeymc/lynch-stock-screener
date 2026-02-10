@@ -104,22 +104,22 @@ class StrategyExecutorCore:
 
             # Phase 1: Screen candidates
             print("=" * 60)
-            print("PHASE 1: SCREENING")
+            print("PHASE 1: UNIVERSE FILTERING")
             print("=" * 60)
-            log_event(self.db, run_id, "Starting screening phase")
+            log_event(self.db, run_id, "Starting universe filtering phase")
             conditions = strategy.get('conditions', {})
-            all_candidates = self.universe_filter.filter_universe(conditions)
+            filtered_candidates = self.universe_filter.filter_universe(conditions)
 
             # Apply limit if requested
             if limit and limit > 0:
-                print(f"  Limiting candidates to {limit} per request (found {len(all_candidates)})")
-                all_candidates = all_candidates[:limit]
+                print(f"  Limiting candidates to {limit} per request (found {len(filtered_candidates)})")
+                filtered_candidates = filtered_candidates[:limit]
 
             # Separate held vs new positions
             holdings = self.db.get_portfolio_holdings(portfolio_id)
             held_symbols = set(holdings.keys())
-            new_candidates = [s for s in all_candidates if s not in held_symbols]
-            held_candidates = [s for s in all_candidates if s in held_symbols]
+            new_candidates = [s for s in filtered_candidates if s not in held_symbols]
+            held_candidates = [s for s in filtered_candidates if s in held_symbols]
 
             print(f"  Universe breakdown:")
             print(f"    New positions: {len(new_candidates)}")
@@ -127,9 +127,9 @@ class StrategyExecutorCore:
             if held_candidates:
                 print(f"    Held stocks in universe: {held_candidates}")
 
-            self.db.update_strategy_run(run_id, stocks_screened=len(all_candidates))
-            log_event(self.db, run_id, f"Screened {len(all_candidates)} candidates ({len(new_candidates)} new, {len(held_candidates)} additions)")
-            print(f"✓ Screened {len(all_candidates)} total candidates\n")
+            self.db.update_strategy_run(run_id, stocks_screened=len(filtered_candidates))
+            log_event(self.db, run_id, f"Screened {len(filtered_candidates)} candidates ({len(new_candidates)} new, {len(held_candidates)} additions)")
+            print(f"✓ Filtered {len(filtered_candidates)} total candidates\n")
 
             # Phase 2: Score candidates (with differentiated thresholds)
             print("=" * 60)
@@ -173,23 +173,8 @@ class StrategyExecutorCore:
             print("=" * 60)
             print("PHASE 4: DELIBERATION")
             print("=" * 60)
-            user_id = strategy.get('user_id')
-            decisions = self._deliberate(enriched, run_id, conditions, user_id, job_id=job_id)
+            decisions = self._deliberate(enriched, run_id, conditions, job_id=job_id)
             print(f"✓ {len(decisions)} BUY decisions made\\n")
-
-            # Phase 4.5: Process dividends - REMOVED (Handled by portfolio_sweep)
-            # print("=" * 60)
-            # print("PHASE 4.5: DIVIDEND PROCESSING")
-            # print("=" * 60)
-             # try:
-            #     from dividend_manager import DividendManager
-            #     dividend_mgr = DividendManager(self.db)
-            #     dividend_mgr.process_portfolio(portfolio_id)
-            #     print("✓ Dividend processing complete\n")
-            #     self._log_event(run_id, "Processed dividends for all portfolios")
-            # except Exception as e:
-            #     logger.warning(f"Dividend processing failed (non-critical): {e}")
-            #     print(f"⚠ Dividend processing failed: {e}\n")
 
             # Phase 5: Check exits
             print("=" * 60)
@@ -251,7 +236,7 @@ class StrategyExecutorCore:
             return {
                 'status': 'completed',
                 'run_id': run_id,
-                'stocks_screened': len(all_candidates),
+                'stocks_screened': len(filtered_candidates),
                 'stocks_scored': len(scored),
                 'theses_generated': len(enriched) if conditions.get('require_thesis') else 0,
                 'trades_executed': trades_executed,
