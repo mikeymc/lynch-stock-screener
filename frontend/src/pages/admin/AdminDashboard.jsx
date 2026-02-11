@@ -1,8 +1,9 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { RefreshCw, CheckCircle, XCircle, Clock, AlertCircle, ExternalLink } from 'lucide-react'
 import { formatDistanceToNow } from 'date-fns'
 
@@ -14,14 +15,18 @@ export default function AdminDashboard() {
     const [loading, setLoading] = useState(true)
     const [error, setError] = useState(null)
     const [lastRefreshed, setLastRefreshed] = useState(new Date())
+    const [selectedJobType, setSelectedJobType] = useState('all')
 
-    const fetchJobs = async () => {
+    const fetchJobs = useCallback(async () => {
         setLoading(true)
         setError(null)
         try {
-            // Note: backend endpoint needs to be implemented or we usage existing /api/jobs
-            // The plan says GET /api/admin/background_jobs
-            const response = await fetch(`${API_BASE}/admin/background_jobs`, {
+            const queryParams = new URLSearchParams()
+            if (selectedJobType && selectedJobType !== 'all') {
+                queryParams.append('job_type', selectedJobType)
+            }
+
+            const response = await fetch(`${API_BASE}/admin/background_jobs?${queryParams.toString()}`, {
                 credentials: 'include'
             })
 
@@ -35,13 +40,13 @@ export default function AdminDashboard() {
             setLoading(false)
             setLastRefreshed(new Date())
         }
-    }
+    }, [selectedJobType])
 
     useEffect(() => {
         fetchJobs()
         const interval = setInterval(fetchJobs, 10000) // Poll every 10s
         return () => clearInterval(interval)
-    }, [])
+    }, [fetchJobs])
 
     const getStatusColor = (status) => {
         switch (status) {
@@ -130,8 +135,22 @@ export default function AdminDashboard() {
 
             {/* Recent Jobs Table */}
             <Card>
-                <CardHeader>
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                     <CardTitle>Recent Background Jobs</CardTitle>
+                    <Select value={selectedJobType} onValueChange={setSelectedJobType}>
+                        <SelectTrigger className="w-[180px]">
+                            <SelectValue placeholder="Filter by Type" />
+                        </SelectTrigger>
+                        <SelectContent>
+                            <SelectItem value="all">All Jobs</SelectItem>
+                            <SelectItem value="strategy_execution">Strategy Execution</SelectItem>
+                            <SelectItem value="check_alerts">Check Alerts</SelectItem>
+                            <SelectItem value="portfolio_sweep">Portfolio Sweep</SelectItem>
+                            <SelectItem value="sec_filing_processing">SEC Filing</SelectItem>
+                            <SelectItem value="transcript_scraping">Transcript Scraping</SelectItem>
+                            <SelectItem value="news_fetching">News Fetching</SelectItem>
+                        </SelectContent>
+                    </Select>
                 </CardHeader>
                 <CardContent>
                     {loading && jobs.length === 0 ? (
