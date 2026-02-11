@@ -3,24 +3,8 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
-import { Skeleton } from "@/components/ui/skeleton"
-import { Badge } from "@/components/ui/badge"
-import {
-    TrendingUp,
-    TrendingDown,
-    Briefcase,
-    Star,
-    Bell,
-    Zap,
-    Calendar,
-    Newspaper,
-    Plus,
-    ArrowRight,
-    ExternalLink,
-    RefreshCw
-} from 'lucide-react'
+import { RefreshCw } from 'lucide-react'
 import IndexChart from '@/components/dashboard/IndexChart'
 import MarketMovers from '@/components/dashboard/MarketMovers'
 import PortfolioSummaryCard from '@/components/dashboard/PortfolioSummaryCard'
@@ -72,22 +56,6 @@ export default function Dashboard() {
         return () => clearInterval(interval)
     }, [fetchDashboardData])
 
-    if (loading) {
-        return <DashboardSkeleton />
-    }
-
-    if (error) {
-        return (
-            <div className="flex flex-col items-center justify-center h-64 gap-4">
-                <p className="text-muted-foreground">{error}</p>
-                <Button onClick={fetchDashboardData} variant="outline">
-                    <RefreshCw className="h-4 w-4 mr-2" />
-                    Try Again
-                </Button>
-            </div>
-        )
-    }
-
     const {
         portfolios = [],
         watchlist = [],
@@ -107,18 +75,26 @@ export default function Dashboard() {
                         Welcome back{user?.name ? `, ${user.name.split(' ')[0]}` : ''}
                     </p>
                 </div>
-                {lastRefresh && (
-                    <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={fetchDashboardData}
-                        className="text-muted-foreground"
-                    >
-                        <RefreshCw className="h-4 w-4 mr-2" />
-                        Updated {formatTimeAgo(lastRefresh)}
-                    </Button>
-                )}
+                <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={fetchDashboardData}
+                    className="text-muted-foreground"
+                >
+                    <RefreshCw className={`h-4 w-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
+                    {loading ? 'Loading...' : lastRefresh ? `Updated ${formatTimeAgo(lastRefresh)}` : 'Refresh'}
+                </Button>
             </div>
+
+            {/* Inline error banner */}
+            {error && (
+                <div className="flex items-center justify-between rounded-lg border border-destructive/50 bg-destructive/10 px-4 py-2 text-sm text-destructive">
+                    <span>{error}</span>
+                    <Button variant="ghost" size="sm" onClick={fetchDashboardData} className="h-auto p-0 text-destructive hover:text-destructive">
+                        Try again
+                    </Button>
+                </div>
+            )}
 
             {/* Row 1: Market Overview */}
             <div className="grid gap-6 md:grid-cols-2">
@@ -131,10 +107,12 @@ export default function Dashboard() {
                 <PortfolioSummaryCard
                     portfolios={portfolios}
                     onNavigate={() => navigate('/portfolios')}
+                    loading={loading}
                 />
                 <WatchlistQuickView
                     watchlist={watchlist}
                     onNavigate={() => navigate('/')}
+                    loading={loading}
                 />
             </div>
 
@@ -143,66 +121,19 @@ export default function Dashboard() {
                 <AlertsSummary
                     alerts={alerts}
                     onNavigate={() => navigate('/alerts')}
+                    loading={loading}
                 />
                 <StrategiesSummary
                     strategies={strategies}
                     onNavigate={() => navigate('/strategies')}
+                    loading={loading}
                 />
             </div>
 
             {/* Row 4: Earnings & News */}
             <div className="grid gap-6 md:grid-cols-2">
-                <EarningsCalendar earnings={upcoming_earnings} />
-                <NewsFeed articles={news} />
-            </div>
-        </div>
-    )
-}
-
-function DashboardSkeleton() {
-    return (
-        <div className="space-y-6">
-            <div>
-                <Skeleton className="h-8 w-48 mb-2" />
-                <Skeleton className="h-4 w-32" />
-            </div>
-
-            <div className="grid gap-6 md:grid-cols-2">
-                <Card>
-                    <CardHeader>
-                        <Skeleton className="h-5 w-32" />
-                    </CardHeader>
-                    <CardContent>
-                        <Skeleton className="h-48 w-full" />
-                    </CardContent>
-                </Card>
-                <Card>
-                    <CardHeader>
-                        <Skeleton className="h-5 w-32" />
-                    </CardHeader>
-                    <CardContent>
-                        <Skeleton className="h-48 w-full" />
-                    </CardContent>
-                </Card>
-            </div>
-
-            <div className="grid gap-6 md:grid-cols-2">
-                <Card>
-                    <CardHeader>
-                        <Skeleton className="h-5 w-32" />
-                    </CardHeader>
-                    <CardContent>
-                        <Skeleton className="h-24 w-full" />
-                    </CardContent>
-                </Card>
-                <Card>
-                    <CardHeader>
-                        <Skeleton className="h-5 w-32" />
-                    </CardHeader>
-                    <CardContent>
-                        <Skeleton className="h-24 w-full" />
-                    </CardContent>
-                </Card>
+                <EarningsCalendar earnings={upcoming_earnings} loading={loading} />
+                <NewsFeed articles={news} loading={loading} />
             </div>
         </div>
     )

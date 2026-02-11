@@ -45,6 +45,7 @@ import AdminConversations from './pages/admin/AdminConversations'
 import AdminStrategies from './pages/admin/AdminStrategies'
 import AdminPortfolios from './pages/admin/AdminPortfolios'
 import AdminUserActions from './pages/admin/AdminUserActions'
+import AdminJobStats from './pages/admin/AdminJobStats'
 
 ChartJS.register(
   CategoryScale,
@@ -1182,6 +1183,7 @@ function App() {
             <Route path="/admin/strategies" element={<AdminStrategies />} />
             <Route path="/admin/portfolios" element={<AdminPortfolios />} />
             <Route path="/admin/user_actions" element={<AdminUserActions />} />
+            <Route path="/admin/job_stats" element={<AdminJobStats />} />
           </Route>
         </Route>
 

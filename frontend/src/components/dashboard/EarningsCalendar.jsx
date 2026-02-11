@@ -4,9 +4,10 @@
 import { useNavigate } from 'react-router-dom'
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
+import { Skeleton } from "@/components/ui/skeleton"
 import { Calendar, Clock } from 'lucide-react'
 
-export default function EarningsCalendar({ earnings = [] }) {
+export default function EarningsCalendar({ earnings = [], loading = false }) {
     const navigate = useNavigate()
 
     return (
@@ -18,7 +19,9 @@ export default function EarningsCalendar({ earnings = [] }) {
                 </CardTitle>
             </CardHeader>
             <CardContent>
-                {earnings.length > 0 ? (
+                {loading ? (
+                    <Skeleton className="h-24 w-full" />
+                ) : earnings.length > 0 ? (
                     <div className="space-y-1">
                         {earnings.map(item => (
                             <EarningsRow

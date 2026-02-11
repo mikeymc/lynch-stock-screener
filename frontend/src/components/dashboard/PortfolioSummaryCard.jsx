@@ -4,9 +4,10 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
+import { Skeleton } from "@/components/ui/skeleton"
 import { Briefcase, Plus, ArrowRight, TrendingUp, TrendingDown } from 'lucide-react'
 
-export default function PortfolioSummaryCard({ portfolios = [], onNavigate }) {
+export default function PortfolioSummaryCard({ portfolios = [], onNavigate, loading = false }) {
     const hasPortfolios = portfolios.length > 0
 
     // Calculate totals across all portfolios
@@ -29,7 +30,9 @@ export default function PortfolioSummaryCard({ portfolios = [], onNavigate }) {
                 </div>
             </CardHeader>
             <CardContent>
-                {hasPortfolios ? (
+                {loading ? (
+                    <Skeleton className="h-24 w-full" />
+                ) : hasPortfolios ? (
                     <div className="space-y-4">
                         {/* Summary row */}
                         <div className="flex items-end justify-between">

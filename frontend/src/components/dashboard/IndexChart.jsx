@@ -74,8 +74,6 @@ export default function IndexChart() {
     const [data, setData] = useState(null)
     const [loading, setLoading] = useState(true)
     const [error, setError] = useState(null)
-    const [activeIndex, setActiveIndex] = useState(null)
-
     const toggleSymbol = (symbol) => {
         setSelectedSymbols(prev => {
             if (prev.includes(symbol)) {
@@ -86,17 +84,9 @@ export default function IndexChart() {
         })
     }
 
-    const handleHover = (event, elements) => {
-        if (elements && elements.length > 0) {
-            setActiveIndex(elements[0].index)
-        }
-    }
-
-    const handleMouseLeave = () => {
-        setActiveIndex(null)
-    }
-
     useEffect(() => {
+        const controller = new AbortController()
+
         const fetchIndexData = async () => {
             if (selectedSymbols.length === 0) {
                 setData(null)
@@ -108,7 +98,9 @@ export default function IndexChart() {
             setError(null)
             try {
                 const symbols = INDICES.map(idx => idx.symbol).join(',')
-                const response = await fetch(`/api/market/index/${symbols}?period=${selectedPeriod}`)
+                const response = await fetch(`/api/market/index/${symbols}?period=${selectedPeriod}`, {
+                    signal: controller.signal
+                })
                 if (response.ok) {
                     const result = await response.json()
                     setData(result)
@@ -117,14 +109,16 @@ export default function IndexChart() {
                     setError(err.error || 'Failed to load index data')
                 }
             } catch (err) {
+                if (err.name === 'AbortError') return
                 console.error('Error fetching index:', err)
                 setError('Failed to load index data')
             } finally {
-                setLoading(false)
+                if (!controller.signal.aborted) setLoading(false)
             }
         }
 
         fetchIndexData()
+        return () => controller.abort()
     }, [selectedSymbols, selectedPeriod])
 
     const chartData = useMemo(() => {
@@ -169,19 +163,18 @@ export default function IndexChart() {
                 backgroundColor: `${indexInfo.color}1a`, // 10% opacity
                 fill: !isMulti, // Only fill if single index for cleaner view
                 tension: 0.1,
-                pointRadius: activeIndex !== null ? 3 : 0,
+                pointRadius: 0,
                 pointHoverRadius: 5,
                 borderWidth: 1.5
             }
         })
 
         return { labels, datasets }
-    }, [data, selectedSymbols, selectedPeriod, activeIndex])
+    }, [data, selectedSymbols, selectedPeriod])
 
-    const chartOptions = {
+    const chartOptions = useMemo(() => ({
         responsive: true,
         maintainAspectRatio: false,
-        onHover: handleHover,
         plugins: {
             legend: {
                 display: false // We'll show our own legend via checkboxes
@@ -234,7 +227,7 @@ export default function IndexChart() {
             mode: 'index',
             intersect: false
         }
-    }
+    }), [selectedSymbols])
 
     return (
         <Card className="h-full">
@@ -269,10 +262,14 @@ export default function IndexChart() {
                         {error}
                     </div>
                 ) : chartData ? (
-                    <div className="h-48" onMouseLeave={handleMouseLeave}>
+                    <div className="h-48">
                         <Line data={chartData} options={chartOptions} plugins={[zeroLinePlugin]} />
                     </div>
-                ) : null}
+                ) : (
+                    <div className="h-48 flex items-center justify-center text-sm text-muted-foreground bg-muted/20 rounded-xl border border-dashed">
+                        No data available
+                    </div>
+                )}
 
                 <div className="mt-4 flex flex-col">
                     {INDICES.map(idx => {

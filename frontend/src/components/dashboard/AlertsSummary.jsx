@@ -4,9 +4,10 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
+import { Skeleton } from "@/components/ui/skeleton"
 import { Bell, Plus, ArrowRight, AlertCircle, Clock } from 'lucide-react'
 
-export default function AlertsSummary({ alerts = {}, onNavigate }) {
+export default function AlertsSummary({ alerts = {}, onNavigate, loading = false }) {
     const triggered = alerts.triggered || []
     const pending = alerts.pending || []
     const hasAlerts = triggered.length > 0 || pending.length > 0
@@ -30,7 +31,9 @@ export default function AlertsSummary({ alerts = {}, onNavigate }) {
                 </div>
             </CardHeader>
             <CardContent>
-                {hasAlerts ? (
+                {loading ? (
+                    <Skeleton className="h-24 w-full" />
+                ) : hasAlerts ? (
                     <div className="space-y-3">
                         {/* Triggered alerts */}
                         {triggered.length > 0 && (

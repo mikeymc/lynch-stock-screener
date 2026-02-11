@@ -4,9 +4,10 @@
 import { useNavigate } from 'react-router-dom'
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
+import { Skeleton } from "@/components/ui/skeleton"
 import { Star, Plus, ArrowRight, TrendingUp, TrendingDown } from 'lucide-react'
 
-export default function WatchlistQuickView({ watchlist = [], onNavigate }) {
+export default function WatchlistQuickView({ watchlist = [], onNavigate, loading = false }) {
     const navigate = useNavigate()
     const hasItems = watchlist.length > 0
 
@@ -24,7 +25,9 @@ export default function WatchlistQuickView({ watchlist = [], onNavigate }) {
                 </div>
             </CardHeader>
             <CardContent>
-                {hasItems ? (
+                {loading ? (
+                    <Skeleton className="h-24 w-full" />
+                ) : hasItems ? (
                     <div className="space-y-1">
                         {watchlist.slice(0, 5).map(stock => (
                             <WatchlistRow

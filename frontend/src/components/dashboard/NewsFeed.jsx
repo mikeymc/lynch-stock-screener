@@ -3,9 +3,10 @@
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
+import { Skeleton } from "@/components/ui/skeleton"
 import { Newspaper, ExternalLink } from 'lucide-react'
 
-export default function NewsFeed({ articles = [] }) {
+export default function NewsFeed({ articles = [], loading = false }) {
     return (
         <Card>
             <CardHeader className="pb-2">
@@ -15,7 +16,9 @@ export default function NewsFeed({ articles = [] }) {
                 </CardTitle>
             </CardHeader>
             <CardContent>
-                {articles.length > 0 ? (
+                {loading ? (
+                    <Skeleton className="h-24 w-full" />
+                ) : articles.length > 0 ? (
                     <div className="space-y-3">
                         {articles.map((article, idx) => (
                             <NewsRow key={article.finnhub_id || idx} article={article} />

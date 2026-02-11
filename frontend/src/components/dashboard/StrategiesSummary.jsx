@@ -4,9 +4,10 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
+import { Skeleton } from "@/components/ui/skeleton"
 import { Zap, Plus, ArrowRight, CheckCircle2, AlertCircle, Clock } from 'lucide-react'
 
-export default function StrategiesSummary({ strategies = [], onNavigate }) {
+export default function StrategiesSummary({ strategies = [], onNavigate, loading = false }) {
     const hasStrategies = strategies.length > 0
 
     return (
@@ -23,7 +24,9 @@ export default function StrategiesSummary({ strategies = [], onNavigate }) {
                 </div>
             </CardHeader>
             <CardContent>
-                {hasStrategies ? (
+                {loading ? (
+                    <Skeleton className="h-24 w-full" />
+                ) : hasStrategies ? (
                     <div className="space-y-2">
                         {strategies.slice(0, 4).map(strategy => (
                             <StrategyRow key={strategy.id} strategy={strategy} />
