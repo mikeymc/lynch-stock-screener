@@ -41,7 +41,11 @@ class TradingMixin:
 
         for exit_signal in exits:
             try:
-                anticipated_proceeds += exit_signal.current_value
+                value = exit_signal.current_value
+                if value is None:
+                    price = self.position_sizer._fetch_price(exit_signal.symbol)
+                    value = (exit_signal.quantity * price) if price else 0.0
+                anticipated_proceeds += value
 
                 if is_market_open:
                     result = portfolio_service.execute_trade(
@@ -57,7 +61,7 @@ class TradingMixin:
                         count += 1
                         log_event(self.db, run_id, f"SELL {exit_signal.symbol}: {exit_signal.reason}")
                         print(f"    ✓ SOLD {exit_signal.symbol}: {exit_signal.quantity} shares "
-                              f"(freed ${exit_signal.current_value:,.2f})")
+                              f"(freed ${value:,.2f})")
                 elif user_id:
                     # Idempotency check: don't queue duplicate sell alert
                     is_duplicate = any(
@@ -229,7 +233,8 @@ class TradingMixin:
         buy_decisions: List[Dict[str, Any]],
         exits: List[ExitSignal],
         strategy: Dict[str, Any],
-        run_id: int
+        run_id: int,
+        held_verdicts: List[Dict] = None
     ) -> int:
         """Coordinate the three-phase trade execution: exits → position sizing → buys."""
         import portfolio_service
@@ -296,6 +301,32 @@ class TradingMixin:
 
         exit_symbols = {s.symbol for s in exits}
         post_exit_holdings = {k: v for k, v in holdings.items() if k not in exit_symbols}
+
+        # Phase A.5: Rebalancing trims — trim over-weight holdings to fund new buys
+        trim_signals = self.position_sizer.compute_rebalancing_trims(
+            holdings=post_exit_holdings,
+            held_verdicts=held_verdicts or [],
+            buy_decisions=buy_decisions,
+            portfolio_value=portfolio_value,
+            method=method,
+            rules=position_rules,
+        )
+        if trim_signals:
+            print(f"\n  Phase A.5: Rebalancing {len(trim_signals)} over-weight positions...")
+            log_event(self.db, run_id, f"Phase A.5: {len(trim_signals)} rebalancing trims")
+            _, trim_proceeds = self._process_exits(
+                exits=trim_signals,
+                portfolio_id=portfolio_id,
+                is_market_open=is_market_open,
+                user_id=user_id,
+                existing_alerts=existing_alerts,
+                run_id=run_id
+            )
+            cash_available_to_trade += (trim_proceeds if not is_market_open else 0)
+            # Reduce holdings quantities for trimmed symbols (stock stays in portfolio)
+            for trim in trim_signals:
+                if trim.symbol in post_exit_holdings:
+                    post_exit_holdings[trim.symbol] -= trim.quantity
 
         # Phase B: Calculate all positions with priority ordering
         print("\n  Phase B: Calculating all positions with priority ordering...")

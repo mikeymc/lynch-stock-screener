@@ -151,7 +151,7 @@ class DeliberationMixin:
         held_symbols: set = None,
         holdings: Dict[str, Any] = None,
         symbols_of_held_stocks_with_failing_scores: set = None
-    ) -> tuple[List[Dict[str, Any]], List]:
+    ) -> tuple[List[Dict[str, Any]], List, List[Dict[str, Any]]]:
         """Apply consensus logic to determine final decisions (Parallelized).
 
         For stocks with theses, conducts deliberation between Lynch and Buffett.
@@ -169,13 +169,18 @@ class DeliberationMixin:
                 verdicts for these are treated as HOLD (not added to buy decisions)
 
         Returns:
-            Tuple of (buy_decisions, deliberation_exits) where deliberation_exits
-            contains ExitSignal objects for held positions that received AVOID.
+            Tuple of (buy_decisions, deliberation_exits, held_verdicts) where
+            deliberation_exits contains ExitSignal objects for held positions that
+            received AVOID, and held_verdicts contains score data for held positions
+            that received BUY-as-HOLD or WATCH verdicts (used for rebalancing).
         """
+        import threading
         from strategy_executor.models import ExitSignal
 
         decisions = []
         deliberation_exits = []
+        held_verdicts = []
+        held_verdicts_lock = threading.Lock()
         held_symbols = held_symbols or set()
         holdings = holdings or {}
         conditions = conditions or {}
@@ -264,24 +269,37 @@ class DeliberationMixin:
                 if final_decision == 'BUY':
                     if symbol in symbols_of_held_stocks_with_failing_scores:
                         # Held stock that failed addition scoring — BUY means HOLD, not an addition
+                        with held_verdicts_lock:
+                            held_verdicts.append({
+                                'symbol': symbol,
+                                'lynch_score': stock.get('lynch_score'),
+                                'buffett_score': stock.get('buffett_score'),
+                                'final_verdict': 'BUY',
+                            })
                         return None
                     stock['id'] = decision_id
                     stock['decision_id'] = decision_id
                     return stock
 
                 # Emit an exit signal for held positions that received AVOID
+                # holdings is {symbol: quantity} as returned by get_portfolio_holdings()
                 if stock.get('final_verdict') == 'AVOID' and symbol in held_symbols:
-                    holding = holdings.get(symbol, {})
-                    quantity = holding.get('quantity', 0)
-                    current_value = holding.get('current_value', 0.0)
-                    gain_pct = holding.get('gain_pct', 0.0)
+                    quantity = holdings.get(symbol, 0)
                     return {'_exit_signal': ExitSignal(
                         symbol=symbol,
                         quantity=quantity,
                         reason=f"Deliberation AVOID: {stock.get('deliberation', '')[:200]}",
-                        current_value=current_value,
-                        gain_pct=gain_pct
                     )}
+
+                # Capture scores for held stocks with WATCH verdict
+                if symbol in held_symbols:
+                    with held_verdicts_lock:
+                        held_verdicts.append({
+                            'symbol': symbol,
+                            'lynch_score': stock.get('lynch_score'),
+                            'buffett_score': stock.get('buffett_score'),
+                            'final_verdict': stock.get('final_verdict', 'WATCH'),
+                        })
 
                 return None
 
@@ -337,4 +355,4 @@ class DeliberationMixin:
                     # Log every 10 completions
                     print(f"  Deliberated on {completed}/{total} stocks")
 
-        return decisions, deliberation_exits
+        return decisions, deliberation_exits, held_verdicts

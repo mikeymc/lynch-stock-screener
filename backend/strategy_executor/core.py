@@ -163,13 +163,15 @@ class StrategyExecutorCore:
             print("PHASE 4: DELIBERATION")
             print("=" * 60)
             symbols_of_held_stocks_with_failing_scores = {s['symbol'] for s in held_stocks_with_failing_scores}
-            buy_decisions, deliberation_exit_decisions = self._deliberate(
+            buy_decisions, deliberation_exit_decisions, held_verdicts = self._deliberate(
                 enriched, run_id, conditions, job_id=job_id,
                 held_symbols=current_portfolio_holdings_symbols, holdings=current_portfolio_holdings,
                 symbols_of_held_stocks_with_failing_scores=symbols_of_held_stocks_with_failing_scores
             )
-            print(f"✓ {len(buy_decisions)} BUY decisions made in deliberation\\n")
-            print(f"  {len(deliberation_exit_decisions)} EXIT decisions made in deliberation\\n")
+            print(f"✓ {len(buy_decisions)} BUY decisions made in deliberation")
+            print(f"  {len(deliberation_exit_decisions)} EXIT decisions made in deliberation")
+            if held_verdicts:
+                print(f"  {len(held_verdicts)} held positions captured for rebalancing")
 
             # Phase 5: Exit Detection
             print("=" * 60)
@@ -212,7 +214,8 @@ class StrategyExecutorCore:
             print("PHASE 6: TRADE EXECUTION")
             print("=" * 60)
             trades_executed = self._execute_trades(
-                buy_decisions, exit_decisions, strategy, run_id
+                buy_decisions, exit_decisions, strategy, run_id,
+                held_verdicts=held_verdicts
             )
             print(f"✓ Executed {trades_executed} trades\n")
 

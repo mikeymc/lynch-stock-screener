@@ -30,5 +30,6 @@ class ExitSignal:
     symbol: str
     quantity: int
     reason: str
-    current_value: float
-    gain_pct: float
+    current_value: Optional[float] = None  # None means: compute from price at execution time
+    gain_pct: Optional[float] = None
+    exit_type: str = 'full'  # 'full' = entire position; 'trim' = partial sell

@@ -43,6 +43,28 @@ def make_exit(symbol, quantity=10, current_value=1000.0):
                       current_value=current_value, gain_pct=5.0)
 
 
+def test_process_exits_resolves_price_when_current_value_none(executor):
+    """When current_value is None, price is fetched and quantity * price is used as proceeds."""
+    import portfolio_service
+    portfolio_service.execute_trade.return_value = {'success': True}
+
+    exit_signal = ExitSignal(symbol='AAPL', quantity=5, reason='Test',
+                             current_value=None, gain_pct=None)
+    executor.position_sizer._fetch_price = MagicMock(return_value=100.0)
+
+    count, proceeds = executor._process_exits(
+        exits=[exit_signal],
+        portfolio_id=1,
+        is_market_open=True,
+        user_id=42,
+        existing_alerts=[],
+        run_id=1
+    )
+
+    executor.position_sizer._fetch_price.assert_called_once_with('AAPL')
+    assert proceeds == 500.0
+
+
 # ---------------------------------------------------------------------------
 # _process_exits tests
 # ---------------------------------------------------------------------------
@@ -50,6 +72,7 @@ def make_exit(symbol, quantity=10, current_value=1000.0):
 def test_process_exits_market_open(executor, mock_db):
     """Market open: sells execute via execute_trade, returns (count, proceeds)."""
     import portfolio_service
+    portfolio_service.execute_trade.reset_mock()
     portfolio_service.execute_trade.return_value = {'success': True}
 
     exits = [make_exit('AAPL', quantity=5, current_value=750.0),
@@ -213,6 +236,7 @@ def test_execute_trades_uses_anticipated_cash(executor, mock_db):
         return []
 
     executor.position_sizer.prioritize_positions = spy_prioritize
+    executor.position_sizer.compute_rebalancing_trims = lambda **kwargs: []
 
     strategy = {
         'portfolio_id': 1,
@@ -257,7 +281,7 @@ def test_deliberation_exits_on_held_positions(executor, mock_db):
     ]
 
     with patch.object(executor, '_conduct_deliberation', return_value=('Avoid text', 'AVOID')):
-        buy_decisions, deliberation_exits = executor._deliberate(
+        buy_decisions, deliberation_exits, held_verdicts = executor._deliberate(
             enriched=enriched,
             run_id=1,
             conditions={},
@@ -290,7 +314,7 @@ def test_deliberation_watch_does_not_exit(executor, mock_db):
     ]
 
     with patch.object(executor, '_conduct_deliberation', return_value=('Watch text', 'WATCH')):
-        buy_decisions, deliberation_exits = executor._deliberate(
+        buy_decisions, deliberation_exits, held_verdicts = executor._deliberate(
             enriched=enriched,
             run_id=1,
             conditions={},
@@ -298,3 +322,82 @@ def test_deliberation_watch_does_not_exit(executor, mock_db):
         )
 
     assert len(deliberation_exits) == 0
+
+
+def test_deliberate_watch_populates_held_verdicts(executor, mock_db):
+    """WATCH verdict on a held position captures the stock's scores in held_verdicts."""
+    held_symbols = {'AAPL'}
+    mock_db.create_strategy_decision.return_value = 1
+
+    enriched = [
+        {
+            'symbol': 'AAPL',
+            'lynch_thesis': 'Some thesis',
+            'buffett_thesis': 'Some thesis',
+            'lynch_thesis_verdict': 'WATCH',
+            'buffett_thesis_verdict': 'WATCH',
+            'lynch_score': 60,
+            'lynch_status': 'ok',
+            'buffett_score': 55,
+            'buffett_status': 'ok',
+        }
+    ]
+
+    with patch.object(executor, '_conduct_deliberation', return_value=('Watch text', 'WATCH')):
+        buy_decisions, deliberation_exits, held_verdicts = executor._deliberate(
+            enriched=enriched,
+            run_id=1,
+            conditions={},
+            held_symbols=held_symbols
+        )
+
+    assert len(held_verdicts) == 1
+    assert held_verdicts[0]['symbol'] == 'AAPL'
+    assert held_verdicts[0]['lynch_score'] == 60
+    assert held_verdicts[0]['buffett_score'] == 55
+    assert held_verdicts[0]['final_verdict'] == 'WATCH'
+
+
+def test_execute_trades_generates_rebalancing_trims(executor, mock_db):
+    """Rebalancing trims are computed and fed into cash available to trade."""
+    import portfolio_service
+    portfolio_service.is_market_open.return_value = False
+
+    mock_db.get_portfolio_summary.return_value = {'cash': 0.0, 'total_value': 10000.0}
+    mock_db.get_portfolio_holdings.return_value = {'AAPL': 20}
+    mock_db.create_alert.return_value = 999
+
+    held_verdicts = [
+        {'symbol': 'AAPL', 'lynch_score': 70, 'buffett_score': 70, 'final_verdict': 'WATCH'}
+    ]
+    buy_decisions = [{'symbol': 'MSFT', 'consensus_score': 70, 'id': 1,
+                      'position_type': 'new', 'consensus_reasoning': ''}]
+
+    trim_signal = ExitSignal(symbol='AAPL', quantity=10, reason='Rebalancing trim',
+                             current_value=1000.0, gain_pct=0.0, exit_type='trim')
+
+    captured = {}
+
+    def spy_trims(holdings, held_verdicts, buy_decisions, portfolio_value, method, rules):
+        captured['held_verdicts'] = held_verdicts
+        return [trim_signal]
+
+    executor.position_sizer.compute_rebalancing_trims = spy_trims
+    executor.position_sizer.prioritize_positions = lambda **kwargs: []
+
+    strategy = {
+        'portfolio_id': 1,
+        'position_sizing': {'method': 'equal_weight'}
+    }
+
+    executor._execute_trades(
+        buy_decisions=buy_decisions,
+        exits=[],
+        strategy=strategy,
+        run_id=1,
+        held_verdicts=held_verdicts
+    )
+
+    assert 'held_verdicts' in captured
+    assert len(captured['held_verdicts']) == 1
+    assert captured['held_verdicts'][0]['symbol'] == 'AAPL'

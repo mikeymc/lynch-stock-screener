@@ -156,7 +156,7 @@ def test_phase5_consolidation_all_sources_merged():
     # Track all exits passed to _execute_trades
     captured_exits = {}
 
-    def spy_execute_trades(buy_decisions, exits, strategy, run_id):
+    def spy_execute_trades(buy_decisions, exits, strategy, run_id, **kwargs):
         captured_exits['exits'] = exits
         return 0
 
@@ -179,7 +179,7 @@ def test_phase5_consolidation_all_sources_merged():
             with patch.object(executor.exit_checker, 'check_universe_compliance',
                               return_value=universe_exits):
                 with patch.object(executor, '_deliberate',
-                                  return_value=([], [deliberation_exit])):
+                                  return_value=([], [deliberation_exit], [])):
                     with patch.object(executor, '_score_candidates', return_value=([], [])):
                         with patch.object(executor, '_generate_theses', return_value=[]):
                             with patch('strategy_executor.core.get_spy_price', return_value=500.0):
@@ -231,7 +231,7 @@ def test_held_declined_get_deliberated():
                        symbols_of_held_stocks_with_failing_scores=None):
         captured_deliberate_calls['exit_only_symbols'] = symbols_of_held_stocks_with_failing_scores
         captured_deliberate_calls['enriched_symbols'] = {s['symbol'] for s in enriched}
-        return [], []
+        return [], [], []
 
     executor._deliberate = spy_deliberate
 
@@ -275,7 +275,7 @@ def test_held_declined_avoid_exits():
     }
 
     with patch.object(executor, '_conduct_deliberation', return_value=('deliberation text', 'AVOID')):
-        decisions, exits = executor._deliberate(
+        decisions, exits, held_verdicts = executor._deliberate(
             enriched=[msft],
             run_id=1,
             held_symbols={'MSFT'},
@@ -310,7 +310,7 @@ def test_held_declined_buy_does_not_add_position():
     }
 
     with patch.object(executor, '_conduct_deliberation', return_value=('deliberation text', 'BUY')):
-        decisions, exits = executor._deliberate(
+        decisions, exits, held_verdicts = executor._deliberate(
             enriched=[msft],
             run_id=1,
             held_symbols={'MSFT'},

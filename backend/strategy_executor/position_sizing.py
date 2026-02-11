@@ -128,7 +128,8 @@ class PositionSizer:
         portfolio_id: int,
         method: str,
         rules: Dict[str, Any],
-        holdings: Dict[str, Any] = None
+        holdings: Dict[str, Any] = None,
+        current_prices: Dict[str, float] = None
     ) -> List[Dict[str, Any]]:
         """Calculate positions for all decisions, prioritize by conviction, select within budget.
 
@@ -140,6 +141,7 @@ class PositionSizer:
             method: Position sizing method
             rules: Position sizing rules
             holdings: Post-exit holdings (exit symbols already removed); queries DB if None
+            current_prices: Optional symbol→price map to avoid per-symbol DB lookups
 
         Returns:
             List of {symbol, decision, position, conviction, priority_score} sorted by priority desc,
@@ -151,7 +153,8 @@ class PositionSizer:
         if holdings is None:
             holdings = {}
 
-        current_prices = {}
+        if current_prices is None:
+            current_prices = {}
 
         positions_data = []
         for decision in buy_decisions:
@@ -203,6 +206,105 @@ class PositionSizer:
                 remaining_cash -= pos_data['position'].estimated_value
 
         return selected
+
+    def compute_rebalancing_trims(
+        self,
+        holdings: Dict[str, Any],
+        held_verdicts: List[Dict[str, Any]],
+        buy_decisions: List[Dict[str, Any]],
+        portfolio_value: float,
+        method: str,
+        rules: Dict[str, Any],
+    ) -> list:
+        """Compute partial sells needed to bring over-weight holdings to their target weight.
+
+        Builds a target portfolio from buy candidates and held stocks with current verdicts,
+        computes target values per stock, and generates trim signals for positions that
+        exceed their target value.
+
+        Args:
+            holdings: Post-full-exit holdings from get_portfolio_holdings(): symbol → quantity (int)
+            held_verdicts: Held stocks that got BUY-as-HOLD or WATCH verdicts, with scores
+            buy_decisions: New buy candidates with consensus_score
+            portfolio_value: Total portfolio value
+            method: Position sizing method (equal_weight, conviction_weighted, fixed_pct, kelly)
+            rules: Position sizing rules (max_position_pct, fixed_position_pct, kelly_fraction)
+
+        Returns:
+            List of ExitSignal objects with exit_type='trim' for partial sells.
+        """
+        from strategy_executor.models import ExitSignal
+
+        if not held_verdicts and not buy_decisions:
+            return []
+
+        # Build universe: {symbol: conviction_score}
+        universe = {}
+        for d in buy_decisions:
+            universe[d['symbol']] = d.get('consensus_score', 50)
+        for v in (held_verdicts or []):
+            if v.get('final_verdict') != 'AVOID' and v['symbol'] not in universe:
+                lynch = v.get('lynch_score') or 0
+                buffett = v.get('buffett_score') or 0
+                universe[v['symbol']] = (lynch + buffett) / 2
+
+        if not universe:
+            return []
+
+        # Compute target value per symbol based on method
+        max_pct = rules.get('max_position_pct', 5.0)
+        max_per_stock = portfolio_value * (max_pct / 100)
+        N = len(universe)
+
+        def target_for(conviction):
+            if method == 'equal_weight':
+                raw = portfolio_value / N
+            elif method == 'conviction_weighted':
+                total_conviction = sum(universe.values())
+                raw = (portfolio_value * conviction / total_conviction) if total_conviction else portfolio_value / N
+            elif method == 'fixed_pct':
+                raw = portfolio_value * (rules.get('fixed_position_pct', 5.0) / 100)
+            elif method == 'kelly':
+                raw = self._size_kelly(portfolio_value, conviction, rules)
+            else:
+                raw = portfolio_value / N
+            return min(raw, max_per_stock)
+
+        # Generate trim signals for over-weight holdings
+        # holdings is {symbol: quantity} as returned by get_portfolio_holdings()
+        trim_signals = []
+        for symbol, quantity in (holdings or {}).items():
+            if symbol not in universe:
+                continue
+            quantity = int(quantity) if quantity else 0
+            if quantity <= 0:
+                continue
+
+            current_price = self._fetch_price(symbol)
+            if not current_price:
+                continue
+            current_value = quantity * current_price
+
+            conviction = universe[symbol]
+            target = target_for(conviction)
+
+            if current_value <= target:
+                continue  # At or below target, no trim needed
+
+            shares_to_sell = int((current_value - target) / current_price)
+
+            if 0 < shares_to_sell < quantity:
+                trim_value = shares_to_sell * current_price
+                trim_signals.append(ExitSignal(
+                    symbol=symbol,
+                    quantity=shares_to_sell,
+                    reason=f"Rebalancing trim: ${current_value:.0f} > target ${target:.0f}",
+                    current_value=trim_value,
+                    gain_pct=0.0,
+                    exit_type='trim',
+                ))
+
+        return trim_signals
 
     def _fetch_price(self, symbol: str) -> Optional[float]:
         """Fetch current price from database."""
