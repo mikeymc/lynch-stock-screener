@@ -149,11 +149,13 @@ def get_all_portfolios():
 @admin_bp.route('/api/admin/user_actions', methods=['GET'])
 @require_admin
 def get_user_actions():
-    """Get recent user actions/events"""
+    """Get recent user actions/events and user stats"""
     try:
         conn = deps.db.get_connection()
         try:
             cursor = conn.cursor(row_factory=psycopg.rows.dict_row)
+            
+            # 1. Get recent events (existing logic)
             cursor.execute("""
                 SELECT ue.*, u.email as user_email, u.name as user_name 
                 FROM user_events ue
@@ -162,7 +164,26 @@ def get_user_actions():
                 LIMIT 100
             """)
             events = [dict(row) for row in cursor.fetchall()]
-            return jsonify({'events': events})
+            
+            # 2. Get aggregate user stats
+            cursor.execute("""
+                SELECT 
+                    u.id as user_id,
+                    u.email,
+                    u.name,
+                    COUNT(ue.id) as total_hits,
+                    MAX(ue.created_at) as last_activity
+                FROM users u
+                LEFT JOIN user_events ue ON u.id = ue.user_id
+                GROUP BY u.id, u.email, u.name
+                ORDER BY total_hits DESC
+            """)
+            stats = [dict(row) for row in cursor.fetchall()]
+            
+            return jsonify({
+                'events': events,
+                'stats': stats
+            })
         finally:
             deps.db.return_connection(conn)
     except Exception as e:
