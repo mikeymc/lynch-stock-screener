@@ -67,24 +67,6 @@ export default function Dashboard() {
 
     return (
         <div className="space-y-6">
-            {/* Header */}
-            <div className="flex items-center justify-between">
-                <div>
-                    <h1 className="text-2xl font-semibold tracking-tight">Dashboard</h1>
-                    <p className="text-sm text-muted-foreground">
-                        Welcome back{user?.name ? `, ${user.name.split(' ')[0]}` : ''}
-                    </p>
-                </div>
-                <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={fetchDashboardData}
-                    className="text-muted-foreground"
-                >
-                    <RefreshCw className={`h-4 w-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
-                    {loading ? 'Loading...' : lastRefresh ? `Updated ${formatTimeAgo(lastRefresh)}` : 'Refresh'}
-                </Button>
-            </div>
 
             {/* Inline error banner */}
             {error && (
