@@ -4,7 +4,7 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Skeleton } from "@/components/ui/skeleton"
-import { Newspaper, ExternalLink } from 'lucide-react'
+import { Newspaper } from 'lucide-react'
 
 export default function NewsFeed({ articles = [], loading = false }) {
     return (
@@ -19,7 +19,7 @@ export default function NewsFeed({ articles = [], loading = false }) {
                 {loading ? (
                     <Skeleton className="h-24 w-full" />
                 ) : articles.length > 0 ? (
-                    <div className="space-y-3">
+                    <div className="space-y-1">
                         {articles.map((article, idx) => (
                             <NewsRow key={article.finnhub_id || idx} article={article} />
                         ))}
@@ -42,27 +42,14 @@ function NewsRow({ article }) {
     return (
         <button
             onClick={handleClick}
-            className="w-full text-left group"
+            className="w-full text-left group p-0"
             disabled={!article.url}
         >
-            <div className="flex items-start gap-3 py-2 px-2 rounded hover:bg-accent transition-colors">
-                {/* Thumbnail if available */}
-                {article.image_url && (
-                    <img
-                        src={article.image_url}
-                        alt=""
-                        className="w-16 h-12 object-cover rounded flex-shrink-0"
-                        onError={(e) => e.target.style.display = 'none'}
-                    />
-                )}
-
+            <div className="flex items-start py-1 px-2 rounded hover:bg-accent transition-colors">
                 <div className="min-w-0 flex-1">
                     {/* Headline */}
                     <p className="text-sm font-medium line-clamp-2 group-hover:text-primary transition-colors">
                         {article.headline}
-                        {article.url && (
-                            <ExternalLink className="h-3 w-3 inline-block ml-1 opacity-50" />
-                        )}
                     </p>
 
                     {/* Meta */}
