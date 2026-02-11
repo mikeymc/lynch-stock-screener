@@ -84,30 +84,30 @@ export default function Dashboard() {
                 <MarketMovers />
             </div>
 
-            {/* Row 2: Personal Overview */}
+            {/* Row 2: Strategies & Portfolios */}
             <div className="grid gap-6 md:grid-cols-2">
+                <StrategiesSummary
+                    strategies={strategies}
+                    onNavigate={() => navigate('/strategies')}
+                    loading={loading}
+                />
                 <PortfolioSummaryCard
                     portfolios={portfolios}
                     onNavigate={() => navigate('/portfolios')}
                     loading={loading}
                 />
+            </div>
+
+            {/* Row 3: Watchlist & Alerts */}
+            <div className="grid gap-6 md:grid-cols-2">
                 <WatchlistQuickView
                     watchlist={watchlist}
                     onNavigate={() => navigate('/')}
                     loading={loading}
                 />
-            </div>
-
-            {/* Row 3: Activity & Strategy */}
-            <div className="grid gap-6 md:grid-cols-2">
                 <AlertsSummary
                     alerts={alerts}
                     onNavigate={() => navigate('/alerts')}
-                    loading={loading}
-                />
-                <StrategiesSummary
-                    strategies={strategies}
-                    onNavigate={() => navigate('/strategies')}
                     loading={loading}
                 />
             </div>
