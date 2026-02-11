@@ -77,7 +77,7 @@ export default function MarketMovers() {
                         {error}
                     </div>
                 ) : (
-                    <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-4">
                         {/* Gainers */}
                         <div>
                             <div className="flex items-center gap-1 text-xs text-muted-foreground mb-2">
@@ -131,13 +131,13 @@ function MoverRow({ stock, isGainer, onClick }) {
     return (
         <button
             onClick={onClick}
-            className="w-full flex items-center justify-between py-1.5 px-2 rounded hover:bg-accent transition-colors text-left"
+            className="w-full flex items-center justify-between py-1 px-2 rounded hover:bg-accent transition-colors text-left"
         >
-            <div className="min-w-0">
-                <div className="font-medium text-sm truncate">{stock.symbol}</div>
-                <div className="text-xs text-muted-foreground truncate">{stock.company_name}</div>
+            <div className="flex items-center gap-2 min-w-0 flex-1 mr-4">
+                <span className="font-medium text-sm shrink-0">{stock.symbol}</span>
+                <span className="text-xs text-muted-foreground truncate">{stock.company_name}</span>
             </div>
-            <div className={`flex items-center gap-1 text-sm ${isGainer ? 'text-green-500' : 'text-red-500'}`}>
+            <div className={`flex items-center gap-1 text-sm shrink-0 ${isGainer ? 'text-green-500' : 'text-red-500'}`}>
                 {isGainer ? <ArrowUpRight className="h-3 w-3" /> : <ArrowDownRight className="h-3 w-3" />}
                 {isGainer && '+'}{changePct}%
             </div>
