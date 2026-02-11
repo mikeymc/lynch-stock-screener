@@ -298,6 +298,7 @@ def get_market_index(symbols):
         # Fetch data for all symbols
         if len(symbol_list) > 1:
             # Multi-symbol download
+            # Note: yf.download can return a DataFrame with a MultiIndex where some tickers are missing if they fail
             hist_data = yf.download(symbol_list, period=period, interval=interval, group_by='ticker', progress=False)
         else:
             # Single symbol - keep behavior consistent
@@ -306,48 +307,58 @@ def get_market_index(symbols):
 
         results = {}
         for symbol in symbol_list:
-            if len(symbol_list) > 1:
-                hist = hist_data[symbol]
-            else:
-                hist = hist_data
+            try:
+                if len(symbol_list) > 1:
+                    # Check if symbol exists in the downloaded columns to avoid KeyError
+                    if symbol not in hist_data.columns.get_level_values(0):
+                        logger.warning(f"Symbol {symbol} not found in yfinance download results")
+                        results[symbol] = {'error': f'No data available for {symbol}'}
+                        continue
+                    hist = hist_data[symbol]
+                else:
+                    hist = hist_data
 
-            if hist.empty:
-                results[symbol] = {'error': 'No data available'}
-                continue
-
-            # Format data for chart
-            data_points = []
-            for idx, row in hist.iterrows():
-                if pd.isna(row['Close']):
+                if hist.empty:
+                    results[symbol] = {'error': 'No data available'}
                     continue
-                data_points.append({
-                    'timestamp': idx.isoformat(),
-                    'close': float(row['Close']),
-                    'open': float(row['Open']) if 'Open' in row else None,
-                    'high': float(row['High']) if 'High' in row else None,
-                    'low': float(row['Low']) if 'Low' in row else None,
-                    'volume': int(row['Volume']) if 'Volume' in row and pd.notna(row['Volume']) else None
-                })
 
-            if not data_points:
-                results[symbol] = {'error': 'No valid data points'}
-                continue
+                # Format data for chart
+                data_points = []
+                for idx, row in hist.iterrows():
+                    # Handle potential missing Close column if ticker was partially returned but failed
+                    if 'Close' not in row or pd.isna(row['Close']):
+                        continue
+                    data_points.append({
+                        'timestamp': idx.isoformat(),
+                        'close': float(row['Close']),
+                        'open': float(row['Open']) if 'Open' in row else None,
+                        'high': float(row['High']) if 'High' in row else None,
+                        'low': float(row['Low']) if 'Low' in row else None,
+                        'volume': int(row['Volume']) if 'Volume' in row and pd.notna(row['Volume']) else None
+                    })
 
-            # Calculate change from first to last
-            first_close = data_points[0]['close']
-            last_close = data_points[-1]['close']
-            change = last_close - first_close
-            change_pct = (change / first_close * 100) if first_close else 0
+                if not data_points:
+                    results[symbol] = {'error': 'No valid data points'}
+                    continue
 
-            results[symbol] = {
-                'symbol': symbol,
-                'name': SUPPORTED_INDICES[symbol],
-                'period': period,
-                'data': data_points,
-                'current_price': last_close,
-                'change': change,
-                'change_pct': round(change_pct, 2)
-            }
+                # Calculate change from first to last
+                first_close = data_points[0]['close']
+                last_close = data_points[-1]['close']
+                change = last_close - first_close
+                change_pct = (change / first_close * 100) if first_close else 0
+
+                results[symbol] = {
+                    'symbol': symbol,
+                    'name': SUPPORTED_INDICES[symbol],
+                    'period': period,
+                    'data': data_points,
+                    'current_price': last_close,
+                    'change': change,
+                    'change_pct': round(change_pct, 2)
+                }
+            except Exception as item_err:
+                logger.error(f"Error processing symbol {symbol}: {item_err}")
+                results[symbol] = {'error': f'Internal error processing {symbol}'}
 
         # If only one symbol was requested, return it directly for backward compatibility
         if len(symbol_list) == 1:

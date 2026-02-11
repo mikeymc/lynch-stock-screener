@@ -97,3 +97,52 @@ class TestDashboardEndpoint:
         """Test that dashboard endpoint requires authentication."""
         response = client.get('/api/dashboard')
         assert response.status_code == 401
+
+
+class TestMarketIndexPartialData:
+    """Tests for partial data handling in GET /api/market/index"""
+
+    def test_get_market_index_partial_data(self, client):
+        """Test that the endpoint handles missing symbols in yfinance download."""
+        import pandas as pd
+        from unittest.mock import patch
+
+        # MultiIndex columns simulating ^GSPC and ^IXIC returned, but ^DJI missing
+        columns = pd.MultiIndex.from_tuples([
+            ('^GSPC', 'Close'), ('^GSPC', 'High'), ('^GSPC', 'Low'), ('^GSPC', 'Open'), ('^GSPC', 'Volume'),
+            ('^IXIC', 'Close'), ('^IXIC', 'High'), ('^IXIC', 'Low'), ('^IXIC', 'Open'), ('^IXIC', 'Volume')
+        ])
+
+        # Mock DataFrame
+        mock_df = pd.DataFrame({
+            ('^GSPC', 'Close'): [100.0, 105.0],
+            ('^GSPC', 'High'): [101.0, 106.0],
+            ('^GSPC', 'Low'): [99.0, 104.0],
+            ('^GSPC', 'Open'): [99.5, 104.5],
+            ('^GSPC', 'Volume'): [1000, 1100],
+            ('^IXIC', 'Close'): [200.0, 210.0],
+            ('^IXIC', 'High'): [201.0, 211.0],
+            ('^IXIC', 'Low'): [199.0, 209.0],
+            ('^IXIC', 'Open'): [199.5, 209.5],
+            ('^IXIC', 'Volume'): [2000, 2200]
+        }, index=pd.to_datetime(['2024-01-01', '2024-01-02']))
+        mock_df.columns = columns
+
+        with patch('yfinance.download', return_value=mock_df):
+            response = client.get('/api/market/index/^GSPC,^IXIC,^DJI?period=1mo')
+            assert response.status_code == 200
+            data = response.get_json()
+
+            assert '^GSPC' in data
+            assert '^IXIC' in data
+            assert '^DJI' in data
+
+            assert 'data' in data['^GSPC']
+            assert'current_price' in data['^GSPC']
+            assert data['^GSPC']['current_price'] == 105.0
+
+            assert 'data' in data['^IXIC']
+            
+            assert 'error' in data['^DJI']
+            assert 'No data available for ^DJI' in data['^DJI']['error']
+
