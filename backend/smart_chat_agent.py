@@ -315,9 +315,9 @@ class SmartChatAgent:
                     break
             
             # Check if model wants to call a tool
-            if response.candidates and response.candidates[0].content.parts:
+            if response.candidates and response.candidates[0].content and response.candidates[0].content.parts:
                 parts = response.candidates[0].content.parts
-                
+
                 # Check for function calls
                 function_calls = [p for p in parts if hasattr(p, 'function_call') and p.function_call]
                 
@@ -331,10 +331,15 @@ class SmartChatAgent:
                         tool_args = dict(fc.args) if fc.args else {}
                         
                         # Inject user_id context for alerts, portfolios, and strategies
-                        portfolio_tools = ["create_portfolio", "get_my_portfolios", "get_portfolio_status", "buy_stock", "sell_stock", "create_strategy"]
+                        portfolio_tools = [
+                            "create_portfolio", "get_my_portfolios", "get_portfolio_status",
+                            "buy_stock", "sell_stock", "create_strategy",
+                            "get_my_strategies", "get_strategy", "update_strategy",
+                            "get_strategy_activity", "get_strategy_decisions",
+                        ]
                         if (tool_name == "manage_alerts" or tool_name in portfolio_tools) and user_id:
                             tool_args["user_id"] = user_id
-                        
+
                         logger.info(f"[Agent] Calling tool: {tool_name}({tool_args})")
                         
                         # Execute the tool
@@ -483,7 +488,7 @@ class SmartChatAgent:
                 if model_success:
                     break
             
-            if response.candidates and response.candidates[0].content.parts:
+            if response.candidates and response.candidates[0].content and response.candidates[0].content.parts:
                 parts = response.candidates[0].content.parts
                 function_calls = [p for p in parts if hasattr(p, 'function_call') and p.function_call]
                 
@@ -497,10 +502,15 @@ class SmartChatAgent:
                         tool_args = dict(fc.args) if fc.args else {}
                         
                         # Inject user_id context for alerts, portfolios, and strategies
-                        portfolio_tools = ["create_portfolio", "get_my_portfolios", "get_portfolio_status", "buy_stock", "sell_stock", "create_strategy"]
+                        portfolio_tools = [
+                            "create_portfolio", "get_my_portfolios", "get_portfolio_status",
+                            "buy_stock", "sell_stock", "create_strategy",
+                            "get_my_strategies", "get_strategy", "update_strategy",
+                            "get_strategy_activity", "get_strategy_decisions",
+                        ]
                         if (tool_name == "manage_alerts" or tool_name in portfolio_tools) and user_id:
                             tool_args["user_id"] = user_id
-                        
+
                         yield {"type": "thinking", "data": f"Calling {tool_name}..."}
                         yield {"type": "tool_call", "data": {"tool": tool_name, "args": tool_args}}
                         
