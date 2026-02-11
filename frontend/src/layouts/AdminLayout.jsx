@@ -19,7 +19,8 @@ import {
     Layers,
     Activity,
     LogOut,
-    ChevronLeft
+    ChevronLeft,
+    BarChart3
 } from 'lucide-react'
 import UserAvatar from '@/components/UserAvatar'
 
@@ -35,6 +36,7 @@ export default function AdminLayout() {
         { name: 'Strategies', path: '/admin/strategies', icon: Layers },
         { name: 'Portfolios', path: '/admin/portfolios', icon: Briefcase },
         { name: 'User Actions', path: '/admin/user_actions', icon: Activity },
+        { name: 'Job Stats', path: '/admin/job_stats', icon: BarChart3 },
     ]
 
     return (

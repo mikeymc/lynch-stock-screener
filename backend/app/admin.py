@@ -2,7 +2,7 @@ from flask import Blueprint, jsonify, request, session
 from app import deps
 from auth import require_user_auth
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta
 import psycopg.rows
 
 logger = logging.getLogger(__name__)
@@ -144,6 +144,67 @@ def get_all_portfolios():
             deps.db.return_connection(conn)
     except Exception as e:
         logger.error(f"Error fetching portfolios: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@admin_bp.route('/api/admin/job_stats', methods=['GET'])
+@require_admin
+def get_job_stats():
+    """Get aggregated background job statistics and timeline data"""
+    try:
+        hours = int(request.args.get('hours', 24))
+        job_type = request.args.get('job_type', 'all')
+        
+        conn = deps.db.get_connection()
+        try:
+            cursor = conn.cursor(row_factory=psycopg.rows.dict_row)
+            time_threshold = datetime.now() - timedelta(hours=hours)
+            
+            # 1. Get stats by job type
+            cursor.execute("""
+                SELECT 
+                    job_type,
+                    tier,
+                    COUNT(*) as total_runs,
+                    COUNT(*) FILTER (WHERE status = 'completed') as completed_runs,
+                    COUNT(*) FILTER (WHERE status = 'failed') as failed_runs,
+                    COUNT(*) FILTER (WHERE status = 'running') as running_runs,
+                    AVG(EXTRACT(EPOCH FROM (completed_at - started_at))) FILTER (
+                        WHERE status = 'completed' AND started_at IS NOT NULL AND completed_at IS NOT NULL
+                    ) as avg_duration_seconds,
+                    MAX(created_at) as last_run
+                FROM background_jobs
+                WHERE created_at >= %s
+                GROUP BY job_type, tier
+                ORDER BY total_runs DESC
+            """, (time_threshold,))
+            stats = [dict(row) for row in cursor.fetchall()]
+            
+            # 2. Get recent jobs (all jobs in timeframe, but limited to last 1000 for safety)
+            query = """
+                SELECT * FROM background_jobs
+                WHERE created_at >= %s
+            """
+            params = [time_threshold]
+            
+            if job_type != 'all':
+                query += " AND job_type = %s"
+                params.append(job_type)
+                
+            query += " ORDER BY created_at DESC LIMIT 1000"
+            
+            cursor.execute(query, params)
+            jobs = [dict(row) for row in cursor.fetchall()]
+            
+            return jsonify({
+                'stats': stats,
+                'jobs': jobs,
+                'time_range': hours
+            })
+        finally:
+            deps.db.return_connection(conn)
+    except Exception as e:
+        logger.error(f"Error fetching job stats: {e}")
         return jsonify({'error': str(e)}), 500
 
 @admin_bp.route('/api/admin/user_actions', methods=['GET'])
