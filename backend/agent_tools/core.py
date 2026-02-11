@@ -74,6 +74,11 @@ class ToolExecutorCore:
             # Strategy management tools
             "get_strategy_templates": self._get_strategy_templates,
             "create_strategy": self._create_strategy,
+            "get_my_strategies": self._get_my_strategies,
+            "get_strategy": self._get_strategy,
+            "update_strategy": self._update_strategy,
+            "get_strategy_activity": self._get_strategy_activity,
+            "get_strategy_decisions": self._get_strategy_decisions,
         }
 
         executor = executor_map.get(tool_name)

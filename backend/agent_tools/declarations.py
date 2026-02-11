@@ -595,6 +595,121 @@ create_strategy_decl = FunctionDeclaration(
 
 
 # =============================================================================
+# Strategy Management Tools
+# =============================================================================
+
+get_my_strategies_decl = FunctionDeclaration(
+    name="get_my_strategies",
+    description="List all of the user's investment strategies with their status (enabled/disabled), alpha vs SPY, and last run date/status. Use this to give a quick overview of what strategies exist before diving into details.",
+    parameters=Schema(
+        type=Type.OBJECT,
+        properties={
+            "user_id": Schema(type=Type.INTEGER, description="Internal User ID (automatically injected)"),
+        },
+        required=[],
+    ),
+)
+
+get_strategy_decl = FunctionDeclaration(
+    name="get_strategy",
+    description="Get the full configuration of a specific strategy including its screening filters, consensus mode, position sizing rules, exit conditions, and schedule. Use this when the user asks how a strategy works or wants to review its settings.",
+    parameters=Schema(
+        type=Type.OBJECT,
+        properties={
+            "strategy_id": Schema(type=Type.INTEGER, description="ID of the strategy to retrieve"),
+            "user_id": Schema(type=Type.INTEGER, description="Internal User ID (automatically injected)"),
+        },
+        required=["strategy_id"],
+    ),
+)
+
+update_strategy_decl = FunctionDeclaration(
+    name="update_strategy",
+    description="""Modify an existing strategy conversationally. You can change any combination of fields.
+
+    Examples:
+    - "disable strategy 3" → enabled=false
+    - "raise the stop loss to 25%" → stop_loss_pct=-25
+    - "switch to conviction-weighted sizing" → position_sizing_method='conviction_weighted'
+    - "add a filter for P/E under 20" → pass updated filters array
+
+    position_sizing and exit_conditions are merged (unmentioned fields preserved).
+    filters fully replaces the existing filter list.""",
+    parameters=Schema(
+        type=Type.OBJECT,
+        properties={
+            "strategy_id": Schema(type=Type.INTEGER, description="ID of the strategy to update"),
+            "name": Schema(type=Type.STRING, description="New name for the strategy"),
+            "description": Schema(type=Type.STRING, description="New description"),
+            "enabled": Schema(type=Type.BOOLEAN, description="Enable (true) or disable (false) the strategy"),
+            "consensus_mode": Schema(
+                type=Type.STRING,
+                description="How Lynch and Buffett must agree: 'both_agree', 'weighted_confidence', or 'veto_power'",
+                enum=["both_agree", "weighted_confidence", "veto_power"],
+            ),
+            "consensus_threshold": Schema(type=Type.NUMBER, description="Minimum score required for approval (0-100)"),
+            "position_sizing_method": Schema(
+                type=Type.STRING,
+                description="Position sizing approach: 'equal_weight', 'conviction_weighted', 'fixed_pct', or 'kelly_criterion'",
+                enum=["equal_weight", "conviction_weighted", "fixed_pct", "kelly_criterion"],
+            ),
+            "max_position_pct": Schema(type=Type.NUMBER, description="Maximum % of portfolio per position (e.g., 10.0 for 10%)"),
+            "profit_target_pct": Schema(type=Type.NUMBER, description="Sell when position gains this % (e.g., 50 for +50%)"),
+            "stop_loss_pct": Schema(type=Type.NUMBER, description="Sell when position loses this % (e.g., -20 for -20%)"),
+            "filters": Schema(
+                type=Type.ARRAY,
+                items=Schema(type=Type.OBJECT),
+                description="Replacement filter list. Each filter has 'field', 'operator', and 'value'.",
+            ),
+            "user_id": Schema(type=Type.INTEGER, description="Internal User ID (automatically injected)"),
+        },
+        required=["strategy_id"],
+    ),
+)
+
+get_strategy_activity_decl = FunctionDeclaration(
+    name="get_strategy_activity",
+    description="Get recent run history for a strategy including trade counts, stocks screened, run status, and performance vs SPY. Use this when the user asks what a strategy has been doing or how it has performed recently.",
+    parameters=Schema(
+        type=Type.OBJECT,
+        properties={
+            "strategy_id": Schema(type=Type.INTEGER, description="ID of the strategy"),
+            "limit": Schema(type=Type.INTEGER, description="Number of recent runs to return (default: 5)"),
+            "user_id": Schema(type=Type.INTEGER, description="Internal User ID (automatically injected)"),
+        },
+        required=["strategy_id"],
+    ),
+)
+
+get_strategy_decisions_decl = FunctionDeclaration(
+    name="get_strategy_decisions",
+    description="""Get per-symbol scoring and reasoning from a strategy run. Shows why each stock was bought, sold, or skipped — including Lynch and Buffett scores, thesis summary, and trade details.
+
+    Defaults to the most recent run. Use filter to narrow results:
+    - 'all': every symbol evaluated
+    - 'trades': only BUYs and SELLs
+    - 'buys': only BUY decisions
+    - 'sells': only SELL decisions
+
+    Use this to answer "why did you buy X?" or "what did the strategy skip last time?".""",
+    parameters=Schema(
+        type=Type.OBJECT,
+        properties={
+            "strategy_id": Schema(type=Type.INTEGER, description="ID of the strategy"),
+            "run_id": Schema(type=Type.INTEGER, description="Specific run ID to inspect (default: latest run)"),
+            "filter": Schema(
+                type=Type.STRING,
+                description="Which decisions to return: 'all', 'trades', 'buys', or 'sells' (default: 'all')",
+                enum=["all", "trades", "buys", "sells"],
+            ),
+            "user_id": Schema(type=Type.INTEGER, description="Internal User ID (automatically injected)"),
+        },
+        required=["strategy_id"],
+    ),
+)
+
+
+# =============================================================================
 # FRED Macroeconomic Data Tools
 # =============================================================================
 
@@ -704,6 +819,11 @@ TOOL_DECLARATIONS = [
     # Strategy management tools
     get_strategy_templates_decl,
     create_strategy_decl,
+    get_my_strategies_decl,
+    get_strategy_decl,
+    update_strategy_decl,
+    get_strategy_activity_decl,
+    get_strategy_decisions_decl,
 ]
 
 # Create the Tool object for Gemini API

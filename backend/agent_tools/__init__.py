@@ -9,9 +9,10 @@ from agent_tools.research_tools import ResearchToolsMixin
 from agent_tools.analysis_tools import AnalysisToolsMixin
 from agent_tools.screening_tools import ScreeningToolsMixin
 from agent_tools.utility_tools import UtilityToolsMixin
+from agent_tools.strategy_tools import StrategyToolsMixin
 
 
 class ToolExecutor(ToolExecutorCore, StockToolsMixin, PortfolioToolsMixin,
                    ResearchToolsMixin, AnalysisToolsMixin,
-                   ScreeningToolsMixin, UtilityToolsMixin):
+                   ScreeningToolsMixin, UtilityToolsMixin, StrategyToolsMixin):
     pass

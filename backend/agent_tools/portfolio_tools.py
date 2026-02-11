@@ -194,7 +194,7 @@ class PortfolioToolsMixin:
 
         # Enable if requested
         if enable_now:
-            self.db.update_strategy(strategy_id, user_id, enabled=True)
+            self.db.update_strategy(user_id, strategy_id, enabled=True)
 
         return {
             "success": True,
