@@ -1,313 +1,260 @@
-# ABOUTME: Calculates position sizes for trades based on various sizing methods
-# ABOUTME: Supports equal weight, conviction weighted, fixed percentage, and Kelly criterion
+# ABOUTME: Calculates position sizes for trades using a Target Portfolio approach
+# ABOUTME: Unified ranking of Held + New candidates to determine ideal allocations
 
 import logging
-from typing import Dict, Any, List, Optional
-from strategy_executor.models import PositionSize
+from typing import Dict, Any, List, Optional, Tuple
+
+from strategy_executor.models import PositionSize, ExitSignal
+from strategy_executor.models import TargetAllocation
 
 logger = logging.getLogger(__name__)
 
 
 class PositionSizer:
-    """Calculates position sizes for trades."""
+    """Calculates position sizes and generates buy/sell signals based on target portfolio."""
 
     def __init__(self, db):
         self.db = db
 
-    def calculate_position(
+    def calculate_target_orders(
         self,
-        portfolio_id: int,
-        symbol: str,
-        conviction_score: float,
+        section_id: int,  # can be portfolio_id
+        candidates: List[Dict[str, Any]],
+        portfolio_value: float,
+        holdings: Dict[str, Any],
         method: str,
         rules: Dict[str, Any],
-        other_buys: List[Dict[str, Any]] = None,
-        current_price: float = None,
-        available_cash: float = None,
-        total_value: float = None,
-        holdings: Dict[str, Any] = None
-    ) -> PositionSize:
-        """Calculate shares to buy based on sizing method.
-
-        Methods:
-        - equal_weight: Divide equally among all positions
-        - conviction_weighted: Higher conviction = larger position
-        - fixed_pct: Fixed percentage of portfolio per position
-        - kelly: Kelly criterion based on expected value
+        cash_available: float = 0.0
+    ) -> Tuple[List[ExitSignal], List[Dict[str, Any]]]:
+        """Core logic: Calculate target portfolio and generate Buy/Sell orders to get there.
 
         Args:
-            portfolio_id: Portfolio to trade in
-            symbol: Stock symbol
-            conviction_score: 0-100 score
-            method: Sizing method
-            rules: Position sizing rules from strategy
-            other_buys: Other stocks being bought this run
-            current_price: Current stock price (fetched if not provided)
-            available_cash: Post-exit cash (skips DB query when provided with total_value and holdings)
-            total_value: Total portfolio value (skips DB query when provided with available_cash and holdings)
-            holdings: Post-exit holdings dict (skips DB query when provided with available_cash and total_value)
+            candidates: Unified list of {symbol, conviction_score, current_price}
+                       Includes both CURRENT holdings and NEW candidates.
+            portfolio_value: Total liquidity (Cash + Stock Value)
+            holdings: Current holdings {symbol: quantity}
+            method: Sizing method (equal_weight, conviction_weighted, etc.)
+            rules: Sizing rules (max_positions, etc.)
+            cash_available: Current cash (used for validation)
 
         Returns:
-            PositionSize with shares, value, and reasoning
+            Tuple(List[ExitSignal], List[final_buy_decision])
         """
-        if other_buys is None:
-            other_buys = []
+        # 1. Calculate Target Allocations
+        targets = self._calculate_ideal_allocation(candidates, portfolio_value, method, rules)
 
-        # Use provided state if all three are given; otherwise query DB
-        if available_cash is None or total_value is None or holdings is None:
-            summary = self.db.get_portfolio_summary(portfolio_id, use_live_prices=False)
-            if not summary:
-                return PositionSize(0, 0.0, 0.0, "Portfolio not found")
+        # 2. Generate Signals (Diff vs Current)
+        sells, buys = self._generate_signals(targets, holdings, rules)
 
-            total_value = summary.get('total_value', 0)
-            available_cash = summary.get('cash', 0)
-            holdings = summary.get('holdings', {})
+        return sells, buys
 
-        # Get current price if not provided
-        if current_price is None:
-            current_price = self._fetch_price(symbol) # todo: use live prices
-            if not current_price:
-                return PositionSize(0, 0.0, 0.0, f"Price unavailable for {symbol}")
+    def _calculate_ideal_allocation(
+        self,
+        candidates: List[Dict[str, Any]],
+        portfolio_value: float,
+        method: str,
+        rules: Dict[str, Any]
+    ) -> List[TargetAllocation]:
+        """Rank candidates and assign target $ values."""
+        
+        # Filter invalid candidates
+        valid_candidates = [c for c in candidates if c.get('price') and c['price'] > 0]
+        if not valid_candidates:
+            return []
 
-        # Calculate maximum allowed position value
-        max_position_pct = rules.get('max_position_pct', 5.0)
-        max_position_value = total_value * (max_position_pct / 100)
+        # Sort by conviction (descending)
+        valid_candidates.sort(key=lambda x: x.get('conviction', 0), reverse=True)
 
-        # Check current position
-        current_shares = holdings.get(symbol, 0)
-        current_value = current_shares * current_price
+        # Apply Max Positions Limit
+        max_positions = rules.get('max_positions', 100)
+        selected_candidates = valid_candidates[:max_positions]
 
-        # Room to add
-        room_to_add = max_position_value - current_value
-        if room_to_add <= 0: # todo: shoudn't this actually be room_to_add <= price_per_share?
-            return PositionSize(
-                0, 0.0, 0.0,
-                f"Already at max position ({current_shares} shares = ${current_value:.2f})"
-            )
+        # Calculate Allocation base
+        num_positions = len(selected_candidates)
+        if num_positions == 0:
+            return []
 
-        # Calculate target size based on method
+        allocations = []
+        
+        # Calculate raw targets based on method
         if method == 'equal_weight':
-            target_value = self._size_equal_weight(available_cash, other_buys)
+            # Simple equal weight
+            target_per_stock = portfolio_value / num_positions
+            for cand in selected_candidates:
+                allocations.append(self._create_allocation(cand, target_per_stock))
+        
         elif method == 'conviction_weighted':
-            target_value = self._size_conviction_weighted(
-                available_cash, conviction_score, other_buys
-            )
-        elif method == 'fixed_pct':
-            target_value = self._size_fixed_pct(total_value, rules)
-        elif method == 'kelly':
-            target_value = self._size_kelly(total_value, conviction_score, rules)
-        else:
-            target_value = self._size_equal_weight(available_cash, other_buys)
-
-        # Apply constraints
-        final_value = min(target_value, room_to_add, available_cash)
-        final_value = max(final_value, 0)
-
-        # Apply minimum position size
-        min_position = rules.get('min_position_value', 500)
-        if 0 < final_value < min_position:
-            if available_cash >= min_position:
-                final_value = min_position
+            total_score = sum(c.get('conviction', 0) for c in selected_candidates)
+            if total_score == 0:
+                target_per_stock = portfolio_value / num_positions
+                for cand in selected_candidates:
+                    allocations.append(self._create_allocation(cand, target_per_stock))
             else:
-                final_value = 0
+                for cand in selected_candidates:
+                    share = cand.get('conviction', 0) / total_score
+                    target_val = portfolio_value * share
+                    allocations.append(self._create_allocation(cand, target_val))
+                    
+        elif method == 'fixed_pct':
+            # Fixed % of portfolio (e.g. 5%)
+            # Note: This might not sum to 100% or might exceed 100%
+            pct = rules.get('fixed_position_pct', 5.0) / 100.0
+            target_val = portfolio_value * pct
+            for cand in selected_candidates:
+                 allocations.append(self._create_allocation(cand, target_val))
+                 
+        elif method == 'kelly':
+             # Simplified Kelly
+             for cand in selected_candidates:
+                target_val = self._size_kelly(portfolio_value, cand.get('conviction', 50), rules)
+                allocations.append(self._create_allocation(cand, target_val))
+                
+        else:
+             # Default to equal weight
+             target_per_stock = portfolio_value / num_positions
+             for cand in selected_candidates:
+                allocations.append(self._create_allocation(cand, target_per_stock))
 
-        shares = int(final_value / current_price)
+        # Apply Max Position Value Cap (if defined)
+        max_pos_pct = rules.get('max_position_pct')
+        if max_pos_pct:
+            max_val = portfolio_value * (max_pos_pct / 100.0)
+            for alloc in allocations:
+                if alloc.target_value > max_val:
+                    alloc.target_value = max_val
+                    # Recalculate drift
+                    alloc.drift = alloc.target_value - alloc.current_value
 
-        return PositionSize(
-            shares=shares,
-            estimated_value=shares * current_price,
-            position_pct=(shares * current_price) / total_value * 100 if total_value > 0 else 0,
-            reasoning=f"{method}: ${final_value:.2f} -> {shares} shares @ ${current_price:.2f}"
+        return allocations
+
+    def _create_allocation(self, candidate: Dict, target_value: float) -> TargetAllocation:
+        symbol = candidate['symbol']
+        price = candidate['price']
+        
+        # Calculate current value from holdings
+        # candidate dict should optionally contain 'current_quantity' or we assume 0 if not passed, 
+        # but better to handle it upstream. 
+        # For now, we assume the candidate dict includes current holding info if available.
+        # Actually, let's pass holdings separately to _calculate_ideal_allocation? 
+        # No, for simplicity, let's assume the caller merged them or we just use 0 here 
+        # and handle the diff in `_generate_signals`.
+        
+        # Wait, TargetAllocation needs current_value to calculate drift? 
+        # Actually drift is calculated in _generate_signals usually. 
+        # But TargetAllocation definition includes `drift`. 
+        # Let's populate what we can.
+        
+        return TargetAllocation(
+            symbol=symbol,
+            conviction=candidate.get('conviction', 0),
+            target_value=target_value,
+            current_value=0.0,
+            drift=target_value,  # Initialize to target_value (assuming 0 held)
+            price=price,
+            source_data=candidate
         )
 
-    def prioritize_positions(
+    def _generate_signals(
         self,
-        buy_decisions: List[Dict[str, Any]],
-        available_cash: float,
-        portfolio_value: float,
-        portfolio_id: int,
-        method: str,
-        rules: Dict[str, Any],
-        holdings: Dict[str, Any] = None,
-        current_prices: Dict[str, float] = None
-    ) -> List[Dict[str, Any]]:
-        """Calculate positions for all decisions, prioritize by conviction, select within budget.
-
-        Args:
-            buy_decisions: List of stocks with BUY decisions
-            available_cash: Post-exit cash available
-            portfolio_value: Total portfolio value
-            portfolio_id: Portfolio to trade in
-            method: Position sizing method
-            rules: Position sizing rules
-            holdings: Post-exit holdings (exit symbols already removed); queries DB if None
-            current_prices: Optional symbol→price map to avoid per-symbol DB lookups
-
-        Returns:
-            List of {symbol, decision, position, conviction, priority_score} sorted by priority desc,
-            filtered to those that fit within available_cash.
-        """
-        if not buy_decisions:
-            return []
-
-        if holdings is None:
-            holdings = {}
-
-        if current_prices is None:
-            current_prices = {}
-
-        positions_data = []
-        for decision in buy_decisions:
-            symbol = decision['symbol']
-            conviction = decision.get('consensus_score', 50)
-            price = current_prices.get(symbol)
-
-            try:
-                position = self.calculate_position(
-                    portfolio_id=portfolio_id,
-                    symbol=symbol,
-                    conviction_score=conviction,
-                    method=method,
-                    rules=rules,
-                    other_buys=[d for d in buy_decisions if d != decision],
-                    current_price=price,
-                    available_cash=available_cash,
-                    total_value=portfolio_value,
-                    holdings=holdings
-                )
-
-                priority_score = conviction - (position.position_pct * 0.1)
-
-                positions_data.append({
-                    'symbol': symbol,
-                    'decision': decision,
-                    'position': position,
-                    'conviction': conviction,
-                    'priority_score': priority_score
-                })
-
-            except Exception as e:
-                logger.error(f"Failed to calculate position for {symbol}: {e}")
-                continue
-
-        positions_data.sort(key=lambda x: x['priority_score'], reverse=True)
-
-        total_requested = sum(p['position'].estimated_value for p in positions_data)
-
-        if total_requested <= available_cash:
-            return positions_data
-
-        # Greedy selection: highest priority positions that fit within budget
-        selected = []
-        remaining_cash = available_cash
-        for pos_data in positions_data:
-            if pos_data['position'].estimated_value <= remaining_cash:
-                selected.append(pos_data)
-                remaining_cash -= pos_data['position'].estimated_value
-
-        return selected
-
-    def compute_rebalancing_trims(
-        self,
+        targets: List[TargetAllocation],
         holdings: Dict[str, Any],
-        held_verdicts: List[Dict[str, Any]],
-        buy_decisions: List[Dict[str, Any]],
-        portfolio_value: float,
-        method: str,
-        rules: Dict[str, Any],
-    ) -> list:
-        """Compute partial sells needed to bring over-weight holdings to their target weight.
+        rules: Dict[str, Any]
+    ) -> Tuple[List[ExitSignal], List[Dict[str, Any]]]:
+        """Compare targets to holdings and generate buy/sell orders."""
 
-        Builds a target portfolio from buy candidates and held stocks with current verdicts,
-        computes target values per stock, and generates trim signals for positions that
-        exceed their target value.
+        min_trade_amt = rules.get('min_trade_amount', 100.0)
 
-        Args:
-            holdings: Post-full-exit holdings from get_portfolio_holdings(): symbol → quantity (int)
-            held_verdicts: Held stocks that got BUY-as-HOLD or WATCH verdicts, with scores
-            buy_decisions: New buy candidates with consensus_score
-            portfolio_value: Total portfolio value
-            method: Position sizing method (equal_weight, conviction_weighted, fixed_pct, kelly)
-            rules: Position sizing rules (max_position_pct, fixed_position_pct, kelly_fraction)
+        sells = []
+        buys = []
 
-        Returns:
-            List of ExitSignal objects with exit_type='trim' for partial sells.
-        """
-        from strategy_executor.models import ExitSignal
+        # Map targets for easy lookup
+        target_map = {t.symbol: t for t in targets}
 
-        if not held_verdicts and not buy_decisions:
-            return []
+        # 1. Check all current holdings
+        # If a holding is NOT in targets, it means it didn't make the cut -> SELL ALL.
+        # If it IS in targets, check for Trim.
 
-        # Build universe: {symbol: conviction_score}
-        universe = {}
-        for d in buy_decisions:
-            universe[d['symbol']] = d.get('consensus_score', 50)
-        for v in (held_verdicts or []):
-            if v.get('final_verdict') != 'AVOID' and v['symbol'] not in universe:
-                lynch = v.get('lynch_score') or 0
-                buffett = v.get('buffett_score') or 0
-                universe[v['symbol']] = (lynch + buffett) / 2
+        for symbol, qty in holdings.items():
+            qty = int(qty)
+            if qty <= 0:
+                continue
 
-        if not universe:
-            return []
-
-        # Compute target value per symbol based on method
-        max_pct = rules.get('max_position_pct', 5.0)
-        max_per_stock = portfolio_value * (max_pct / 100)
-        N = len(universe)
-
-        def target_for(conviction):
-            if method == 'equal_weight':
-                raw = portfolio_value / N
-            elif method == 'conviction_weighted':
-                total_conviction = sum(universe.values())
-                raw = (portfolio_value * conviction / total_conviction) if total_conviction else portfolio_value / N
-            elif method == 'fixed_pct':
-                raw = portfolio_value * (rules.get('fixed_position_pct', 5.0) / 100)
-            elif method == 'kelly':
-                raw = self._size_kelly(portfolio_value, conviction, rules)
+            # Get price (we need it for value)
+            price = 0.0
+            if symbol in target_map:
+                price = target_map[symbol].price
             else:
-                raw = portfolio_value / N
-            return min(raw, max_per_stock)
+                price = self._fetch_price(symbol) or 0.0
 
-        # Generate trim signals for over-weight holdings
-        # holdings is {symbol: quantity} as returned by get_portfolio_holdings()
-        trim_signals = []
-        for symbol, quantity in (holdings or {}).items():
-            if symbol not in universe:
-                continue
-            quantity = int(quantity) if quantity else 0
-            if quantity <= 0:
+            if price <= 0:
+                logger.warning(f"Could not fetch price for {symbol}, shipping signal generation.")
                 continue
 
-            current_price = self._fetch_price(symbol)
-            if not current_price:
-                continue
-            current_value = quantity * current_price
+            current_val = qty * price
 
-            conviction = universe[symbol]
-            target = target_for(conviction)
-
-            if current_value <= target:
-                continue  # At or below target, no trim needed
-
-            shares_to_sell = int((current_value - target) / current_price)
-
-            if 0 < shares_to_sell < quantity:
-                trim_value = shares_to_sell * current_price
-                trim_signals.append(ExitSignal(
+            if symbol not in target_map:
+                # Full Exit (Displaced by better candidate)
+                reason = "Rebalance: Displaced by higher conviction opportunities"
+                sells.append(ExitSignal(
                     symbol=symbol,
-                    quantity=shares_to_sell,
-                    reason=f"Rebalancing trim: ${current_value:.0f} > target ${target:.0f}",
-                    current_value=trim_value,
-                    gain_pct=0.0,
-                    exit_type='trim',
+                    quantity=qty,
+                    reason=reason,
+                    current_value=current_val,
+                    exit_type='full'
                 ))
+            else:
+                # Update current value in target
+                target = target_map[symbol]
+                target.current_value = current_val
+                target.quantity = qty
+                target.drift = target.target_value - current_val
 
-        return trim_signals
+                # Check for TRIM
+                # Drift < 0 means we have too much -> Sell
+                if target.drift < -min_trade_amt:
+                    sell_val = abs(target.drift)
+                    sell_shares = int(sell_val / price)
+                    if sell_shares > 0:
+                        sells.append(ExitSignal(
+                            symbol=symbol,
+                            quantity=sell_shares,
+                            reason=f"Rebalance Trim: Value ${current_val:.0f} exceeds target ${target.target_value:.0f}",
+                            current_value=sell_shares * price,
+                            exit_type='trim'
+                        ))
+
+        # 2. Check for Buys
+        # Iterate through targets. If drift > min_trade_amt -> Buy
+        # Sort buys by conviction to prioritize execution if cash is constrained (though sizing should handle it)
+        targets.sort(key=lambda x: x.conviction, reverse=True)
+
+        for target in targets:
+            if target.drift > min_trade_amt:
+                buy_val = target.drift
+                buy_shares = int(buy_val / target.price)
+
+                if buy_shares > 0:
+                    pos = PositionSize(
+                        shares=buy_shares,
+                        estimated_value=buy_shares * target.price,
+                        position_pct=0.0, # todo
+                        reasoning=f"Target Rebalance: Target ${target.target_value:.0f} vs Current ${target.current_value:.0f}",
+                        target_value=target.target_value,
+                        drift=target.drift
+                    )
+
+                    buys.append({
+                        'symbol': target.symbol,
+                        'position': pos,
+                        'priority_score': target.conviction,
+                        'decision': target.source_data
+                    })
+
+        return sells, buys
 
     def _fetch_price(self, symbol: str) -> Optional[float]:
         """Fetch current price from database."""
+        # Simple cache wrapper or direct DB call
         conn = self.db.get_connection()
         try:
             cursor = conn.cursor()
@@ -320,64 +267,12 @@ class PositionSizer:
         finally:
             self.db.return_connection(conn)
 
-    def _size_equal_weight(
-        self,
-        available_cash: float,
-        other_buys: List[Dict[str, Any]]
-    ) -> float:
-        """Divide cash equally among all buys."""
-        num_buys = len(other_buys) + 1
-        return available_cash / num_buys
-
-    def _size_conviction_weighted(
-        self,
-        available_cash: float,
-        conviction_score: float,
-        other_buys: List[Dict[str, Any]]
-    ) -> float:
-        """Weight by conviction score."""
-        total_conviction = conviction_score + sum(
-            b.get('conviction', 50) for b in other_buys
-        )
-        if total_conviction == 0:
-            return self._size_equal_weight(available_cash, other_buys)
-
-        weight = conviction_score / total_conviction
-        return available_cash * weight
-
-    def _size_fixed_pct(
-        self,
-        total_value: float,
-        rules: Dict[str, Any]
-    ) -> float:
-        """Fixed percentage of portfolio."""
-        target_pct = rules.get('fixed_position_pct', 5.0)
-        return total_value * (target_pct / 100)
-
-    def _size_kelly(
-        self,
-        total_value: float,
-        conviction_score: float,
-        rules: Dict[str, Any]
-    ) -> float:
-        """Simplified Kelly criterion.
-
-        Full Kelly: f* = (bp - q) / b
-        We approximate: p = conviction/100, assuming 1:1 payoff
-        Then apply kelly_fraction for safety (typically 0.25 = quarter-Kelly)
-        """
+    def _size_kelly(self, total_value, conviction, rules):
+        """Helper for Kelly Criterion sizing."""
         kelly_fraction = rules.get('kelly_fraction', 0.25)
-
-        # Convert conviction (0-100) to probability (0.5-1.0)
-        p = max(0.5, conviction_score / 100)
+        p = max(0.5, conviction / 100.0)
         q = 1 - p
-
-        # Assume 1:1 payoff (b=1)
-        b = 1
+        b = 1 # 1:1 payoff assumption
         kelly_pct = (b * p - q) / b
-
-        # Apply fractional Kelly and cap
-        safe_pct = kelly_pct * kelly_fraction
-        safe_pct = max(0, min(safe_pct, 0.25))  # Cap at 25%
-
+        safe_pct = max(0, min(kelly_pct * kelly_fraction, 0.25))
         return total_value * safe_pct

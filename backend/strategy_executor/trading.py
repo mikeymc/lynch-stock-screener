@@ -4,6 +4,7 @@
 import logging
 from typing import Dict, Any, List, Tuple
 
+from portfolio_service import fetch_current_prices_batch
 from strategy_executor.models import ExitSignal
 from strategy_executor.utils import log_event
 
@@ -236,7 +237,7 @@ class TradingMixin:
         run_id: int,
         held_verdicts: List[Dict] = None
     ) -> int:
-        """Coordinate the three-phase trade execution: exits → position sizing → buys."""
+        """Coordinate the trade execution: Use Target Portfolio approach."""
         import portfolio_service
 
         portfolio_id = strategy['portfolio_id']
@@ -275,7 +276,7 @@ class TradingMixin:
         portfolio_cash = portfolio_summary.get('cash', 0) if portfolio_summary else 0
         portfolio_value = portfolio_summary.get('total_value', 0) if portfolio_summary else 0
 
-        # Phase A: Process exits
+        # Phase A: Process mandatory exits (Universe, Price, Time, Deliberation AVOID)
         sells_executed, anticipated_proceeds = self._process_exits(
             exits=exits,
             portfolio_id=portfolio_id,
@@ -285,74 +286,120 @@ class TradingMixin:
             run_id=run_id
         )
 
-        # When the market is closed, sells haven't hit the DB yet — add anticipated proceeds
+        # Cash available before rebalancing
         cash_available_to_trade = portfolio_cash + (anticipated_proceeds if not is_market_open else 0)
 
-        print(f"\n  Processed exits. Available cash to trade: ${cash_available_to_trade:,.2f} "
+        print(f"\n  Processed mandatory exits. Cash state: ${cash_available_to_trade:,.2f} "
               f"(db=${portfolio_cash:,.2f}, anticipated=${anticipated_proceeds:,.2f})")
         log_event(self.db, run_id, f"Available cash: ${cash_available_to_trade:,.2f}")
 
         # Get current holdings and remove exited symbols to get post-exit state
-        holdings = {}
+        post_exit_holdings = {}
         try:
-            holdings = self.db.get_portfolio_holdings(portfolio_id) or {}
+            current_portfolio_holdings = self.db.get_portfolio_holdings(portfolio_id) or {}
+            exit_symbols = {s.symbol for s in exits}
+            # Convert to symbol -> quantity map for PositionSizer
+            for sym, qty in current_portfolio_holdings.items():
+                if sym not in exit_symbols:
+                    post_exit_holdings[sym] = qty
         except Exception as e:
             logger.warning(f"Could not fetch holdings for portfolio {portfolio_id}: {e}")
 
-        exit_symbols = {s.symbol for s in exits}
-        post_exit_holdings = {k: v for k, v in holdings.items() if k not in exit_symbols}
+        # Phase B: Calculate Target Portfolio
+        print("\n  Phase B: Calculating Target Portfolio...")
+        log_event(self.db, run_id, "Phase B: Calculating Target Portfolio")
 
-        # Phase A.5: Rebalancing trims — trim over-weight holdings to fund new buys
-        trim_signals = self.position_sizer.compute_rebalancing_trims(
+        # 1. Build unified candidates list (New Buys + Held Verdicts)
+        candidates = []
+        seen_candidates = set()
+
+        def add_candidate(source_item):
+            sym = source_item['symbol']
+            if sym in seen_candidates:
+                return
+            seen_candidates.add(sym)
+
+            # Determine score/conviction
+            score = source_item.get('consensus_score')
+            if score is None:
+                l = source_item.get('lynch_score') or 0
+                b = source_item.get('buffett_score') or 0
+                score = (l + b) / 2
+
+            candidates.append({
+                'symbol': sym,
+                'conviction': score,
+                'price': 0,
+                'source_data': source_item
+            })
+
+        for d in buy_decisions:
+            add_candidate(d)
+        for h in (held_verdicts or []):
+            add_candidate(h)
+
+        if candidates:
+            symbols = [c['symbol'] for c in candidates]
+            prices = fetch_current_prices_batch(symbols, db=self.db)
+            for c in candidates:
+                c['price'] = prices.get(c['symbol'], 0)
+            missing = [c['symbol'] for c in candidates if c['price'] == 0]
+            if missing:
+                logger.warning(f"No price data for candidates: {missing}")
+
+        log_event(self.db, run_id, f"Moving to #2: calculating target orders")
+        log_event(self.db, run_id, f"Candidates: {len(candidates)} and {len(post_exit_holdings)} post-exit")
+        log_event(self.db, run_id, f"Candidates: portfolio value: {portfolio_value} and cash available: {cash_available_to_trade}")
+        log_event(self.db, run_id, f"Method: {method}")
+        log_event(self.db, run_id, f"Rules: {position_rules}")
+
+        # 2. Calculate Targets and Generate Signals
+        target_sells, target_buys = self.position_sizer.calculate_target_orders(
+            section_id=portfolio_id,
+            candidates=candidates,
+            portfolio_value=portfolio_value, # Uses total liquidity as base
             holdings=post_exit_holdings,
-            held_verdicts=held_verdicts or [],
-            buy_decisions=buy_decisions,
-            portfolio_value=portfolio_value,
             method=method,
             rules=position_rules,
+            cash_available=cash_available_to_trade
         )
-        if trim_signals:
-            print(f"\n  Phase A.5: Rebalancing {len(trim_signals)} over-weight positions...")
-            log_event(self.db, run_id, f"Phase A.5: {len(trim_signals)} rebalancing trims")
-            _, trim_proceeds = self._process_exits(
-                exits=trim_signals,
+
+        print(f"  Generated {len(target_sells)} rebalancing sells and {len(target_buys)} buys")
+        log_event(self.db, run_id, f"Target Portfolio: {len(target_sells)} trims/exits, {len(target_buys)} buys")
+
+        # Phase C: Execute Target Sells (Trims/Displacements)
+        if target_sells:
+            print(f"\n  Phase C: Executing Rebalancing Sells...")
+            s_count, s_proceeds = self._process_exits(
+                exits=target_sells,
                 portfolio_id=portfolio_id,
                 is_market_open=is_market_open,
                 user_id=user_id,
                 existing_alerts=existing_alerts,
                 run_id=run_id
             )
-            cash_available_to_trade += (trim_proceeds if not is_market_open else 0)
-            # Reduce holdings quantities for trimmed symbols (stock stays in portfolio)
-            for trim in trim_signals:
-                if trim.symbol in post_exit_holdings:
-                    post_exit_holdings[trim.symbol] -= trim.quantity
+            sells_executed += s_count
+            cash_available_to_trade += (s_proceeds if not is_market_open else 0)
+            print(f"  Proceeds from rebalancing: ${s_proceeds:,.2f}. Updated Allocatable Cash: ${cash_available_to_trade:,.2f}")
 
-        # Phase B: Calculate all positions with priority ordering
-        print("\n  Phase B: Calculating all positions with priority ordering...")
-        log_event(self.db, run_id, f"Phase B: Calculating positions for {len(buy_decisions)} buy decisions")
+        # Phase D: Execute Target Buys
+        # Note: prioritize_positions logic in _execute_buys is specific to the old way.
+        # target_buys is ALREADY prioritized (sorted by conviction in generate_signals)
+        # We need to adapt _execute_buys or just call the inner logic.
+        # _execute_buys expects `prioritized_positions` format which matches `target_buys` format:
+        # {symbol, position, decision, priority_score}
 
-        prioritized_positions = self.position_sizer.prioritize_positions(
-            buy_decisions=buy_decisions,
-            available_cash=cash_available_to_trade,
-            portfolio_value=portfolio_value,
-            portfolio_id=portfolio_id,
-            method=method,
-            rules=position_rules,
-            holdings=post_exit_holdings
-        )
-
-        total_requested = sum(p['position'].estimated_value for p in prioritized_positions)
-        log_event(self.db, run_id, f"Total requested: ${total_requested:,.2f}, Available: ${cash_available_to_trade:,.2f}")
-
-        # Phase C: Execute buys in priority order
-        buys_executed = self._execute_buys(
-            prioritized_positions=prioritized_positions,
-            portfolio_id=portfolio_id,
-            is_market_open=is_market_open,
-            user_id=user_id,
-            existing_alerts=existing_alerts,
-            run_id=run_id
-        )
+        if target_buys:
+            print(f"\n  Phase D: Executing Target Buys...")
+            buys_executed = self._execute_buys(
+                prioritized_positions=target_buys,
+                portfolio_id=portfolio_id,
+                is_market_open=is_market_open,
+                user_id=user_id,
+                existing_alerts=existing_alerts,
+                run_id=run_id
+            )
+        else:
+            buys_executed = 0
 
         return sells_executed + buys_executed

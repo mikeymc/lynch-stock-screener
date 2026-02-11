@@ -78,16 +78,16 @@ class ScoringMixin:
             if addition_reqs:
                 for req in addition_reqs:
                     if req.get('character') == 'lynch':
-                        lynch_req = req.get('min_score', default_min)
+                        lynch_req = int(req.get('min_score', default_min))
                     elif req.get('character') == 'buffett':
-                        buffett_req = req.get('min_score', default_min)
+                        buffett_req = int(req.get('min_score', default_min))
             else:
                 # Default: +10 higher than base requirements
                 for req in scoring_reqs:
                     if req.get('character') == 'lynch':
-                        lynch_req = req.get('min_score', default_min) + 10
+                        lynch_req = int(req.get('min_score', default_min)) + 10
                     elif req.get('character') == 'buffett':
-                        buffett_req = req.get('min_score', default_min) + 10
+                        buffett_req = int(req.get('min_score', default_min)) + 10
 
                 if not scoring_reqs:
                     lynch_req = default_min + 10
@@ -95,11 +95,11 @@ class ScoringMixin:
         else:
             for req in scoring_reqs:
                 if req.get('character') == 'lynch':
-                    lynch_req = req.get('min_score', default_min)
+                    lynch_req = int(req.get('min_score', default_min))
                 elif req.get('character') == 'buffett':
-                    buffett_req = req.get('min_score', default_min)
+                    buffett_req = int(req.get('min_score', default_min))
 
-        return lynch_req, buffett_req
+        return int(lynch_req), int(buffett_req)
 
     def _load_candidate_data(self, candidates: List[str], run_id: int):
         """Load vectorized stock data for candidates."""

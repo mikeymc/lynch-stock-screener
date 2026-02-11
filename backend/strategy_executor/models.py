@@ -2,7 +2,7 @@
 # ABOUTME: Defines ConsensusResult, PositionSize, and ExitSignal
 
 from dataclasses import dataclass
-from typing import Optional
+from typing import Optional, Dict, Any
 
 
 @dataclass
@@ -22,6 +22,9 @@ class PositionSize:
     estimated_value: float
     position_pct: float
     reasoning: str
+    target_value: Optional[float] = None
+    drift: Optional[float] = None
+    price_used: Optional[float] = None
 
 
 @dataclass
@@ -33,3 +36,16 @@ class ExitSignal:
     current_value: Optional[float] = None  # None means: compute from price at execution time
     gain_pct: Optional[float] = None
     exit_type: str = 'full'  # 'full' = entire position; 'trim' = partial sell
+
+
+@dataclass
+class TargetAllocation:
+    """Target allocation for a single stock."""
+    symbol: str
+    conviction: float
+    target_value: float
+    current_value: float
+    drift: float  # target - current
+    price: float
+    source_data: Optional[Dict[str, Any]] = None
+    quantity: int = 0

@@ -148,8 +148,8 @@ class ExitConditionChecker:
         failing = held_symbols - set(filtered_candidates)
         exits = []
         for symbol in failing:
-            holding = holdings.get(symbol, {})
-            quantity = holding.get('quantity', 0)
+            # Holdings is {symbol: quantity} mapping, not {symbol: {quantity: ...}}
+            quantity = holdings.get(symbol, 0)
             exits.append(ExitSignal(
                 symbol=symbol,
                 quantity=quantity,
