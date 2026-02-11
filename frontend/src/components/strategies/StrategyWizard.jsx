@@ -149,6 +149,8 @@ const StrategyWizard = ({ onClose, onSuccess, initialData = null, mode = 'create
                 payload.exit_conditions.profit_target_pct = parseFloat(payload.exit_conditions.profit_target_pct);
             if (payload.exit_conditions.stop_loss_pct)
                 payload.exit_conditions.stop_loss_pct = parseFloat(payload.exit_conditions.stop_loss_pct);
+            if (payload.exit_conditions.max_hold_days)
+                payload.exit_conditions.max_hold_days = parseInt(payload.exit_conditions.max_hold_days);
 
             // Clean up position sizing
             if (payload.position_sizing.max_position_pct)
