@@ -15,7 +15,7 @@ export default function EarningsCalendar({ earnings = [], loading = false }) {
             <CardHeader className="pb-2">
                 <CardTitle className="text-base font-medium flex items-center gap-2">
                     <Calendar className="h-4 w-4" />
-                    Upcoming Earnings
+                    Earnings Calendar
                 </CardTitle>
             </CardHeader>
             <CardContent>
