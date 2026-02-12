@@ -5,7 +5,13 @@ import { useNavigate } from 'react-router-dom'
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Skeleton } from "@/components/ui/skeleton"
-import { Calendar, Clock } from 'lucide-react'
+import { Calendar, Clock, Zap } from 'lucide-react'
+import {
+    Tooltip,
+    TooltipContent,
+    TooltipProvider,
+    TooltipTrigger,
+} from "@/components/ui/tooltip"
 
 export default function EarningsCalendar({ earnings = [], totalCount = 0, loading = false }) {
     const navigate = useNavigate()
@@ -64,6 +70,20 @@ function EarningsRow({ item, onClick }) {
                     <span className="text-xs text-muted-foreground truncate">
                         {item.company_name}
                     </span>
+                    {item.has_8k && (
+                        <TooltipProvider>
+                            <Tooltip>
+                                <TooltipTrigger asChild>
+                                    <div className="flex items-center">
+                                        <Zap className="h-3 w-3 text-amber-500 fill-amber-500 animate-pulse" />
+                                    </div>
+                                </TooltipTrigger>
+                                <TooltipContent>
+                                    <p>8-K (Item 2.02) filed on earnings date - Fresh data available</p>
+                                </TooltipContent>
+                            </Tooltip>
+                        </TooltipProvider>
+                    )}
                 </div>
             </div>
             <div className="flex items-center gap-2">

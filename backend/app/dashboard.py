@@ -606,8 +606,20 @@ def get_dashboard(user_id):
             # Gather all symbols from watchlist and portfolios (reusing already gathered portfolio symbols)
             all_symbols = set(watchlist_symbols) | all_portfolio_symbols
 
-            upcoming_earnings = []
+            upcoming_earnings_list = []
+            total_upcoming_earnings = 0
             if all_symbols:
+                # Get the count first
+                cursor.execute("""
+                    SELECT COUNT(*) as total
+                    FROM stock_metrics sm
+                    WHERE sm.symbol = ANY(%s)
+                      AND sm.next_earnings_date IS NOT NULL
+                      AND sm.next_earnings_date BETWEEN CURRENT_DATE AND CURRENT_DATE + INTERVAL '14 days'
+                """, (list(all_symbols),))
+                total_upcoming_earnings = cursor.fetchone()['total']
+
+                # Now get the items
                 cursor.execute("""
                     SELECT
                         sm.symbol,
@@ -621,13 +633,31 @@ def get_dashboard(user_id):
                     ORDER BY sm.next_earnings_date ASC
                     LIMIT 10
                 """, (list(all_symbols),))
-                for row in cursor.fetchall():
-                    upcoming_earnings.append({
-                        'symbol': row['symbol'],
+                
+                raw_earnings = cursor.fetchall()
+                
+                # Check for 8-K filings (Item 2.02) for these earnings dates
+                ticker_date_pairs = [
+                    (row['symbol'], row['next_earnings_date'].isoformat())
+                    for row in raw_earnings
+                ]
+                has_8k_map = deps.db.get_earnings_8k_status_batch(ticker_date_pairs)
+
+                for row in raw_earnings:
+                    symbol = row['symbol']
+                    earnings_date = row['next_earnings_date'].isoformat() if row['next_earnings_date'] else None
+                    upcoming_earnings_list.append({
+                        'symbol': symbol,
                         'company_name': row['company_name'],
-                        'earnings_date': row['next_earnings_date'].isoformat() if row['next_earnings_date'] else None,
-                        'days_until': (row['next_earnings_date'] - date.today()).days if row['next_earnings_date'] else None
+                        'earnings_date': earnings_date,
+                        'days_until': (row['next_earnings_date'] - date.today()).days if row['next_earnings_date'] else None,
+                        'has_8k': has_8k_map.get(f"{symbol}:{earnings_date}", False)
                     })
+
+            upcoming_earnings = {
+                'earnings': upcoming_earnings_list,
+                'total_count': total_upcoming_earnings
+            }
 
             # 6. Aggregated news (from database cache)
             news_articles = []

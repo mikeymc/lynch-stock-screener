@@ -703,3 +703,39 @@ class FilingsMixin:
         rows = cursor.fetchall()
         self.return_connection(conn)
         return {row[0]: row[1] for row in rows}
+
+    def get_earnings_8k_status_batch(self, ticker_date_pairs: List[tuple]) -> Dict[str, bool]:
+        """
+        Check for 8-K filings with Item 2.02 ('Results of Operations and Financial Condition')
+        matching a set of ticker/date pairs.
+
+        Args:
+            ticker_date_pairs: List of (ticker, date_str) tuples where date_str is YYYY-MM-DD
+
+        Returns:
+            Dict mapping "ticker:date_str" to boolean indicating if matching 8-K exists
+        """
+        if not ticker_date_pairs:
+            return {}
+
+        conn = self.get_connection()
+        try:
+            cursor = conn.cursor()
+            results = {}
+
+            # Construct query to check all pairs at once
+            # sec_item_codes is a TEXT[] in material_events
+            for ticker, date_str in ticker_date_pairs:
+                cursor.execute("""
+                    SELECT EXISTS(
+                        SELECT 1 FROM material_events
+                        WHERE symbol = %s
+                          AND filing_date = %s
+                          AND '2.02' = ANY(sec_item_codes)
+                    )
+                """, (ticker, date_str))
+                results[f"{ticker}:{date_str}"] = cursor.fetchone()[0]
+
+            return results
+        finally:
+            self.return_connection(conn)
