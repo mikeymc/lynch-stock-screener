@@ -1,6 +1,7 @@
 // ABOUTME: Upcoming earnings calendar for stocks in watchlist and portfolios
 // ABOUTME: Shows next 10 earnings dates within 2-week lookahead window
 
+import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
@@ -13,9 +14,36 @@ import {
     TooltipTrigger,
 } from "@/components/ui/tooltip"
 
-export default function EarningsCalendar({ earnings = [], totalCount = 0, loading = false }) {
+export default function EarningsCalendar() {
     const navigate = useNavigate()
-    const moreCount = totalCount - earnings.length
+    const [earningsData, setEarningsData] = useState({ earnings: [], total_count: 0 })
+    const [loading, setLoading] = useState(true)
+    const [error, setError] = useState(null)
+
+    useEffect(() => {
+        const fetchEarnings = async () => {
+            try {
+                setLoading(true)
+                const response = await fetch('/api/dashboard/earnings')
+                if (response.ok) {
+                    const data = await response.json()
+                    setEarningsData(data.upcoming_earnings || { earnings: [], total_count: 0 })
+                } else {
+                    setError('Failed to load earnings calendar')
+                }
+            } catch (err) {
+                console.error('Error fetching earnings:', err)
+                setError('Failed to load earnings calendar')
+            } finally {
+                setLoading(false)
+            }
+        }
+
+        fetchEarnings()
+    }, [])
+
+    const { earnings = [], total_count = 0 } = earningsData
+    const moreCount = total_count - earnings.length
 
     return (
         <Card>
@@ -28,6 +56,10 @@ export default function EarningsCalendar({ earnings = [], totalCount = 0, loadin
             <CardContent>
                 {loading ? (
                     <Skeleton className="h-24 w-full" />
+                ) : error ? (
+                    <div className="h-24 flex items-center justify-center text-sm text-muted-foreground border border-dashed rounded-lg bg-muted/20">
+                        {error}
+                    </div>
                 ) : earnings.length > 0 ? (
                     <div className="space-y-1">
                         {earnings.map(item => (

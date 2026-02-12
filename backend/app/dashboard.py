@@ -504,6 +504,260 @@ def get_market_movers():
         return jsonify({'error': str(e)}), 500
 
 
+
+@dashboard_bp.route('/api/dashboard/portfolios', methods=['GET'])
+@require_user_auth
+def get_dashboard_portfolios(user_id):
+    """Get portfolio summaries for the dashboard."""
+    try:
+        portfolios = deps.db.get_user_portfolios(user_id)
+        all_portfolio_symbols = set()
+        for p in portfolios:
+            try:
+                holdings = deps.db.get_portfolio_holdings(p['id'])
+                for symbol in holdings.keys():
+                    all_portfolio_symbols.add(symbol)
+            except Exception:
+                pass
+
+        portfolio_prices = {}
+        if all_portfolio_symbols:
+            from portfolio_service import fetch_current_prices_batch
+            portfolio_prices = fetch_current_prices_batch(list(all_portfolio_symbols), db=deps.db)
+
+        portfolio_summaries = []
+        for p in portfolios:
+            try:
+                summary = deps.db.get_portfolio_summary(p['id'], prices_map=portfolio_prices)
+                portfolio_summaries.append({
+                    'id': p['id'],
+                    'name': p['name'],
+                    'total_value': summary.get('total_value', 0),
+                    'total_gain_loss': summary.get('gain_loss', 0),
+                    'total_gain_loss_pct': summary.get('gain_loss_percent', 0),
+                    'top_holdings': summary.get('holdings_detailed', [])[:3]
+                })
+            except Exception as e:
+                logger.warning(f"Error getting portfolio summary for {p['id']}: {e}")
+
+        return jsonify({'portfolios': portfolio_summaries})
+    except Exception as e:
+        logger.error(f"Error getting dashboard portfolios: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@dashboard_bp.route('/api/dashboard/watchlist', methods=['GET'])
+@require_user_auth
+def get_dashboard_watchlist(user_id):
+    """Get watchlist items for the dashboard."""
+    try:
+        watchlist_symbols = deps.db.get_watchlist(user_id)
+        watchlist_data = []
+        if watchlist_symbols:
+            conn = deps.db.get_connection()
+            try:
+                cursor = conn.cursor(row_factory=psycopg.rows.dict_row)
+                cursor.execute("""
+                    SELECT
+                        sm.symbol,
+                        s.company_name,
+                        sm.price,
+                        sm.price_change_pct
+                    FROM stock_metrics sm
+                    JOIN stocks s ON sm.symbol = s.symbol
+                    WHERE sm.symbol = ANY(%s)
+                """, (watchlist_symbols,))
+                watchlist_data = [dict(row) for row in cursor.fetchall()]
+            finally:
+                deps.db.return_connection(conn)
+        return jsonify({'watchlist': watchlist_data})
+    except Exception as e:
+        logger.error(f"Error getting dashboard watchlist: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@dashboard_bp.route('/api/dashboard/alerts', methods=['GET'])
+@require_user_auth
+def get_dashboard_alerts(user_id):
+    """Get alert summary for the dashboard."""
+    try:
+        alerts = deps.db.get_alerts(user_id)
+        alert_summary = {
+            'triggered': [a for a in alerts if a.get('status') == 'triggered'][:5],
+            'pending': [a for a in alerts if a.get('status') == 'active'][:5],
+            'total_triggered': len([a for a in alerts if a.get('status') == 'triggered']),
+            'total_pending': len([a for a in alerts if a.get('status') == 'active'])
+        }
+        return jsonify({'alerts': alert_summary})
+    except Exception as e:
+        logger.error(f"Error getting dashboard alerts: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@dashboard_bp.route('/api/dashboard/strategies', methods=['GET'])
+@require_user_auth
+def get_dashboard_strategies(user_id):
+    """Get strategy summaries for the dashboard."""
+    try:
+        strategies = deps.db.get_user_strategies(user_id)
+        
+        # We need portfolio values for these
+        portfolios = deps.db.get_user_portfolios(user_id)
+        portfolio_summaries = {}
+        
+        # Batch fetch prices for all portfolio symbols
+        all_symbols = set()
+        for p in portfolios:
+            try:
+                holdings = deps.db.get_portfolio_holdings(p['id'])
+                for symbol in holdings.keys():
+                    all_symbols.add(symbol)
+            except Exception:
+                pass
+        
+        prices_map = {}
+        if all_symbols:
+            from portfolio_service import fetch_current_prices_batch
+            prices_map = fetch_current_prices_batch(list(all_symbols), db=deps.db)
+            
+        for p in portfolios:
+            try:
+                summary = deps.db.get_portfolio_summary(p['id'], prices_map=prices_map)
+                portfolio_summaries[p['id']] = summary
+            except Exception:
+                pass
+
+        strategy_summaries = [
+            {
+                'id': s['id'],
+                'name': s['name'],
+                'enabled': s.get('enabled', True),
+                'last_run': s.get('last_run_at'),
+                'last_status': s.get('last_run_status'),
+                'portfolio_value': portfolio_summaries.get(s['portfolio_id'], {}).get('total_value', 0),
+                'portfolio_return_pct': portfolio_summaries.get(s['portfolio_id'], {}).get('gain_loss_percent', 0)
+            }
+            for s in strategies if s.get('enabled', True)
+        ][:5]
+        
+        return jsonify({'strategies': strategy_summaries})
+    except Exception as e:
+        logger.error(f"Error getting dashboard strategies: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@dashboard_bp.route('/api/dashboard/earnings', methods=['GET'])
+@require_user_auth
+def get_dashboard_earnings(user_id):
+    """Get upcoming earnings for the dashboard."""
+    try:
+        watchlist_symbols = deps.db.get_watchlist(user_id)
+        portfolios = deps.db.get_user_portfolios(user_id)
+        portfolio_symbols = set()
+        for p in portfolios:
+            try:
+                holdings = deps.db.get_portfolio_holdings(p['id'])
+                portfolio_symbols.update(holdings.keys())
+            except Exception:
+                pass
+        
+        all_symbols = set(watchlist_symbols) | portfolio_symbols
+        upcoming_earnings_list = []
+        total_upcoming_earnings = 0
+        
+        if all_symbols:
+            conn = deps.db.get_connection()
+            try:
+                cursor = conn.cursor(row_factory=psycopg.rows.dict_row)
+                cursor.execute("""
+                    SELECT COUNT(*) as total
+                    FROM stock_metrics sm
+                    WHERE sm.symbol = ANY(%s)
+                      AND sm.next_earnings_date IS NOT NULL
+                      AND sm.next_earnings_date BETWEEN CURRENT_DATE AND CURRENT_DATE + INTERVAL '14 days'
+                """, (list(all_symbols),))
+                total_upcoming_earnings = cursor.fetchone()['total']
+
+                cursor.execute("""
+                    SELECT
+                        sm.symbol,
+                        s.company_name,
+                        sm.next_earnings_date
+                    FROM stock_metrics sm
+                    JOIN stocks s ON sm.symbol = s.symbol
+                    WHERE sm.symbol = ANY(%s)
+                      AND sm.next_earnings_date IS NOT NULL
+                      AND sm.next_earnings_date BETWEEN CURRENT_DATE AND CURRENT_DATE + INTERVAL '14 days'
+                    ORDER BY sm.next_earnings_date ASC
+                    LIMIT 10
+                """, (list(all_symbols),))
+                raw_earnings = cursor.fetchall()
+                
+                ticker_date_pairs = [(row['symbol'], row['next_earnings_date'].isoformat()) for row in raw_earnings]
+                has_8k_map = deps.db.get_earnings_8k_status_batch(ticker_date_pairs)
+
+                for row in raw_earnings:
+                    symbol = row['symbol']
+                    earnings_date = row['next_earnings_date'].isoformat()
+                    upcoming_earnings_list.append({
+                        'symbol': symbol,
+                        'company_name': row['company_name'],
+                        'earnings_date': earnings_date,
+                        'days_until': (row['next_earnings_date'] - date.today()).days,
+                        'has_8k': has_8k_map.get(f"{symbol}:{earnings_date}", False)
+                    })
+            finally:
+                deps.db.return_connection(conn)
+
+        return jsonify({
+            'upcoming_earnings': {
+                'earnings': upcoming_earnings_list,
+                'total_count': total_upcoming_earnings
+            }
+        })
+    except Exception as e:
+        logger.error(f"Error getting dashboard earnings: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@dashboard_bp.route('/api/dashboard/news', methods=['GET'])
+@require_user_auth
+def get_dashboard_news(user_id):
+    """Get recent news for the dashboard."""
+    try:
+        watchlist_symbols = deps.db.get_watchlist(user_id)
+        portfolios = deps.db.get_user_portfolios(user_id)
+        portfolio_symbols = set()
+        for p in portfolios:
+            try:
+                holdings = deps.db.get_portfolio_holdings(p['id'])
+                portfolio_symbols.update(holdings.keys())
+            except Exception:
+                pass
+        
+        all_symbols = list(set(watchlist_symbols) | portfolio_symbols)
+        news_articles = []
+        if all_symbols:
+            news_articles = deps.db.get_news_articles_multi(all_symbols, limit=10)
+            
+        return jsonify({'news': news_articles})
+    except Exception as e:
+        logger.error(f"Error getting dashboard news: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@dashboard_bp.route('/api/dashboard/theses', methods=['GET'])
+@require_user_auth
+def get_dashboard_theses(user_id):
+    """Get recent theses for the dashboard."""
+    try:
+        recent_theses_data = deps.db.get_recent_theses(user_id, days=1, limit=10)
+        return jsonify({'recent_theses': recent_theses_data})
+    except Exception as e:
+        logger.error(f"Error getting dashboard theses: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
 @dashboard_bp.route('/api/dashboard', methods=['GET'])
 @require_user_auth
 def get_dashboard(user_id):

@@ -19,67 +19,10 @@ import { useAuth } from '@/context/AuthContext'
 const AUTO_REFRESH_INTERVAL = 5 * 60 * 1000 // 5 minutes
 
 export default function Dashboard() {
-    const { user } = useAuth()
     const navigate = useNavigate()
-    const [dashboardData, setDashboardData] = useState(null)
-    const [loading, setLoading] = useState(true)
-    const [error, setError] = useState(null)
-    const [lastRefresh, setLastRefresh] = useState(null)
-
-    const fetchDashboardData = useCallback(async () => {
-        try {
-            setError(null)
-            const response = await fetch('/api/dashboard', {
-                credentials: 'include'
-            })
-            if (response.ok) {
-                const data = await response.json()
-                setDashboardData(data)
-                setLastRefresh(new Date())
-            } else if (response.status === 401) {
-                setError('Please log in to view your dashboard')
-            } else {
-                throw new Error('Failed to load dashboard data')
-            }
-        } catch (err) {
-            console.error('Error fetching dashboard:', err)
-            setError(err.message)
-        } finally {
-            setLoading(false)
-        }
-    }, [])
-
-    useEffect(() => {
-        fetchDashboardData()
-
-        // Auto-refresh every 5 minutes
-        const interval = setInterval(fetchDashboardData, AUTO_REFRESH_INTERVAL)
-        return () => clearInterval(interval)
-    }, [fetchDashboardData])
-
-    const {
-        portfolios = [],
-        watchlist = [],
-        alerts = {},
-        strategies = [],
-        upcoming_earnings = { earnings: [], total_count: 0 },
-        news = [],
-        recent_theses = { theses: [], total_count: 0 }
-    } = dashboardData || {}
 
     return (
         <div className="space-y-6">
-
-            {/* Inline error banner */}
-            {error && (
-                <div className="flex items-center justify-between rounded-lg border border-destructive/50 bg-destructive/10 px-4 py-2 text-sm text-destructive">
-                    <span>{error}</span>
-                    <Button variant="ghost" size="sm" onClick={fetchDashboardData} className="h-auto p-0 text-destructive hover:text-destructive">
-                        Try again
-                    </Button>
-                </div>
-            )}
-
             {/* Row 1: Market Overview */}
             <div className="grid gap-6 md:grid-cols-2">
                 <IndexChart />
@@ -88,49 +31,25 @@ export default function Dashboard() {
 
             {/* Row 2: Strategies & Portfolios */}
             <div className="grid gap-6 md:grid-cols-2">
-                <StrategiesSummary
-                    strategies={strategies}
-                    onNavigate={() => navigate('/strategies')}
-                    loading={loading}
-                />
-                <PortfolioSummaryCard
-                    portfolios={portfolios}
-                    onNavigate={() => navigate('/portfolios')}
-                    loading={loading}
-                />
+                <StrategiesSummary onNavigate={() => navigate('/strategies')} />
+                <PortfolioSummaryCard onNavigate={() => navigate('/portfolios')} />
             </div>
 
             {/* Row 3: Watchlist & Alerts */}
             <div className="grid gap-6 md:grid-cols-2">
-                <WatchlistQuickView
-                    watchlist={watchlist}
-                    onNavigate={() => navigate('/')}
-                    loading={loading}
-                />
-                <AlertsSummary
-                    alerts={alerts}
-                    onNavigate={() => navigate('/alerts')}
-                    loading={loading}
-                />
+                <WatchlistQuickView onNavigate={() => navigate('/')} />
+                <AlertsSummary onNavigate={() => navigate('/alerts')} />
             </div>
 
             {/* Row 4: Earnings & News */}
             <div className="grid gap-6 md:grid-cols-2">
-                <EarningsCalendar
-                    earnings={upcoming_earnings.earnings}
-                    totalCount={upcoming_earnings.total_count}
-                    loading={loading}
-                />
-                <NewsFeed articles={news} loading={loading} />
+                <EarningsCalendar />
+                <NewsFeed />
             </div>
 
             {/* Row 5: Recent Theses */}
             <div className="grid gap-6">
-                <NewTheses
-                    theses={recent_theses.theses || []}
-                    totalTodayCount={recent_theses.total_count || 0}
-                    loading={loading}
-                />
+                <NewTheses />
             </div>
         </div>
     )

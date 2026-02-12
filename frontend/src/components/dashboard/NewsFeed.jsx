@@ -1,12 +1,39 @@
 // ABOUTME: Aggregated news feed from watchlist and portfolio stocks
 // ABOUTME: Shows 10 most recent articles with source and timestamp
 
+import { useState, useEffect } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Newspaper } from 'lucide-react'
 
-export default function NewsFeed({ articles = [], loading = false }) {
+export default function NewsFeed() {
+    const [articles, setArticles] = useState([])
+    const [loading, setLoading] = useState(true)
+    const [error, setError] = useState(null)
+
+    useEffect(() => {
+        const fetchNews = async () => {
+            try {
+                setLoading(true)
+                const response = await fetch('/api/dashboard/news')
+                if (response.ok) {
+                    const data = await response.json()
+                    setArticles(data.news || [])
+                } else {
+                    setError('Failed to load news')
+                }
+            } catch (err) {
+                console.error('Error fetching news:', err)
+                setError('Failed to load news')
+            } finally {
+                setLoading(false)
+            }
+        }
+
+        fetchNews()
+    }, [])
+
     return (
         <Card>
             <CardHeader className="pb-2">
@@ -18,6 +45,10 @@ export default function NewsFeed({ articles = [], loading = false }) {
             <CardContent>
                 {loading ? (
                     <Skeleton className="h-24 w-full" />
+                ) : error ? (
+                    <div className="h-24 flex items-center justify-center text-sm text-muted-foreground border border-dashed rounded-lg bg-muted/20">
+                        {error}
+                    </div>
                 ) : articles.length > 0 ? (
                     <div className="space-y-1">
                         {articles.map((article, idx) => (

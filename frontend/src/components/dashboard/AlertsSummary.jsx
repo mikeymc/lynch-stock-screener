@@ -1,13 +1,40 @@
 // ABOUTME: Summary of triggered and pending alerts for dashboard
 // ABOUTME: Shows CTA to set up alerts if none exist
 
+import { useState, useEffect } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Bell, Plus, ArrowRight, AlertCircle, Clock } from 'lucide-react'
 
-export default function AlertsSummary({ alerts = {}, onNavigate, loading = false }) {
+export default function AlertsSummary({ onNavigate }) {
+    const [alerts, setAlerts] = useState({})
+    const [loading, setLoading] = useState(true)
+    const [error, setError] = useState(null)
+
+    useEffect(() => {
+        const fetchAlerts = async () => {
+            try {
+                setLoading(true)
+                const response = await fetch('/api/dashboard/alerts')
+                if (response.ok) {
+                    const data = await response.json()
+                    setAlerts(data.alerts || {})
+                } else {
+                    setError('Failed to load alerts')
+                }
+            } catch (err) {
+                console.error('Error fetching alerts:', err)
+                setError('Failed to load alerts')
+            } finally {
+                setLoading(false)
+            }
+        }
+
+        fetchAlerts()
+    }, [])
+
     const triggered = alerts.triggered || []
     const pending = alerts.pending || []
     const hasAlerts = triggered.length > 0 || pending.length > 0
@@ -28,6 +55,10 @@ export default function AlertsSummary({ alerts = {}, onNavigate, loading = false
             <CardContent>
                 {loading ? (
                     <Skeleton className="h-24 w-full" />
+                ) : error ? (
+                    <div className="h-24 flex items-center justify-center text-sm text-muted-foreground border border-dashed rounded-lg bg-muted/20">
+                        {error}
+                    </div>
                 ) : hasAlerts ? (
                     <div className="space-y-3">
                         {/* Pending alerts */}

@@ -1,14 +1,41 @@
 // ABOUTME: Quick view of watchlist stocks with prices and daily change
 // ABOUTME: Shows CTA to add stocks if watchlist is empty
 
+import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Star, Plus, ArrowRight, TrendingUp, TrendingDown } from 'lucide-react'
 
-export default function WatchlistQuickView({ watchlist = [], onNavigate, loading = false }) {
+export default function WatchlistQuickView({ onNavigate }) {
     const navigate = useNavigate()
+    const [watchlist, setWatchlist] = useState([])
+    const [loading, setLoading] = useState(true)
+    const [error, setError] = useState(null)
+
+    useEffect(() => {
+        const fetchWatchlist = async () => {
+            try {
+                setLoading(true)
+                const response = await fetch('/api/dashboard/watchlist')
+                if (response.ok) {
+                    const data = await response.json()
+                    setWatchlist(data.watchlist || [])
+                } else {
+                    setError('Failed to load watchlist')
+                }
+            } catch (err) {
+                console.error('Error fetching watchlist:', err)
+                setError('Failed to load watchlist')
+            } finally {
+                setLoading(false)
+            }
+        }
+
+        fetchWatchlist()
+    }, [])
+
     const hasItems = watchlist.length > 0
 
     return (
@@ -27,6 +54,10 @@ export default function WatchlistQuickView({ watchlist = [], onNavigate, loading
             <CardContent>
                 {loading ? (
                     <Skeleton className="h-24 w-full" />
+                ) : error ? (
+                    <div className="h-24 flex items-center justify-center text-sm text-muted-foreground border border-dashed rounded-lg bg-muted/20">
+                        {error}
+                    </div>
                 ) : hasItems ? (
                     <div className="space-y-1">
                         {watchlist.slice(0, 5).map(stock => (

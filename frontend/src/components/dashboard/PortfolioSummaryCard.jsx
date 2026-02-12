@@ -1,13 +1,40 @@
 // ABOUTME: Compact portfolio overview card for dashboard
 // ABOUTME: Shows total value, gain/loss, top holdings or CTA to create portfolio
 
+import { useState, useEffect } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Briefcase, Plus, ArrowRight, TrendingUp, TrendingDown } from 'lucide-react'
 
-export default function PortfolioSummaryCard({ portfolios = [], onNavigate, loading = false }) {
+export default function PortfolioSummaryCard({ onNavigate }) {
+    const [portfolios, setPortfolios] = useState([])
+    const [loading, setLoading] = useState(true)
+    const [error, setError] = useState(null)
+
+    useEffect(() => {
+        const fetchPortfolios = async () => {
+            try {
+                setLoading(true)
+                const response = await fetch('/api/dashboard/portfolios')
+                if (response.ok) {
+                    const data = await response.json()
+                    setPortfolios(data.portfolios || [])
+                } else {
+                    setError('Failed to load portfolios')
+                }
+            } catch (err) {
+                console.error('Error fetching portfolios:', err)
+                setError('Failed to load portfolios')
+            } finally {
+                setLoading(false)
+            }
+        }
+
+        fetchPortfolios()
+    }, [])
+
     const hasPortfolios = portfolios.length > 0
 
     // Calculate totals across all portfolios
@@ -32,6 +59,10 @@ export default function PortfolioSummaryCard({ portfolios = [], onNavigate, load
             <CardContent>
                 {loading ? (
                     <Skeleton className="h-24 w-full" />
+                ) : error ? (
+                    <div className="h-24 flex items-center justify-center text-sm text-muted-foreground border border-dashed rounded-lg bg-muted/20">
+                        {error}
+                    </div>
                 ) : hasPortfolios ? (
                     <div className="space-y-4">
                         {/* Summary row */}

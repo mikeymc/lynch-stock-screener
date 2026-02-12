@@ -1,12 +1,39 @@
 // ABOUTME: Summary of active investment strategies for dashboard
 // ABOUTME: Shows strategy status and last run info or CTA to create strategy
 
+import { useState, useEffect } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Zap, Plus, ArrowRight } from 'lucide-react'
 
-export default function StrategiesSummary({ strategies = [], onNavigate, loading = false }) {
+export default function StrategiesSummary({ onNavigate }) {
+    const [strategies, setStrategies] = useState([])
+    const [loading, setLoading] = useState(true)
+    const [error, setError] = useState(null)
+
+    useEffect(() => {
+        const fetchStrategies = async () => {
+            try {
+                setLoading(true)
+                const response = await fetch('/api/dashboard/strategies')
+                if (response.ok) {
+                    const data = await response.json()
+                    setStrategies(data.strategies || [])
+                } else {
+                    setError('Failed to load strategies')
+                }
+            } catch (err) {
+                console.error('Error fetching strategies:', err)
+                setError('Failed to load strategies')
+            } finally {
+                setLoading(false)
+            }
+        }
+
+        fetchStrategies()
+    }, [])
+
     const hasStrategies = strategies.length > 0
 
     return (
@@ -25,6 +52,10 @@ export default function StrategiesSummary({ strategies = [], onNavigate, loading
             <CardContent>
                 {loading ? (
                     <Skeleton className="h-24 w-full" />
+                ) : error ? (
+                    <div className="h-24 flex items-center justify-center text-sm text-muted-foreground border border-dashed rounded-lg bg-muted/20">
+                        {error}
+                    </div>
                 ) : hasStrategies ? (
                     <div className="space-y-2">
                         {strategies.slice(0, 4).map(strategy => (
