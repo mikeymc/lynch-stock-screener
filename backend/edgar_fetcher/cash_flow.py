@@ -374,6 +374,9 @@ class CashFlowMixin:
     def parse_cash_equivalents_history(self, company_facts: Dict[str, Any]) -> List[Dict[str, Any]]:
         """
         Extract Cash and Cash Equivalents history from company facts.
+        
+        This function tries ALL available cash tags and merges the data to get the most
+        complete coverage. This handles companies that change reporting tags over time.
 
         Args:
             company_facts: Company facts data from EDGAR API
@@ -381,34 +384,60 @@ class CashFlowMixin:
         Returns:
             List of dictionaries with year, cash_and_cash_equivalents, and fiscal_end values
         """
-        cash_data_list = None
-
+        # All possible balance sheet cash tags (not cash flow tags)
+        cash_tag_candidates = [
+            'CashAndCashEquivalentsAtCarryingValue',
+            'CashAndCashEquivalents',
+            'CashCashEquivalentsAndShortTermInvestments',
+            'Cash',
+            'CashEquivalents',
+            'CashCashEquivalentsRestrictedCashAndRestrictedCashEquivalents',
+            'CashAndDueFromBanks',  # Banks
+            'CashFDICInsuredAmount',  # Banks
+            'RestrictedCashAndCashEquivalents',
+            'RestrictedCash',
+        ]
+        
+        all_cash_data = {}  # {tag_name: {year: {data}}}
+        
         # Try US-GAAP first
         try:
             if 'us-gaap' in company_facts['facts']:
-                # Try CashAndCashEquivalentsAtCarryingValue first (most common)
-                if 'CashAndCashEquivalentsAtCarryingValue' in company_facts['facts']['us-gaap']:
-                    units = company_facts['facts']['us-gaap']['CashAndCashEquivalentsAtCarryingValue']['units']
-                    if 'USD' in units:
-                        cash_data_list = units['USD']
-
-                # Fallback: CashAndCashEquivalents
-                if cash_data_list is None and 'CashAndCashEquivalents' in company_facts['facts']['us-gaap']:
-                    units = company_facts['facts']['us-gaap']['CashAndCashEquivalents']['units']
-                    if 'USD' in units:
-                        cash_data_list = units['USD']
-
-                # Fallback: Cash (less common, but some companies use it)
-                if cash_data_list is None and 'Cash' in company_facts['facts']['us-gaap']:
-                    units = company_facts['facts']['us-gaap']['Cash']['units']
-                    if 'USD' in units:
-                        cash_data_list = units['USD']
-
+                for tag in cash_tag_candidates:
+                    if tag not in company_facts['facts']['us-gaap']:
+                        continue
+                    
+                    units = company_facts['facts']['us-gaap'][tag].get('units', {})
+                    if 'USD' not in units:
+                        continue
+                    
+                    cash_data_list = units['USD']
+                    by_year = {}
+                    
+                    for entry in cash_data_list:
+                        if entry.get('form') in ['10-K', '20-F']:
+                            fiscal_end = entry.get('end')
+                            val = entry.get('val')
+                            fy = entry.get('fy')  # Use EDGAR's fiscal year field
+                            
+                            if val is not None and fiscal_end and fy:
+                                # Keep latest fiscal_end for each fiscal year (handles restatements)
+                                if fy not in by_year or fiscal_end > by_year[fy]['fiscal_end']:
+                                    by_year[fy] = {
+                                        'year': fy,
+                                        'fiscal_end': fiscal_end,
+                                        'cash_and_cash_equivalents': val
+                                    }
+                    
+                    if by_year:
+                        all_cash_data[tag] = by_year
+                        logger.debug(f"Tag {tag}: {len(by_year)} years of data")
+        
         except (KeyError, TypeError):
             pass
 
-        # Try IFRS
-        if cash_data_list is None:
+        # Try IFRS if no US-GAAP data found
+        if not all_cash_data:
             try:
                 if 'ifrs-full' in company_facts['facts']:
                     if 'CashAndCashEquivalents' in company_facts['facts']['ifrs-full']:
@@ -420,43 +449,55 @@ class CashFlowMixin:
                             currency_units = [u for u in units.keys() if len(u) == 3 and u.isupper()]
                             if currency_units:
                                 cash_data_list = units[currency_units[0]]
+                            else:
+                                cash_data_list = None
+                        
+                        if cash_data_list:
+                            by_year = {}
+                            for entry in cash_data_list:
+                                if entry.get('form') in ['10-K', '20-F']:
+                                    fiscal_end = entry.get('end')
+                                    val = entry.get('val')
+                                    fy = entry.get('fy')
+                                    
+                                    if val is not None and fiscal_end and fy:
+                                        if fy not in by_year or fiscal_end > by_year[fy]['fiscal_end']:
+                                            by_year[fy] = {
+                                                'year': fy,
+                                                'fiscal_end': fiscal_end,
+                                                'cash_and_cash_equivalents': val
+                                            }
+                            
+                            if by_year:
+                                all_cash_data['CashAndCashEquivalents (IFRS)'] = by_year
             except (KeyError, TypeError):
                 pass
 
-        if cash_data_list is None:
+        if not all_cash_data:
             logger.debug("Could not parse Cash and Cash Equivalents history from EDGAR")
             return []
 
-        # Process and filter for annual data
-        annual_cash_by_fiscal_end = {}
-
-        for entry in cash_data_list:
-            if entry.get('form') in ['10-K', '20-F']:
-                fiscal_end = entry.get('end')
-                val = entry.get('val')
-
-                # For point-in-time metrics like Cash, we care about the 'end' date matching the fiscal year end
-                if val is not None and fiscal_end:
-                    # Keep entry for each unique fiscal_end, preferring later entries (restatements)
-                    if fiscal_end not in annual_cash_by_fiscal_end:
-                        annual_cash_by_fiscal_end[fiscal_end] = {
-                            'fiscal_end': fiscal_end,
-                            'cash_and_cash_equivalents': val
-                        }
-
-        # Group by year
-        by_year = {}
-        for fiscal_end, entry in annual_cash_by_fiscal_end.items():
-            year = int(fiscal_end[:4])
-            entry['year'] = year
-            # Prefer the latest fiscal_end for the year if duplicates exist
-            if year not in by_year:
-                by_year[year] = entry
-
-        annual_cash = list(by_year.values())
+        # Merge all tags, preferring data from tags with more complete recent coverage
+        # Strategy: Combine all years from all tags, preferring the latest fiscal_end for each year
+        merged_by_year = {}
+        
+        for tag, by_year in all_cash_data.items():
+            for year, data in by_year.items():
+                if year not in merged_by_year:
+                    merged_by_year[year] = data
+                else:
+                    # If we already have this year, keep the one with the later fiscal_end
+                    if data['fiscal_end'] > merged_by_year[year]['fiscal_end']:
+                        merged_by_year[year] = data
+        
+        annual_cash = list(merged_by_year.values())
         annual_cash.sort(key=lambda x: x['year'], reverse=True)
 
-        logger.info(f"Successfully parsed {len(annual_cash)} years of Cash and Cash Equivalents from EDGAR")
+        # Log which tags contributed data
+        if annual_cash and all_cash_data:
+            tag_names = list(all_cash_data.keys())
+            logger.info(f"Successfully parsed {len(annual_cash)} years of Cash from {len(tag_names)} tag(s): {', '.join(tag_names[:3])}")
+        
         return annual_cash
 
     def parse_interest_expense(self, company_facts: Dict[str, Any]) -> Optional[float]:

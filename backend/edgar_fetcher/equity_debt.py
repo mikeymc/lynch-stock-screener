@@ -29,12 +29,21 @@ class EquityDebtMixin:
                     units = company_facts['facts']['us-gaap']['StockholdersEquity']['units']
                     if 'USD' in units:
                         equity_data_list = units['USD']
+                        logger.debug("Using tag: StockholdersEquity")
 
                 # Fallback: StockholdersEquityIncludingPortionAttributableToNoncontrollingInterest
                 if equity_data_list is None and 'StockholdersEquityIncludingPortionAttributableToNoncontrollingInterest' in company_facts['facts']['us-gaap']:
                     units = company_facts['facts']['us-gaap']['StockholdersEquityIncludingPortionAttributableToNoncontrollingInterest']['units']
                     if 'USD' in units:
                          equity_data_list = units['USD']
+                         logger.debug("Using tag: StockholdersEquityIncludingPortionAttributableToNoncontrollingInterest")
+                
+                # Fallback: PartnersCapital (for partnerships like MLPs)
+                if equity_data_list is None and 'PartnersCapital' in company_facts['facts']['us-gaap']:
+                    units = company_facts['facts']['us-gaap']['PartnersCapital']['units']
+                    if 'USD' in units:
+                        equity_data_list = units['USD']
+                        logger.debug("Using tag: PartnersCapital")
 
         except (KeyError, TypeError):
             pass
@@ -47,11 +56,13 @@ class EquityDebtMixin:
                         units = company_facts['facts']['ifrs-full']['Equity']['units']
                         if 'USD' in units:
                             equity_data_list = units['USD']
+                            logger.debug("Using tag: Equity (IFRS)")
                         else:
                             # Find first currency unit
                             currency_units = [u for u in units.keys() if len(u) == 3 and u.isupper()]
                             if currency_units:
                                 equity_data_list = units[currency_units[0]]
+                                logger.debug(f"Using tag: Equity (IFRS, {currency_units[0]})")
             except (KeyError, TypeError):
                 pass
 
@@ -299,30 +310,51 @@ class EquityDebtMixin:
             if facts is None:
                 return []
 
-            # Get equity data - try multiple tags in order of preference
-            equity_tags = [
+            # Get equity data - collect from ALL tags to handle changes over time
+            equity_tag_candidates = [
                 'StockholdersEquity',
                 'Equity', # IFRS
                 'StockholdersEquityIncludingPortionAttributableToNoncontrollingInterest',
                 'CommonStockholdersEquity',
+                'MembersEquity', # LLCs
+                'PartnersCapital', # Partnerships
+                'CommonEquityTierOneCapital', # Banks
                 'LiabilitiesAndStockholdersEquity'  # Last resort - total assets
             ]
 
-            equity_data = []
-            for tag in equity_tags:
-                equity_data = facts.get(tag, {}).get('units', {}).get('USD', [])
-                if equity_data:
-                    logger.debug(f"Using equity tag: {tag}")
-                    break
+            all_equity_data = {} # {tag: {year: {val, fiscal_end}}}
+            for tag in equity_tag_candidates:
+                units = facts.get(tag, {}).get('units', {})
+                if 'USD' not in units:
+                    continue
+                
+                data_list = units['USD']
+                by_year = {}
+                for entry in data_list:
+                    if entry.get('form') in ['10-K', '20-F']:
+                        year = entry.get('fy')
+                        fiscal_end = entry.get('end')
+                        val = entry.get('val')
+                        if year and val is not None:
+                            if year not in by_year or fiscal_end > by_year[year]['fiscal_end']:
+                                by_year[year] = {'val': val, 'fiscal_end': fiscal_end}
+                if by_year:
+                    all_equity_data[tag] = by_year
 
-            if not equity_data:
+            # Merge equity tags, preferring more modern/standard ones but keeping latest fiscal_end per year
+            merged_equity_by_year = {}
+            for tag in reversed(equity_tag_candidates): # Reverse so standard tags can overwrite if same year/end
+                if tag in all_equity_data:
+                    for year, data in all_equity_data[tag].items():
+                        if year not in merged_equity_by_year or data['fiscal_end'] >= merged_equity_by_year[year]['fiscal_end']:
+                            merged_equity_by_year[year] = data
+
+            if not merged_equity_by_year:
                 logger.debug("No equity data found in EDGAR")
                 return []
 
-            # Get debt data - merge multiple fields to avoid gaps
-            # Use a prioritized list of tags commonly used for Debt
-            # Aggregate tags first, followed by specific instrument types
-            lt_debt_tags = [
+            # Get debt data - collect from ALL tags to handle changes over time
+            lt_debt_tag_candidates = [
                 'LongTermDebtNoncurrent',
                 'LongTermDebt',
                 'NonCurrentBorrowings', # IFRS
@@ -339,14 +371,7 @@ class EquityDebtMixin:
                 'OtherLongTermDebtNoncurrent'
             ]
 
-            long_term_debt_data = []
-            for tag in lt_debt_tags:
-                data = facts.get(tag, {}).get('units', {}).get('USD', [])
-                if data:
-                    long_term_debt_data.extend(data)
-
-            # Get short-term debt data from multiple sources
-            st_debt_tags = [
+            st_debt_tag_candidates = [
                 'LongTermDebtCurrent',
                 'DebtCurrent',
                 'CurrentBorrowings', # IFRS
@@ -358,68 +383,61 @@ class EquityDebtMixin:
                 'CommercialPaper',
                 'LinesOfCreditCurrent',
                 'CapitalLeaseObligationsCurrent',
-                'OtherLongTermDebtCurrent'
+                'OtherLongTermDebtCurrent',
+                'DebtSecuritiesCurrent'
             ]
 
-            short_term_debt_data = []
-            for tag in st_debt_tags:
-                data = facts.get(tag, {}).get('units', {}).get('USD', [])
-                if data:
-                    short_term_debt_data.extend(data)
+            # Collect all debt data
+            all_lt_debt = {}
+            all_st_debt = {}
 
-            # Filter for annual reports (10-K for US, 20-F for foreign) and create lookup by fiscal year and end date
-            equity_by_year = {}
-            for entry in equity_data:
-                if entry.get('form') in ['10-K', '20-F']:
-                    year = entry.get('fy')
-                    fiscal_end = entry.get('end')
-                    val = entry.get('val')
-                    if year and val and year not in equity_by_year:
-                        equity_by_year[year] = {'val': val, 'fiscal_end': fiscal_end}
+            def collect_debt_by_year(tags, facts_dict, target_dict):
+                for tag in tags:
+                    units = facts_dict.get(tag, {}).get('units', {})
+                    if 'USD' not in units:
+                        continue
+                    
+                    data_list = units['USD']
+                    for entry in data_list:
+                        if entry.get('form') in ['10-K', '20-F']:
+                            year = entry.get('fy')
+                            fiscal_end = entry.get('end')
+                            val = entry.get('val')
+                            if year and val is not None:
+                                if tag not in target_dict:
+                                    target_dict[tag] = {}
+                                if year not in target_dict[tag] or fiscal_end > target_dict[tag][year]['fiscal_end']:
+                                    target_dict[tag][year] = {'val': val, 'fiscal_end': fiscal_end}
 
-            # Build long-term debt by year (first entry per year wins)
-            long_term_debt_by_year = {}
-            if long_term_debt_data:
-                for entry in long_term_debt_data:
-                    if entry.get('form') in ['10-K', '20-F']:
-                        year = entry.get('fy')
-                        fiscal_end = entry.get('end')
-                        val = entry.get('val')
-                        if year and val is not None and year not in long_term_debt_by_year:
-                            long_term_debt_by_year[year] = {'val': val, 'fiscal_end': fiscal_end}
+            collect_debt_by_year(lt_debt_tag_candidates, facts, all_lt_debt)
+            collect_debt_by_year(st_debt_tag_candidates, facts, all_st_debt)
 
-            # Build short-term debt by year
-            short_term_debt_by_year = {}
-            if short_term_debt_data:
-                for entry in short_term_debt_data:
-                    if entry.get('form') in ['10-K', '20-F']:
-                        year = entry.get('fy')
-                        fiscal_end = entry.get('end')
-                        val = entry.get('val')
-                        if year and val is not None and year not in short_term_debt_by_year:
-                            short_term_debt_by_year[year] = {'val': val, 'fiscal_end': fiscal_end}
+            # Merge debt tags by year
+            merged_lt_debt = {}
+            for year_data in all_lt_debt.values():
+                for year, data in year_data.items():
+                    if year not in merged_lt_debt or data['fiscal_end'] > merged_lt_debt[year]['fiscal_end']:
+                        merged_lt_debt[year] = data
 
-            # Calculate D/E ratio for each year where we have equity and at least one debt component
+            merged_st_debt = {}
+            for year_data in all_st_debt.values():
+                for year, data in year_data.items():
+                    if year not in merged_st_debt or data['fiscal_end'] > merged_st_debt[year]['fiscal_end']:
+                        merged_st_debt[year] = data
+
+            # Calculate D/E ratio for each year where we have equity
             debt_to_equity_history = []
-            for year in equity_by_year.keys():
-                equity = equity_by_year[year]['val']
-                fiscal_end = equity_by_year[year]['fiscal_end']
+            for year, data in merged_equity_by_year.items():
+                equity = data['val']
+                fiscal_end = data['fiscal_end']
 
-                # Calculate total debt for this year
                 total_debt = 0
-                has_debt_data = False
+                if year in merged_lt_debt:
+                    total_debt += merged_lt_debt[year]['val']
+                if year in merged_st_debt:
+                    total_debt += merged_st_debt[year]['val']
 
-                if year in long_term_debt_by_year:
-                    total_debt += long_term_debt_by_year[year]['val']
-                    has_debt_data = True
-
-                if year in short_term_debt_by_year:
-                    total_debt += short_term_debt_by_year[year]['val']
-                    has_debt_data = True
-
-                # Only calculate D/E if we have both equity and some debt data
-                # Allow negative equity (deficit) which results in negative D/E ratio
-                if equity != 0 and has_debt_data:
+                if equity != 0:
                     debt_to_equity = total_debt / equity
                     debt_to_equity_history.append({
                         'year': year,
@@ -474,52 +492,22 @@ class EquityDebtMixin:
             if not equity_data:
                 return []
 
-            # Get debt data (Long Term)
-            lt_debt_tags = [
-                'LongTermDebtNoncurrent',
-                'LongTermDebt',
-                'NonCurrentBorrowings', # IFRS
-                'NonCurrentFinancialLiabilities', # IFRS
-                'InterestBearingLoansAndBorrowingsNonCurrent', # IFRS
-                'SeniorLongTermNotes',
-                'ConvertibleDebt',
-                'ConvertibleLongTermNotesPayable',
-                'NotesPayable',
-                'LongTermNotesPayable',
-                'DebtInstrumentCarryingAmount',
-                'LongTermDebtAndCapitalLeaseObligations',
-                'CapitalLeaseObligationsNoncurrent',
-                'OtherLongTermDebtNoncurrent'
+            # Get equity data - collect from ALL tags to handle changes over time
+            equity_tag_candidates = [
+                'StockholdersEquity',
+                'Equity', # IFRS
+                'StockholdersEquityIncludingPortionAttributableToNoncontrollingInterest',
+                'CommonStockholdersEquity',
+                'MembersEquity', # LLCs
+                'PartnersCapital', # Partnerships
+                'CommonEquityTierOneCapital', # Banks
+                'LiabilitiesAndStockholdersEquity'  # Last resort - total assets
             ]
 
-            long_term_debt_data = []
-            for tag in lt_debt_tags:
-                data = facts.get(tag, {}).get('units', {}).get('USD', [])
-                if data:
-                    long_term_debt_data.extend(data)
-
-            # Get short-term debt data
-            st_debt_tags = [
-                'LongTermDebtCurrent',
-                'DebtCurrent',
-                'NotesPayableCurrent',
-                'ConvertibleNotesPayableCurrent',
-                'ShortTermBorrowings',
-                'CommercialPaper',
-                'LinesOfCreditCurrent',
-                'CapitalLeaseObligationsCurrent',
-                'OtherLongTermDebtCurrent'
-            ]
-
-            short_term_debt_data = []
-            for tag in st_debt_tags:
-                data = facts.get(tag, {}).get('units', {}).get('USD', [])
-                if data:
-                    short_term_debt_data.extend(data)
-
-            # Helper to organize by (year, quarter)
-            def organize_by_quarter_first_wins(data_list):
-                organized = {}
+            all_equity_data = {} # {tag: {(year, quarter): {val, fiscal_end}}}
+            
+            def organize_by_quarter(data_list):
+                by_quarter = {}
                 for entry in data_list:
                     form = entry.get('form')
                     fiscal_end = entry.get('end')
@@ -543,35 +531,111 @@ class EquityDebtMixin:
 
                     year = int(fiscal_end[:4])
                     key = (year, quarter)
+                    
+                    if val is not None:
+                        if key not in by_quarter or fiscal_end > by_quarter[key]['fiscal_end']:
+                            by_quarter[key] = {'val': val, 'fiscal_end': fiscal_end}
+                return by_quarter
 
-                    if key not in organized and val is not None:
-                        organized[key] = {'val': val, 'fiscal_end': fiscal_end}
-                return organized
+            for tag in equity_tag_candidates:
+                units = facts.get(tag, {}).get('units', {})
+                if 'USD' not in units:
+                    continue
+                
+                res = organize_by_quarter(units['USD'])
+                if res:
+                    all_equity_data[tag] = res
 
-            equity_org = organize_by_quarter_first_wins(equity_data)
-            lt_debt_org = organize_by_quarter_first_wins(long_term_debt_data)
-            st_debt_org = organize_by_quarter_first_wins(short_term_debt_data)
+            # Merge equity tags, preferring more standard ones but keeping latest fiscal_end per quarter
+            merged_equity_by_quarter = {}
+            for tag in reversed(equity_tag_candidates):
+                if tag in all_equity_data:
+                    for key, data in all_equity_data[tag].items():
+                        if key not in merged_equity_by_quarter or data['fiscal_end'] >= merged_equity_by_quarter[key]['fiscal_end']:
+                            merged_equity_by_quarter[key] = data
+
+            if not merged_equity_by_quarter:
+                logger.debug("No quarterly equity data found in EDGAR")
+                return []
+
+            # Get debt data - collect from ALL tags
+            lt_debt_tag_candidates = [
+                'LongTermDebtNoncurrent',
+                'LongTermDebt',
+                'NonCurrentBorrowings',
+                'NonCurrentFinancialLiabilities',
+                'InterestBearingLoansAndBorrowingsNonCurrent',
+                'SeniorLongTermNotes',
+                'ConvertibleDebt',
+                'ConvertibleLongTermNotesPayable',
+                'NotesPayable',
+                'LongTermNotesPayable',
+                'DebtInstrumentCarryingAmount',
+                'LongTermDebtAndCapitalLeaseObligations',
+                'CapitalLeaseObligationsNoncurrent',
+                'OtherLongTermDebtNoncurrent'
+            ]
+
+            st_debt_tag_candidates = [
+                'LongTermDebtCurrent',
+                'DebtCurrent',
+                'CurrentBorrowings',
+                'CurrentFinancialLiabilities',
+                'InterestBearingLoansAndBorrowingsCurrent',
+                'NotesPayableCurrent',
+                'ConvertibleNotesPayableCurrent',
+                'ShortTermBorrowings',
+                'CommercialPaper',
+                'LinesOfCreditCurrent',
+                'CapitalLeaseObligationsCurrent',
+                'OtherLongTermDebtCurrent',
+                'DebtSecuritiesCurrent'
+            ]
+
+            all_lt_debt = {} # {tag: {(year, quarter): {val, fiscal_end}}}
+            all_st_debt = {}
+
+            for tag in lt_debt_tag_candidates:
+                units = facts.get(tag, {}).get('units', {})
+                if 'USD' in units:
+                    res = organize_by_quarter(units['USD'])
+                    if res: all_lt_debt[tag] = res
+
+            for tag in st_debt_tag_candidates:
+                units = facts.get(tag, {}).get('units', {})
+                if 'USD' in units:
+                    res = organize_by_quarter(units['USD'])
+                    if res: all_st_debt[tag] = res
+
+            # Merge debt tags by (year, quarter)
+            merged_lt_debt = {}
+            for q_data in all_lt_debt.values():
+                for key, data in q_data.items():
+                    if key not in merged_lt_debt or data['fiscal_end'] > merged_lt_debt[key]['fiscal_end']:
+                        merged_lt_debt[key] = data
+
+            # Merge short-term debt tags
+            merged_st_debt = {}
+            for q_data in all_st_debt.values():
+                for key, data in q_data.items():
+                    if key not in merged_st_debt or data['fiscal_end'] > merged_st_debt[key]['fiscal_end']:
+                        merged_st_debt[key] = data
 
             quarterly_de = []
 
-            # Iterate through all quarters we found equity for
-            for key in equity_org:
+            # Calculate D/E ratio for each quarter where we have equity
+            for key, data in merged_equity_by_quarter.items():
                 year, quarter = key
-                equity = equity_org[key]['val']
-                fiscal_end = equity_org[key]['fiscal_end']
+                equity = data['val']
+                fiscal_end = data['fiscal_end']
 
                 total_debt = 0
-                has_debt_data = False
+                if key in merged_lt_debt:
+                    total_debt += merged_lt_debt[key]['val']
+                if key in merged_st_debt:
+                    total_debt += merged_st_debt[key]['val']
 
-                if key in lt_debt_org:
-                    total_debt += lt_debt_org[key]['val']
-                    has_debt_data = True
-
-                if key in st_debt_org:
-                    total_debt += st_debt_org[key]['val']
-                    has_debt_data = True
-
-                if equity != 0 and has_debt_data:
+                if equity != 0:
                     de_ratio = total_debt / equity
                     quarterly_de.append({
                         'year': year,

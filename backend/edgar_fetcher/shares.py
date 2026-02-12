@@ -33,17 +33,32 @@ class SharesMixin:
                 units = company_facts['facts'].get(namespace, {}).get(tag, {}).get('units', {})
                 if 'shares' in units:
                     shares_data_list.extend(units['shares'])
-                    logger.debug(f"Found {len(units['shares'])} entries for {tag}")
+                    logger.debug(f"Found {len(units['shares'])} entries for {namespace}:{tag}")
+                    return True
             except (KeyError, TypeError):
                 pass
+            return False
 
-        # Collect from all known tags (Primary + Fallbacks)
+        # Collect from ALL known tags (not just first match)
+        # This handles companies that change tags over time
+        # Try diluted shares first (preferred for EPS calculation)
         collect_shares('us-gaap', 'WeightedAverageNumberOfDilutedSharesOutstanding')
+        
+        # Also collect basic shares
+        collect_shares('us-gaap', 'WeightedAverageNumberOfSharesOutstandingBasic')
+        
+        # Point-in-time shares outstanding
         collect_shares('us-gaap', 'CommonStockSharesOutstanding')
+        
+        # SharesOutstanding (generic)
+        collect_shares('us-gaap', 'SharesOutstanding')
+        
+        # DEI namespace (Document and Entity Information)
         collect_shares('dei', 'EntityCommonStockSharesOutstanding')
 
-        # Also check IFRS
+        # Also check IFRS (for foreign filers)
         collect_shares('ifrs-full', 'WeightedAverageNumberOfSharesOutstandingDiluted')
+        collect_shares('ifrs-full', 'WeightedAverageNumberOfSharesOutstandingBasic')
 
         # If zero data found
         if not shares_data_list:

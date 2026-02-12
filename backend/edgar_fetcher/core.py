@@ -232,35 +232,80 @@ class EdgarFetcherCore:
 
     def _fetch_from_api(self, cik: str) -> Optional[Dict[str, Any]]:
         """
-        Fetch company facts from SEC EDGAR API with retry logic for SSL errors
-
+        Fetch company facts from SEC EDGAR API with comprehensive retry logic
+        
         Args:
             cik: 10-digit CIK number
-
+            
         Returns:
             Dictionary containing company facts data or None on error
         """
         self._rate_limit(caller=f"facts-{cik}")
-
+        
         url = self.COMPANY_FACTS_URL.format(cik=cik)
-
-        # Retry logic for transient SSL errors
+        
+        # Retry logic for transient errors (network, SSL, 500s)
         max_retries = 3
         for attempt in range(max_retries):
             try:
-                response = requests.get(url, headers=self.headers, timeout=30)  # Increased timeout for Fly.io
+                response = requests.get(url, headers=self.headers, timeout=30)
+                
+                # Handle different HTTP status codes
+                if response.status_code == 404:
+                    # Company has no XBRL filings - this is expected for some companies
+                    logger.warning(f"[CIK {cik}] No XBRL filings found (404) - company may not file electronically")
+                    return None
+                elif response.status_code >= 500:
+                    # Server error - retry
+                    if attempt < max_retries - 1:
+                        wait_time = 2 ** attempt  # Exponential backoff: 1s, 2s, 4s
+                        logger.warning(f"[CIK {cik}] Server error {response.status_code} (attempt {attempt + 1}/{max_retries}), retrying in {wait_time}s")
+                        time.sleep(wait_time)
+                        continue
+                    else:
+                        logger.error(f"[CIK {cik}] Server error {response.status_code} after {max_retries} attempts")
+                        return None
+                
+                # Raise for other bad status codes (400, 403, etc.)
                 response.raise_for_status()
+                
                 logger.info(f"[CIK {cik}] Successfully fetched company facts from EDGAR API")
                 return response.json()
+                
             except requests.exceptions.SSLError as e:
                 if attempt < max_retries - 1:
-                    wait_time = 2 ** attempt  # Exponential backoff: 1s, 2s, 4s
+                    wait_time = 2 ** attempt
                     logger.warning(f"[CIK {cik}] SSL error (attempt {attempt + 1}/{max_retries}), retrying in {wait_time}s: {e}")
                     time.sleep(wait_time)
                     continue
                 else:
                     logger.error(f"[CIK {cik}] SSL error after {max_retries} attempts: {e}")
                     return None
+                    
+            except requests.exceptions.Timeout as e:
+                if attempt < max_retries - 1:
+                    wait_time = 2 ** attempt
+                    logger.warning(f"[CIK {cik}] Timeout (attempt {attempt + 1}/{max_retries}), retrying in {wait_time}s")
+                    time.sleep(wait_time)
+                    continue
+                else:
+                    logger.error(f"[CIK {cik}] Timeout after {max_retries} attempts")
+                    return None
+                    
+            except requests.exceptions.ConnectionError as e:
+                if attempt < max_retries - 1:
+                    wait_time = 2 ** attempt
+                    logger.warning(f"[CIK {cik}] Connection error (attempt {attempt + 1}/{max_retries}), retrying in {wait_time}s: {e}")
+                    time.sleep(wait_time)
+                    continue
+                else:
+                    logger.error(f"[CIK {cik}] Connection error after {max_retries} attempts: {e}")
+                    return None
+                    
             except requests.exceptions.RequestException as e:
-                logger.error(f"[CIK {cik}] Error fetching company facts: {type(e).__name__}: {e}")
+                # Other request errors (don't retry)
+                logger.error(f"[CIK {cik}] Request error: {type(e).__name__}: {e}")
                 return None
+        
+        # Should not reach here, but just in case
+        return None

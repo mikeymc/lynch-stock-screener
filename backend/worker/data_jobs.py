@@ -81,12 +81,14 @@ class DataJobsMixin:
                 # Get CIK
                 cik = edgar_fetcher.get_cik_for_ticker(symbol)
                 if not cik:
-                    return None
+                    logger.warning(f"[{symbol}] CIK not found in SEC mapping - company may be delisted or use different ticker")
+                    return {'symbol': symbol, 'status': 'failed', 'reason': 'cik_not_found'}
 
                 # Fetch company_facts (historical data)
                 company_facts = edgar_fetcher.fetch_company_facts(cik)
                 if not company_facts:
-                    return None
+                    logger.warning(f"[{symbol}] No company facts available (CIK: {cik}) - may have no XBRL filings or API error")
+                    return {'symbol': symbol, 'status': 'failed', 'reason': 'no_company_facts', 'cik': cik}
 
                 # Parse annual historical data ONLY (skip quarterly - that's handled by quarterly job)
                 eps_history = edgar_fetcher.parse_eps_history(company_facts)
@@ -95,6 +97,13 @@ class DataJobsMixin:
                 debt_to_equity_history = edgar_fetcher.parse_debt_to_equity_history(company_facts)
                 shareholder_equity_history = edgar_fetcher.parse_shareholder_equity_history(company_facts)
                 cash_flow_history = edgar_fetcher.parse_cash_flow_history(company_facts)
+                cash_equivalents_history = edgar_fetcher.parse_cash_equivalents_history(company_facts)
+                shares_outstanding_history = edgar_fetcher.parse_shares_outstanding_history(company_facts)
+
+                # Check if we got any useful data
+                if not revenue_history or len(revenue_history) == 0:
+                    logger.warning(f"[{symbol}] Company facts returned but no revenue data found (CIK: {cik})")
+                    return {'symbol': symbol, 'status': 'failed', 'reason': 'no_revenue_data', 'cik': cik}
 
                 # Store annual data to earnings_history table
                 # This uses the same storage logic as the full screening job
@@ -109,17 +118,25 @@ class DataJobsMixin:
                     'debt_to_equity_history': debt_to_equity_history,
                     'shareholder_equity_history': shareholder_equity_history,
                     'cash_flow_history': cash_flow_history,
+                    'cash_equivalents_history': cash_equivalents_history,
+                    'shares_outstanding_history': shares_outstanding_history,
                 }
 
                 # Store to DB (this populates earnings_history table)
                 data_fetcher._store_edgar_earnings(symbol, edgar_data, price_history=None)
+                
+                # CRITICAL: Flush write queue to ensure data is committed
+                # Without this, cash_and_cash_equivalents and shares_outstanding won't persist
+                self.db.flush()
 
                 logger.info(f"[{symbol}] Cached {len(revenue_history)} years of historical data")
                 return {'symbol': symbol, 'status': 'success', 'years': len(revenue_history)}
 
             except Exception as e:
-                logger.error(f"[{symbol}] Error caching historical data: {e}")
-                return None
+                logger.error(f"[{symbol}] Unexpected error caching historical data: {type(e).__name__}: {e}")
+                import traceback
+                traceback.print_exc()
+                return {'symbol': symbol, 'status': 'failed', 'reason': 'exception', 'error': str(e)}
 
         # Process stocks with reduced parallelism to avoid DB pressure
         from concurrent.futures import ThreadPoolExecutor
@@ -127,6 +144,7 @@ class DataJobsMixin:
         success_count = 0
         cached_count = 0
         failed_count = 0
+        failure_reasons = {}  # Track failure reasons
 
         BATCH_SIZE = 10
         MAX_WORKERS = 4  # Reduced for heavy company_facts calls
@@ -141,12 +159,19 @@ class DataJobsMixin:
                     processed_count += 1
 
                     if result:
-                        if result.get('status') == 'cached':
+                        status = result.get('status')
+                        if status == 'cached':
                             cached_count += 1
-                        else:
+                        elif status == 'success':
                             success_count += 1
+                        elif status == 'failed':
+                            failed_count += 1
+                            # Track failure reason
+                            reason = result.get('reason', 'unknown')
+                            failure_reasons[reason] = failure_reasons.get(reason, 0) + 1
                     else:
                         failed_count += 1
+                        failure_reasons['unknown'] = failure_reasons.get('unknown', 0) + 1
 
                     if processed_count % 10 == 0:
                         progress_pct = 10 + int((processed_count / total) * 85)
@@ -158,8 +183,12 @@ class DataJobsMixin:
                         )
                         self._send_heartbeat(job_id)
 
-        # Complete
+        # Complete with detailed failure breakdown
         result_message = f"Historical fundamentals cached: {success_count} new, {cached_count} already cached, {failed_count} failed out of {total} stocks"
+        if failure_reasons:
+            reason_summary = ", ".join([f"{reason}: {count}" for reason, count in sorted(failure_reasons.items(), key=lambda x: -x[1])])
+            result_message += f" | Failure breakdown: {reason_summary}"
+        
         self.db.complete_job(job_id, result=result_message)
         logger.info(result_message)
 
