@@ -3,9 +3,8 @@
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
-import { Badge } from "@/components/ui/badge"
 import { Skeleton } from "@/components/ui/skeleton"
-import { Zap, Plus, ArrowRight, CheckCircle2, AlertCircle, Clock } from 'lucide-react'
+import { Zap, Plus, ArrowRight } from 'lucide-react'
 
 export default function StrategiesSummary({ strategies = [], onNavigate, loading = false }) {
     const hasStrategies = strategies.length > 0
@@ -46,58 +45,32 @@ export default function StrategiesSummary({ strategies = [], onNavigate, loading
 }
 
 function StrategyRow({ strategy }) {
-    const status = strategy.last_status || 'pending'
-    const StatusIcon = status === 'completed' ? CheckCircle2 : status === 'failed' ? AlertCircle : Clock
+    const isPositive = strategy.portfolio_return_pct >= 0
 
     return (
         <div className="flex items-center justify-between py-2 px-2 rounded bg-muted/50">
             <div className="flex items-center gap-2 min-w-0">
-                <StatusIcon className={`h-4 w-4 flex-shrink-0 ${getStatusColor(status)}`} />
+                <div className={`h-2 w-2 rounded-full ${strategy.enabled ? 'bg-green-500' : 'bg-muted-foreground/50'}`} title={strategy.enabled ? 'Active' : 'Paused'} />
                 <span className="font-medium text-sm truncate">{strategy.name}</span>
             </div>
-            <div className="flex items-center gap-2">
-                {strategy.last_run && (
-                    <span className="text-xs text-muted-foreground">
-                        {formatTimeAgo(strategy.last_run)}
+            <div className="flex items-center gap-4">
+                <div className="flex flex-col items-end">
+                    <span className={`text-sm font-medium ${isPositive ? 'text-green-500' : 'text-red-500'}`}>
+                        {isPositive ? '+' : ''}{strategy.portfolio_return_pct?.toFixed(2)}%
                     </span>
-                )}
-                <Badge
-                    variant={strategy.enabled ? 'default' : 'secondary'}
-                    className="text-xs"
-                >
-                    {strategy.enabled ? 'Active' : 'Paused'}
-                </Badge>
+                    <span className="text-[10px] text-muted-foreground uppercase font-semibold">Return</span>
+                </div>
+                <div className="flex flex-col items-end min-w-[80px]">
+                    <span className="text-sm font-medium">
+                        ${strategy.portfolio_value?.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+                    </span>
+                    <span className="text-[10px] text-muted-foreground uppercase font-semibold">Value</span>
+                </div>
             </div>
         </div>
     )
 }
 
-function getStatusColor(status) {
-    switch (status) {
-        case 'completed':
-            return 'text-green-500'
-        case 'failed':
-            return 'text-red-500'
-        case 'running':
-            return 'text-blue-500'
-        default:
-            return 'text-muted-foreground'
-    }
-}
-
-function formatTimeAgo(dateStr) {
-    if (!dateStr) return ''
-    const date = new Date(dateStr)
-    const seconds = Math.floor((new Date() - date) / 1000)
-
-    if (seconds < 60) return 'just now'
-    const minutes = Math.floor(seconds / 60)
-    if (minutes < 60) return `${minutes}m ago`
-    const hours = Math.floor(minutes / 60)
-    if (hours < 24) return `${hours}h ago`
-    const days = Math.floor(hours / 24)
-    return `${days}d ago`
-}
 
 function EmptyState({ onNavigate }) {
     return (

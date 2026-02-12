@@ -585,13 +585,19 @@ def get_dashboard(user_id):
 
             # 4. Active strategies
             strategies = deps.db.get_user_strategies(user_id)
+            
+            # Create a map for quick lookup of portfolio performance
+            portfolio_map = {p['id']: p for p in portfolio_summaries}
+            
             strategy_summaries = [
                 {
                     'id': s['id'],
                     'name': s['name'],
                     'enabled': s.get('enabled', True),
                     'last_run': s.get('last_run_at'),
-                    'last_status': s.get('last_run_status')
+                    'last_status': s.get('last_run_status'),
+                    'portfolio_value': portfolio_map.get(s['portfolio_id'], {}).get('total_value', 0),
+                    'portfolio_return_pct': portfolio_map.get(s['portfolio_id'], {}).get('total_gain_loss_pct', 0)
                 }
                 for s in strategies if s.get('enabled', True)
             ][:5]
