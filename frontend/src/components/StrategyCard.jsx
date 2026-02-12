@@ -5,6 +5,10 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { Badge } from '@/components/ui/badge'
 import { format } from 'date-fns'
 
+const LiveSignal = () => (
+    <span className="animate-pulse-yellow h-2 w-2 rounded-full mr-2 inline-block shadow-sm" />
+)
+
 export default function StrategyCard({ strategy }) {
     const navigate = useNavigate()
 
@@ -39,7 +43,8 @@ export default function StrategyCard({ strategy }) {
                             )}
                         </CardDescription>
                     </div>
-                    <Badge variant={strategy.enabled ? "success" : "secondary"}>
+                    <Badge variant={strategy.enabled ? "success" : "destructive"} className="flex items-center">
+                        {strategy.enabled && <LiveSignal />}
                         {strategy.enabled ? 'Active' : 'Paused'}
                     </Badge>
                 </div>

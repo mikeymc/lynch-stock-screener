@@ -43,6 +43,14 @@ export default {
 					DEFAULT: 'hsl(var(--destructive))',
 					foreground: 'hsl(var(--destructive-foreground))'
 				},
+				success: {
+					DEFAULT: 'hsl(var(--success))',
+					foreground: 'hsl(var(--success-foreground))'
+				},
+				danger: {
+					DEFAULT: 'hsl(var(--danger))',
+					foreground: 'hsl(var(--danger-foreground))'
+				},
 				border: 'hsl(var(--border))',
 				input: 'hsl(var(--input))',
 				ring: 'hsl(var(--ring))',
@@ -63,7 +71,20 @@ export default {
 					border: 'hsl(var(--sidebar-border))',
 					ring: 'hsl(var(--sidebar-ring))'
 				}
-			}
+			},
+			animation: {
+				'pulse-yellow': 'pulse-yellow 2s cubic-bezier(0.4, 0, 0.6, 1) infinite',
+			},
+			keyframes: {
+				'pulse-yellow': {
+					'0%, 100%': {
+						backgroundColor: '#f97316', // Orange-500
+					},
+					'50%': {
+						backgroundColor: '#fde047', // Yellow-300 (Bright Yellow)
+					},
+				},
+			},
 		}
 	},
 	plugins: [

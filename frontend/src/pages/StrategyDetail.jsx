@@ -21,6 +21,10 @@ import { format } from 'date-fns'
 import { Line } from 'react-chartjs-2'
 import StrategyWizard from '@/components/strategies/StrategyWizard'
 
+const LiveSignal = () => (
+    <span className="animate-pulse-yellow h-2 w-2 rounded-full mr-2 inline-block shadow-sm" />
+)
+
 function StrategyDetail() {
     const { id } = useParams()
     const navigate = useNavigate()
@@ -170,10 +174,11 @@ function StrategyDetail() {
                 </div>
                 <div className="flex items-center gap-2">
                     <Badge
-                        variant={strategy.enabled ? "success" : "secondary"}
-                        className="cursor-pointer hover:opacity-80 transition-opacity select-none"
+                        variant={strategy.enabled ? "success" : "destructive"}
+                        className="cursor-pointer hover:opacity-80 transition-opacity select-none flex items-center"
                         onClick={handleToggleEnabled}
                     >
+                        {strategy.enabled && <LiveSignal />}
                         {strategy.enabled ? 'Active' : 'Paused'}
                     </Badge>
                     <Button variant="outline" size="sm" onClick={() => navigate(`/portfolios/${strategy.portfolio_id}`)}>

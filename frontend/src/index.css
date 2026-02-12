@@ -54,7 +54,9 @@
 
     --radius: 0.5rem;
     --success: 160 84% 39%;
+    --success-foreground: 0 0% 100%;
     --danger: 0 72% 51%;
+    --danger-foreground: 0 0% 100%;
 
     /* Sidebar */
     --sidebar-background: 30 6% 98%;
