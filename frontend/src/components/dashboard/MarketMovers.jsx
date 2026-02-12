@@ -49,7 +49,7 @@ export default function MarketMovers() {
         <Card>
             <CardHeader className="pb-2">
                 <div className="flex items-center justify-between">
-                    <CardTitle className="text-base font-medium">Market Movers</CardTitle>
+                    <CardTitle className="text-base font-medium">Movers</CardTitle>
                     <div className="flex gap-1">
                         {PERIODS.map(p => (
                             <Button
@@ -138,7 +138,6 @@ function MoverRow({ stock, isGainer, onClick }) {
                 <span className="text-xs text-muted-foreground truncate">{stock.company_name}</span>
             </div>
             <div className={`flex items-center gap-1 text-sm shrink-0 ${isGainer ? 'text-green-500' : 'text-red-500'}`}>
-                {isGainer ? <ArrowUpRight className="h-3 w-3" /> : <ArrowDownRight className="h-3 w-3" />}
                 {isGainer && '+'}{changePct}%
             </div>
         </button>
