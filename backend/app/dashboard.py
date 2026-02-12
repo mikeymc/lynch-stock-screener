@@ -634,13 +634,18 @@ def get_dashboard(user_id):
             if all_symbols:
                 news_articles = deps.db.get_news_articles_multi(list(all_symbols), limit=10)
 
+            # 7. Recent investment theses (character generated, past 1 day)
+            # Returns {'theses': [], 'total_count': int}
+            recent_theses_data = deps.db.get_recent_theses(user_id, days=1, limit=10)
+
             return jsonify({
                 'portfolios': portfolio_summaries,
                 'watchlist': watchlist_data,
                 'alerts': alert_summary,
                 'strategies': strategy_summaries,
                 'upcoming_earnings': upcoming_earnings,
-                'news': news_articles
+                'news': news_articles,
+                'recent_theses': recent_theses_data
             })
 
         finally:

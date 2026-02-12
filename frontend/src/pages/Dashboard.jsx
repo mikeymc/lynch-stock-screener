@@ -13,6 +13,7 @@ import AlertsSummary from '@/components/dashboard/AlertsSummary'
 import StrategiesSummary from '@/components/dashboard/StrategiesSummary'
 import EarningsCalendar from '@/components/dashboard/EarningsCalendar'
 import NewsFeed from '@/components/dashboard/NewsFeed'
+import NewTheses from '@/components/dashboard/NewTheses'
 import { useAuth } from '@/context/AuthContext'
 
 const AUTO_REFRESH_INTERVAL = 5 * 60 * 1000 // 5 minutes
@@ -62,7 +63,8 @@ export default function Dashboard() {
         alerts = {},
         strategies = [],
         upcoming_earnings = [],
-        news = []
+        news = [],
+        recent_theses = { theses: [], total_count: 0 }
     } = dashboardData || {}
 
     return (
@@ -116,6 +118,15 @@ export default function Dashboard() {
             <div className="grid gap-6 md:grid-cols-2">
                 <EarningsCalendar earnings={upcoming_earnings} loading={loading} />
                 <NewsFeed articles={news} loading={loading} />
+            </div>
+
+            {/* Row 5: Recent Theses */}
+            <div className="grid gap-6">
+                <NewTheses
+                    theses={recent_theses.theses || []}
+                    totalTodayCount={recent_theses.total_count || 0}
+                    loading={loading}
+                />
             </div>
         </div>
     )

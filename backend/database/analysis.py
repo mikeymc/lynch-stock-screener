@@ -121,6 +121,92 @@ class AnalysisMixin:
         finally:
             self.return_connection(conn)
 
+    def get_recent_theses(self, user_id: int, days: int = 1, limit: int = 10) -> List[Dict[str, Any]]:
+        """
+        Fetch the most recent investment theses for the dashboard.
+        
+        Args:
+            user_id: User requesting the data
+            days: Period window (default 1 day)
+            limit: Max items to return (default 10)
+        """
+        conn = self.get_connection()
+        try:
+            cursor = conn.cursor()
+            # Logic:
+            # 1. Fetch from lynch_analyses (character generated)
+            # 2. Join with stocks to get company name
+            # 3. Filter by date and user (or system user if allowed)
+            # 4. Order by generated_at DESC
+            
+            cursor.execute("""
+                SELECT DISTINCT ON (a.symbol)
+                    a.symbol, 
+                    s.company_name, 
+                    a.analysis_text, 
+                    a.generated_at, 
+                    a.character_id
+                FROM lynch_analyses a
+                JOIN stocks s ON a.symbol = s.symbol
+                WHERE (a.user_id = %s OR a.user_id = %s)
+                  AND a.generated_at >= CURRENT_TIMESTAMP - (%s * INTERVAL '1 day')
+                ORDER BY a.symbol, a.generated_at DESC
+                LIMIT %s
+            """, (user_id, self.SYSTEM_USER_ID, days, limit))
+            
+            rows = cursor.fetchall()
+            
+            # Re-sort by date since DISTINCT ON requires ORDER BY symbol first
+            rows.sort(key=lambda x: x[3], reverse=True)
+            rows = rows[:limit]
+            
+            results = []
+            for row in rows:
+                text = row[2]
+                text_upper = text.upper()
+                verdict = 'UNKNOWN'
+                
+                # Robust extraction logic (matches ThesisMixin fallback)
+                if '**BUY**' in text or 'VERDICT: BUY' in text_upper:
+                    verdict = 'BUY'
+                elif '**WATCH**' in text or 'VERDICT: WATCH' in text_upper:
+                    verdict = 'WATCH'
+                elif '**AVOID**' in text or 'VERDICT: AVOID' in text_upper:
+                    verdict = 'AVOID'
+                else:
+                    # Fallback to keyword search in first 500 chars
+                    first_500 = text_upper[:500]
+                    if 'BUY' in first_500 and 'AVOID' not in first_500:
+                        verdict = 'BUY'
+                    elif 'AVOID' in first_500:
+                        verdict = 'AVOID'
+                    elif 'WATCH' in first_500 or 'HOLD' in first_500:
+                        verdict = 'WATCH'
+                
+                results.append({
+                    'symbol': row[0],
+                    'name': row[1],
+                    'verdict': verdict,
+                    'generated_at': row[3].isoformat() if row[3] else None,
+                    'character_id': row[4]
+                })
+                
+            # Also get total count for the last 24 hours for the "+n more" message
+            cursor.execute("""
+                SELECT COUNT(DISTINCT symbol)
+                FROM lynch_analyses
+                WHERE (user_id = %s OR user_id = %s)
+                  AND generated_at >= CURRENT_TIMESTAMP - INTERVAL '1 day'
+            """, (user_id, self.SYSTEM_USER_ID))
+            total_today_count = cursor.fetchone()[0]
+            
+            return {
+                'theses': results,
+                'total_count': total_today_count
+            }
+        finally:
+            self.return_connection(conn)
+
     def set_chart_analysis(self, user_id: int, symbol: str, section: str, analysis_text: str, model_version: str, character_id: str = 'lynch'):
         conn = self.get_connection()
         try:
