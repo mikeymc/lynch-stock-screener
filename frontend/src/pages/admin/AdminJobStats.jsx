@@ -41,6 +41,7 @@ export default function AdminJobStats() {
     const [refreshing, setRefreshing] = useState(false)
     const [selectedTrendTypes, setSelectedTrendTypes] = useState(new Set())
     const [sortConfig, setSortConfig] = useState({ key: 'total_runs', direction: 'desc' })
+    const [historySortConfig, setHistorySortConfig] = useState({ key: 'id', direction: 'desc' })
 
     // Update selected types when data changes for the first time
     useEffect(() => {
@@ -109,6 +110,7 @@ export default function AdminJobStats() {
             return sum
         }, 0)
 
+        const pending = jobs.filter(j => j.status === 'pending')
         const avgDuration = completed.length > 0 ? totalDuration / completed.length : 0
         const successRate = jobs.length > 0 ? (completed.length / jobs.length) * 100 : 0
 
@@ -116,7 +118,9 @@ export default function AdminJobStats() {
             total: jobs.length,
             successRate,
             avgDuration,
-            running: running.length
+            running: running.length,
+            pending: pending.length,
+            failed: failed.length
         }
     }, [data.jobs])
 
@@ -166,9 +170,36 @@ export default function AdminJobStats() {
         }))
     }
 
-    const SortIcon = ({ columnKey }) => {
-        if (sortConfig.key !== columnKey) return <ArrowUpDown className="ml-1 h-3 w-3" />
-        return sortConfig.direction === 'asc'
+    const sortJobs = (jobs, config) => {
+        if (!config.key) return jobs
+        return [...jobs].sort((a, b) => {
+            let aValue, bValue
+            if (config.key === 'duration') {
+                aValue = a.started_at && a.completed_at ? new Date(a.completed_at) - new Date(a.started_at) : 0
+                bValue = b.started_at && b.completed_at ? new Date(b.completed_at) - new Date(b.started_at) : 0
+            } else {
+                aValue = a[config.key]
+                bValue = b[config.key]
+            }
+            if (aValue < bValue) return config.direction === 'asc' ? -1 : 1
+            if (aValue > bValue) return config.direction === 'asc' ? 1 : -1
+            return 0
+        })
+    }
+
+    const sortedJobs = useMemo(() => sortJobs(data.jobs || [], historySortConfig), [data.jobs, historySortConfig])
+
+    const handleHistorySort = (key) => {
+        setHistorySortConfig(prev => ({
+            key,
+            direction: prev.key === key && prev.direction === 'desc' ? 'asc' : 'desc'
+        }))
+    }
+
+    const SortIcon = ({ columnKey, config }) => {
+        const activeConfig = config || sortConfig
+        if (activeConfig.key !== columnKey) return <ArrowUpDown className="ml-1 h-3 w-3" />
+        return activeConfig.direction === 'asc'
             ? <ArrowUp className="ml-1 h-3 w-3 text-primary" />
             : <ArrowDown className="ml-1 h-3 w-3 text-primary" />
     }
@@ -265,7 +296,7 @@ export default function AdminJobStats() {
             </div>
 
             {/* Summary Cards */}
-            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+            <div className="grid gap-4 md:grid-cols-3 lg:grid-cols-6">
                 <Card>
                     <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                         <CardTitle className="text-sm font-medium">Total Jobs</CardTitle>
@@ -273,6 +304,36 @@ export default function AdminJobStats() {
                     </CardHeader>
                     <CardContent>
                         <div className="text-2xl font-bold">{summaryStats.total}</div>
+                        <p className="text-xs text-muted-foreground">in selected timeframe</p>
+                    </CardContent>
+                </Card>
+                <Card>
+                    <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                        <CardTitle className="text-sm font-medium">Active Jobs</CardTitle>
+                        <PlayCircle className="h-4 w-4 text-blue-500" />
+                    </CardHeader>
+                    <CardContent>
+                        <div className="text-2xl font-bold">{summaryStats.running}</div>
+                        <p className="text-xs text-muted-foreground">currently executing</p>
+                    </CardContent>
+                </Card>
+                <Card>
+                    <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                        <CardTitle className="text-sm font-medium">Pending Jobs</CardTitle>
+                        <Clock className="h-4 w-4 text-muted-foreground" />
+                    </CardHeader>
+                    <CardContent>
+                        <div className="text-2xl font-bold">{summaryStats.pending}</div>
+                        <p className="text-xs text-muted-foreground">waiting for worker</p>
+                    </CardContent>
+                </Card>
+                <Card>
+                    <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                        <CardTitle className="text-sm font-medium">Failed Jobs</CardTitle>
+                        <XCircle className="h-4 w-4 text-red-500" />
+                    </CardHeader>
+                    <CardContent>
+                        <div className="text-2xl font-bold text-red-500">{summaryStats.failed}</div>
                         <p className="text-xs text-muted-foreground">in selected timeframe</p>
                     </CardContent>
                 </Card>
@@ -296,20 +357,14 @@ export default function AdminJobStats() {
                         <p className="text-xs text-muted-foreground">per completed job</p>
                     </CardContent>
                 </Card>
-                <Card>
-                    <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                        <CardTitle className="text-sm font-medium">Active Jobs</CardTitle>
-                        <PlayCircle className="h-4 w-4 text-blue-500" />
-                    </CardHeader>
-                    <CardContent>
-                        <div className="text-2xl font-bold">{summaryStats.running}</div>
-                        <p className="text-xs text-muted-foreground">currently executing</p>
-                    </CardContent>
-                </Card>
             </div>
-            <Tabs defaultValue="performance" className="space-y-6">
+            <Tabs defaultValue="history" className="space-y-6">
                 <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
                     <TabsList>
+                        <TabsTrigger value="history" className="flex items-center gap-2">
+                            <Activity className="h-4 w-4" />
+                            Job History
+                        </TabsTrigger>
                         <TabsTrigger value="performance" className="flex items-center gap-2">
                             <BarChart3 className="h-4 w-4" />
                             Performance
@@ -317,10 +372,6 @@ export default function AdminJobStats() {
                         <TabsTrigger value="timeline" className="flex items-center gap-2">
                             <Clock className="h-4 w-4" />
                             Timeline
-                        </TabsTrigger>
-                        <TabsTrigger value="history" className="flex items-center gap-2">
-                            <Activity className="h-4 w-4" />
-                            Job History
                         </TabsTrigger>
                     </TabsList>
 
@@ -604,15 +655,26 @@ export default function AdminJobStats() {
                                 <table className="w-full text-sm text-left">
                                     <thead className="text-xs text-muted-foreground uppercase bg-muted/50 border-b">
                                         <tr>
-                                            <th className="px-4 py-3">Job ID</th>
-                                            <th className="px-4 py-3">Type</th>
-                                            <th className="px-4 py-3">Status</th>
-                                            <th className="px-4 py-3 text-right">Duration</th>
-                                            <th className="px-4 py-3 text-right">Created</th>
+                                            <th className="px-4 py-3 cursor-pointer hover:text-foreground transition-colors" onClick={() => handleHistorySort('id')}>
+                                                <div className="flex items-center">Job ID <SortIcon columnKey="id" config={historySortConfig} /></div>
+                                            </th>
+                                            <th className="px-4 py-3 cursor-pointer hover:text-foreground transition-colors" onClick={() => handleHistorySort('job_type')}>
+                                                <div className="flex items-center">Type <SortIcon columnKey="job_type" config={historySortConfig} /></div>
+                                            </th>
+                                            <th className="px-4 py-3">Params</th>
+                                            <th className="px-4 py-3 cursor-pointer hover:text-foreground transition-colors" onClick={() => handleHistorySort('status')}>
+                                                <div className="flex items-center">Status <SortIcon columnKey="status" config={historySortConfig} /></div>
+                                            </th>
+                                            <th className="px-4 py-3 text-right cursor-pointer hover:text-foreground transition-colors" onClick={() => handleHistorySort('duration')}>
+                                                <div className="flex items-center justify-end">Duration <SortIcon columnKey="duration" config={historySortConfig} /></div>
+                                            </th>
+                                            <th className="px-4 py-3 text-right cursor-pointer hover:text-foreground transition-colors" onClick={() => handleHistorySort('created_at')}>
+                                                <div className="flex items-center justify-end">Created <SortIcon columnKey="created_at" config={historySortConfig} /></div>
+                                            </th>
                                         </tr>
                                     </thead>
                                     <tbody className="divide-y">
-                                        {data.jobs.slice(0, 50).map((job) => {
+                                        {sortedJobs.slice(0, 50).map((job) => {
                                             const duration = job.started_at && job.completed_at
                                                 ? new Date(job.completed_at) - new Date(job.started_at)
                                                 : null
@@ -621,6 +683,11 @@ export default function AdminJobStats() {
                                                 <tr key={job.id} className="hover:bg-muted/5">
                                                     <td className="px-4 py-3 font-mono text-xs">{job.id}</td>
                                                     <td className="px-4 py-3 font-medium">{job.job_type}</td>
+                                                    <td className="px-4 py-3">
+                                                        <div className="max-w-[200px] truncate font-mono text-[10px] text-muted-foreground" title={JSON.stringify(job.params)}>
+                                                            {JSON.stringify(job.params)}
+                                                        </div>
+                                                    </td>
                                                     <td className="px-4 py-3">{getStatusBadge(job.status)}</td>
                                                     <td className="px-4 py-3 text-right font-mono">
                                                         {duration ? formatDuration(duration) : 'N/A'}

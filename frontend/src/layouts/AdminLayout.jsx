@@ -31,12 +31,11 @@ export default function AdminLayout() {
     const isActive = (path) => location.pathname === path
 
     const menuItems = [
-        { name: 'Dashboard', path: '/admin', icon: LayoutDashboard },
+        { name: 'Job Stats', path: '/admin', icon: BarChart3 },
         { name: 'Conversations', path: '/admin/conversations', icon: MessageSquare },
         { name: 'Strategies', path: '/admin/strategies', icon: Layers },
         { name: 'Portfolios', path: '/admin/portfolios', icon: Briefcase },
         { name: 'User Actions', path: '/admin/user_actions', icon: Activity },
-        { name: 'Job Stats', path: '/admin/job_stats', icon: BarChart3 },
     ]
 
     return (

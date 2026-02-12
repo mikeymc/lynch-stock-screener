@@ -40,7 +40,6 @@ import { useTheme } from './components/theme-provider'
 // Admin Components
 import AdminLayout from './layouts/AdminLayout'
 import RequireAdmin from './components/RequireAdmin'
-import AdminDashboard from './pages/admin/AdminDashboard'
 import AdminConversations from './pages/admin/AdminConversations'
 import AdminStrategies from './pages/admin/AdminStrategies'
 import AdminPortfolios from './pages/admin/AdminPortfolios'
@@ -1178,12 +1177,11 @@ function App() {
         {/* Admin Routes */}
         <Route element={<RequireAdmin />}>
           <Route element={<AdminLayout />}>
-            <Route path="/admin" element={<AdminDashboard />} />
+            <Route path="/admin" element={<AdminJobStats />} />
             <Route path="/admin/conversations" element={<AdminConversations />} />
             <Route path="/admin/strategies" element={<AdminStrategies />} />
             <Route path="/admin/portfolios" element={<AdminPortfolios />} />
             <Route path="/admin/user_actions" element={<AdminUserActions />} />
-            <Route path="/admin/job_stats" element={<AdminJobStats />} />
           </Route>
         </Route>
 

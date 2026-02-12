@@ -91,3 +91,8 @@ def test_get_job_stats(admin_client, test_db):
     jobs = data['jobs']
     assert len(jobs) >= 1
     assert any(j['job_type'] == 'test_job' for j in jobs)
+    
+    # 5. Verify params are included
+    test_job = next(j for j in jobs if j['job_type'] == 'test_job')
+    assert 'params' in test_job
+    assert test_job['params'] == {'foo': 'bar'}

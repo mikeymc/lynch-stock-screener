@@ -24,36 +24,6 @@ def require_admin(f):
         return f(*args, **kwargs)
     return decorated_function
 
-@admin_bp.route('/api/admin/background_jobs', methods=['GET'])
-@require_admin
-def get_background_jobs():
-    """Get recent background jobs for admin dashboard"""
-    try:
-        conn = deps.db.get_connection()
-        try:
-            cursor = conn.cursor(row_factory=psycopg.rows.dict_row)
-            job_type = request.args.get('job_type')
-            
-            query = """
-                SELECT * FROM background_jobs 
-                WHERE 1=1
-            """
-            params = []
-            
-            if job_type:
-                query += " AND job_type = %s"
-                params.append(job_type)
-                
-            query += " ORDER BY created_at DESC LIMIT 50"
-            
-            cursor.execute(query, params)
-            jobs = [dict(row) for row in cursor.fetchall()]
-            return jsonify({'jobs': jobs})
-        finally:
-            deps.db.return_connection(conn)
-    except Exception as e:
-        logger.error(f"Error fetching background jobs: {e}")
-        return jsonify({'error': str(e)}), 500
 
 @admin_bp.route('/api/admin/conversations', methods=['GET'])
 @require_admin
