@@ -66,8 +66,8 @@ on:
     - cron: '30 14 * * 1-5'
     # Benchmark snapshot at 4:05 PM ET (9:05 PM UTC) on weekdays - Market Close
     - cron: '5 21 * * 1-5'
-    # Portfolio sweep (dividends, snapshots, benchmark) at 8:00 PM ET (1:00 AM UTC) daily
-    - cron: '0 1 * * *'
+    # Portfolio sweep (dividends, snapshots, benchmark) at 9:00 PM ET (2:00 AM UTC) daily
+    - cron: '0 2 * * *'
   workflow_dispatch:
     inputs:
       job_type:
@@ -154,7 +154,7 @@ jobs:
               "0 8 * * 1-5") echo "type=thesis_refresher" >> $GITHUB_OUTPUT ;;
               "30 14 * * 1-5") echo "type=strategy_execution" >> $GITHUB_OUTPUT ;;
               "5 21 * * 1-5") echo "type=benchmark_snapshot" >> $GITHUB_OUTPUT ;;
-              "0 1 * * *")   echo "type=portfolio_sweep" >> $GITHUB_OUTPUT ;;
+              "0 2 * * *")   echo "type=portfolio_sweep" >> $GITHUB_OUTPUT ;;
               *)             echo "Unknown schedule: $SCHEDULE" && exit 1 ;;
             esac
           fi
