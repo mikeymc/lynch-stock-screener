@@ -62,7 +62,7 @@ export default function Dashboard() {
         watchlist = [],
         alerts = {},
         strategies = [],
-        upcoming_earnings = [],
+        upcoming_earnings = { earnings: [], total_count: 0 },
         news = [],
         recent_theses = { theses: [], total_count: 0 }
     } = dashboardData || {}
@@ -116,7 +116,11 @@ export default function Dashboard() {
 
             {/* Row 4: Earnings & News */}
             <div className="grid gap-6 md:grid-cols-2">
-                <EarningsCalendar earnings={upcoming_earnings} loading={loading} />
+                <EarningsCalendar
+                    earnings={upcoming_earnings.earnings}
+                    totalCount={upcoming_earnings.total_count}
+                    loading={loading}
+                />
                 <NewsFeed articles={news} loading={loading} />
             </div>
 

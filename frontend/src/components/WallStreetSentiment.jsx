@@ -589,7 +589,10 @@ export default function WallStreetSentiment({ symbol }) {
                     const currentFY = fc?.current_fiscal_year
                     const reportingQ = fc?.reporting_quarter
                     const reportingFY = fc?.reporting_fiscal_year
-                    const earningsDate = (fc?.next_earnings_date || metrics?.next_earnings_date) ? new Date(fc?.next_earnings_date || metrics.next_earnings_date) : null
+                    const rawDate = fc?.next_earnings_date || metrics?.next_earnings_date
+                    const earningsDate = rawDate
+                        ? (() => { const [y, m, d] = rawDate.split('-').map(Number); return new Date(y, m - 1, d) })()
+                        : null
 
                     if (!earningsDate && !currentQ) return null
 

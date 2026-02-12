@@ -7,8 +7,9 @@ import { Badge } from "@/components/ui/badge"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Calendar, Clock } from 'lucide-react'
 
-export default function EarningsCalendar({ earnings = [], loading = false }) {
+export default function EarningsCalendar({ earnings = [], totalCount = 0, loading = false }) {
     const navigate = useNavigate()
+    const moreCount = totalCount - earnings.length
 
     return (
         <Card>
@@ -30,6 +31,13 @@ export default function EarningsCalendar({ earnings = [], loading = false }) {
                                 onClick={() => navigate(`/stock/${item.symbol}`)}
                             />
                         ))}
+                        {moreCount > 0 && (
+                            <div className="pt-2 pb-1 text-center border-t border-border mt-1">
+                                <span className="text-xs text-muted-foreground italic">
+                                    +{moreCount} more in the next two weeks
+                                </span>
+                            </div>
+                        )}
                     </div>
                 ) : (
                     <EmptyState />
@@ -75,7 +83,8 @@ function EarningsRow({ item, onClick }) {
 
 function formatDate(dateStr) {
     if (!dateStr) return ''
-    const date = new Date(dateStr)
+    const [year, month, day] = dateStr.split('-').map(Number)
+    const date = new Date(year, month - 1, day)
     return date.toLocaleDateString('en-US', {
         month: 'short',
         day: 'numeric'
