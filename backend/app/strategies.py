@@ -1,5 +1,5 @@
 # ABOUTME: Investment strategy CRUD and execution endpoints
-# ABOUTME: Handles strategy creation, manual runs, previews, and template listing
+# ABOUTME: Handles strategy creation, previews, and template listing
 
 from flask import Blueprint, jsonify, request, session
 from app import deps
@@ -142,43 +142,6 @@ def get_strategy_detail(user_id, strategy_id):
         return jsonify({'error': str(e)}), 500
 
 
-@strategies_bp.route('/api/strategies/<int:strategy_id>/run', methods=['POST'])
-@require_user_auth
-def manual_run_strategy(user_id, strategy_id):
-    """Manually trigger a strategy execution via background job."""
-    try:
-        # Verify ownership
-        strategy = deps.db.get_strategy(strategy_id)
-        if not strategy:
-            return jsonify({'error': 'Strategy not found'}), 404
-
-        is_admin = session.get('user_type') == 'admin'
-        if strategy['user_id'] != user_id and not is_admin:
-            return jsonify({'error': 'Unauthorized'}), 403
-
-        # Create background job for strategy execution (beefy tier)
-        job_id = deps.db.create_background_job(
-            job_type='strategy_execution',
-            params={'strategy_id': strategy_id},
-            tier='beefy'
-        )
-
-        logger.info(f"Manual strategy run queued: strategy_id={strategy_id}, job_id={job_id}")
-
-        # Start worker machine if configured
-        from fly_machines import get_fly_manager
-        fly_manager = get_fly_manager()
-        worker_id = fly_manager.start_worker_for_job(tier='beefy', max_workers=4)
-        logger.info(f"Worker startup triggered: {worker_id}")
-
-        return jsonify({
-            'message': 'Strategy run queued',
-            'job_id': job_id,
-            'strategy_id': strategy_id
-        })
-    except Exception as e:
-        logger.error(f"Error queueing manual strategy run: {e}")
-        return jsonify({'error': str(e)}), 500
 
 
 @strategies_bp.route('/api/strategies/preview', methods=['POST'])

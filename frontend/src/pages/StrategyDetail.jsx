@@ -31,8 +31,6 @@ function StrategyDetail() {
     const [error, setError] = useState(null)
     const [activeRunId, setActiveRunId] = useState(null)
     const [showConfigModal, setShowConfigModal] = useState(false)
-    const [running, setRunning] = useState(false)
-    const [runJobId, setRunJobId] = useState(null)
 
     useEffect(() => {
         const fetchDetail = async () => {
@@ -108,71 +106,6 @@ function StrategyDetail() {
         }
     };
 
-    const handleManualRun = async () => {
-        setRunning(true);
-        setError(null);
-
-        try {
-            const response = await fetch(`/api/strategies/${id}/run`, {
-                method: 'POST'
-            });
-
-            if (!response.ok) {
-                throw new Error('Failed to queue strategy run');
-            }
-
-            const data = await response.json();
-            setRunJobId(data.job_id);
-
-            // Poll for job completion
-            const pollInterval = setInterval(async () => {
-                try {
-                    const jobResponse = await fetch(`/api/jobs/${data.job_id}`);
-                    if (!jobResponse.ok) {
-                        throw new Error('Failed to check job status');
-                    }
-
-                    const job = await jobResponse.json();
-
-                    if (job.status === 'completed') {
-                        clearInterval(pollInterval);
-                        setRunning(false);
-                        setRunJobId(null);
-
-                        // Refresh strategy details to show new run
-                        const detailResponse = await fetch(`/api/strategies/${id}`);
-                        if (detailResponse.ok) {
-                            const detailData = await detailResponse.json();
-                            setStrategy(detailData.strategy);
-                            setPerformance(detailData.performance);
-                            setRuns(detailData.runs);
-                            if (detailData.runs.length > 0) {
-                                setActiveRunId(detailData.runs[0].id);
-                            }
-                        }
-                    } else if (job.status === 'failed') {
-                        clearInterval(pollInterval);
-                        setRunning(false);
-                        setRunJobId(null);
-                        setError(job.error || 'Strategy run failed');
-                    }
-                } catch (err) {
-                    console.error('Polling error:', err);
-                    clearInterval(pollInterval);
-                    setRunning(false);
-                    setRunJobId(null);
-                    setError('Failed to monitor job status');
-                }
-            }, 2000); // Poll every 2 seconds
-
-            // Cleanup polling on unmount
-            return () => clearInterval(pollInterval);
-        } catch (err) {
-            console.error(err);
-            setRunning(false);
-            setError(err.message);
-        }
-    };
 
     // Chart Data Preparation
     const chartData = {
@@ -246,15 +179,6 @@ function StrategyDetail() {
                     <Button variant="outline" size="sm" onClick={() => navigate(`/portfolios/${strategy.portfolio_id}`)}>
                         <Wallet className="h-4 w-4 mr-2" />
                         View Portfolio
-                    </Button>
-                    <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={handleManualRun}
-                        disabled={running}
-                    >
-                        <Play className="h-4 w-4 mr-2" />
-                        {running ? 'Running...' : 'Run Now'}
                     </Button>
                     <Button variant="outline" size="sm" onClick={() => setShowConfigModal(true)}>
                         <Settings className="h-4 w-4 mr-2" />
