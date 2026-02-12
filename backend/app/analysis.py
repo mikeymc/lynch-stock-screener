@@ -273,65 +273,60 @@ def get_stock_thesis(symbol, user_id):
         return jsonify({'error': f'Stock {symbol} not found'}), 404
     logger.info(f"[Thesis][{symbol}] Fetched stock metrics in {t_metrics:.2f}ms")
 
-    # Get historical data
-    history = deps.db.get_earnings_history(symbol)
-    if not history:
-        return jsonify({'error': f'No historical data for {symbol}'}), 404
-
-    # Prepare stock data for analysis
-    evaluation = deps.criteria.evaluate_stock(symbol)
-    stock_data = {
-        **stock_metrics,
-        'peg_ratio': evaluation.get('peg_ratio') if evaluation else None,
-        'earnings_cagr': evaluation.get('earnings_cagr') if evaluation else None,
-        'revenue_cagr': evaluation.get('revenue_cagr') if evaluation else None
-    }
-
-    # Get filing sections if available (for US stocks only)
-    sections = None
-    country = stock_metrics.get('country', '')
-    if not country or country.upper() in ['USA', 'UNITED STATES']:
-        t0 = time.time()
-        sections = deps.db.get_filing_sections(symbol)
-        t_sections = (time.time() - t0) * 1000
-        section_size_mb = 0
-        if sections:
-            # Rough estimation of size
-            section_size_mb = sum(len(s.get('content', '')) for s in sections.values()) / 1024 / 1024
-        logger.info(f"[Thesis][{symbol}] Fetched SEC sections in {t_sections:.2f}ms (Size: {section_size_mb:.2f} MB)")
-
-    # Check cache
-    cached_analysis = deps.db.get_lynch_analysis(user_id, symbol, character_id=character_id)
-    was_cached = cached_analysis is not None
-
-    # Get model from query parameter and validate
-    model = request.args.get('model', DEFAULT_AI_MODEL)
-    if model not in AVAILABLE_AI_MODELS:
-        return jsonify({'error': f'Invalid model: {model}. Must be one of {AVAILABLE_AI_MODELS}'}), 400
-
-    # Handle 'only_cached' request
-    only_cached = request.args.get('only_cached', 'false').lower() == 'true'
-    should_stream = request.args.get('stream', 'false').lower() == 'true'
-
-    if only_cached:
-        if was_cached:
-            return jsonify({
-                'analysis': cached_analysis['analysis_text'],
-                'cached': True,
-                'generated_at': cached_analysis['generated_at'],
-                'character_id': cached_analysis.get('character_id', 'lynch')
-            })
-        else:
-            return jsonify({
-                'analysis': None,
-                'cached': False,
-                'generated_at': None
-            })
-
     # Get or generate analysis
     try:
+        # Check cache first (before expensive data fetching)
+        cached_analysis = deps.db.get_lynch_analysis(user_id, symbol, character_id=character_id, allow_fallback=True)
+        was_cached = cached_analysis is not None
+
+        # Handle 'only_cached' request
+        only_cached = request.args.get('only_cached', 'false').lower() == 'true'
+
+        if only_cached:
+            if was_cached:
+                return jsonify({
+                    'analysis': cached_analysis['analysis_text'],
+                    'cached': True,
+                    'generated_at': cached_analysis['generated_at'],
+                    'character_id': cached_analysis.get('character_id', 'lynch')
+                })
+            else:
+                return jsonify({
+                    'analysis': None,
+                    'cached': False,
+                    'generated_at': None
+                })
+
+        # If not only_cached and not cached, we need to fetch data for generation
         t_start = time.time()
         logger.info(f"[Thesis][{symbol}] Starting thesis generation request")
+
+        # Get historical data
+        history = deps.db.get_earnings_history(symbol)
+        if not history:
+            return jsonify({'error': f'No historical data for {symbol}'}), 404
+
+        # Prepare stock data for analysis
+        evaluation = deps.criteria.evaluate_stock(symbol)
+        stock_data = {
+            **stock_metrics,
+            'peg_ratio': evaluation.get('peg_ratio') if evaluation else None,
+            'earnings_cagr': evaluation.get('earnings_cagr') if evaluation else None,
+            'revenue_cagr': evaluation.get('revenue_cagr') if evaluation else None
+        }
+
+        # Get filing sections if available (for US stocks only)
+        sections = None
+        country = stock_metrics.get('country', '')
+        if not country or country.upper() in ['USA', 'UNITED STATES']:
+            t0 = time.time()
+            sections = deps.db.get_filing_sections(symbol)
+            t_sections = (time.time() - t0) * 1000
+            section_size_mb = 0
+            if sections:
+                # Rough estimation of size
+                section_size_mb = sum(len(s.get('content', '')) for s in sections.values()) / 1024 / 1024
+            logger.info(f"[Thesis][{symbol}] Fetched SEC sections in {t_sections:.2f}ms (Size: {section_size_mb:.2f} MB)")
 
         # Fetch material events and news articles for context
         t0 = time.time()

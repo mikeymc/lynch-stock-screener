@@ -489,11 +489,13 @@ const AnalysisChat = forwardRef(function AnalysisChat({ symbol, stockName, chatO
     try {
       if (forceRefresh) {
         setRefreshing(true)
-      } else {
+      } else if (!onlyCached) {
         setAnalysisLoading(true)
       }
       setAnalysisError(null)
-      setIsGenerating(true)
+      if (!onlyCached) {
+        setIsGenerating(true)
+      }
 
       let baseUrl = forceRefresh
         ? `${API_BASE}/stock/${symbol}/thesis/refresh?character=${selectedCharacter}`
