@@ -574,11 +574,13 @@ def get_dashboard(user_id):
                 """, (watchlist_symbols,))
                 watchlist_data = [dict(row) for row in cursor.fetchall()]
 
-            # 3. Alerts (recent triggered + pending)
+            # 3. Alerts (recent triggered + pending/active)
             alerts = deps.db.get_alerts(user_id)
             alert_summary = {
                 'triggered': [a for a in alerts if a.get('status') == 'triggered'][:5],
-                'pending': [a for a in alerts if a.get('status') == 'pending'][:5]
+                'pending': [a for a in alerts if a.get('status') == 'active'][:5],
+                'total_triggered': len([a for a in alerts if a.get('status') == 'triggered']),
+                'total_pending': len([a for a in alerts if a.get('status') == 'active'])
             }
 
             # 4. Active strategies

@@ -19,11 +19,6 @@ export default function AlertsSummary({ alerts = {}, onNavigate, loading = false
                     <CardTitle className="text-base font-medium flex items-center gap-2">
                         <Bell className="h-4 w-4" />
                         Alerts
-                        {triggered.length > 0 && (
-                            <Badge variant="destructive" className="ml-1 text-xs">
-                                {triggered.length}
-                            </Badge>
-                        )}
                     </CardTitle>
                     <Button variant="ghost" size="sm" onClick={onNavigate}>
                         Manage <ArrowRight className="h-4 w-4 ml-1" />
@@ -35,31 +30,31 @@ export default function AlertsSummary({ alerts = {}, onNavigate, loading = false
                     <Skeleton className="h-24 w-full" />
                 ) : hasAlerts ? (
                     <div className="space-y-3">
-                        {/* Triggered alerts */}
-                        {triggered.length > 0 && (
-                            <div>
-                                <div className="flex items-center gap-1 text-xs text-red-500 mb-2">
-                                    <AlertCircle className="h-3 w-3" />
-                                    Triggered
-                                </div>
-                                <div className="space-y-1">
-                                    {triggered.slice(0, 3).map(alert => (
-                                        <AlertRow key={alert.id} alert={alert} isTriggered />
-                                    ))}
-                                </div>
-                            </div>
-                        )}
-
                         {/* Pending alerts */}
                         {pending.length > 0 && (
                             <div>
                                 <div className="flex items-center gap-1 text-xs text-muted-foreground mb-2">
                                     <Clock className="h-3 w-3" />
-                                    Watching
+                                    Pending ({alerts.total_pending || pending.length})
                                 </div>
                                 <div className="space-y-1">
                                     {pending.slice(0, 3).map(alert => (
                                         <AlertRow key={alert.id} alert={alert} />
+                                    ))}
+                                </div>
+                            </div>
+                        )}
+
+                        {/* Triggered alerts */}
+                        {triggered.length > 0 && (
+                            <div>
+                                <div className="flex items-center gap-1 text-xs text-red-500 mb-2">
+                                    <AlertCircle className="h-3 w-3" />
+                                    Triggered ({alerts.total_triggered || triggered.length})
+                                </div>
+                                <div className="space-y-1">
+                                    {triggered.slice(0, 3).map(alert => (
+                                        <AlertRow key={alert.id} alert={alert} isTriggered />
                                     ))}
                                 </div>
                             </div>
@@ -82,24 +77,24 @@ function AlertRow({ alert, isTriggered }) {
                 <span className="font-medium text-sm">{alert.symbol}</span>
                 <span className="text-xs text-muted-foreground">{conditionText}</span>
             </div>
-            {isTriggered && (
-                <Badge variant="destructive" className="text-xs">
-                    Triggered
-                </Badge>
-            )}
         </div>
     )
 }
 
 function formatCondition(alert) {
+    // Prioritize descriptive strings from the backend
+    if (alert.condition_description) return alert.condition_description
+    if (alert.message) return alert.message
+
     const type = alert.condition_type
     const params = alert.condition_params || {}
+    const price = params.price ?? params.threshold
 
     switch (type) {
         case 'price_above':
-            return `Above $${params.price}`
+            return `Above $${price}`
         case 'price_below':
-            return `Below $${params.price}`
+            return `Below $${price}`
         case 'pct_change':
             return `${params.direction === 'up' ? '↑' : '↓'} ${params.percent}%`
         default:
