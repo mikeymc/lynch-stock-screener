@@ -69,7 +69,6 @@ def create_job():
             'historical_fundamentals_cache',
             'transcript_cache',
             'quarterly_fundamentals_cache',
-            'strategy_execution',
             'thesis_refresher',
             'outlook_cache',
             '8k_cache',
