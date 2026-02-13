@@ -761,7 +761,9 @@ def get_dashboard_news(user_id):
 def get_dashboard_theses(user_id):
     """Get recent theses for the dashboard."""
     try:
-        recent_theses_data = deps.db.get_recent_theses(user_id, days=1, limit=10)
+        days = int(request.args.get('days', 1))
+        limit = int(request.args.get('limit', 10))
+        recent_theses_data = deps.db.get_recent_theses(user_id, days=days, limit=limit)
         return jsonify({'recent_theses': recent_theses_data})
     except Exception as e:
         logger.error(f"Error getting dashboard theses: {e}")

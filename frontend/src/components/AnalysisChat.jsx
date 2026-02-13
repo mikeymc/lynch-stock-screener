@@ -2,7 +2,7 @@
 // ABOUTME: Two-column layout in full mode (analysis left, chat right); chatOnly mode for sidebar use
 
 import { useState, useEffect, useRef, forwardRef, useImperativeHandle, memo, useCallback, useMemo } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { RefreshCw, Sparkles, Bot } from 'lucide-react'
@@ -176,14 +176,18 @@ const parseMessage = (msg) => {
 
 // AnalysisChat Component
 const AnalysisChat = forwardRef(function AnalysisChat({ symbol, stockName, chatOnly = false, hideChat = false, contextType = 'brief', activeCharacter }, ref) {
-  const [selectedCharacter, setSelectedCharacter] = useState(activeCharacter || 'lynch')
+  const [searchParams] = useSearchParams()
+  const queryCharacter = searchParams.get('character')
+  const [selectedCharacter, setSelectedCharacter] = useState(queryCharacter || activeCharacter || 'lynch')
 
-  // Sync with activeCharacter if it changes from parent
+  // Sync with activeCharacter or queryCharacter if they change
   useEffect(() => {
-    if (activeCharacter) {
+    if (queryCharacter) {
+      setSelectedCharacter(queryCharacter)
+    } else if (activeCharacter) {
       setSelectedCharacter(activeCharacter)
     }
-  }, [activeCharacter])
+  }, [activeCharacter, queryCharacter])
 
   // Navigation for internal links
   const navigate = useNavigate()

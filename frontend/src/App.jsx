@@ -35,6 +35,7 @@ import Help from './pages/Help'
 import Dashboard from './pages/Dashboard'
 import { OnboardingWizard } from './components/OnboardingWizard'
 import EarningsCalendarPage from './pages/EarningsCalendarPage'
+import ThesesPage from './pages/ThesesPage'
 // import './App.css' // Disabled for shadcn migration
 import { useTheme } from './components/theme-provider'
 
@@ -1242,6 +1243,7 @@ function App() {
           <Route path="/stocks" element={<Navigate to="/" replace />} />
           <Route path="/earnings" element={<EarningsCalendarPage />} />
           <Route path="/dashboard" element={<Dashboard />} />
+          <Route path="/theses" element={<ThesesPage />} />
           <Route path="/stock/:symbol" element={
             <StockDetail
               watchlist={watchlist}

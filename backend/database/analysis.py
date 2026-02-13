@@ -140,7 +140,7 @@ class AnalysisMixin:
             # 4. Order by generated_at DESC
             
             cursor.execute("""
-                SELECT DISTINCT ON (a.symbol)
+                SELECT DISTINCT ON (a.symbol, a.character_id)
                     a.symbol, 
                     s.company_name, 
                     a.analysis_text, 
@@ -150,7 +150,7 @@ class AnalysisMixin:
                 JOIN stocks s ON a.symbol = s.symbol
                 WHERE (a.user_id = %s OR a.user_id = %s)
                   AND a.generated_at >= CURRENT_TIMESTAMP - (%s * INTERVAL '1 day')
-                ORDER BY a.symbol, a.generated_at DESC
+                ORDER BY a.symbol, a.character_id, a.generated_at DESC
                 LIMIT %s
             """, (user_id, self.SYSTEM_USER_ID, days, limit))
             
@@ -186,6 +186,7 @@ class AnalysisMixin:
                 results.append({
                     'symbol': row[0],
                     'name': row[1],
+                    'thesis': row[2], # analysis_text
                     'verdict': verdict,
                     'generated_at': row[3].isoformat() if row[3] else None,
                     'character_id': row[4]

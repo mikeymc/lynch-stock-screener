@@ -2,7 +2,7 @@
 // ABOUTME: Displays ticker, name, verdict, and generation date for the 10 most recent theses
 
 import { useState, useEffect } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, Link } from 'react-router-dom'
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Skeleton } from "@/components/ui/skeleton"
@@ -42,10 +42,19 @@ export default function NewTheses() {
     return (
         <Card>
             <CardHeader className="pb-2">
-                <CardTitle className="text-base font-medium flex items-center gap-2">
-                    <Lightbulb className="h-4 w-4" />
-                    New Theses
-                </CardTitle>
+                <div className="flex items-center justify-between">
+                    <CardTitle className="text-base font-medium flex items-center gap-2">
+                        <Lightbulb className="h-4 w-4" />
+                        New Theses
+                    </CardTitle>
+                    <Link
+                        to="/theses"
+                        className="text-xs text-primary hover:underline flex items-center gap-1 transition-colors"
+                    >
+                        view all
+                        <span className="text-[10px]">→</span>
+                    </Link>
+                </div>
             </CardHeader>
             <CardContent>
                 {loading ? (
@@ -64,7 +73,7 @@ export default function NewTheses() {
                             <ThesisRow
                                 key={`${item.symbol}-${idx}`}
                                 item={item}
-                                onClick={() => navigate(`/stock/${item.symbol}?tab=analysis`)}
+                                onClick={() => navigate(`/stock/${item.symbol}?tab=analysis&character=${item.character_id}`)}
                             />
                         ))}
                         {totalTodayCount > theses.length && (
@@ -92,9 +101,12 @@ function ThesisRow({ item, onClick }) {
             <div className="min-w-0 flex-1 mr-4">
                 <div className="flex items-center gap-2">
                     <span className="font-bold text-sm shrink-0">{item.symbol}</span>
-                    <span className="text-xs text-muted-foreground truncate max-w-[200px]">
+                    <span className="text-xs text-muted-foreground truncate max-w-[140px]">
                         {item.name}
                     </span>
+                    <Badge variant="secondary" className="text-[9px] h-4 px-1 lowercase py-0 opacity-70">
+                        {item.character_id}
+                    </Badge>
                 </div>
             </div>
 
