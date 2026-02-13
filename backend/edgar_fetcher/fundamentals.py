@@ -63,63 +63,88 @@ class FundamentalsMixin:
             logger.warning(f"[{ticker}] Failed to get raw XBRL data: {e}")
             return result
 
+        from datetime import datetime
+
+        # First pass: find the quarter_period_key by scanning ALL items for a ~90-day duration.
+        # This decouples period discovery from revenue extraction so that companies without
+        # standard revenue labels (banks, pre-revenue biotechs, financials) still get their
+        # NI and EPS extracted.
         quarter_period_key = None
+        all_quarterly_periods = []
 
         for item in raw_data:
-            if not item.get('has_values') or item.get('is_abstract'):
+            if not item.get('has_values') or item.get('is_abstract') or item.get('is_dimension'):
+                continue
+            for period_key, val in item.get('values', {}).items():
+                if not period_key.startswith('duration_'):
+                    continue
+                parts = period_key.replace('duration_', '').split('_')
+                if len(parts) != 2:
+                    continue
+                try:
+                    start = datetime.strptime(parts[0], '%Y-%m-%d')
+                    end = datetime.strptime(parts[1], '%Y-%m-%d')
+                    duration_days = (end - start).days
+                    if 80 <= duration_days <= 100:
+                        all_quarterly_periods.append({
+                            'key': period_key,
+                            'start': parts[0],
+                            'end': parts[1],
+                            'duration_days': duration_days
+                        })
+                except (ValueError, TypeError):
+                    pass
+
+        if all_quarterly_periods:
+            # Sort by most recent end date, then shortest duration (most discrete)
+            all_quarterly_periods.sort(key=lambda x: (-int(x['end'].replace('-', '')), x['duration_days']))
+            best = all_quarterly_periods[0]
+            quarter_period_key = best['key']
+            result['fiscal_end'] = best['end']
+
+        # Second pass: extract field values using the discovered period key
+        for item in raw_data:
+            if not item.get('has_values') or item.get('is_abstract') or item.get('is_dimension'):
                 continue
 
             label = item.get('label', '')
             concept = item.get('concept', '')
             values = item.get('values', {})
 
-            # Skip dimensional breakdowns (segments) - we want total values only
-            if item.get('is_dimension', False):
-                continue
-
-            # Check if this is a revenue concept (not cost)
+            # Revenue: look for revenue/sales labels, exclude cost items
             is_revenue = ('revenue' in label.lower() or
+                         'sales' in label.lower() or
                          concept.lower() == 'us-gaap_revenues')
             is_cost = 'cost' in label.lower()
 
-            if is_revenue and not is_cost and not result['revenue']:
-                # Find the discrete quarterly value (shortest duration period)
-                quarterly_periods = []
-                for period_key, val in values.items():
-                    if period_key.startswith('duration_'):
+            if is_revenue and not is_cost and not result['revenue'] and quarter_period_key:
+                # Prefer the exact quarter_period_key; fall back to shortest matching period
+                if quarter_period_key in values:
+                    result['revenue'] = values[quarter_period_key]
+                    logger.info(f"[{ticker}] Found discrete quarterly revenue: ${result['revenue']/1e9:.2f}B")
+                else:
+                    # Try other ~90-day periods in case revenue uses a slightly different date range
+                    quarterly_periods = []
+                    for period_key, val in values.items():
+                        if not period_key.startswith('duration_'):
+                            continue
                         parts = period_key.replace('duration_', '').split('_')
                         if len(parts) == 2:
-                            start_date = parts[0]
-                            end_date = parts[1]
-                            from datetime import datetime
                             try:
-                                start = datetime.strptime(start_date, '%Y-%m-%d')
-                                end = datetime.strptime(end_date, '%Y-%m-%d')
-                                duration_days = (end - start).days
-                                quarterly_periods.append({
-                                    'key': period_key,
-                                    'value': val,
-                                    'start': start_date,
-                                    'end': end_date,
-                                    'duration_days': duration_days
-                                })
-                            except:
+                                s = datetime.strptime(parts[0], '%Y-%m-%d')
+                                e = datetime.strptime(parts[1], '%Y-%m-%d')
+                                dur = (e - s).days
+                                if 80 <= dur <= 100:
+                                    quarterly_periods.append({'key': period_key, 'value': val, 'start': parts[0], 'end': parts[1], 'duration_days': dur})
+                            except (ValueError, TypeError):
                                 pass
+                    if quarterly_periods:
+                        quarterly_periods.sort(key=lambda x: (-int(x['end'].replace('-', '')), x['duration_days']))
+                        best = quarterly_periods[0]
+                        result['revenue'] = best['value']
+                        logger.info(f"[{ticker}] Found discrete quarterly revenue (alt period): ${best['value']/1e9:.2f}B from {best['start']} to {best['end']}")
 
-                if quarterly_periods:
-                    # Sort by end date (most recent first), then by duration (shortest = discrete quarterly)
-                    quarterly_periods.sort(key=lambda x: (-int(x['end'].replace('-', '')), x['duration_days']))
-
-                    # Pick the first one that's a 3-month period (80-100 days)
-                    for qp in quarterly_periods:
-                        if 80 <= qp['duration_days'] <= 100:
-                            result['revenue'] = qp['value']
-                            quarter_period_key = qp['key']
-                            result['fiscal_end'] = qp['end']
-                            logger.info(f"[{ticker}] Found discrete quarterly revenue: ${qp['value']/1e9:.2f}B from {qp['start']} to {qp['end']} ({qp['duration_days']} days)")
-                            break
-
-            # Check for net income
+            # Net income
             is_net_income = ('net income' in label.lower() and
                            'per share' not in label.lower() and
                            'comprehensive' not in label.lower())
@@ -129,8 +154,8 @@ class FundamentalsMixin:
                     result['net_income'] = values[quarter_period_key]
                     logger.info(f"[{ticker}] Found discrete quarterly Net Income: ${result['net_income']/1e9:.2f}B")
 
-            # Check for EPS (diluted)
-            is_eps = ('earnings per share' in label.lower() and 'diluted' in label.lower())
+            # EPS (diluted)
+            is_eps = ('diluted' in label.lower() and 'per share' in label.lower())
 
             if is_eps and not result['eps'] and quarter_period_key:
                 if quarter_period_key in values:
@@ -152,6 +177,111 @@ class FundamentalsMixin:
         return result
 
 
+
+    def _first_date_column(self, df) -> Optional[str]:
+        """
+        Return the first column in df whose name matches YYYY-MM-DD.
+
+        In edgartools 5.x, to_dataframe() produces bare date column headers
+        instead of the old "YYYY-MM-DD (Qn)" format. The first date column is
+        the most recent period snapshot.
+        """
+        import re
+        _date_re = re.compile(r'^\d{4}-\d{2}-\d{2}$')
+        for col in df.columns:
+            if isinstance(col, str) and _date_re.match(col):
+                return col
+        return None
+
+    def _extract_cf_from_raw_data(self, cf_raw: List[dict], period_key: str):
+        """
+        Extract OCF and capex from CF get_raw_data() for a specific period key.
+
+        Returns (operating_cash_flow, capital_expenditures) where capex is
+        stored as a positive value (abs of the raw outflow).
+        """
+        import math as _math
+        operating_cash_flow = None
+        capital_expenditures = None
+
+        for item in cf_raw:
+            if not item.get('has_values') or item.get('is_abstract') or item.get('is_dimension'):
+                continue
+            label = item.get('label', '')
+            values = item.get('values', {})
+            val = values.get(period_key)
+            if val is None or (isinstance(val, float) and _math.isnan(val)):
+                continue
+
+            label_lower = label.lower()
+            is_ocf = ('operating' in label_lower and 'cash' in label_lower)
+            is_capex = (
+                'capital expenditure' in label_lower or
+                'capital addition' in label_lower or
+                ('property' in label_lower and ('purchase' in label_lower or 'acquisition' in label_lower)) or
+                ('purchases' in label_lower and 'equipment' in label_lower)
+            )
+
+            if is_ocf and operating_cash_flow is None:
+                operating_cash_flow = val
+            elif is_capex and capital_expenditures is None:
+                capital_expenditures = abs(val)
+
+        return operating_cash_flow, capital_expenditures
+
+    def _compute_discrete_cf(self, cf_ytd_staging: List[dict]) -> List[dict]:
+        """
+        Convert YTD cumulative cash flow values to discrete quarterly values.
+
+        Cash flow statements carry YTD values from fiscal year start.
+        Q1 YTD equals Q1 discrete. Q2 discrete = Q2 YTD - Q1 YTD, etc.
+        Year boundaries reset the accumulation so 2024 Q1 is never
+        contaminated by 2023 Q4 YTD.
+        """
+        quarter_order = {'Q1': 1, 'Q2': 2, 'Q3': 3, 'Q4': 4}
+        result = []
+
+        by_year: Dict[int, List[dict]] = {}
+        for entry in cf_ytd_staging:
+            yr = entry.get('year')
+            if yr is not None:
+                by_year.setdefault(yr, []).append(entry)
+
+        for yr, entries in sorted(by_year.items()):
+            entries.sort(key=lambda x: quarter_order.get(x.get('quarter', 'Q1'), 0))
+            prev_ocf = None
+            prev_capex = None
+
+            for i, entry in enumerate(entries):
+                ocf_ytd = entry.get('ocf_ytd')
+                capex_ytd = entry.get('capex_ytd')
+
+                if i == 0:
+                    ocf_discrete = ocf_ytd
+                    capex_discrete = capex_ytd
+                else:
+                    ocf_discrete = (ocf_ytd - prev_ocf) if (ocf_ytd is not None and prev_ocf is not None) else ocf_ytd
+                    capex_discrete = (capex_ytd - prev_capex) if (capex_ytd is not None and prev_capex is not None) else capex_ytd
+
+                fcf = None
+                if ocf_discrete is not None and capex_discrete is not None:
+                    fcf = ocf_discrete - capex_discrete
+
+                result.append({
+                    'year': entry['year'],
+                    'quarter': entry['quarter'],
+                    'operating_cash_flow': ocf_discrete,
+                    'capital_expenditures': capex_discrete,
+                    'free_cash_flow': fcf,
+                    'fiscal_end': entry['fiscal_end'],
+                })
+
+                if ocf_ytd is not None:
+                    prev_ocf = ocf_ytd
+                if capex_ytd is not None:
+                    prev_capex = capex_ytd
+
+        return result
 
     def get_quarterly_financials_from_filings(self, ticker: str, num_quarters: int = 8) -> Dict[str, Any]:
         """
@@ -205,6 +335,7 @@ class FundamentalsMixin:
             eps_quarterly = []
             net_income_quarterly = []
             cash_flow_quarterly = []
+            cf_ytd_staging = []
             debt_to_equity_quarterly = []
             shares_outstanding_quarterly = []
             shareholder_equity_quarterly = []
@@ -252,6 +383,18 @@ class FundamentalsMixin:
                                 data_cols = [col for col in cover_df.columns if col not in ['concept', 'label', 'level', 'abstract', 'dimension']]
                                 if data_cols:
                                     fiscal_end = row.get(data_cols[0])
+
+                    # Fallback for edgartools 5.x: cover page uses standard_concept column,
+                    # the fiscal period date lives in the column header rather than cell values.
+                    if cover_df is not None and not fiscal_end:
+                        date_col = self._first_date_column(cover_df)
+                        if date_col:
+                            fiscal_end = date_col
+                            if not fiscal_year:
+                                try:
+                                    fiscal_year = int(date_col[:4])
+                                except (ValueError, TypeError):
+                                    pass
 
                     # Capture filing metadata
                     filings_metadata.append({
@@ -382,7 +525,8 @@ class FundamentalsMixin:
 
                         if 'label' in bs_df.columns:
                             # Find quarterly column
-                            quarterly_cols = [col for col in bs_df.columns if isinstance(col, str) and '(Q' in col]
+                            date_col = self._first_date_column(bs_df)
+                            quarterly_cols = [date_col] if date_col else []
 
                             if quarterly_cols:
                                 quarterly_col = quarterly_cols[0]
@@ -471,79 +615,51 @@ class FundamentalsMixin:
                                         })
                                         break
 
-                    # Extract from Cash Flow Statement
+                    # Extract from Cash Flow Statement using get_raw_data() for edgartools 5.x
                     cashflow = statements.cashflow_statement()
                     if cashflow:
-                        cf_df = cashflow.to_dataframe()
+                        try:
+                            cf_raw = cashflow.get_raw_data()
+                        except Exception as e:
+                            logger.debug(f"[{ticker}] Could not get CF raw data: {e}")
+                            cf_raw = None
 
-                        if 'label' in cf_df.columns:
-                            # Find quarterly column
-                            quarterly_cols = [col for col in cf_df.columns if isinstance(col, str) and '(Q' in col]
-
-                            if quarterly_cols:
-                                quarterly_col = quarterly_cols[0]
-
-                                # Extract Operating Cash Flow
-                                ocf_rows = cf_df[cf_df['label'].str.contains('Operating', case=False, na=False) &
-                                                cf_df['label'].str.contains('Cash', case=False, na=False)]
-
-                                operating_cash_flow = None
-                                for idx in range(len(ocf_rows)):
-                                    ocf_row = ocf_rows.iloc[idx]
-                                    if 'abstract' in cf_df.columns and ocf_row.get('abstract', False):
+                        if cf_raw:
+                            # CF summary totals (OCF, capex) always use YTD period keys,
+                            # even when individual adjustment items have discrete keys.
+                            # Always stage YTD values for post-loop discrete subtraction.
+                            ytd_key = None
+                            if fiscal_end:
+                                for item in cf_raw:
+                                    if not item.get('has_values') or item.get('is_abstract'):
                                         continue
-                                    ocf = ocf_row[quarterly_col]
-                                    if isinstance(ocf, str):
-                                        if ocf.strip() == '':
-                                            continue
-                                        try:
-                                            ocf = float(ocf.replace(',', ''))
-                                        except:
-                                            continue
-                                    if ocf is not None:
-                                        operating_cash_flow = ocf
+                                    for pk in item.get('values', {}).keys():
+                                        if pk.startswith('duration_') and pk.endswith(f'_{fiscal_end}'):
+                                            ytd_key = pk
+                                            break
+                                    if ytd_key:
                                         break
 
-                                # Extract CapEx
-                                capex_rows = cf_df[cf_df['label'].str.contains('Capital Expenditure', case=False, na=False) |
-                                                  cf_df['label'].str.contains('Property', case=False, na=False)]
-
-                                capital_expenditures = None
-                                for idx in range(len(capex_rows)):
-                                    capex_row = capex_rows.iloc[idx]
-                                    if 'abstract' in cf_df.columns and capex_row.get('abstract', False):
-                                        continue
-                                    capex = capex_row[quarterly_col]
-                                    if isinstance(capex, str):
-                                        if capex.strip() == '':
-                                            continue
-                                        try:
-                                            capex = float(capex.replace(',', ''))
-                                        except:
-                                            continue
-                                    if capex is not None:
-                                        # CapEx is usually negative in cash flow statement
-                                        capital_expenditures = abs(capex)
-                                        break
-
-                                # Calculate Free Cash Flow if both available
-                                if operating_cash_flow is not None or capital_expenditures is not None:
-                                    fcf = None
-                                    if operating_cash_flow is not None and capital_expenditures is not None:
-                                        fcf = operating_cash_flow - capital_expenditures
-
-                                    cash_flow_quarterly.append({
+                            if ytd_key:
+                                ocf_ytd, capex_ytd = self._extract_cf_from_raw_data(cf_raw, ytd_key)
+                                if ocf_ytd is not None or capex_ytd is not None:
+                                    cf_ytd_staging.append({
                                         'year': fiscal_year,
                                         'quarter': fiscal_quarter,
-                                        'operating_cash_flow': operating_cash_flow,
-                                        'capital_expenditures': capital_expenditures,
-                                        'free_cash_flow': fcf,
-                                        'fiscal_end': fiscal_end
+                                        'fiscal_end': fiscal_end,
+                                        'ocf_ytd': ocf_ytd,
+                                        'capex_ytd': capex_ytd,
                                     })
+                                    logger.debug(f"[{ticker}] CF YTD staged: OCF={ocf_ytd}, capex={capex_ytd}, q={fiscal_quarter}")
 
                 except Exception as e:
                     logger.debug(f"[{ticker}] Error processing filing {filing.filing_date}: {e}")
                     continue
+
+            if cf_ytd_staging:
+                discrete_cf = self._compute_discrete_cf(cf_ytd_staging)
+                cash_flow_quarterly.extend(discrete_cf)
+                logger.debug(f"[{ticker}] CF YTD staging: {len(cf_ytd_staging)} entries → {len(discrete_cf)} discrete")
 
             logger.info(f"[{ticker}] Extracted from 10-Q filings: {len(revenue_quarterly)} revenue, {len(eps_quarterly)} EPS, {len(net_income_quarterly)} NI, {len(cash_flow_quarterly)} CF, {len(debt_to_equity_quarterly)} D/E, {len(shares_outstanding_quarterly)} shares, {len(shareholder_equity_quarterly)} equity")
 

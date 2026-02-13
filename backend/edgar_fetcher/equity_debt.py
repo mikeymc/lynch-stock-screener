@@ -19,87 +19,77 @@ class EquityDebtMixin:
         Returns:
             List of dictionaries with year, shareholder_equity, and fiscal_end values
         """
-        equity_data_list = None
+        # Try all US-GAAP equity tags. Listed from most standard to most specific so that
+        # standard tags win when there are conflicts within the same fiscal year.
+        equity_tag_candidates = [
+            'StockholdersEquity',
+            'StockholdersEquityIncludingPortionAttributableToNoncontrollingInterest',
+            'PartnersCapital',          # Partnerships / MLPs
+            'CommonStockholdersEquity', # Some utilities and industrials
+            'MembersEquity',            # LLC-structured companies
+            'CommonEquityTierOneCapital', # Banks / financial institutions
+        ]
 
-        # Try US-GAAP first
-        try:
-            # Try StockholdersEquity first (most common)
-            if 'us-gaap' in company_facts['facts']:
-                if 'StockholdersEquity' in company_facts['facts']['us-gaap']:
-                    units = company_facts['facts']['us-gaap']['StockholdersEquity']['units']
-                    if 'USD' in units:
-                        equity_data_list = units['USD']
-                        logger.debug("Using tag: StockholdersEquity")
+        all_equity_data = {}  # {tag: {year: {val, fiscal_end}}}
+        facts = company_facts.get('facts', {})
 
-                # Fallback: StockholdersEquityIncludingPortionAttributableToNoncontrollingInterest
-                if equity_data_list is None and 'StockholdersEquityIncludingPortionAttributableToNoncontrollingInterest' in company_facts['facts']['us-gaap']:
-                    units = company_facts['facts']['us-gaap']['StockholdersEquityIncludingPortionAttributableToNoncontrollingInterest']['units']
-                    if 'USD' in units:
-                         equity_data_list = units['USD']
-                         logger.debug("Using tag: StockholdersEquityIncludingPortionAttributableToNoncontrollingInterest")
-                
-                # Fallback: PartnersCapital (for partnerships like MLPs)
-                if equity_data_list is None and 'PartnersCapital' in company_facts['facts']['us-gaap']:
-                    units = company_facts['facts']['us-gaap']['PartnersCapital']['units']
-                    if 'USD' in units:
-                        equity_data_list = units['USD']
-                        logger.debug("Using tag: PartnersCapital")
+        for tag in equity_tag_candidates:
+            units = facts.get('us-gaap', {}).get(tag, {}).get('units', {})
+            if 'USD' not in units:
+                continue
 
-        except (KeyError, TypeError):
-            pass
+            by_year = {}
+            for entry in units['USD']:
+                if entry.get('form') in ['10-K', '20-F']:
+                    fiscal_end = entry.get('end')
+                    val = entry.get('val')
+                    if val is not None and fiscal_end:
+                        year = int(fiscal_end[:4])
+                        if year not in by_year or fiscal_end > by_year[year]['fiscal_end']:
+                            by_year[year] = {'val': val, 'fiscal_end': fiscal_end}
+            if by_year:
+                all_equity_data[tag] = by_year
+                logger.debug(f"Found equity data via tag: {tag}")
 
-        # Try IFRS
-        if equity_data_list is None:
+        # Try IFRS if no US-GAAP data found
+        if not all_equity_data:
             try:
-                if 'ifrs-full' in company_facts['facts']:
-                    if 'Equity' in company_facts['facts']['ifrs-full']:
-                        units = company_facts['facts']['ifrs-full']['Equity']['units']
-                        if 'USD' in units:
-                            equity_data_list = units['USD']
-                            logger.debug("Using tag: Equity (IFRS)")
-                        else:
-                            # Find first currency unit
-                            currency_units = [u for u in units.keys() if len(u) == 3 and u.isupper()]
-                            if currency_units:
-                                equity_data_list = units[currency_units[0]]
-                                logger.debug(f"Using tag: Equity (IFRS, {currency_units[0]})")
+                ifrs_units = facts.get('ifrs-full', {}).get('Equity', {}).get('units', {})
+                currency = 'USD' if 'USD' in ifrs_units else next(
+                    (u for u in ifrs_units if len(u) == 3 and u.isupper()), None
+                )
+                if currency:
+                    by_year = {}
+                    for entry in ifrs_units[currency]:
+                        if entry.get('form') in ['20-F']:
+                            fiscal_end = entry.get('end')
+                            val = entry.get('val')
+                            if val is not None and fiscal_end:
+                                year = int(fiscal_end[:4])
+                                if year not in by_year or fiscal_end > by_year[year]['fiscal_end']:
+                                    by_year[year] = {'val': val, 'fiscal_end': fiscal_end}
+                    if by_year:
+                        all_equity_data['ifrs:Equity'] = by_year
+                        logger.debug(f"Found equity data via IFRS Equity ({currency})")
             except (KeyError, TypeError):
                 pass
 
-        if equity_data_list is None:
+        if not all_equity_data:
             logger.debug("Could not parse Shareholder Equity history from EDGAR")
             return []
 
-        # Process and filter for annual data
-        annual_equity_by_year = {}
+        # Merge tags: iterate in reverse order so standard tags (listed first) overwrite
+        # less standard ones when both cover the same year.
+        merged_by_year = {}
+        for tag in reversed(list(all_equity_data.keys())):
+            for year, data in all_equity_data[tag].items():
+                if year not in merged_by_year or data['fiscal_end'] >= merged_by_year[year]['fiscal_end']:
+                    merged_by_year[year] = data
 
-        for entry in equity_data_list:
-            if entry.get('form') in ['10-K', '20-F']:
-                fiscal_end = entry.get('end')
-                val = entry.get('val')
-                start = entry.get('start')  # Equity is a point-in-time metric, but EDGAR might provide period
-
-                # For point-in-time metrics like Equity, we care about the 'end' date matching the fiscal year end
-                if val is not None and fiscal_end:
-                     year = int(fiscal_end[:4])
-
-                     # Keep entry for each unique fiscal_end, preferring later entries (restatements)
-                     if fiscal_end not in annual_equity_by_year:
-                         annual_equity_by_year[fiscal_end] = {
-                             'year': year,
-                             'shareholder_equity': val,
-                             'fiscal_end': fiscal_end
-                         }
-
-        # Group by year
-        by_year = {}
-        for fiscal_end, entry in annual_equity_by_year.items():
-            year = entry['year']
-            # Prefer the latest fiscal_end for the year if duplicates exist (unlikely for annual)
-            if year not in by_year:
-                by_year[year] = entry
-
-        annual_equity = list(by_year.values())
+        annual_equity = [
+            {'year': year, 'shareholder_equity': data['val'], 'fiscal_end': data['fiscal_end']}
+            for year, data in merged_by_year.items()
+        ]
         annual_equity.sort(key=lambda x: x['year'], reverse=True)
 
         logger.info(f"Successfully parsed {len(annual_equity)} years of Shareholder Equity from EDGAR")

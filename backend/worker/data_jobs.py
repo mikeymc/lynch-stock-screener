@@ -99,11 +99,13 @@ class DataJobsMixin:
                 cash_flow_history = edgar_fetcher.parse_cash_flow_history(company_facts)
                 cash_equivalents_history = edgar_fetcher.parse_cash_equivalents_history(company_facts)
                 shares_outstanding_history = edgar_fetcher.parse_shares_outstanding_history(company_facts)
+                calculated_eps_history = edgar_fetcher.calculate_split_adjusted_annual_eps_history(company_facts)
 
                 # Check if we got any useful data
-                if not revenue_history or len(revenue_history) == 0:
-                    logger.warning(f"[{symbol}] Company facts returned but no revenue data found (CIK: {cik})")
-                    return {'symbol': symbol, 'status': 'failed', 'reason': 'no_revenue_data', 'cik': cik}
+                # Pre-revenue companies (biotechs) may have no revenue but have cash and equity
+                if not revenue_history and not cash_equivalents_history and not shareholder_equity_history:
+                    logger.warning(f"[{symbol}] Company facts returned but NO useful data found (no revenue, cash, or equity) (CIK: {cik})")
+                    return {'symbol': symbol, 'status': 'failed', 'reason': 'no_financial_data', 'cik': cik}
 
                 # Store annual data to earnings_history table
                 # This uses the same storage logic as the full screening job
@@ -113,6 +115,7 @@ class DataJobsMixin:
                 # Create a minimal edgar_data dict with just annual data
                 edgar_data = {
                     'eps_history': eps_history,
+                    'calculated_eps_history': calculated_eps_history,
                     'revenue_history': revenue_history,
                     'net_income_annual': net_income_annual,
                     'debt_to_equity_history': debt_to_equity_history,
@@ -287,7 +290,13 @@ class DataJobsMixin:
                 # Fetch quarterly data from 10-Q/10-K filings (last 8 filings)
                 quarterly_data = edgar_fetcher.get_quarterly_financials_from_filings(symbol, num_quarters=8)
 
-                if not quarterly_data or not quarterly_data.get('revenue_quarterly'):
+                has_any_quarterly_data = (
+                    quarterly_data.get('revenue_quarterly') or
+                    quarterly_data.get('eps_quarterly') or
+                    quarterly_data.get('net_income_quarterly') or
+                    quarterly_data.get('cash_flow_quarterly')
+                )
+                if not quarterly_data or not has_any_quarterly_data:
                     logger.warning(f"[{symbol}] No quarterly data found in 10-K/10-Q filings")
                     return None
 
@@ -307,42 +316,44 @@ class DataJobsMixin:
                 from data_fetcher import DataFetcher
                 data_fetcher = DataFetcher(self.db)
 
-                # The data is already in the right format for storage
-                revenue_quarterly = quarterly_data.get('revenue_quarterly', [])
-                net_income_quarterly = quarterly_data.get('net_income_quarterly', [])
-                eps_quarterly = quarterly_data.get('eps_quarterly', [])
-                cash_flow_quarterly = quarterly_data.get('cash_flow_quarterly', [])
+                # Build (year, quarter) keyed dicts so data from parallel arrays is
+                # joined by identity rather than positional index. This ensures EPS/NI
+                # are not dropped when revenue is missing for a quarter.
+                def by_key(entries, *field_names):
+                    result = {}
+                    for e in entries:
+                        key = (e.get('year'), e.get('quarter'))
+                        if key[0] and key[1]:
+                            result[key] = {f: e.get(f) for f in field_names}
+                    return result
+
+                rev_by_key = by_key(quarterly_data.get('revenue_quarterly', []), 'revenue', 'fiscal_end')
+                ni_by_key = by_key(quarterly_data.get('net_income_quarterly', []), 'net_income', 'fiscal_end')
+                eps_by_key = by_key(quarterly_data.get('eps_quarterly', []), 'eps', 'fiscal_end')
+                cf_by_key = by_key(quarterly_data.get('cash_flow_quarterly', []), 'operating_cash_flow', 'capital_expenditures', 'free_cash_flow', 'fiscal_end')
+
+                all_keys = set(rev_by_key) | set(ni_by_key) | set(eps_by_key) | set(cf_by_key)
 
                 quarters_stored = 0
-                for i in range(len(revenue_quarterly)):
-                    year = revenue_quarterly[i]['year']
-                    quarter = revenue_quarterly[i]['quarter']
-                    period = quarter  # quarter is already 'Q1', 'Q2', etc.
+                for (year, quarter) in all_keys:
+                    rev = rev_by_key.get((year, quarter), {})
+                    ni = ni_by_key.get((year, quarter), {})
+                    eps_e = eps_by_key.get((year, quarter), {})
+                    cf = cf_by_key.get((year, quarter), {})
 
-                    # Get corresponding data from other metrics
-                    revenue = revenue_quarterly[i].get('revenue')
-                    net_income = net_income_quarterly[i].get('net_income') if i < len(net_income_quarterly) else None
-                    eps = eps_quarterly[i].get('eps') if i < len(eps_quarterly) else None
+                    fiscal_end = rev.get('fiscal_end') or ni.get('fiscal_end') or eps_e.get('fiscal_end') or cf.get('fiscal_end')
 
-                    operating_cash_flow = None
-                    capital_expenditures = None
-                    free_cash_flow = None
-                    if i < len(cash_flow_quarterly):
-                        operating_cash_flow = cash_flow_quarterly[i].get('operating_cash_flow')
-                        capital_expenditures = cash_flow_quarterly[i].get('capital_expenditures')
-                        free_cash_flow = cash_flow_quarterly[i].get('free_cash_flow')
-
-                    # Save to earnings_history
                     self.db.save_earnings_history(
                         symbol=symbol,
                         year=year,
-                        eps=eps,
-                        revenue=revenue,
-                        period=period,
-                        net_income=net_income,
-                        operating_cash_flow=operating_cash_flow,
-                        capital_expenditures=capital_expenditures,
-                        free_cash_flow=free_cash_flow
+                        eps=eps_e.get('eps'),
+                        revenue=rev.get('revenue'),
+                        period=quarter,
+                        fiscal_end=fiscal_end,
+                        net_income=ni.get('net_income'),
+                        operating_cash_flow=cf.get('operating_cash_flow'),
+                        capital_expenditures=cf.get('capital_expenditures'),
+                        free_cash_flow=cf.get('free_cash_flow')
                     )
                     quarters_stored += 1
 

@@ -155,6 +155,10 @@ class EarningsMixin:
             if missing_cf:
                  years_needing_cf.append(year)
 
+            # Debug: Log cash and shares data
+            if cash_and_cash_equivalents is not None or shares_outstanding is not None:
+                logger.info(f"[{symbol}] {year}: Storing cash=${cash_and_cash_equivalents}, shares={shares_outstanding}")
+
             self.db.save_earnings_history(symbol, year, float(eps) if eps else None, float(revenue), fiscal_end=fiscal_end, debt_to_equity=debt_to_equity, net_income=float(net_income) if net_income else None, dividend_amount=float(dividend) if dividend is not None else None, operating_cash_flow=float(operating_cash_flow) if operating_cash_flow is not None else None, capital_expenditures=float(capital_expenditures) if capital_expenditures is not None else None, free_cash_flow=float(free_cash_flow) if free_cash_flow is not None else None, shareholder_equity=float(shareholder_equity) if shareholder_equity is not None else None, shares_outstanding=float(shares_outstanding) if shares_outstanding is not None else None, cash_and_cash_equivalents=float(cash_and_cash_equivalents) if cash_and_cash_equivalents is not None else None)
             logger.debug(f"[{symbol}] Stored EDGAR for {year}: Revenue: ${revenue:,.0f}" + (f", NI: ${net_income:,.0f}" if net_income else " (no NI)") + (f", Div: ${dividend:.2f}" if dividend else "") + (f", FCF: ${free_cash_flow:,.0f}" if free_cash_flow else ""))
 

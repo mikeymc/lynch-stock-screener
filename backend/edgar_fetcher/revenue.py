@@ -57,7 +57,7 @@ class RevenueMixin:
                             if frame and frame.endswith(('Q1', 'Q2', 'Q3', 'Q4')):
                                 continue
 
-                            if revenue and fiscal_end:
+                            if revenue is not None and fiscal_end:
                                 # Use fiscal_end year as the key (this is the actual fiscal year)
                                 year = int(fiscal_end[:4])
 
@@ -117,7 +117,7 @@ class RevenueMixin:
                                     if frame and frame.endswith(('Q1', 'Q2', 'Q3', 'Q4')):
                                         continue
 
-                                    if revenue and fiscal_end:
+                                    if revenue is not None and fiscal_end:
                                         # Use fiscal_end year as the key (this is the actual fiscal year)
                                         year = int(fiscal_end[:4])
 

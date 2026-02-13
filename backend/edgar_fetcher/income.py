@@ -27,11 +27,23 @@ class IncomeMixin:
         """
         net_income_data_list = None
 
-        # Try US-GAAP first (domestic companies)
+        # Try US-GAAP first (domestic companies). Multiple tags handle companies that
+        # use preferred-stock-adjusted figures (NetIncomeLossAvailableToCommonStockholders*)
+        # instead of the standard NetIncomeLoss tag.
         try:
-            ni_units = company_facts['facts']['us-gaap']['NetIncomeLoss']['units']
-            if 'USD' in ni_units:
-                net_income_data_list = ni_units['USD']
+            ni_tags = [
+                'NetIncomeLoss',
+                'NetIncomeLossAvailableToCommonStockholdersBasic',
+                'ProfitLoss',  # Used by some US companies (e.g. consolidated entities)
+                'NetIncomeLossAvailableToCommonStockholdersDiluted',
+            ]
+            for tag in ni_tags:
+                if tag in company_facts['facts'].get('us-gaap', {}):
+                    units = company_facts['facts']['us-gaap'][tag]['units']
+                    if 'USD' in units:
+                        net_income_data_list = units['USD']
+                        logger.debug(f"Found Net Income data using tag: {tag}")
+                        break
         except (KeyError, TypeError):
             pass
 
