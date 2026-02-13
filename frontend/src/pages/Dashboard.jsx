@@ -10,7 +10,6 @@ import MarketMovers from '@/components/dashboard/MarketMovers'
 import PortfolioSummaryCard from '@/components/dashboard/PortfolioSummaryCard'
 import WatchlistQuickView from '@/components/dashboard/WatchlistQuickView'
 import AlertsSummary from '@/components/dashboard/AlertsSummary'
-import StrategiesSummary from '@/components/dashboard/StrategiesSummary'
 import EarningsCalendar from '@/components/dashboard/EarningsCalendar'
 import NewsFeed from '@/components/dashboard/NewsFeed'
 import NewTheses from '@/components/dashboard/NewTheses'
@@ -23,33 +22,28 @@ export default function Dashboard() {
 
     return (
         <div className="space-y-6">
-            {/* Row 1: Market Overview */}
+            {/* Row 1: Market Overview & Portfolios */}
             <div className="grid gap-6 md:grid-cols-2">
                 <IndexChart />
-                <MarketMovers />
-            </div>
-
-            {/* Row 2: Strategies & Portfolios */}
-            <div className="grid gap-6 md:grid-cols-2">
-                <StrategiesSummary onNavigate={() => navigate('/strategies')} />
                 <PortfolioSummaryCard onNavigate={() => navigate('/portfolios')} />
             </div>
 
-            {/* Row 3: Watchlist & Alerts */}
+            {/* Row 2: Watchlist & Alerts */}
             <div className="grid gap-6 md:grid-cols-2">
                 <WatchlistQuickView onNavigate={() => navigate('/')} />
                 <AlertsSummary onNavigate={() => navigate('/alerts')} />
             </div>
 
-            {/* Row 4: Earnings & News */}
+            {/* Row 3: Earnings & Recent Theses */}
             <div className="grid gap-6 md:grid-cols-2">
                 <EarningsCalendar />
-                <NewsFeed />
+                <NewTheses />
+                {/* <NewsFeed /> */}
             </div>
 
-            {/* Row 5: Recent Theses */}
+            {/* Row 4: Market Movers */}
             <div className="grid gap-6">
-                <NewTheses />
+                <MarketMovers />
             </div>
         </div>
     )

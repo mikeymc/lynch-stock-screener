@@ -2,7 +2,7 @@
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
-import { TrendingUp, TrendingDown, Trash2 } from 'lucide-react'
+import { TrendingUp, TrendingDown, Trash2, Bot, User } from 'lucide-react'
 
 // Format currency with commas and 2 decimal places
 const formatCurrency = (value) => {
@@ -57,17 +57,30 @@ export default function PortfolioCard({ portfolio, onClick, onDelete }) {
                     {portfolio.user_email && (
                         <span className="text-muted-foreground/80 font-medium">User: {portfolio.user_email}</span>
                     )}
-                    {portfolio.strategy_id && (
-                        <Button
-                            variant="link"
-                            className="p-0 h-auto text-xs justify-start text-primary"
-                            onClick={(e) => {
-                                e.stopPropagation()
-                                window.location.href = `/strategies/${portfolio.strategy_id}`
-                            }}
-                        >
-                            View Strategy
-                        </Button>
+                    {portfolio.strategy_id ? (
+                        <div className="flex items-center gap-1.5 mt-1">
+                            <Badge variant="outline" className="text-[10px] h-4 px-1.5 border-primary/30 text-primary font-medium flex items-center gap-1">
+                                <Bot className="h-2.5 w-2.5" />
+                                Autonomous
+                            </Badge>
+                            <Button
+                                variant="link"
+                                className="p-0 h-auto text-[10px] text-primary"
+                                onClick={(e) => {
+                                    e.stopPropagation()
+                                    window.location.href = `/strategies/${portfolio.strategy_id}`
+                                }}
+                            >
+                                Strategy Detail
+                            </Button>
+                        </div>
+                    ) : (
+                        <div className="flex items-center gap-1.5 mt-1">
+                            <Badge variant="outline" className="text-[10px] h-4 px-1.5 text-muted-foreground font-medium flex items-center gap-1">
+                                <User className="h-2.5 w-2.5" />
+                                Self-Directed
+                            </Badge>
+                        </div>
                     )}
                 </CardDescription>
             </CardHeader>

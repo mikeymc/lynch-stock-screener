@@ -48,7 +48,7 @@ export default function AlertsSummary({ onNavigate }) {
                         Alerts
                     </CardTitle>
                     <Button variant="ghost" size="sm" onClick={onNavigate}>
-                        Manage <ArrowRight className="h-4 w-4 ml-1" />
+                        View all <ArrowRight className="h-4 w-4 ml-1" />
                     </Button>
                 </div>
             </CardHeader>

@@ -6,7 +6,7 @@ import { useNavigate } from 'react-router-dom'
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
-import { TrendingUp, TrendingDown } from 'lucide-react'
+import { TrendingUp, TrendingDown, Zap } from 'lucide-react'
 import { Badge } from "@/components/ui/badge"
 
 const PERIODS = [
@@ -50,7 +50,10 @@ export default function MarketMovers() {
         <Card>
             <CardHeader className="pb-2">
                 <div className="flex items-center justify-between">
-                    <CardTitle className="text-base font-medium">Movers</CardTitle>
+                    <CardTitle className="text-base font-medium flex items-center gap-2">
+                        <Zap className="h-4 w-4" />
+                        Movers
+                    </CardTitle>
                     <div className="flex gap-1">
                         {PERIODS.map(p => (
                             <Button
@@ -78,14 +81,14 @@ export default function MarketMovers() {
                         {error}
                     </div>
                 ) : (
-                    <div className="space-y-4">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                         {/* Gainers */}
                         <div>
                             <div className="flex items-center gap-1 text-xs text-muted-foreground mb-2">
                                 <TrendingUp className="h-3 w-3 text-green-500" />
                                 Top Gainers
                             </div>
-                            <div className="space-y-1">
+                            <div className="space-y-0">
                                 {data?.gainers?.map(stock => (
                                     <MoverRow
                                         key={stock.symbol}
@@ -106,7 +109,7 @@ export default function MarketMovers() {
                                 <TrendingDown className="h-3 w-3 text-red-500" />
                                 Top Losers
                             </div>
-                            <div className="space-y-1">
+                            <div className="space-y-0">
                                 {data?.losers?.map(stock => (
                                     <MoverRow
                                         key={stock.symbol}
@@ -134,7 +137,7 @@ function MoverRow({ stock, isGainer, onClick }) {
     return (
         <button
             onClick={onClick}
-            className="w-full flex items-center justify-between py-1 px-2 rounded hover:bg-accent transition-colors text-left"
+            className="w-full flex items-center justify-between py-0.5 px-2 rounded hover:bg-accent transition-colors text-left"
         >
             <div className="flex items-center gap-2 min-w-0 flex-1 mr-2">
                 <span className="font-medium text-sm shrink-0 w-12">{stock.symbol}</span>

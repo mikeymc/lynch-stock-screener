@@ -30,7 +30,9 @@ import {
     CheckCircle2,
     Briefcase,
     ArrowUpRight,
-    ArrowDownRight
+    ArrowDownRight,
+    Bot,
+    User
 } from 'lucide-react'
 import { useAuth } from '@/context/AuthContext'
 
@@ -383,7 +385,20 @@ function PortfolioDetail({ portfolio, onBack, onRefresh, onDelete }) {
                         <ArrowLeft className="h-5 w-5" />
                     </Button>
                     <div>
-                        <h1 className="text-2xl font-bold tracking-tight">{portfolio.name}</h1>
+                        <div className="flex items-center gap-2">
+                            <h1 className="text-2xl font-bold tracking-tight">{portfolio.name}</h1>
+                            {portfolio.strategy_id ? (
+                                <Badge variant="outline" className="border-primary/30 text-primary font-medium flex items-center gap-1">
+                                    <Bot className="h-4 w-4" />
+                                    Autonomous
+                                </Badge>
+                            ) : (
+                                <Badge variant="outline" className="text-muted-foreground font-medium flex items-center gap-1">
+                                    <User className="h-4 w-4" />
+                                    Self-Directed
+                                </Badge>
+                            )}
+                        </div>
                         <p className="text-sm text-muted-foreground">
                             Created {new Date(portfolio.created_at).toLocaleDateString()}
                         </p>
@@ -397,7 +412,7 @@ function PortfolioDetail({ portfolio, onBack, onRefresh, onDelete }) {
                             onClick={() => window.location.href = `/strategies/${portfolio.strategy_id}`}
                         >
                             <Activity className="h-4 w-4 mr-2" />
-                            View Strategy
+                            Strategy Detail
                         </Button>
                     )}
                     <Button variant="ghost" size="icon" className="text-muted-foreground hover:text-destructive" onClick={onDelete}>

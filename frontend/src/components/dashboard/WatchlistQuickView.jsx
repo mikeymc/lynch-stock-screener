@@ -59,7 +59,7 @@ export default function WatchlistQuickView({ onNavigate }) {
                         {error}
                     </div>
                 ) : hasItems ? (
-                    <div className="space-y-1">
+                    <div className="space-y-0">
                         {watchlist.slice(0, 5).map(stock => (
                             <WatchlistRow
                                 key={stock.symbol}
@@ -88,7 +88,7 @@ function WatchlistRow({ stock, onClick }) {
     return (
         <button
             onClick={onClick}
-            className="w-full flex items-center justify-between py-2 px-2 rounded hover:bg-accent transition-colors text-left"
+            className="w-full flex items-center justify-between py-0.5 px-2 rounded hover:bg-accent transition-colors text-left"
         >
             <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-2">
@@ -99,13 +99,19 @@ function WatchlistRow({ stock, onClick }) {
                 </div>
             </div>
             <div className="flex items-center gap-3">
-                <span className="text-sm font-medium">
-                    ${stock.price?.toFixed(2) || '—'}
-                </span>
-                <span className={`flex items-center gap-1 text-xs ${isPositive ? 'text-green-500' : 'text-red-500'}`}>
-                    {isPositive ? <TrendingUp className="h-3 w-3" /> : <TrendingDown className="h-3 w-3" />}
-                    {isPositive && '+'}{changePct}%
-                </span>
+                <div className="flex flex-col items-end min-w-[75px]">
+                    <span className="text-sm font-bold">
+                        ${stock.price?.toFixed(2) || '—'}
+                    </span>
+                    <span className="text-[10px] text-muted-foreground uppercase font-bold tracking-wider">Price</span>
+                </div>
+                <div className="flex flex-col items-end min-w-[60px]">
+                    <div className={`flex items-center gap-1 text-sm font-bold ${isPositive ? 'text-green-500' : 'text-red-500'}`}>
+                        {isPositive ? <TrendingUp className="h-3 w-3" /> : <TrendingDown className="h-3 w-3" />}
+                        {isPositive && '+'}{changePct}%
+                    </div>
+                    <span className="text-[10px] text-muted-foreground uppercase font-bold tracking-wider">Change</span>
+                </div>
             </div>
         </button>
     )

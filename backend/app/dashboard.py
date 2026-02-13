@@ -517,12 +517,18 @@ def get_dashboard_portfolios(user_id):
                     'total_value': summary.get('total_value', 0),
                     'total_gain_loss': summary.get('gain_loss', 0),
                     'total_gain_loss_pct': summary.get('gain_loss_percent', 0),
-                    'top_holdings': summary.get('holdings_detailed', [])[:3]
+                    'top_holdings': summary.get('holdings_detailed', [])[:3],
+                    'strategy_id': summary.get('strategy_id')
                 })
             except Exception as e:
                 logger.warning(f"Error getting portfolio summary for {p['id']}: {e}")
 
-        return jsonify({'portfolios': portfolio_summaries})
+        total_count = len(portfolio_summaries)
+        logger.info(f"Returning {len(portfolio_summaries[:5])} portfolios for dashboard (total available: {total_count})")
+        return jsonify({
+            'portfolios': portfolio_summaries[:5],
+            'total_count': total_count
+        })
     except Exception as e:
         logger.error(f"Error getting dashboard portfolios: {e}")
         return jsonify({'error': str(e)}), 500
@@ -789,7 +795,8 @@ def get_dashboard(user_id):
                         'total_value': summary.get('total_value', 0),
                         'total_gain_loss': summary.get('gain_loss', 0),
                         'total_gain_loss_pct': summary.get('gain_loss_percent', 0),
-                        'top_holdings': summary.get('holdings_detailed', [])[:3]
+                        'top_holdings': summary.get('holdings_detailed', [])[:3],
+                        'strategy_id': summary.get('strategy_id')
                     })
                 except Exception as e:
                     logger.warning(f"Error getting portfolio summary for {p['id']}: {e}")
@@ -905,7 +912,8 @@ def get_dashboard(user_id):
             recent_theses_data = deps.db.get_recent_theses(user_id, days=1, limit=10)
 
             return jsonify({
-                'portfolios': portfolio_summaries,
+                'portfolios': portfolio_summaries[:5],
+                'portfolio_total_count': len(portfolio_summaries),
                 'watchlist': watchlist_data,
                 'alerts': alert_summary,
                 'strategies': strategy_summaries,

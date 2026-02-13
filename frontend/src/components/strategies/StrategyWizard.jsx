@@ -59,6 +59,7 @@ const StrategyWizard = ({ onClose, onSuccess, initialData = null, mode = 'create
         position_sizing: {
             method: 'equal_weight',
             max_position_pct: 10.0,
+            max_positions: 25,
             min_position_value: 500,
             fixed_position_pct: '',
             kelly_fraction: ''
@@ -161,6 +162,8 @@ const StrategyWizard = ({ onClose, onSuccess, initialData = null, mode = 'create
                 payload.position_sizing.fixed_position_pct = parseFloat(payload.position_sizing.fixed_position_pct);
             if (payload.position_sizing.kelly_fraction)
                 payload.position_sizing.kelly_fraction = parseFloat(payload.position_sizing.kelly_fraction);
+            if (payload.position_sizing.max_positions)
+                payload.position_sizing.max_positions = parseInt(payload.position_sizing.max_positions);
 
             const url = mode === 'edit' ? `/api/strategies/${initialData.id}` : '/api/strategies';
             const method = mode === 'edit' ? 'PUT' : 'POST';
@@ -413,9 +416,9 @@ const StrategyWizard = ({ onClose, onSuccess, initialData = null, mode = 'create
                                                         step={filter.field === 'market_cap' ? '1000000000' : filter.field === 'price' ? '1' : '0.1'}
                                                         placeholder={
                                                             filter.field === 'price_vs_52wk_high' ? 'e.g. -20' :
-                                                            filter.field === 'market_cap' ? 'e.g. 10000000000' :
-                                                            filter.field === 'price' ? 'e.g. 50' :
-                                                            'e.g. 1.5'
+                                                                filter.field === 'market_cap' ? 'e.g. 10000000000' :
+                                                                    filter.field === 'price' ? 'e.g. 50' :
+                                                                        'e.g. 1.5'
                                                         }
                                                         value={filter.value === undefined ? '' : filter.value}
                                                         onChange={e => {
@@ -962,6 +965,25 @@ const StrategyWizard = ({ onClose, onSuccess, initialData = null, mode = 'create
                                                 Skip positions below this dollar amount
                                             </p>
                                         </div>
+                                        <div>
+                                            <label className="block text-muted-foreground mb-2 text-sm">Max Total Positions</label>
+                                            <input
+                                                type="number"
+                                                step="1"
+                                                min="1"
+                                                max="100"
+                                                placeholder="e.g. 25"
+                                                value={formData.position_sizing.max_positions}
+                                                onChange={e => setFormData({
+                                                    ...formData,
+                                                    position_sizing: { ...formData.position_sizing, max_positions: e.target.value }
+                                                })}
+                                                className="w-full bg-background border border-input rounded-lg p-3 text-foreground"
+                                            />
+                                            <p className="text-xs text-muted-foreground mt-2">
+                                                Maximum number of stocks to hold at once
+                                            </p>
+                                        </div>
                                     </div>
                                 </div>
                             </div>
@@ -971,8 +993,8 @@ const StrategyWizard = ({ onClose, onSuccess, initialData = null, mode = 'create
                                 <select
                                     value={
                                         formData.schedule_cron === '' || formData.schedule_cron === null ? 'manual' :
-                                        ['0 9 * * 1-5', '0 16 * * 1-5', '0 9 * * 1'].includes(formData.schedule_cron) ?
-                                        formData.schedule_cron : 'custom'
+                                            ['0 9 * * 1-5', '0 16 * * 1-5', '0 9 * * 1'].includes(formData.schedule_cron) ?
+                                                formData.schedule_cron : 'custom'
                                     }
                                     onChange={e => {
                                         if (e.target.value === 'manual') {
@@ -1057,7 +1079,7 @@ const StrategyWizard = ({ onClose, onSuccess, initialData = null, mode = 'create
                                 <div className="flex justify-between border-b border-border pb-3">
                                     <span className="text-muted-foreground">Position Limits</span>
                                     <span className="text-foreground text-sm">
-                                        Max: {formData.position_sizing.max_position_pct || '?'}% / Min: ${formData.position_sizing.min_position_value || '?'}
+                                        Max: {formData.position_sizing.max_position_pct || '?'}% / Count: {formData.position_sizing.max_positions || '25'} / Min: ${formData.position_sizing.min_position_value || '?'}
                                     </span>
                                 </div>
                                 <div className="flex justify-between pb-1">

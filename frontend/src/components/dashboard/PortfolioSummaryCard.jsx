@@ -6,10 +6,13 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Skeleton } from "@/components/ui/skeleton"
-import { Briefcase, Plus, ArrowRight, TrendingUp, TrendingDown } from 'lucide-react'
+import { Briefcase, Plus, ArrowRight, TrendingUp, TrendingDown, Bot, User, ArrowUpRight, ArrowDownRight } from 'lucide-react'
+import { useNavigate } from 'react-router-dom'
 
 export default function PortfolioSummaryCard({ onNavigate }) {
+    const navigate = useNavigate()
     const [portfolios, setPortfolios] = useState([])
+    const [totalCount, setTotalCount] = useState(0)
     const [loading, setLoading] = useState(true)
     const [error, setError] = useState(null)
 
@@ -21,6 +24,7 @@ export default function PortfolioSummaryCard({ onNavigate }) {
                 if (response.ok) {
                     const data = await response.json()
                     setPortfolios(data.portfolios || [])
+                    setTotalCount(data.total_count || data.portfolios?.length || 0)
                 } else {
                     setError('Failed to load portfolios')
                 }
@@ -64,35 +68,14 @@ export default function PortfolioSummaryCard({ onNavigate }) {
                         {error}
                     </div>
                 ) : hasPortfolios ? (
-                    <div className="space-y-4">
-                        {/* Summary row */}
-                        <div className="flex items-end justify-between">
-                            <div>
-                                <p className="text-2xl font-bold">
-                                    {formatCurrency(totalValue)}
-                                </p>
-                                <p className="text-sm text-muted-foreground">
-                                    Total across {portfolios.length} portfolio{portfolios.length > 1 ? 's' : ''}
-                                </p>
-                            </div>
-                            <div className={`flex items-center gap-1 text-sm ${isPositive ? 'text-green-500' : 'text-red-500'}`}>
-                                {isPositive ? <TrendingUp className="h-4 w-4" /> : <TrendingDown className="h-4 w-4" />}
-                                {formatCurrency(Math.abs(totalGainLoss))} ({isPositive ? '+' : ''}{totalGainLossPct.toFixed(2)}%)
-                            </div>
-                        </div>
-
-                        {/* Top holdings from all portfolios */}
-                        {portfolios.some(p => p.top_holdings?.length > 0) && (
-                            <div>
-                                <p className="text-xs text-muted-foreground mb-2">Top Holdings</p>
-                                <div className="flex flex-wrap gap-1">
-                                    {getTopHoldings(portfolios).slice(0, 5).map(holding => (
-                                        <Badge key={holding.symbol} variant="secondary" className="text-xs">
-                                            {holding.symbol}
-                                        </Badge>
-                                    ))}
-                                </div>
-                            </div>
+                    <div className="space-y-0">
+                        {portfolios.slice(0, 5).map(portfolio => (
+                            <PortfolioRow key={portfolio.id} portfolio={portfolio} onClick={() => navigate(`/portfolios/${portfolio.id}`)} />
+                        ))}
+                        {totalCount > 5 && (
+                            <p className="text-xs text-muted-foreground text-center pt-2">
+                                +{totalCount - 5} more portfolios
+                            </p>
                         )}
                     </div>
                 ) : (
@@ -102,6 +85,48 @@ export default function PortfolioSummaryCard({ onNavigate }) {
         </Card>
     )
 }
+
+function PortfolioRow({ portfolio, onClick }) {
+    const isPositive = (portfolio.total_gain_loss || 0) >= 0
+    const isAutonomous = !!portfolio.strategy_id
+
+    return (
+        <div
+            className="flex items-center justify-between py-1.5 px-0 rounded-lg bg-muted/30 hover:bg-muted/50 cursor-pointer transition-colors"
+            onClick={onClick}
+        >
+            <div className="flex items-center gap-3 min-w-0">
+                <div className={`p-2 rounded-full ${isAutonomous ? 'bg-primary/10 text-primary' : 'bg-muted text-muted-foreground'}`}>
+                    {isAutonomous ? <Bot className="h-4 w-4" /> : <User className="h-4 w-4" />}
+                </div>
+                <div className="min-w-0">
+                    <p className="font-semibold text-sm truncate">{portfolio.name}</p>
+                    <div className="flex items-center gap-2">
+                        <Badge variant="outline" className={`text-[10px] h-4 px-1.5 font-medium ${isAutonomous ? 'border-primary/30 text-primary' : 'text-muted-foreground'}`}>
+                            {isAutonomous ? 'Autonomous' : 'Self-Directed'}
+                        </Badge>
+                    </div>
+                </div>
+            </div>
+            <div className="flex items-center gap-3">
+                <div className="flex flex-col items-end">
+                    <div className={`flex items-center gap-1 text-sm font-bold ${isPositive ? 'text-emerald-500' : 'text-red-500'}`}>
+                        {isPositive ? <ArrowUpRight className="h-3 w-3" /> : <ArrowDownRight className="h-3 w-3" />}
+                        {(portfolio.total_gain_loss_pct || 0).toFixed(2)}%
+                    </div>
+                    <span className="text-[10px] text-muted-foreground uppercase font-bold tracking-wider">Return</span>
+                </div>
+                <div className="flex flex-col items-end min-w-[75px]">
+                    <span className="text-sm font-bold">
+                        {formatCurrency(portfolio.total_value)}
+                    </span>
+                    <span className="text-[10px] text-muted-foreground uppercase font-bold tracking-wider">Value</span>
+                </div>
+            </div>
+        </div>
+    )
+}
+
 
 function EmptyState({ onNavigate }) {
     return (
@@ -132,11 +157,11 @@ function getTopHoldings(portfolios) {
 }
 
 function formatCurrency(value) {
-    if (value === null || value === undefined) return '$0.00'
+    if (value === null || value === undefined) return '$0'
     return new Intl.NumberFormat('en-US', {
         style: 'currency',
         currency: 'USD',
-        minimumFractionDigits: 2,
-        maximumFractionDigits: 2
+        minimumFractionDigits: 0,
+        maximumFractionDigits: 0
     }).format(value)
 }

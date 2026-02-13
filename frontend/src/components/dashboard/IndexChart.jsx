@@ -5,7 +5,7 @@ import { useState, useEffect, useMemo } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
-import { TrendingUp, TrendingDown, Check } from 'lucide-react'
+import { TrendingUp, TrendingDown, Check, Activity } from 'lucide-react'
 import { Line } from 'react-chartjs-2'
 import {
     Chart as ChartJS,
@@ -70,7 +70,7 @@ const PERIODS = [
 
 export default function IndexChart() {
     const [selectedSymbols, setSelectedSymbols] = useState(['^GSPC'])
-    const [selectedPeriod, setSelectedPeriod] = useState('1mo')
+    const [selectedPeriod, setSelectedPeriod] = useState('1y')
     const [data, setData] = useState(null)
     const [loading, setLoading] = useState(true)
     const [error, setError] = useState(null)
@@ -234,7 +234,8 @@ export default function IndexChart() {
             <CardHeader className="pb-2 space-y-0">
                 <div className="flex items-center justify-between">
                     <CardTitle className="text-base font-medium flex items-center gap-2">
-                        Market
+                        <Activity className="h-4 w-4" />
+                        Indices
                     </CardTitle>
 
                     <div className="flex gap-1">
@@ -277,7 +278,7 @@ export default function IndexChart() {
                         const symbolData = data && !loading && !data.error ? data[idx.symbol] : null
 
                         return (
-                            <div key={idx.symbol} className="flex items-center justify-between h-8 px-1 rounded-md hover:bg-accent/50 transition-colors">
+                            <div key={idx.symbol} className="flex items-center justify-between h-6 px-1 rounded-md hover:bg-accent/50 transition-colors">
                                 <button
                                     onClick={() => toggleSymbol(idx.symbol)}
                                     className={`flex items-center gap-2 text-xs font-medium transition-colors hover:text-foreground text-left ${isSelected ? 'text-foreground' : 'text-muted-foreground'}`}
