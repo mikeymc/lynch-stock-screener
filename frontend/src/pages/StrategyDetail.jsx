@@ -22,7 +22,7 @@ import { Line } from 'react-chartjs-2'
 import StrategyWizard from '@/components/strategies/StrategyWizard'
 
 const LiveSignal = () => (
-    <span className="animate-pulse-yellow h-2 w-2 rounded-full mr-2 inline-block shadow-sm" />
+    <span className="bg-yellow-400 h-2 w-2 rounded-full mr-2 inline-block shadow-sm" />
 )
 
 function StrategyDetail() {
