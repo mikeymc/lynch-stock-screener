@@ -896,3 +896,83 @@ class TestCoverPageFiscalEndFallback:
         )
         result = self.ef._first_date_column(cover_df)
         assert result is None
+
+
+# ── EPS concept-based matching tests ──────────────────────────────────────────
+
+class TestEPSConceptMatching:
+    """
+    EPS must be found via XBRL concept name when labels are non-standard.
+
+    AVGO/AMD use IncomeLossFromContinuingOperationsPerDilutedShare.
+    DIS uses label 'Diluted' (no 'per share') with concept EarningsPerShareDiluted.
+    NEE uses label 'Assuming dilution (in dollars per share)' (no 'diluted').
+    """
+
+    def setup_method(self):
+        from edgar_fetcher import EdgarFetcher
+        self.ef = EdgarFetcher.__new__(EdgarFetcher)
+
+    def _make_stmt(self, items):
+        from unittest.mock import MagicMock
+        stmt = MagicMock()
+        stmt.get_raw_data.return_value = items
+        return stmt
+
+    def _item(self, label, concept, period_key, value):
+        return {
+            'label': label,
+            'concept': concept,
+            'has_values': True,
+            'is_abstract': False,
+            'is_dimension': False,
+            'values': {period_key: value},
+        }
+
+    def test_eps_via_continuing_ops_concept_avgo_amd(self):
+        """
+        AVGO/AMD: label has 'diluted' but no 'per share';
+        concept is IncomeLossFromContinuingOperationsPerDilutedShare.
+        """
+        period_key = 'duration_2024-09-01_2024-11-30'  # 91 days
+        items = [
+            self._item(
+                'Earnings from continuing operations - diluted',
+                'us-gaap_IncomeLossFromContinuingOperationsPerDilutedShare',
+                period_key, 1.69
+            ),
+        ]
+        result = self.ef._extract_quarterly_from_raw_xbrl('AMD', self._make_stmt(items))
+        assert result['eps'] == 1.69, f"Expected EPS via continuing-ops concept, got {result['eps']}"
+
+    def test_eps_via_earnings_per_share_diluted_concept_dis(self):
+        """
+        DIS: label is just 'Diluted' (no 'per share');
+        concept is EarningsPerShareDiluted — concept alone should match.
+        """
+        period_key = 'duration_2024-10-01_2024-12-31'  # 92 days
+        items = [
+            self._item(
+                'Diluted',
+                'us-gaap_EarningsPerShareDiluted',
+                period_key, 1.15
+            ),
+        ]
+        result = self.ef._extract_quarterly_from_raw_xbrl('DIS', self._make_stmt(items))
+        assert result['eps'] == 1.15, f"Expected EPS via EarningsPerShareDiluted concept for DIS, got {result['eps']}"
+
+    def test_eps_via_dilution_label_nee(self):
+        """
+        NEE: label is 'Assuming dilution (in dollars per share)' — uses 'dilution'
+        not 'diluted'. Label-based match needs to cover this variant.
+        """
+        period_key = 'duration_2024-10-01_2024-12-31'  # 92 days
+        items = [
+            self._item(
+                'Assuming dilution (in dollars per share)',
+                'us-gaap_EarningsPerShareDiluted',
+                period_key, 0.62
+            ),
+        ]
+        result = self.ef._extract_quarterly_from_raw_xbrl('NEE', self._make_stmt(items))
+        assert result['eps'] == 0.62, f"Expected EPS via 'dilution' label for NEE, got {result['eps']}"

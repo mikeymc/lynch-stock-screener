@@ -154,8 +154,19 @@ class FundamentalsMixin:
                     result['net_income'] = values[quarter_period_key]
                     logger.info(f"[{ticker}] Found discrete quarterly Net Income: ${result['net_income']/1e9:.2f}B")
 
-            # EPS (diluted)
-            is_eps = ('diluted' in label.lower() and 'per share' in label.lower())
+            # EPS (diluted) — match by concept first, then label variants
+            # Concept-based: covers AVGO/AMD (IncomeLossFromContinuingOperationsPerDilutedShare)
+            # and DIS (label='Diluted', no 'per share', but correct concept)
+            # Label-based: covers NEE ('Assuming dilution...') and standard 'diluted per share'
+            concept_lower = concept.lower()
+            is_eps = (
+                concept_lower in (
+                    'us-gaap_earningspersharediluted',
+                    'us-gaap_incomelossFromcontinuingoperationsperdilutedshare'.lower(),
+                ) or
+                ('diluted' in label.lower() and 'per share' in label.lower()) or
+                ('dilution' in label.lower() and 'per share' in label.lower())
+            )
 
             if is_eps and not result['eps'] and quarter_period_key:
                 if quarter_period_key in values:
