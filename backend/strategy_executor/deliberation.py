@@ -146,6 +146,7 @@ class DeliberationMixin:
         enriched: List[Dict[str, Any]],
         run_id: int,
         conditions: Dict[str, Any] = None,
+        strategy: Dict[str, Any] = None,
         user_id: int = None,
         job_id: Optional[int] = None,
         held_symbols: set = None,
@@ -192,7 +193,44 @@ class DeliberationMixin:
         # Helper for parallel execution
         def process_deliberation(stock):
             symbol = stock['symbol']
+            
+            # 1. Preliminary Score-based Consensus Check
+            consensus_res = self.consensus_engine.evaluate(
+                lynch_result={'score': stock.get('lynch_score', 0), 'status': stock.get('lynch_status', 'N/A')},
+                buffett_result={'score': stock.get('buffett_score', 0), 'status': stock.get('buffett_status', 'N/A')},
+                mode=strategy.get('consensus_mode', 'both_agree'),
+                config={
+                    'threshold': strategy.get('consensus_threshold', 70),
+                    'veto_score_threshold': conditions.get('veto_score_threshold', 30),
+                    'min_score': strategy.get('consensus_threshold', 70) # For both_agree
+                }
+            )
+            
+            # If explicit VETO, we can stop here
+            if consensus_res.verdict == 'VETO':
+                self.db.create_strategy_decision(
+                    run_id=run_id,
+                    symbol=symbol,
+                    lynch_score=stock.get('lynch_score'),
+                    lynch_status=stock.get('lynch_status'),
+                    buffett_score=stock.get('buffett_score'),
+                    buffett_status=stock.get('buffett_status'),
+                    consensus_score=consensus_res.score,
+                    consensus_verdict='VETO',
+                    final_decision='SKIP',
+                    decision_reasoning=f"Automatic VETO: {consensus_res.reasoning}"
+                )
+                
+                if symbol in held_symbols:
+                    quantity = holdings.get(symbol, 0)
+                    return {'_exit_signal': ExitSignal(
+                        symbol=symbol,
+                        quantity=quantity,
+                        reason=f"Consensus VETO: {consensus_res.reasoning}",
+                    )}
+                return None
 
+            # 2. Proceed to AI Deliberation if theses are available
             # If we have both theses, conduct deliberation
             lynch_thesis = stock.get('lynch_thesis')
             buffett_thesis = stock.get('buffett_thesis')

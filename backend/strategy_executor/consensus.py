@@ -148,9 +148,10 @@ class ConsensusEngine:
                 buffett_contributed=not buffett_vetos
             )
 
-        # No veto - use weighted average
+        # No veto - use the strategy's consensus threshold
         avg_score = (lynch_score + buffett_score) / 2
-        verdict = 'BUY' if avg_score >= 70 else 'WATCH'
+        threshold = config.get('threshold', 70)
+        verdict = 'BUY' if avg_score >= threshold else 'WATCH'
 
         return ConsensusResult(
             verdict=verdict,

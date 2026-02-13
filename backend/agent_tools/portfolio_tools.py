@@ -131,7 +131,9 @@ class PortfolioToolsMixin:
         max_position_pct: float = None,
         max_positions: int = None,
         profit_target_pct: float = None,
-        stop_loss_pct: float = None
+        stop_loss_pct: float = None,
+        addition_lynch_min: float = None,
+        addition_buffett_min: float = None
     ) -> Dict[str, Any]:
         """Create a new investment strategy conversationally."""
         from strategy_templates import FILTER_TEMPLATES, STRATEGY_DEFAULTS
@@ -165,6 +167,15 @@ class PortfolioToolsMixin:
             ],
             "thesis_verdict_required": ["BUY"]
         }
+
+        # Add addition thresholds if provided
+        if addition_lynch_min is not None or addition_buffett_min is not None:
+            addition_reqs = []
+            if addition_lynch_min is not None:
+                addition_reqs.append({"character": "lynch", "min_score": addition_lynch_min})
+            if addition_buffett_min is not None:
+                addition_reqs.append({"character": "buffett", "min_score": addition_buffett_min})
+            conditions["addition_scoring_requirements"] = addition_reqs
 
         # Build position sizing
         position_sizing = {

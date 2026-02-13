@@ -164,7 +164,7 @@ class StrategyExecutorCore:
             print("=" * 60)
             symbols_of_held_stocks_with_failing_scores = {s['symbol'] for s in held_stocks_with_failing_scores}
             buy_decisions, deliberation_exit_decisions, held_verdicts = self._deliberate(
-                enriched, run_id, conditions, job_id=job_id,
+                enriched, run_id, conditions, strategy=strategy, job_id=job_id,
                 held_symbols=current_portfolio_holdings_symbols, holdings=current_portfolio_holdings,
                 symbols_of_held_stocks_with_failing_scores=symbols_of_held_stocks_with_failing_scores
             )

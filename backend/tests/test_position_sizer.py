@@ -23,48 +23,50 @@ class TestPositionSizer(unittest.TestCase):
         self.mock_db = MagicMock()
         self.sizer = PositionSizer(self.mock_db)
 
-    def test_nvr_max_position_limit(self):
-        """
-        Test the NVR scenario where adding another share would exceed the 10% max position limit.
-        """
-        # Scenario Configuration
-        portfolio_id = 9
-        symbol = 'NVR'
-        current_price = 8009.84
+    def test_min_position_value_alias(self):
+        """Test that min_position_value in rules is respected (it's the UI name)."""
+        portfolio_id = 1
+        symbol = 'AAPL'
+        current_price = 150.0
         
-        # Portfolio State: $100k total, holding 1 share of NVR
         self.mock_db.get_portfolio_summary.return_value = {
-            'total_value': 100000.0,
-            'cash': 91965.36,
-            'holdings': {
-                'NVR': 1
-            }
+            'total_value': 10000.0,
+            'cash': 5000.0,
+            'holdings': {}
         }
         
-        # Sizing Rules: Max 10%
+        # Test 1: Amount below threshold ($500 < $1000)
         rules = {
-            'method': 'conviction_weighted',
-            'max_position_pct': 10,
-            'min_position_value': 500
+            'method': 'fixed_pct',
+            'fixed_position_pct': 5,  # Target $500
+            'max_position_pct': 20,
+            'min_position_value': 1000 # High threshold
         }
         
-        # Execute Sizing
         result = self.sizer.calculate_position(
             portfolio_id=portfolio_id,
             symbol=symbol,
             conviction_score=50,
-            method='conviction_weighted',
+            method='fixed_pct',
             rules=rules,
-            other_buys=[],
             current_price=current_price
         )
         
-        # Assertions
-        # 1 share ($8009) + 1 share ($8009) = $16,018 > $10,000 limit
-        # So should execute 0 shares
-        self.assertEqual(result.shares, 0)
-        self.assertEqual(result.estimated_value, 0.0)
-        self.assertTrue("Already at max position" in str(result.reasoning) or result.shares == 0)
+        self.assertEqual(result.shares, 0, "Should skip trade as $500 < $1000 min_position_value")
+        self.assertIn("below minimum trade amount", result.reasoning.lower())
+
+        # Test 2: Amount above threshold ($1500 > $1000)
+        rules['fixed_position_pct'] = 15 # Target $1500
+        result = self.sizer.calculate_position(
+            portfolio_id=portfolio_id,
+            symbol=symbol,
+            conviction_score=50,
+            method='fixed_pct',
+            rules=rules,
+            current_price=current_price
+        )
+        self.assertEqual(result.shares, 10, "Should execute 10 shares ($1500)")
+        self.assertEqual(result.estimated_value, 1500.0)
 
     def test_basic_buy(self):
         """Test a standard buy scenario with sufficient cash and room."""

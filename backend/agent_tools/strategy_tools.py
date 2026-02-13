@@ -72,11 +72,15 @@ class StrategyToolsMixin:
         enabled: bool = None,
         consensus_mode: str = None,
         consensus_threshold: float = None,
+        veto_score_threshold: float = None,
         position_sizing_method: str = None,
         max_position_pct: float = None,
         max_positions: int = None,
         profit_target_pct: float = None,
         stop_loss_pct: float = None,
+        addition_lynch_min: float = None,
+        addition_buffett_min: float = None,
+        min_position_value: float = None,
         filters=None,
     ) -> Dict[str, Any]:
         """
@@ -107,7 +111,7 @@ class StrategyToolsMixin:
                 update_kwargs['consensus_threshold'] = consensus_threshold
 
             # position_sizing: read-modify-write
-            if position_sizing_method is not None or max_position_pct is not None or max_positions is not None:
+            if position_sizing_method is not None or max_position_pct is not None or max_positions is not None or min_position_value is not None:
                 existing_ps = strategy.get('position_sizing') or {}
                 if position_sizing_method is not None:
                     existing_ps['method'] = position_sizing_method
@@ -115,6 +119,8 @@ class StrategyToolsMixin:
                     existing_ps['max_position_pct'] = max_position_pct
                 if max_positions is not None:
                     existing_ps['max_positions'] = max_positions
+                if min_position_value is not None:
+                    existing_ps['min_position_value'] = min_position_value
                 update_kwargs['position_sizing'] = existing_ps
 
             # exit_conditions: read-modify-write
@@ -126,10 +132,33 @@ class StrategyToolsMixin:
                     existing_ec['stop_loss_pct'] = stop_loss_pct
                 update_kwargs['exit_conditions'] = existing_ec
 
-            # filters: fully replaces conditions.filters
-            if filters is not None:
+            if filters is not None or addition_lynch_min is not None or addition_buffett_min is not None or veto_score_threshold is not None:
                 existing_conditions = strategy.get('conditions') or {}
-                existing_conditions['filters'] = filters
+                if filters is not None:
+                    existing_conditions['filters'] = filters
+                
+                if veto_score_threshold is not None:
+                    existing_conditions['veto_score_threshold'] = veto_score_threshold
+
+                if addition_lynch_min is not None or addition_buffett_min is not None:
+                    addition_reqs = existing_conditions.get('addition_scoring_requirements') or []
+                    
+                    if addition_lynch_min is not None:
+                        lynch_idx = next((i for i, r in enumerate(addition_reqs) if r['character'] == 'lynch'), -1)
+                        if lynch_idx >= 0:
+                            addition_reqs[lynch_idx]['min_score'] = addition_lynch_min
+                        else:
+                            addition_reqs.append({"character": "lynch", "min_score": addition_lynch_min})
+                            
+                    if addition_buffett_min is not None:
+                        buffett_idx = next((i for i, r in enumerate(addition_reqs) if r['character'] == 'buffett'), -1)
+                        if buffett_idx >= 0:
+                            addition_reqs[buffett_idx]['min_score'] = addition_buffett_min
+                        else:
+                            addition_reqs.append({"character": "buffett", "min_score": addition_buffett_min})
+                    
+                    existing_conditions['addition_scoring_requirements'] = addition_reqs
+                
                 update_kwargs['conditions'] = existing_conditions
 
             if not update_kwargs:

@@ -162,7 +162,15 @@ class PositionSizer:
     ) -> Tuple[List[ExitSignal], List[Dict[str, Any]]]:
         """Compare targets to holdings and generate buy/sell orders."""
 
-        min_trade_amt = rules.get('min_trade_amount', 100.0)
+        # Support both names (UI uses min_position_value)
+        min_trade_amt = rules.get('min_position_value')
+        if min_trade_amt is None:
+            min_trade_amt = rules.get('min_trade_amount', 100.0)
+        else:
+            try:
+                min_trade_amt = float(min_trade_amt)
+            except (ValueError, TypeError):
+                min_trade_amt = 100.0
 
         sells = []
         buys = []

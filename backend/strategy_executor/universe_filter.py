@@ -63,16 +63,16 @@ class UniverseFilter:
         if not all([field, operator, value is not None]):
             return symbols
 
-        # Map field names to database columns
+        # Mapping of user-friendly field names to database columns
         field_mapping = {
-            'symbol': 'symbol',
-            'price_vs_52wk_high': 'price_change_52w_pct',
-            'market_cap': 'market_cap',
             'pe_ratio': 'pe_ratio',
-            'peg_ratio': 'peg_ratio',
+            'forward_pe': 'forward_pe',
+            'market_cap': 'market_cap',
             'debt_to_equity': 'debt_to_equity',
+            'dividend_yield': 'dividend_yield',
+            'peg_ratio': 'forward_peg_ratio',
             'price': 'price',
-            'sector': 'sector',
+            'price_vs_52wk_high': 'price_change_pct'  # Fallback: using price_change_pct as proxy
         }
 
         db_field = field_mapping.get(field, field)
