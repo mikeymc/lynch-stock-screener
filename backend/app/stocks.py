@@ -4,10 +4,10 @@
 from flask import Blueprint, jsonify, request, session
 from app import deps
 from app.helpers import clean_nan_values
+from app.scoring import resolve_scoring_config
 from auth import require_user_auth
 from characters import get_character
 from data_fetcher import DataFetcher
-from stock_vectors import DEFAULT_ALGORITHM_CONFIG
 from wacc_calculator import calculate_wacc
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import json
@@ -34,54 +34,17 @@ def get_stock(symbol):
     if not stock_data:
         return jsonify({'error': f'Stock {symbol} not found'}), 404
 
-    # Get active character: prefer query param, then fallback to setting, then default
-    active_character = request.args.get('character') or deps.db.get_setting('active_character') or 'lynch'
-
-    # Load fresh character-specific config using robust helper
-    # Use session.get('user_id') if available, otherwise None for system defaults
+    # Resolve character and scoring configuration using the shared helper
     user_id = session.get('user_id')
-
-    # helper method already handles fallback to system default if user-specific config not found
-    db_config = deps.db.get_user_algorithm_config(user_id, active_character)
-
-    overrides = None
-    if db_config:
-        if active_character == 'lynch':
-            # Lynch-specific overrides
-            overrides = {
-                'peg_excellent': db_config.get('peg_excellent'),
-                'peg_good': db_config.get('peg_good'),
-                'peg_fair': db_config.get('peg_fair'),
-                'debt_excellent': db_config.get('debt_excellent'),
-                'debt_good': db_config.get('debt_good'),
-                'debt_moderate': db_config.get('debt_moderate'),
-                'inst_own_min': db_config.get('inst_own_min'),
-                'inst_own_max': db_config.get('inst_own_max'),
-                'weight_peg': db_config.get('weight_peg'),
-                'weight_consistency': db_config.get('weight_consistency'),
-                'weight_debt': db_config.get('weight_debt'),
-                'weight_ownership': db_config.get('weight_ownership'),
-            }
-        elif active_character == 'buffett':
-            # Buffett-specific overrides
-            # Note: StockEvaluator looks for {metric}_excellent where metric matches character config
-            overrides = {
-                'weight_roe': db_config.get('weight_roe'),
-                'weight_earnings_consistency': db_config.get('weight_consistency'),
-                'weight_debt_to_earnings': db_config.get('weight_debt_to_earnings'),
-                'weight_gross_margin': db_config.get('weight_gross_margin'),
-                'roe_excellent': db_config.get('roe_excellent'),
-                'roe_good': db_config.get('roe_good'),
-                'roe_fair': db_config.get('roe_fair'),
-                'debt_to_earnings_excellent': db_config.get('debt_to_earnings_excellent'),
-                'debt_to_earnings_good': db_config.get('debt_to_earnings_good'),
-                'debt_to_earnings_fair': db_config.get('debt_to_earnings_fair'),
-                'gross_margin_excellent': db_config.get('gross_margin_excellent'),
-                'gross_margin_good': db_config.get('gross_margin_good'),
-                'gross_margin_fair': db_config.get('gross_margin_fair'),
-            }
-
-    evaluation = deps.criteria.evaluate_stock(symbol.upper(), algorithm=algorithm, overrides=overrides, character_id=active_character)
+    active_character, config = resolve_scoring_config(user_id, request.args.get('character'))
+    
+    # StockEvaluator (evaluate_stock) uses 'overrides' dict for weight/threshold changes
+    evaluation = deps.criteria.evaluate_stock(
+        symbol.upper(), 
+        algorithm=algorithm, 
+        overrides=config, 
+        character_id=active_character
+    )
 
     return jsonify({
         'stock_data': clean_nan_values(stock_data),
@@ -247,111 +210,16 @@ def get_latest_session(user_id):
     sort_by = request.args.get('sort_by', 'overall_score')
     sort_dir = request.args.get('sort_dir', 'desc')
     status_filter = request.args.get('status', None)
-
-    # Determine active character for scoring
-    # Check query parameter first (for instant character switching), fallback to database
-    character_id = request.args.get('character', None) or deps.db.get_user_character(user_id)
+    # Resolve character and scoring configuration using the shared helper
+    character_id, config = resolve_scoring_config(user_id, request.args.get('character'))
     character = get_character(character_id)
 
     # Check if US-only filter is enabled (default: True for production)
     us_stocks_only = deps.db.get_setting('us_stocks_only', True)
     country_filter = 'US' if us_stocks_only else None
 
-    # HYBRID APPROACH: Use vectorized for Lynch, database for other characters
+    # HYBRID APPROACH: Use vectorized for Lynch/Buffett, database for other characters
     if character_id in ['lynch', 'buffett']:
-        # --- VECTORIZED PATH (for performance) ---
-        # Get user's algorithm config
-        configs = deps.db.get_algorithm_configs()
-
-        # Build Config based on Active Character
-        if character_id == 'lynch':
-            if configs and len(configs) > 0:
-                # Filter for Lynch config
-                lynch_config = None
-                for cfg in configs:
-                    if cfg.get('character') == 'lynch':
-                        lynch_config = cfg
-                        break
-
-                if lynch_config:
-                    config = {
-                        'peg_excellent': lynch_config.get('peg_excellent', 1.0),
-                        'peg_good': lynch_config.get('peg_good', 1.5),
-                        'peg_fair': lynch_config.get('peg_fair', 2.0),
-                        'debt_excellent': lynch_config.get('debt_excellent', 0.5),
-                        'debt_good': lynch_config.get('debt_good', 1.0),
-                        'debt_moderate': lynch_config.get('debt_moderate', 2.0),
-                        'inst_own_min': lynch_config.get('inst_own_min', 0.20),
-                        'inst_own_max': lynch_config.get('inst_own_max', 0.60),
-                        'weight_peg': lynch_config.get('weight_peg', 0.50),
-                        'weight_consistency': lynch_config.get('weight_consistency', 0.25),
-                        'weight_debt': lynch_config.get('weight_debt', 0.15),
-                        'weight_ownership': lynch_config.get('weight_ownership', 0.10),
-                    }
-                else:
-                    config = DEFAULT_ALGORITHM_CONFIG
-            else:
-                config = DEFAULT_ALGORITHM_CONFIG
-
-        elif character_id == 'buffett':
-            # Load Buffett config from database
-            buffett_config = None
-            if configs:
-                for cfg in configs:
-                    if cfg.get('character') == 'buffett':
-                        buffett_config = cfg
-                        break
-
-            if buffett_config:
-                # Use saved Buffett configuration
-                # Note: DB has 'weight_debt_to_earnings' but scoring expects 'weight_debt_earnings'
-                config = {
-                    'weight_roe': buffett_config.get('weight_roe', 0.35),
-                    'weight_consistency': buffett_config.get('weight_consistency', 0.25),
-                    'weight_debt_earnings': buffett_config.get('weight_debt_to_earnings', 0.20),  # Map from DB name
-                    'weight_gross_margin': buffett_config.get('weight_gross_margin', 0.20),  # Column doesn't exist yet
-
-                    # Zero out Lynch weights
-                    'weight_peg': 0.0,
-                    'weight_debt': 0.0,
-                    'weight_ownership': 0.0,
-
-                    # Thresholds
-                    'roe_excellent': buffett_config.get('roe_excellent', 20.0),
-                    'roe_good': buffett_config.get('roe_good', 15.0),
-                    'roe_fair': buffett_config.get('roe_fair', 10.0),
-                    'debt_to_earnings_excellent': buffett_config.get('debt_to_earnings_excellent', 3.0),
-                    'debt_to_earnings_good': buffett_config.get('debt_to_earnings_good', 5.0),
-                    'debt_to_earnings_fair': buffett_config.get('debt_to_earnings_fair', 8.0),
-                    'gross_margin_excellent': buffett_config.get('gross_margin_excellent', 50.0),
-                    'gross_margin_good': buffett_config.get('gross_margin_good', 40.0),
-                    'gross_margin_fair': buffett_config.get('gross_margin_fair', 30.0),
-                }
-            else:
-                # Fallback to defaults if no config found
-                config = {
-                    'weight_roe': 0.35,
-                    'weight_consistency': 0.25,
-                    'weight_debt_earnings': 0.20,  # Fixed: was weight_debt_to_earnings
-                    'weight_gross_margin': 0.20,
-
-                    # Zero out Lynch weights
-                    'weight_peg': 0.0,
-                    'weight_debt': 0.0,
-                    'weight_ownership': 0.0,
-
-                    # Thresholds
-                    'roe_excellent': 20.0,
-                    'roe_good': 15.0,
-                    'roe_fair': 10.0,
-                    'debt_to_earnings_excellent': 3.0,
-                    'debt_to_earnings_good': 5.0,
-                    'debt_to_earnings_fair': 8.0,
-                    'gross_margin_excellent': 50.0,
-                    'gross_margin_good': 40.0,
-                    'gross_margin_fair': 30.0,
-                }
-
         try:
             # Load and score using vectorized engine
             df = deps.stock_vectors.load_vectors(country_filter)

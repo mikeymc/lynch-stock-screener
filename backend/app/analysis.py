@@ -4,6 +4,7 @@
 from flask import Blueprint, jsonify, request, Response, stream_with_context, session
 from app import deps
 from app.helpers import clean_nan_values
+from app.scoring import resolve_scoring_config
 from auth import require_user_auth
 from wacc_calculator import calculate_wacc
 import json
@@ -262,7 +263,13 @@ def get_stock_thesis(symbol, user_id):
     Supports Lynch vs Buffett based on 'character' query param.
     """
     symbol = symbol.upper()
-    character_id = request.args.get('character')
+    
+    # Resolve character and config using shared helper
+    character_id, config = resolve_scoring_config(user_id, request.args.get('character'))
+    
+    # Get model and streaming preferences
+    model = request.args.get('model', DEFAULT_AI_MODEL)
+    should_stream = request.args.get('stream', 'false').lower() == 'true'
 
     # Check if stock exists
     t0 = time.time()
@@ -307,10 +314,12 @@ def get_stock_thesis(symbol, user_id):
             return jsonify({'error': f'No historical data for {symbol}'}), 404
 
         # Prepare stock data for analysis
-        evaluation = deps.criteria.evaluate_stock(symbol)
+        evaluation = deps.criteria.evaluate_stock(symbol, overrides=config, character_id=character_id)
         stock_data = {
             **stock_metrics,
             'peg_ratio': evaluation.get('peg_ratio') if evaluation else None,
+            'overall_score': evaluation.get('overall_score') if evaluation else None,
+            'overall_status': evaluation.get('overall_status') if evaluation else None,
             'earnings_cagr': evaluation.get('earnings_cagr') if evaluation else None,
             'revenue_cagr': evaluation.get('revenue_cagr') if evaluation else None
         }
@@ -406,6 +415,9 @@ def refresh_stock_thesis(symbol, user_id):
     symbol = symbol.upper()
     data = request.get_json() or {}
     character_id = data.get('character') or request.args.get('character')
+    
+    # Resolve character and scoring configuration using the shared helper
+    character_id, scoring_config = resolve_scoring_config(user_id, character_id)
 
     # Check if stock exists
     stock_metrics = deps.db.get_stock_metrics(symbol)
@@ -418,7 +430,7 @@ def refresh_stock_thesis(symbol, user_id):
         return jsonify({'error': f'No historical data for {symbol}'}), 404
 
     # Prepare stock data for analysis
-    evaluation = deps.criteria.evaluate_stock(symbol)
+    evaluation = deps.criteria.evaluate_stock(symbol, overrides=scoring_config, character_id=character_id)
     stock_data = {
         **stock_metrics,
         'peg_ratio': evaluation.get('peg_ratio') if evaluation else None,
@@ -517,8 +529,11 @@ def get_unified_chart_analysis(symbol, user_id):
     if not history:
         return jsonify({'error': f'No historical data for {symbol}'}), 404
 
+    # Resolve character and scoring configuration using the shared helper
+    character_id, scoring_config = resolve_scoring_config(user_id, character_id)
+
     # Prepare stock data for analysis
-    evaluation = deps.criteria.evaluate_stock(symbol, character_id=character_id)
+    evaluation = deps.criteria.evaluate_stock(symbol, overrides=scoring_config, character_id=character_id)
     stock_data = {
         **stock_metrics,
         'peg_ratio': evaluation.get('peg_ratio') if evaluation else None,
@@ -639,8 +654,10 @@ def get_dcf_recommendations(symbol, user_id):
     if not history:
         return jsonify({'error': f'No historical data for {symbol}'}), 404
 
+    # Resolve character and scoring configuration using the shared helper
+    character_id, scoring_config = resolve_scoring_config(user_id)
     # Prepare stock data for analysis
-    evaluation = deps.criteria.evaluate_stock(symbol)
+    evaluation = deps.criteria.evaluate_stock(symbol, overrides=scoring_config, character_id=character_id)
     stock_data = {
         **stock_metrics,
         'peg_ratio': evaluation.get('peg_ratio') if evaluation else None,

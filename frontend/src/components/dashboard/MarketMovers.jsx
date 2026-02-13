@@ -6,7 +6,8 @@ import { useNavigate } from 'react-router-dom'
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
-import { TrendingUp, TrendingDown, ArrowUpRight, ArrowDownRight } from 'lucide-react'
+import { TrendingUp, TrendingDown } from 'lucide-react'
+import { Badge } from "@/components/ui/badge"
 
 const PERIODS = [
     { value: '1d', label: 'Today' },
@@ -128,17 +129,52 @@ export default function MarketMovers() {
 
 function MoverRow({ stock, isGainer, onClick }) {
     const changePct = stock.change_pct?.toFixed(2)
+    const pe = stock.pe_ratio ? stock.pe_ratio.toFixed(1) : 'N/A'
+
     return (
         <button
             onClick={onClick}
-            className="w-full flex items-center justify-between py-0 px-2 rounded hover:bg-accent transition-colors text-left"
+            className="w-full flex items-center justify-between py-1 px-2 rounded hover:bg-accent transition-colors text-left"
         >
-            <div className="flex items-center gap-2 min-w-0 flex-1 mr-4">
-                <span className="font-medium text-sm shrink-0">{stock.symbol}</span>
+            <div className="flex items-center gap-2 min-w-0 flex-1 mr-2">
+                <span className="font-medium text-sm shrink-0 w-12">{stock.symbol}</span>
                 <span className="text-xs text-muted-foreground truncate">{stock.company_name}</span>
             </div>
-            <div className={`flex items-center gap-1 text-sm shrink-0 ${isGainer ? 'text-green-500' : 'text-red-500'}`}>
-                {isGainer && '+'}{changePct}%
+
+            <div className="flex items-center gap-3 shrink-0">
+                <div className="flex flex-col items-end w-10">
+                    <span className="text-[10px] text-muted-foreground leading-none">P/E</span>
+                    <span className="text-xs font-medium">{pe}</span>
+                </div>
+
+                <div className="flex items-center justify-end w-16">
+                    <Badge
+                        variant="default"
+                        className={`text-[10px] px-1.5 py-0 ${stock.overall_status === 'Excellent' || stock.overall_status === 'STRONG_BUY'
+                            ? 'bg-green-600 hover:bg-green-700'
+                            : stock.overall_status === 'Good' || stock.overall_status === 'BUY'
+                                ? 'bg-blue-600 hover:bg-blue-700'
+                                : stock.overall_status === 'Fair' || stock.overall_status === 'HOLD'
+                                    ? 'bg-yellow-600 hover:bg-yellow-700'
+                                    : stock.overall_status === 'Weak' || stock.overall_status === 'CAUTION'
+                                        ? 'bg-orange-600 hover:bg-orange-700'
+                                        : stock.overall_status === 'Poor' || stock.overall_status === 'AVOID'
+                                            ? 'bg-red-600 hover:bg-red-700'
+                                            : 'bg-zinc-600 hover:bg-zinc-700'
+                            } text-white whitespace-nowrap min-w-[50px] justify-center`}
+                    >
+                        {stock.overall_status === 'STRONG_BUY' ? 'Excellent' :
+                            stock.overall_status === 'BUY' ? 'Good' :
+                                stock.overall_status === 'HOLD' ? 'Fair' :
+                                    stock.overall_status === 'CAUTION' ? 'Weak' :
+                                        stock.overall_status === 'AVOID' ? 'Poor' :
+                                            stock.overall_status || 'N/A'}
+                    </Badge>
+                </div>
+
+                <div className={`flex items-center gap-1 text-sm font-medium w-16 justify-end ${isGainer ? 'text-green-500' : 'text-red-500'}`}>
+                    {isGainer && '+'}{changePct}%
+                </div>
             </div>
         </button>
     )

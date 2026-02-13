@@ -5,8 +5,12 @@ from flask import Blueprint, jsonify, request, session, send_from_directory, cur
 from app import deps
 from app.helpers import clean_nan_values
 from auth import require_user_auth
+from app.scoring import resolve_scoring_config
 from fred_service import get_fred_service, SUPPORTED_SERIES, CATEGORIES
 from fly_machines import get_fly_manager
+from characters import get_character
+from character_scoring import apply_character_scoring
+from stock_vectors import DEFAULT_ALGORITHM_CONFIG
 import json
 import logging
 import os
@@ -371,136 +375,114 @@ def get_market_index(symbols):
         return jsonify({'error': str(e)}), 500
 
 
+from stock_vectors import DEFAULT_ALGORITHM_CONFIG
+
 @dashboard_bp.route('/api/market/movers', methods=['GET'])
 def get_market_movers():
     """Get top gainers and losers from screened stocks.
-
+    
+    Uses vectorized scoring for all characters (Lynch, Buffett, etc.) to 
+    ensure movers represent high-quality stocks.
+    
     Query params:
       - period: 1d, 1w, 1m, ytd (default: 1d)
       - limit: number of stocks per category (default: 5)
+      - character: optional character override (default: user's active character)
     """
     period = request.args.get('period', '1d')
     limit = min(int(request.args.get('limit', 5)), 20)
-
+    
     try:
-        conn = deps.db.get_connection()
-        try:
-            cursor = conn.cursor(row_factory=psycopg.rows.dict_row)
-
-            if period == '1d':
-                # Use price_change_pct from stock_metrics
+        # 1. Resolve character and scoring configuration using the shared helper
+        user_id = session.get('user_id')
+        character_id, config = resolve_scoring_config(user_id, request.args.get('character'))
+        
+        # 2. Get Stock Pool & Score (Vectorized)
+        df = deps.stock_vectors.load_vectors(country_filter='US')
+        scored_df = deps.criteria.evaluate_batch(df, config)
+        
+        # Filter: Exclude weak stocks (CAUTION or AVOID)
+        quality_df = scored_df[~scored_df['overall_status'].isin(['CAUTION', 'AVOID'])].copy()
+        
+        # 3. Calculate Movers
+        if period == '1d':
+            # Use real-time daily change from stock_metrics (loaded into df already)
+            # Ensure we filter out NaNs or errors
+            valid_df = quality_df[quality_df['price_change_pct'].notna()].copy()
+            
+            gainers_pool = valid_df[valid_df['price_change_pct'] > 0]
+            losers_pool = valid_df[valid_df['price_change_pct'] < 0]
+            
+            gainers = gainers_pool.sort_values('price_change_pct', ascending=False).head(limit)
+            losers = losers_pool.sort_values('price_change_pct', ascending=True).head(limit)
+            
+            # Rename for frontend compatibility
+            gainers = gainers.rename(columns={'price_change_pct': 'change_pct'})
+            losers = losers.rename(columns={'price_change_pct': 'change_pct'})
+            
+        else:
+            # Long periods (1w, 1m, ytd) require historical prices
+            if period == '1w': days_back = 7
+            elif period == '1m': days_back = 30
+            elif period == 'ytd': days_back = (datetime.now() - datetime(datetime.now().year, 1, 1)).days
+            else: days_back = 7
+            
+            symbols = quality_df['symbol'].tolist()
+            if not symbols:
+                return jsonify({'period': period, 'gainers': [], 'losers': []})
+                
+            conn = deps.db.get_connection()
+            try:
+                cursor = conn.cursor(row_factory=psycopg.rows.dict_row)
                 cursor.execute("""
-                    SELECT
-                        sm.symbol,
-                        s.company_name,
-                        sm.price,
-                        sm.price_change_pct as change_pct
-                    FROM stock_metrics sm
-                    JOIN stocks s ON sm.symbol = s.symbol
-                    WHERE sm.price_change_pct IS NOT NULL
-                      AND sm.price IS NOT NULL
-                      AND NOT (sm.price_change_pct = 'NaN')
-                      AND s.country = 'US'
-                    ORDER BY sm.price_change_pct DESC
-                    LIMIT %s
-                """, (limit,))
-                gainers = cursor.fetchall()
+                    SELECT DISTINCT ON (symbol)
+                        symbol,
+                        price as historical_price
+                    FROM weekly_prices
+                    WHERE symbol = ANY(%s)
+                      AND week_ending <= CURRENT_DATE - INTERVAL '%s days'
+                    ORDER BY symbol, week_ending DESC
+                """ % ("%s", "%s"), (symbols, f"{days_back} days"))
+                hist_prices = cursor.fetchall()
+                
+                # Convert to DataFrame for merging
+                hist_df = pd.DataFrame(hist_prices)
+                if hist_df.empty:
+                    return jsonify({'period': period, 'gainers': [], 'losers': []})
+                    
+                # Merge and compute change
+                merged = quality_df.merge(hist_df, on='symbol', how='inner')
+                merged['change_pct'] = (merged['price'] - merged['historical_price']) / merged['historical_price'] * 100
+                
+                # Filter valid
+                valid_df = merged[merged['change_pct'].notna()].copy()
+                
+                gainers_pool = valid_df[valid_df['change_pct'] > 0]
+                losers_pool = valid_df[valid_df['change_pct'] < 0]
+                
+                gainers = gainers_pool.sort_values('change_pct', ascending=False).head(limit)
+                losers = losers_pool.sort_values('change_pct', ascending=True).head(limit)
+            finally:
+                deps.db.return_connection(conn)
+                
+        # 4. Format Results
+        # 4. Format and Character Score Results
+        def process_movers(df):
+            if df.empty:
+                return []
+            # Results from evaluate_batch already have overall_score and overall_status
+            return [clean_nan_values(r) for r in df.to_dict(orient='records')]
 
-                cursor.execute("""
-                    SELECT
-                        sm.symbol,
-                        s.company_name,
-                        sm.price,
-                        sm.price_change_pct as change_pct
-                    FROM stock_metrics sm
-                    JOIN stocks s ON sm.symbol = s.symbol
-                    WHERE sm.price_change_pct IS NOT NULL
-                      AND sm.price IS NOT NULL
-                      AND NOT (sm.price_change_pct = 'NaN')
-                      AND s.country = 'US'
-                    ORDER BY sm.price_change_pct ASC
-                    LIMIT %s
-                """, (limit,))
-                losers = cursor.fetchall()
-
-            else:
-                # Calculate from weekly_prices for longer periods
-                if period == '1w':
-                    days_back = 7
-                elif period == '1m':
-                    days_back = 30
-                elif period == 'ytd':
-                    days_back = (datetime.now() - datetime(datetime.now().year, 1, 1)).days
-                else:
-                    days_back = 7
-
-                cursor.execute("""
-                    WITH latest_reference_prices AS (
-                        SELECT DISTINCT ON (symbol)
-                            symbol,
-                            price as historical_price
-                        FROM weekly_prices
-                        WHERE week_ending <= CURRENT_DATE - INTERVAL '%s days'
-                        ORDER BY symbol, week_ending DESC
-                    ),
-                    price_change AS (
-                        SELECT
-                            rp.symbol,
-                            s.company_name,
-                            sm.price,
-                            (sm.price - rp.historical_price) / rp.historical_price * 100 as change_pct
-                        FROM latest_reference_prices rp
-                        JOIN stocks s ON rp.symbol = s.symbol
-                        JOIN stock_metrics sm ON rp.symbol = sm.symbol
-                        WHERE sm.price IS NOT NULL
-                        AND s.country = 'US'
-                    )
-                    SELECT * FROM price_change
-                    WHERE change_pct IS NOT NULL
-                    ORDER BY change_pct DESC
-                    LIMIT %s
-                """, (days_back, limit))
-                gainers = cursor.fetchall()
-
-                cursor.execute("""
-                    WITH latest_reference_prices AS (
-                        SELECT DISTINCT ON (symbol)
-                            symbol,
-                            price as historical_price
-                        FROM weekly_prices
-                        WHERE week_ending <= CURRENT_DATE - INTERVAL '%s days'
-                        ORDER BY symbol, week_ending DESC
-                    ),
-                    price_change AS (
-                        SELECT
-                            rp.symbol,
-                            s.company_name,
-                            sm.price,
-                            (sm.price - rp.historical_price) / rp.historical_price * 100 as change_pct
-                        FROM latest_reference_prices rp
-                        JOIN stocks s ON rp.symbol = s.symbol
-                        JOIN stock_metrics sm ON rp.symbol = sm.symbol
-                        WHERE sm.price IS NOT NULL
-                        AND s.country = 'US'
-                    )
-                    SELECT * FROM price_change
-                    WHERE change_pct IS NOT NULL
-                    ORDER BY change_pct ASC
-                    LIMIT %s
-                """, (days_back, limit))
-                losers = cursor.fetchall()
-
-            return jsonify({
-                'period': period,
-                'gainers': [dict(g) for g in gainers],
-                'losers': [dict(l) for l in losers]
-            })
-
-        finally:
-            deps.db.return_connection(conn)
+        return jsonify({
+            'period': period,
+            'gainers': process_movers(gainers),
+            'losers': process_movers(losers)
+        })
 
     except Exception as e:
         logger.error(f"Error getting market movers: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
         return jsonify({'error': str(e)}), 500
 
 
