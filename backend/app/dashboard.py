@@ -653,49 +653,71 @@ def get_dashboard_earnings(user_id):
         upcoming_earnings_list = []
         total_upcoming_earnings = 0
         
-        if all_symbols:
-            conn = deps.db.get_connection()
-            try:
-                cursor = conn.cursor(row_factory=psycopg.rows.dict_row)
-                cursor.execute("""
-                    SELECT COUNT(*) as total
-                    FROM stock_metrics sm
-                    WHERE sm.symbol = ANY(%s)
-                      AND sm.next_earnings_date IS NOT NULL
-                      AND sm.next_earnings_date BETWEEN CURRENT_DATE AND CURRENT_DATE + INTERVAL '14 days'
-                """, (list(all_symbols),))
-                total_upcoming_earnings = cursor.fetchone()['total']
+        # Get days and scope from query params
+        days = int(request.args.get('days', 14))
+        scope = request.args.get('scope', 'user') # 'user' (watchlist+portfolio) or 'all'
+        
+        # Increase limit if we're looking at a longer timeframe
+        limit = 10 if days <= 14 else 100
 
-                cursor.execute("""
-                    SELECT
-                        sm.symbol,
-                        s.company_name,
-                        sm.next_earnings_date
-                    FROM stock_metrics sm
-                    JOIN stocks s ON sm.symbol = s.symbol
-                    WHERE sm.symbol = ANY(%s)
-                      AND sm.next_earnings_date IS NOT NULL
-                      AND sm.next_earnings_date BETWEEN CURRENT_DATE AND CURRENT_DATE + INTERVAL '14 days'
-                    ORDER BY sm.next_earnings_date ASC
-                    LIMIT 10
-                """, (list(all_symbols),))
-                raw_earnings = cursor.fetchall()
+
+        # Build query conditions
+        where_clause = "WHERE sm.next_earnings_date IS NOT NULL AND sm.next_earnings_date BETWEEN CURRENT_DATE AND CURRENT_DATE + (%s * INTERVAL '1 day')"
+        query_params = [days]
+
+        if scope == 'user':
+            if not all_symbols:
+                return jsonify({
+                    'upcoming_earnings': {
+                        'earnings': [],
+                        'total_count': 0
+                    }
+                })
+            where_clause += " AND sm.symbol = ANY(%s)"
+            query_params.append(list(all_symbols))
+        else:
+            # For 'all' scope, we just filter by date
+            pass
+
+        conn = deps.db.get_connection()
+        try:
+            cursor = conn.cursor(row_factory=psycopg.rows.dict_row)
+            
+            # Count query
+            count_sql = f"SELECT COUNT(*) as total FROM stock_metrics sm {where_clause}"
+            cursor.execute(count_sql, tuple(query_params))
+            total_upcoming_earnings = cursor.fetchone()['total']
+
+            # Results query
+            results_sql = f"""
+                SELECT
+                    sm.symbol,
+                    s.company_name,
+                    sm.next_earnings_date
+                FROM stock_metrics sm
+                JOIN stocks s ON sm.symbol = s.symbol
+                {where_clause}
+                ORDER BY sm.next_earnings_date ASC
+                LIMIT %s
+            """
+            cursor.execute(results_sql, tuple(query_params + [limit]))
+            raw_earnings = cursor.fetchall()
                 
-                ticker_date_pairs = [(row['symbol'], row['next_earnings_date'].isoformat()) for row in raw_earnings]
-                has_8k_map = deps.db.get_earnings_8k_status_batch(ticker_date_pairs)
+            ticker_date_pairs = [(row['symbol'], row['next_earnings_date'].isoformat()) for row in raw_earnings]
+            has_8k_map = deps.db.get_earnings_8k_status_batch(ticker_date_pairs)
 
-                for row in raw_earnings:
-                    symbol = row['symbol']
-                    earnings_date = row['next_earnings_date'].isoformat()
-                    upcoming_earnings_list.append({
-                        'symbol': symbol,
-                        'company_name': row['company_name'],
-                        'earnings_date': earnings_date,
-                        'days_until': (row['next_earnings_date'] - date.today()).days,
-                        'has_8k': has_8k_map.get(f"{symbol}:{earnings_date}", False)
-                    })
-            finally:
-                deps.db.return_connection(conn)
+            for row in raw_earnings:
+                symbol = row['symbol']
+                earnings_date = row['next_earnings_date'].isoformat()
+                upcoming_earnings_list.append({
+                    'symbol': symbol,
+                    'company_name': row['company_name'],
+                    'earnings_date': earnings_date,
+                    'days_until': (row['next_earnings_date'] - date.today()).days,
+                    'has_8k': has_8k_map.get(f"{symbol}:{earnings_date}", False)
+                })
+        finally:
+            deps.db.return_connection(conn)
 
         return jsonify({
             'upcoming_earnings': {

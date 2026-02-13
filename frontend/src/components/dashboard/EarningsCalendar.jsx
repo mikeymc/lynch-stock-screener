@@ -2,7 +2,7 @@
 // ABOUTME: Shows next 10 earnings dates within 2-week lookahead window
 
 import { useState, useEffect } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, Link } from 'react-router-dom'
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Skeleton } from "@/components/ui/skeleton"
@@ -48,10 +48,19 @@ export default function EarningsCalendar() {
     return (
         <Card>
             <CardHeader className="pb-2">
-                <CardTitle className="text-base font-medium flex items-center gap-2">
-                    <Calendar className="h-4 w-4" />
-                    Earnings Calendar
-                </CardTitle>
+                <div className="flex items-center justify-between">
+                    <CardTitle className="text-base font-medium flex items-center gap-2">
+                        <Calendar className="h-4 w-4" />
+                        Earnings Calendar
+                    </CardTitle>
+                    <Link
+                        to="/earnings"
+                        className="text-xs text-primary hover:underline flex items-center gap-1 transition-colors"
+                    >
+                        view calendar
+                        <span className="text-[10px]">→</span>
+                    </Link>
+                </div>
             </CardHeader>
             <CardContent>
                 {loading ? (

@@ -5,6 +5,7 @@ import pytest
 from unittest.mock import MagicMock, patch
 import sys
 import os
+from datetime import date
 
 # Add backend directory to path
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
@@ -146,3 +147,75 @@ class TestMarketIndexPartialData:
             assert 'error' in data['^DJI']
             assert 'No data available for ^DJI' in data['^DJI']['error']
 
+
+class TestDashboardEarningsEndpoint:
+    """Tests for GET /api/dashboard/earnings"""
+
+    def test_get_earnings_days_param(self, client, mock_db):
+        """Test getting earnings with custom days parameter."""
+        mock_cursor = MagicMock()
+        # First call is for total count, second for results, others for potential auth/8k status
+        mock_cursor.fetchone.side_effect = [{'total': 5}]
+        mock_cursor.fetchall.return_value = [
+            {'symbol': 'AAPL', 'company_name': 'Apple', 'next_earnings_date': date(2026, 3, 1)}
+        ]
+        mock_conn = MagicMock()
+        mock_conn.cursor.return_value = mock_cursor
+        mock_db.get_connection.return_value = mock_conn
+        mock_db.get_earnings_8k_status_batch.return_value = {}
+        mock_db.get_user_by_id.return_value = {"id": 1, "user_type": "regular"}
+        
+        # Test with days=30
+        with client.session_transaction() as sess:
+            sess['user_id'] = 1
+            
+        with patch('app.deps.db', mock_db):
+            response = client.get('/api/dashboard/earnings?days=30')
+            assert response.status_code == 200
+            data = response.get_json()
+            assert 'upcoming_earnings' in data
+            assert data['upcoming_earnings']['total_count'] == 5
+            
+            # Verify the SQL matches our expectation (parameterized interval)
+            execute_calls = [call for call in mock_cursor.execute.call_args_list]
+            found_interval_logic = False
+            for call in execute_calls:
+                sql = call[0][0]
+                params = call[0][1]
+                if "%s * INTERVAL '1 day'" in sql:
+                    found_interval_logic = True
+                    # Check parameter order: days should be first, symbols second
+                    assert params[0] == 30
+                    assert isinstance(params[1], list)
+                    assert "sm.symbol = ANY(%s)" in sql
+                    break
+            assert found_interval_logic
+
+    def test_get_earnings_scope_all(self, client, mock_db):
+        """Test getting earnings with scope=all parameter."""
+        mock_cursor = MagicMock()
+        mock_cursor.fetchone.return_value = {'total': 100}
+        mock_cursor.fetchall.return_value = [
+            {'symbol': 'MSFT', 'company_name': 'Microsoft', 'next_earnings_date': date(2026, 3, 1)}
+        ]
+        mock_conn = MagicMock()
+        mock_conn.cursor.return_value = mock_cursor
+        mock_db.get_connection.return_value = mock_conn
+        mock_db.get_earnings_8k_status_batch.return_value = {}
+        mock_db.get_user_by_id.return_value = {"id": 1, "user_type": "regular"}
+        
+        # Test with scope=all
+        with client.session_transaction() as sess:
+            sess['user_id'] = 1
+            
+        with patch('app.deps.db', mock_db):
+            response = client.get('/api/dashboard/earnings?scope=all')
+            assert response.status_code == 200
+            data = response.get_json()
+            assert data['upcoming_earnings']['total_count'] == 100
+            
+            # Verify the SQL DOES NOT contain the watchlist filtering
+            execute_calls = [call for call in mock_cursor.execute.call_args_list]
+            for call in execute_calls:
+                sql = call[0][0]
+                assert "sm.symbol = ANY(%s)" not in sql
