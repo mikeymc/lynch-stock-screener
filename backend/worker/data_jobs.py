@@ -331,8 +331,9 @@ class DataJobsMixin:
                 ni_by_key = by_key(quarterly_data.get('net_income_quarterly', []), 'net_income', 'fiscal_end')
                 eps_by_key = by_key(quarterly_data.get('eps_quarterly', []), 'eps', 'fiscal_end')
                 cf_by_key = by_key(quarterly_data.get('cash_flow_quarterly', []), 'operating_cash_flow', 'capital_expenditures', 'free_cash_flow', 'fiscal_end')
+                eq_by_key = by_key(quarterly_data.get('shareholder_equity_quarterly', []), 'shareholder_equity', 'fiscal_end')
 
-                all_keys = set(rev_by_key) | set(ni_by_key) | set(eps_by_key) | set(cf_by_key)
+                all_keys = set(rev_by_key) | set(ni_by_key) | set(eps_by_key) | set(cf_by_key) | set(eq_by_key)
 
                 quarters_stored = 0
                 for (year, quarter) in all_keys:
@@ -340,8 +341,10 @@ class DataJobsMixin:
                     ni = ni_by_key.get((year, quarter), {})
                     eps_e = eps_by_key.get((year, quarter), {})
                     cf = cf_by_key.get((year, quarter), {})
+                    eq = eq_by_key.get((year, quarter), {})
 
-                    fiscal_end = rev.get('fiscal_end') or ni.get('fiscal_end') or eps_e.get('fiscal_end') or cf.get('fiscal_end')
+                    fiscal_end = (rev.get('fiscal_end') or ni.get('fiscal_end') or
+                                  eps_e.get('fiscal_end') or cf.get('fiscal_end') or eq.get('fiscal_end'))
 
                     self.db.save_earnings_history(
                         symbol=symbol,
@@ -353,7 +356,8 @@ class DataJobsMixin:
                         net_income=ni.get('net_income'),
                         operating_cash_flow=cf.get('operating_cash_flow'),
                         capital_expenditures=cf.get('capital_expenditures'),
-                        free_cash_flow=cf.get('free_cash_flow')
+                        free_cash_flow=cf.get('free_cash_flow'),
+                        shareholder_equity=eq.get('shareholder_equity'),
                     )
                     quarters_stored += 1
 

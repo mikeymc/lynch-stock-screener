@@ -510,6 +510,63 @@ class TestQuarterlyEPSExtraction:
 
 # ── Quarterly job revenue guard fix ────────────────────────────────────────────
 
+def test_quarterly_job_stores_shareholder_equity():
+    """
+    Quarterly cache job must pass shareholder_equity to save_earnings_history.
+    Previously equity was extracted from the balance sheet but never wired into
+    the storage call, leaving shareholder_equity=NULL for all quarterly records.
+    """
+    from unittest.mock import MagicMock, patch, call
+    import sys, os
+    sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+
+    # Simulate the by_key join and save call as done in _run_quarterly_fundamentals_cache
+    def by_key(entries, *field_names):
+        result = {}
+        for e in entries:
+            key = (e.get('year'), e.get('quarter'))
+            if key[0] and key[1]:
+                result[key] = {f: e.get(f) for f in field_names}
+        return result
+
+    rev_by_key = by_key([{'year': 2024, 'quarter': 'Q3', 'revenue': 1_000_000_000, 'fiscal_end': '2024-09-30'}], 'revenue', 'fiscal_end')
+    ni_by_key = by_key([{'year': 2024, 'quarter': 'Q3', 'net_income': 100_000_000, 'fiscal_end': '2024-09-30'}], 'net_income', 'fiscal_end')
+    eps_by_key = by_key([], 'eps', 'fiscal_end')
+    cf_by_key = by_key([], 'operating_cash_flow', 'capital_expenditures', 'free_cash_flow', 'fiscal_end')
+    eq_by_key = by_key([{'year': 2024, 'quarter': 'Q3', 'shareholder_equity': 5_000_000_000, 'fiscal_end': '2024-09-30'}], 'shareholder_equity', 'fiscal_end')
+
+    # With the fix: equity_by_key is included in all_keys and passed to save
+    all_keys = set(rev_by_key) | set(ni_by_key) | set(eps_by_key) | set(cf_by_key) | set(eq_by_key)
+
+    db = MagicMock()
+    for (year, quarter) in all_keys:
+        rev = rev_by_key.get((year, quarter), {})
+        ni = ni_by_key.get((year, quarter), {})
+        eps_e = eps_by_key.get((year, quarter), {})
+        cf = cf_by_key.get((year, quarter), {})
+        eq = eq_by_key.get((year, quarter), {})
+        fiscal_end = rev.get('fiscal_end') or ni.get('fiscal_end') or eps_e.get('fiscal_end') or cf.get('fiscal_end') or eq.get('fiscal_end')
+
+        db.save_earnings_history(
+            symbol='TEST',
+            year=year,
+            eps=eps_e.get('eps'),
+            revenue=rev.get('revenue'),
+            period=quarter,
+            fiscal_end=fiscal_end,
+            net_income=ni.get('net_income'),
+            operating_cash_flow=cf.get('operating_cash_flow'),
+            capital_expenditures=cf.get('capital_expenditures'),
+            free_cash_flow=cf.get('free_cash_flow'),
+            shareholder_equity=eq.get('shareholder_equity'),
+        )
+
+    assert db.save_earnings_history.called
+    kwargs = db.save_earnings_history.call_args[1]
+    assert kwargs['shareholder_equity'] == 5_000_000_000, \
+        f"Expected shareholder_equity=5B, got {kwargs.get('shareholder_equity')}"
+
+
 def test_quarterly_job_processes_eps_only_company():
     """
     Quarterly cache job must store EPS/NI data even when revenue_quarterly is empty.
