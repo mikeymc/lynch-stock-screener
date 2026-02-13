@@ -1,5 +1,5 @@
-import { useState, useEffect } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useState, useEffect, useMemo } from 'react'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { Plus, TrendingUp, TrendingDown, Activity, Calendar, PlayCircle, Folder } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card'
@@ -12,10 +12,22 @@ import StrategyCard from '@/components/StrategyCard'
 
 function Strategies() {
     const navigate = useNavigate()
+    const [searchParams, setSearchParams] = useSearchParams()
     const [strategies, setStrategies] = useState([])
     const [loading, setLoading] = useState(true)
     const [error, setError] = useState(null)
     const [showWizard, setShowWizard] = useState(false)
+
+    // Check for "create" query param to auto-open wizard
+    useEffect(() => {
+        if (searchParams.get('create') === 'true') {
+            setShowWizard(true)
+            // Clear the param after opening to avoid re-opening on manual refresh later
+            const newParams = new URLSearchParams(searchParams)
+            newParams.delete('create')
+            setSearchParams(newParams, { replace: true })
+        }
+    }, [searchParams, setSearchParams])
 
     const fetchStrategies = async () => {
         try {
@@ -69,7 +81,7 @@ function Strategies() {
                     <p className="text-muted-foreground">Manage your autonomous investment agents</p>
                 </div>
                 <Button onClick={() => setShowWizard(true)} className="flex items-center gap-2">
-                    <Plus className="h-4 w-4" /> Create Strategy
+                    <Plus className="h-4 w-4" /> Create Autonomous Portfolio
                 </Button>
             </div>
 
@@ -83,7 +95,7 @@ function Strategies() {
                         There are no active investment strategies linked to your account.
                     </p>
                     <Button onClick={() => setShowWizard(true)}>
-                        <Plus className="h-4 w-4 mr-2" /> Create Your First Strategy
+                        <Plus className="h-4 w-4 mr-2" /> Create Your First Autonomous Portfolio
                     </Button>
                 </div>
             ) : (

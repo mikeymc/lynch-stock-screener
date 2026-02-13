@@ -78,9 +78,19 @@ export default function Portfolios() {
 
     // Create portfolio dialog state
     const [createDialogOpen, setCreateDialogOpen] = useState(false)
+    const [creationStep, setCreationStep] = useState('choice') // 'choice' or 'form'
     const [newPortfolioName, setNewPortfolioName] = useState('')
     const [newPortfolioInitialCash, setNewPortfolioInitialCash] = useState('100000')
     const [creating, setCreating] = useState(false)
+
+    // Reset step when dialog closes
+    useEffect(() => {
+        if (!createDialogOpen) {
+            setCreationStep('choice')
+            setNewPortfolioName('')
+            setNewPortfolioInitialCash('100000')
+        }
+    }, [createDialogOpen])
 
     useEffect(() => {
         fetchPortfolios()
@@ -247,45 +257,87 @@ export default function Portfolios() {
                             New Portfolio
                         </Button>
                     </DialogTrigger>
-                    <DialogContent>
+                    <DialogContent className={creationStep === 'choice' ? 'sm:max-w-[600px]' : 'sm:max-w-[425px]'}>
                         <DialogHeader>
-                            <DialogTitle>Create New Portfolio</DialogTitle>
+                            <DialogTitle>
+                                {creationStep === 'choice' ? 'Create New Portfolio' : 'Self-Directed Portfolio'}
+                            </DialogTitle>
                             <DialogDescription>
-                                Start a new paper trading portfolio with virtual cash.
+                                {creationStep === 'choice'
+                                    ? 'Choose how you want to manage your new paper trading portfolio.'
+                                    : 'Start a new paper trading portfolio with virtual cash.'
+                                }
                             </DialogDescription>
                         </DialogHeader>
-                        <div className="space-y-4 py-4">
-                            <div className="space-y-2">
-                                <Label htmlFor="name">Portfolio Name</Label>
-                                <Input
-                                    id="name"
-                                    placeholder="e.g., Tech Growth, Value Picks"
-                                    value={newPortfolioName}
-                                    onChange={(e) => setNewPortfolioName(e.target.value)}
-                                />
+
+                        {creationStep === 'choice' ? (
+                            <div className="grid grid-cols-2 gap-4 py-6">
+                                <Card
+                                    className="cursor-pointer hover:border-primary transition-colors border-2 border-muted"
+                                    onClick={() => navigate('/strategies?create=true')}
+                                >
+                                    <CardContent className="pt-6 flex flex-col items-center text-center">
+                                        <div className="h-12 w-12 rounded-full bg-primary/10 flex items-center justify-center mb-4">
+                                            <Bot className="h-6 w-6 text-primary" />
+                                        </div>
+                                        <h3 className="font-bold mb-1">Autonomous</h3>
+                                        <p className="text-sm text-muted-foreground">
+                                            Managed by an AI strategy agent that trades automatically based on your rules.
+                                        </p>
+                                    </CardContent>
+                                </Card>
+
+                                <Card
+                                    className="cursor-pointer hover:border-primary transition-colors border-2 border-muted"
+                                    onClick={() => setCreationStep('form')}
+                                >
+                                    <CardContent className="pt-6 flex flex-col items-center text-center">
+                                        <div className="h-12 w-12 rounded-full bg-muted flex items-center justify-center mb-4">
+                                            <User className="h-6 w-6 text-muted-foreground" />
+                                        </div>
+                                        <h3 className="font-bold mb-1">Self-Directed</h3>
+                                        <p className="text-sm text-muted-foreground">
+                                            Manual paper trading. You choose which stocks to buy and sell yourself.
+                                        </p>
+                                    </CardContent>
+                                </Card>
                             </div>
-                            <div className="space-y-2">
-                                <Label htmlFor="cash">Initial Cash</Label>
-                                <div className="relative">
-                                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground">$</span>
-                                    <Input
-                                        id="cash"
-                                        type="number"
-                                        className="pl-7"
-                                        value={newPortfolioInitialCash}
-                                        onChange={(e) => setNewPortfolioInitialCash(e.target.value)}
-                                    />
+                        ) : (
+                            <>
+                                <div className="space-y-4 py-4">
+                                    <div className="space-y-2">
+                                        <Label htmlFor="name">Portfolio Name</Label>
+                                        <Input
+                                            id="name"
+                                            placeholder="e.g., Tech Growth, Value Picks"
+                                            value={newPortfolioName}
+                                            onChange={(e) => setNewPortfolioName(e.target.value)}
+                                        />
+                                    </div>
+                                    <div className="space-y-2">
+                                        <Label htmlFor="cash">Initial Cash</Label>
+                                        <div className="relative">
+                                            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground">$</span>
+                                            <Input
+                                                id="cash"
+                                                type="number"
+                                                className="pl-7"
+                                                value={newPortfolioInitialCash}
+                                                onChange={(e) => setNewPortfolioInitialCash(e.target.value)}
+                                            />
+                                        </div>
+                                    </div>
                                 </div>
-                            </div>
-                        </div>
-                        <DialogFooter>
-                            <Button variant="outline" onClick={() => setCreateDialogOpen(false)}>
-                                Cancel
-                            </Button>
-                            <Button onClick={createPortfolio} disabled={creating || !newPortfolioName.trim()}>
-                                {creating ? 'Creating...' : 'Create Portfolio'}
-                            </Button>
-                        </DialogFooter>
+                                <DialogFooter>
+                                    <Button variant="outline" onClick={() => setCreationStep('choice')}>
+                                        Back
+                                    </Button>
+                                    <Button onClick={createPortfolio} disabled={creating || !newPortfolioName.trim()}>
+                                        {creating ? 'Creating...' : 'Create Portfolio'}
+                                    </Button>
+                                </DialogFooter>
+                            </>
+                        )}
                     </DialogContent>
                 </Dialog>
             </div>

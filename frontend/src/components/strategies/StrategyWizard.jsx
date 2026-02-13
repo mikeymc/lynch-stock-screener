@@ -268,7 +268,7 @@ const StrategyWizard = ({ onClose, onSuccess, initialData = null, mode = 'create
                 {/* Header */}
                 <div className="border-b border-border p-6 flex justify-between items-center bg-card">
                     <div>
-                        <h2 className="text-xl font-bold text-foreground">{mode === 'edit' ? 'Strategy Configuration' : 'Create Strategy'}</h2>
+                        <h2 className="text-xl font-bold text-foreground">{mode === 'edit' ? 'Strategy Configuration' : 'Create Autonomous Portfolio'}</h2>
                         <div className="flex gap-2 mt-2">
                             {[1, 2, 3, 4, 5, 6, 7].map(s => (
                                 <div
