@@ -164,9 +164,6 @@ function StrategyDetail() {
             {/* Header */}
             <div className="flex items-center justify-between">
                 <div className="flex items-center gap-4">
-                    <Button variant="ghost" size="icon" onClick={() => navigate('/strategies')}>
-                        <ArrowLeft className="h-4 w-4" />
-                    </Button>
                     <div>
                         <h1 className="text-2xl font-bold tracking-tight">{strategy.name}</h1>
                         <p className="text-muted-foreground">{strategy.description || 'Autonomous Investment Strategy'}</p>

@@ -433,9 +433,6 @@ function PortfolioDetail({ portfolio, onBack, onRefresh, onDelete }) {
             {/* Header */}
             <div className="flex items-start justify-between mb-6">
                 <div className="flex items-center gap-4">
-                    <Button variant="ghost" size="icon" onClick={onBack}>
-                        <ArrowLeft className="h-5 w-5" />
-                    </Button>
                     <div>
                         <div className="flex items-center gap-2">
                             <h1 className="text-2xl font-bold tracking-tight">{portfolio.name}</h1>
