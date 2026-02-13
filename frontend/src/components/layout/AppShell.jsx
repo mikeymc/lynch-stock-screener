@@ -300,6 +300,18 @@ function AppShellContent({
                                             </SidebarMenuButton>
                                         </SidebarMenuItem>
                                     )}
+                                    <SidebarMenuItem>
+                                        <SidebarMenuButton
+                                            onClick={() => {
+                                                navigate('/earnings')
+                                                onNavClick()
+                                            }}
+                                            isActive={location.pathname === '/earnings'}
+                                            className="pl-4 font-normal text-muted-foreground data-[active=true]:font-medium data-[active=true]:text-sidebar-primary"
+                                        >
+                                            <span>Earnings Calendar</span>
+                                        </SidebarMenuButton>
+                                    </SidebarMenuItem>
                                 </SidebarMenu>
                             </SidebarGroupContent>
                         </SidebarGroup>
