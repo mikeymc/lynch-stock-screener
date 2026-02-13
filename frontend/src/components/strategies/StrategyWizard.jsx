@@ -59,7 +59,7 @@ const StrategyWizard = ({ onClose, onSuccess, initialData = null, mode = 'create
         position_sizing: {
             method: 'equal_weight',
             max_position_pct: 10.0,
-            max_positions: 25,
+            max_positions: 50,
             min_position_value: 500,
             fixed_position_pct: '',
             kelly_fraction: ''
@@ -1079,7 +1079,7 @@ const StrategyWizard = ({ onClose, onSuccess, initialData = null, mode = 'create
                                 <div className="flex justify-between border-b border-border pb-3">
                                     <span className="text-muted-foreground">Position Limits</span>
                                     <span className="text-foreground text-sm">
-                                        Max: {formData.position_sizing.max_position_pct || '?'}% / Count: {formData.position_sizing.max_positions || '25'} / Min: ${formData.position_sizing.min_position_value || '?'}
+                                        Max: {formData.position_sizing.max_position_pct || '?'}% / Count: {formData.position_sizing.max_positions || '50'} / Min: ${formData.position_sizing.min_position_value || '?'}
                                     </span>
                                 </div>
                                 <div className="flex justify-between pb-1">

@@ -65,7 +65,8 @@ FILTER_TEMPLATES = {
 STRATEGY_DEFAULTS = {
     "position_sizing": {
         "method": "equal_weight",
-        "max_position_pct": 10.0
+        "max_position_pct": 10.0,
+        "max_positions": 50
     },
     "consensus_mode": "both_agree",
     "consensus_threshold": 70.0,

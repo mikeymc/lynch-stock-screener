@@ -74,6 +74,7 @@ class StrategyToolsMixin:
         consensus_threshold: float = None,
         position_sizing_method: str = None,
         max_position_pct: float = None,
+        max_positions: int = None,
         profit_target_pct: float = None,
         stop_loss_pct: float = None,
         filters=None,
@@ -106,12 +107,14 @@ class StrategyToolsMixin:
                 update_kwargs['consensus_threshold'] = consensus_threshold
 
             # position_sizing: read-modify-write
-            if position_sizing_method is not None or max_position_pct is not None:
+            if position_sizing_method is not None or max_position_pct is not None or max_positions is not None:
                 existing_ps = strategy.get('position_sizing') or {}
                 if position_sizing_method is not None:
                     existing_ps['method'] = position_sizing_method
                 if max_position_pct is not None:
                     existing_ps['max_position_pct'] = max_position_pct
+                if max_positions is not None:
+                    existing_ps['max_positions'] = max_positions
                 update_kwargs['position_sizing'] = existing_ps
 
             # exit_conditions: read-modify-write

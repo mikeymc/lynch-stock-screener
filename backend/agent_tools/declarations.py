@@ -585,6 +585,7 @@ create_strategy_decl = FunctionDeclaration(
                 description="How to size positions: 'equal_weight' (equal allocation), 'conviction_weighted' (scale by confidence), 'fixed_pct' (fixed %), 'kelly_criterion' (Kelly formula). Default: 'equal_weight'"
             ),
             "max_position_pct": Schema(type=Type.NUMBER, description="Maximum % of portfolio per position (e.g., 10.0 for 10%). Default: 10.0"),
+            "max_positions": Schema(type=Type.INTEGER, description="Maximum number of holdings in the portfolio. Default: 50"),
             "profit_target_pct": Schema(type=Type.NUMBER, description="Optional: Sell when position gains this % (e.g., 50 for +50%)"),
             "stop_loss_pct": Schema(type=Type.NUMBER, description="Optional: Sell when position loses this % (e.g., -20 for -20%)"),
             "user_id": Schema(type=Type.INTEGER, description="Internal User ID (automatically injected)"),
@@ -654,6 +655,7 @@ update_strategy_decl = FunctionDeclaration(
                 enum=["equal_weight", "conviction_weighted", "fixed_pct", "kelly_criterion"],
             ),
             "max_position_pct": Schema(type=Type.NUMBER, description="Maximum % of portfolio per position (e.g., 10.0 for 10%)"),
+            "max_positions": Schema(type=Type.INTEGER, description="Maximum number of holdings in the portfolio"),
             "profit_target_pct": Schema(type=Type.NUMBER, description="Sell when position gains this % (e.g., 50 for +50%)"),
             "stop_loss_pct": Schema(type=Type.NUMBER, description="Sell when position loses this % (e.g., -20 for -20%)"),
             "filters": Schema(

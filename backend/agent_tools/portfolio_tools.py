@@ -129,6 +129,7 @@ class PortfolioToolsMixin:
         consensus_threshold: float = None,
         position_sizing_method: str = None,
         max_position_pct: float = None,
+        max_positions: int = None,
         profit_target_pct: float = None,
         stop_loss_pct: float = None
     ) -> Dict[str, Any]:
@@ -168,7 +169,8 @@ class PortfolioToolsMixin:
         # Build position sizing
         position_sizing = {
             "method": position_sizing_method or STRATEGY_DEFAULTS["position_sizing"]["method"],
-            "max_position_pct": max_position_pct or STRATEGY_DEFAULTS["position_sizing"]["max_position_pct"]
+            "max_position_pct": max_position_pct or STRATEGY_DEFAULTS["position_sizing"]["max_position_pct"],
+            "max_positions": max_positions or STRATEGY_DEFAULTS["position_sizing"]["max_positions"]
         }
 
         # Build exit conditions
