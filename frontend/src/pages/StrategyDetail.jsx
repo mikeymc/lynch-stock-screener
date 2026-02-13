@@ -18,7 +18,6 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog'
 import ReactMarkdown from 'react-markdown'
 import { format } from 'date-fns'
-import { Line } from 'react-chartjs-2'
 import StrategyWizard from '@/components/strategies/StrategyWizard'
 
 const LiveSignal = () => (
@@ -215,30 +214,12 @@ function StrategyDetail() {
             </div>
 
             {/* Main Content Tabs */}
-            <Tabs defaultValue="performance" className="space-y-4">
+            <Tabs defaultValue="history" className="space-y-4">
                 <TabsList>
-                    <TabsTrigger value="performance">Performance</TabsTrigger>
                     <TabsTrigger value="history">Run History</TabsTrigger>
                     <TabsTrigger value="decisions">Decisions Log</TabsTrigger>
                 </TabsList>
 
-                <TabsContent value="performance" className="space-y-4">
-                    <Card>
-                        <CardHeader>
-                            <CardTitle>Performance vs Benchmark</CardTitle>
-                            <CardDescription>Comparing strategy returns against S&P 500 (SPY)</CardDescription>
-                        </CardHeader>
-                        <CardContent className="h-[400px]">
-                            {performance.length > 0 ? (
-                                <Line data={chartData} options={chartOptions} />
-                            ) : (
-                                <div className="h-full flex items-center justify-center text-muted-foreground">
-                                    No performance data available yet.
-                                </div>
-                            )}
-                        </CardContent>
-                    </Card>
-                </TabsContent>
 
                 <TabsContent value="history">
                     <Card>

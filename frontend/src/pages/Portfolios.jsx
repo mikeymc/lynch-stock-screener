@@ -521,7 +521,7 @@ function PortfolioDetail({ portfolio, onBack, onRefresh, onDelete }) {
             <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
                 <TabsList className="mb-4">
                     <TabsTrigger value="holdings">Holdings</TabsTrigger>
-                    <TabsTrigger value="trade">Trade</TabsTrigger>
+                    {!portfolio.strategy_id && <TabsTrigger value="trade">Trade</TabsTrigger>}
                     <TabsTrigger value="transactions">Transactions</TabsTrigger>
                     <TabsTrigger value="performance">Performance</TabsTrigger>
                 </TabsList>
@@ -530,14 +530,16 @@ function PortfolioDetail({ portfolio, onBack, onRefresh, onDelete }) {
                     <HoldingsTab portfolio={portfolio} />
                 </TabsContent>
 
-                <TabsContent value="trade">
-                    <TradeTab
-                        portfolioId={portfolio.id}
-                        cash={cash}
-                        holdings={holdings}
-                        onTradeComplete={onRefresh}
-                    />
-                </TabsContent>
+                {!portfolio.strategy_id && (
+                    <TabsContent value="trade">
+                        <TradeTab
+                            portfolioId={portfolio.id}
+                            cash={cash}
+                            holdings={holdings}
+                            onTradeComplete={onRefresh}
+                        />
+                    </TabsContent>
+                )}
 
                 <TabsContent value="transactions">
                     <TransactionsTab
