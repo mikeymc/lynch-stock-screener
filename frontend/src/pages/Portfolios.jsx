@@ -34,6 +34,8 @@ import {
     Bot,
     User
 } from 'lucide-react'
+import { format } from 'date-fns'
+import { Line } from 'react-chartjs-2'
 import { useAuth } from '@/context/AuthContext'
 
 // Format currency with commas and 2 decimal places
@@ -856,60 +858,109 @@ function PerformanceTab({ snapshots, loading, initialCash }) {
         )
     }
 
-    // Simple text-based chart representation
-    const maxValue = Math.max(...snapshots.map(s => s.total_value), initialCash)
-    const minValue = Math.min(...snapshots.map(s => s.total_value), initialCash)
-    const range = maxValue - minValue || 1
+    // Prepare chart data
+    const chartData = {
+        labels: snapshots.map(s => format(new Date(s.snapshot_at), 'MMM d, h:mm a')),
+        datasets: [
+            {
+                label: 'Portfolio Return',
+                data: snapshots.map(s => s.portfolio_return_pct),
+                borderColor: 'rgb(34, 197, 94)', // Green
+                backgroundColor: 'rgba(34, 197, 94, 0.1)',
+                fill: true,
+                tension: 0.3
+            },
+            {
+                label: 'S&P 500',
+                data: snapshots.map(s => s.spy_return_pct),
+                borderColor: 'rgb(148, 163, 184)', // Slate
+                borderDash: [5, 5],
+                fill: false,
+                tension: 0.3
+            }
+        ]
+    }
+
+    const chartOptions = {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+            legend: {
+                position: 'top',
+            },
+            tooltip: {
+                mode: 'index',
+                intersect: false,
+                callbacks: {
+                    label: function (context) {
+                        let label = context.dataset.label || '';
+                        if (label) {
+                            label += ': ';
+                        }
+                        if (context.parsed.y !== null) {
+                            label += context.parsed.y.toFixed(2) + '%';
+                        }
+                        return label;
+                    }
+                }
+            },
+        },
+        scales: {
+            y: {
+                title: {
+                    display: true,
+                    text: 'Return (%)'
+                },
+                ticks: {
+                    callback: function (value) {
+                        return value.toFixed(1) + '%';
+                    }
+                }
+            }
+        }
+    }
+
+    const latest = snapshots[snapshots.length - 1];
+    const currentReturn = latest?.portfolio_return_pct || 0;
+    const currentSpyReturn = latest?.spy_return_pct || 0;
+    const alpha = latest?.alpha || 0;
 
     return (
         <Card>
             <CardHeader>
-                <CardTitle className="text-lg">Portfolio Value Over Time</CardTitle>
+                <CardTitle className="text-lg">Performance vs Benchmark</CardTitle>
                 <CardDescription>
-                    {snapshots.length} data points
+                    Comparing returns against S&P 500 (SPY) since inception
                 </CardDescription>
             </CardHeader>
             <CardContent>
-                <div className="space-y-2">
-                    {/* Mini chart visualization */}
-                    <div className="h-32 flex items-end gap-1 border-b pb-2">
-                        {snapshots.slice(-50).map((snapshot, i) => {
-                            const height = ((snapshot.total_value - minValue) / range) * 100
-                            const isPositive = snapshot.total_value >= initialCash
-                            return (
-                                <div
-                                    key={i}
-                                    className={`flex-1 min-w-1 rounded-t transition-all ${isPositive
-                                        ? 'bg-emerald-500/60 hover:bg-emerald-500'
-                                        : 'bg-red-500/60 hover:bg-red-500'
-                                        }`}
-                                    style={{ height: `${Math.max(height, 5)}%` }}
-                                    title={`${formatDate(snapshot.snapshot_at)}: ${formatCurrency(snapshot.total_value)}`}
-                                />
-                            )
-                        })}
-                    </div>
-                    <div className="flex justify-between text-xs text-muted-foreground">
-                        <span>{formatDate(snapshots[0]?.snapshot_at)}</span>
-                        <span>{formatDate(snapshots[snapshots.length - 1]?.snapshot_at)}</span>
-                    </div>
+                <div className="h-[400px] w-full mb-8">
+                    <Line data={chartData} options={chartOptions} />
                 </div>
 
                 <Separator className="my-6" />
 
                 {/* Stats summary */}
-                <div className="grid grid-cols-3 gap-4 text-center">
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-center">
                     <div>
-                        <p className="text-sm text-muted-foreground">Starting Value</p>
-                        <p className="font-semibold">{formatCurrency(initialCash)}</p>
+                        <p className="text-sm text-muted-foreground">Portfolio Return</p>
+                        <p className={`text-xl font-bold ${currentReturn >= 0 ? 'text-emerald-500' : 'text-red-500'}`}>
+                            {formatPercent(currentReturn)}
+                        </p>
+                    </div>
+                    <div>
+                        <p className="text-sm text-muted-foreground">SPY Return</p>
+                        <p className="text-xl font-bold text-slate-400">{formatPercent(currentSpyReturn)}</p>
+                    </div>
+                    <div>
+                        <p className="text-sm text-muted-foreground">Alpha vs SPY</p>
+                        <p className={`text-xl font-bold ${alpha >= 0 ? 'text-emerald-500' : 'text-red-500'}`}>
+                            {formatPercent(alpha)}
+                        </p>
                     </div>
                     <div>
                         <p className="text-sm text-muted-foreground">Current Value</p>
-                        <p className="font-semibold">{formatCurrency(snapshots[snapshots.length - 1]?.total_value)}</p>
-                    </div>
-                    <div>
-                        <p className="text-sm text-muted-foreground">Peak Value</p>
-                        <p className="font-semibold">{formatCurrency(maxValue)}</p>
+                        <p className="text-xl font-bold">{formatCurrency(latest?.total_value)}</p>
                     </div>
                 </div>
             </CardContent>

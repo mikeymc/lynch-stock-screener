@@ -582,20 +582,74 @@ class PortfoliosMixin:
             self.return_connection(conn)
 
     def get_portfolio_snapshots(self, portfolio_id: int, limit: int = None) -> List[Dict[str, Any]]:
-        """Get portfolio value history snapshots"""
+        """Get portfolio value history snapshots enriched with benchmark performance."""
         conn = self.get_connection()
         try:
             cursor = conn.cursor(row_factory=psycopg.rows.dict_row)
+            
+            # 1. Get portfolio info (inception values)
+            cursor.execute("SELECT initial_cash, created_at FROM portfolios WHERE id = %s", (portfolio_id,))
+            portfolio_info = cursor.fetchone()
+            if not portfolio_info:
+                return []
+                
+            initial_cash = float(portfolio_info['initial_cash'])
+            creation_date = portfolio_info['created_at'].date()
+            
+            # 2. Get inception benchmark price (closest to creation date)
+            cursor.execute("""
+                SELECT spy_price FROM benchmark_snapshots 
+                ORDER BY ABS(snapshot_date - %s) ASC 
+                LIMIT 1
+            """, (creation_date,))
+            inception_benchmark = cursor.fetchone()
+            inception_spy = float(inception_benchmark['spy_price']) if inception_benchmark else None
+
+            # 3. Get snapshots joined with benchmarks
             query = """
-                SELECT id, portfolio_id, total_value, cash_value, holdings_value, snapshot_at
-                FROM portfolio_value_snapshots
-                WHERE portfolio_id = %s
-                ORDER BY snapshot_at ASC
+                SELECT 
+                    s.id, s.portfolio_id, s.total_value, s.cash_value, s.holdings_value, s.snapshot_at,
+                    b.spy_price as current_spy
+                FROM portfolio_value_snapshots s
+                LEFT JOIN benchmark_snapshots b ON s.snapshot_at::date = b.snapshot_date
+                WHERE s.portfolio_id = %s
+                ORDER BY s.snapshot_at ASC
             """
             if limit:
                 query += f" LIMIT {limit}"
+                
             cursor.execute(query, (portfolio_id,))
-            return cursor.fetchall()
+            snapshots = cursor.fetchall()
+            
+            # 4. Calculate returns
+            results = []
+            for s in snapshots:
+                # Portfolio return %
+                total_value = float(s['total_value'])
+                portfolio_return_pct = ((total_value - initial_cash) / initial_cash * 100) if initial_cash > 0 else 0
+                
+                # Benchmark return %
+                current_spy = float(s['current_spy']) if s['current_spy'] else None
+                spy_return_pct = 0
+                if inception_spy and current_spy:
+                    spy_return_pct = ((current_spy - inception_spy) / inception_spy * 100)
+                
+                alpha = portfolio_return_pct - spy_return_pct
+                
+                results.append({
+                    'id': s['id'],
+                    'portfolio_id': s['portfolio_id'],
+                    'total_value': total_value,
+                    'cash_value': float(s['cash_value']),
+                    'holdings_value': float(s['holdings_value']),
+                    'snapshot_at': s['snapshot_at'],
+                    'portfolio_return_pct': float(portfolio_return_pct),
+                    'spy_return_pct': float(spy_return_pct),
+                    'alpha': float(alpha),
+                    'spy_price': current_spy
+                })
+                
+            return results
         finally:
             self.return_connection(conn)
 
