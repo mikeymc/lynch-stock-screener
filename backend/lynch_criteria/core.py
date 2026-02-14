@@ -329,7 +329,10 @@ class LynchCriteriaCore:
             ownership_weight = self.settings['weight_ownership']['value']
 
         # Get consistency score (0-100), default to 50 if not available
-        consistency_score = base_data.get('consistency_score', 50) if base_data.get('consistency_score') is not None else 50
+        # Use pd.isna to handle both None and np.nan consistently with vectorized engine
+        consistency_score = base_data.get('consistency_score')
+        if consistency_score is None or pd.isna(consistency_score):
+            consistency_score = 50.0
 
         # Check if threshold overrides are provided - if so, recalculate component scores
         has_threshold_overrides = overrides and any(
@@ -412,7 +415,7 @@ class LynchCriteriaCore:
 
 
 def normalize_consistency(raw_value):
-    if raw_value is None:
+    if raw_value is None or pd.isna(raw_value):
         return None
     # Formula: 100 - (std_dev * 2), capped at 0
     return max(0.0, 100.0 - (raw_value * 2.0))

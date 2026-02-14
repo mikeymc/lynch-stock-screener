@@ -50,7 +50,7 @@ class BatchScoringMixin:
 
         # Buffett Weights
         weight_roe = config.get('weight_roe') if config.get('weight_roe') is not None else 0.0
-        weight_debt_earnings = config.get('weight_debt_earnings') if config.get('weight_debt_earnings') is not None else 0.0
+        weight_debt_to_earnings = config.get('weight_debt_to_earnings') if config.get('weight_debt_to_earnings') is not None else 0.0
         weight_gross_margin = config.get('weight_gross_margin') if config.get('weight_gross_margin') is not None else 0.0
 
         # Initialize overall score
@@ -89,7 +89,8 @@ class BatchScoringMixin:
                 df['debt_to_equity'] <= debt_excellent,
                 df['debt_to_equity'] <= debt_good,
             ]
-            debt_choices = ['FAIL', 'PASS', 'CLOSE']
+            # Alignment: Missing debt is PASS (100 score) for Lynch
+            debt_choices = ['PASS', 'PASS', 'CLOSE']
             debt_status = np.select(debt_conditions, debt_choices, default='FAIL')
 
         ownership_score = pd.Series(0.0, index=df.index)
@@ -111,7 +112,8 @@ class BatchScoringMixin:
                 inst_pass,
                 inst_close,
             ]
-            inst_choices = ['FAIL', 'PASS', 'CLOSE']
+            # Alignment: Missing ownership is PASS (75 score) for Lynch
+            inst_choices = ['PASS', 'PASS', 'CLOSE']
             ownership_status = np.select(inst_conditions, inst_choices, default='FAIL')
 
         # --- Buffett Components ---
@@ -128,24 +130,24 @@ class BatchScoringMixin:
             )
             overall_score += roe_score * weight_roe
 
-        debt_earnings_score = pd.Series(0.0, index=df.index)
-        if weight_debt_earnings > 0:
-            # Debt/Earnings Thresholds
-            de_excellent = config.get('de_excellent') if config.get('de_excellent') is not None else 2.0
-            de_good = config.get('de_good') if config.get('de_good') is not None else 4.0
-            de_fair = config.get('de_fair') if config.get('de_fair') is not None else 7.0
+        debt_to_earnings_score = pd.Series(0.0, index=df.index)
+        if weight_debt_to_earnings > 0:
+            # Debt/Earnings Thresholds (unified keys)
+            de_excellent = config.get('debt_to_earnings_excellent') if config.get('debt_to_earnings_excellent') is not None else 2.0
+            de_good = config.get('debt_to_earnings_good') if config.get('debt_to_earnings_good') is not None else 4.0
+            de_fair = config.get('debt_to_earnings_fair') if config.get('debt_to_earnings_fair') is not None else 7.0
 
-            debt_earnings_score = self._vectorized_debt_earnings_score(
+            debt_to_earnings_score = self._vectorized_debt_earnings_score(
                 df['debt_to_earnings'], de_excellent, de_good, de_fair
             )
-            overall_score += debt_earnings_score * weight_debt_earnings
+            overall_score += debt_to_earnings_score * weight_debt_to_earnings
 
         gross_margin_score = pd.Series(0.0, index=df.index)
         if weight_gross_margin > 0 and 'gross_margin' in df.columns:
-            # Gross Margin Thresholds
-            gm_excellent = config.get('gm_excellent') if config.get('gm_excellent') is not None else 50.0
-            gm_good = config.get('gm_good') if config.get('gm_good') is not None else 40.0
-            gm_fair = config.get('gm_fair') if config.get('gm_fair') is not None else 30.0
+            # Gross Margin Thresholds (unified keys)
+            gm_excellent = config.get('gross_margin_excellent') if config.get('gross_margin_excellent') is not None else 50.0
+            gm_good = config.get('gross_margin_good') if config.get('gross_margin_good') is not None else 40.0
+            gm_fair = config.get('gross_margin_fair') if config.get('gross_margin_fair') is not None else 30.0
 
             gross_margin_score = self._vectorized_gross_margin_score(
                 df['gross_margin'], gm_excellent, gm_good, gm_fair
@@ -199,11 +201,11 @@ class BatchScoringMixin:
         result['consistency_score'] = consistency_score.round(1)
 
         # Add Buffett Scores
-        if weight_roe > 0 or weight_debt_earnings > 0 or weight_gross_margin > 0:
+        if weight_roe > 0 or weight_debt_to_earnings > 0 or weight_gross_margin > 0:
             if weight_roe > 0:
                 result['roe_score'] = roe_score.round(1)
-            if weight_debt_earnings > 0:
-                result['debt_earnings_score'] = debt_earnings_score.round(1)
+            if weight_debt_to_earnings > 0:
+                result['debt_to_earnings_score'] = debt_to_earnings_score.round(1)
             if weight_gross_margin > 0:
                 result['gross_margin_score'] = gross_margin_score.round(1)
 
@@ -406,13 +408,13 @@ class BatchScoringMixin:
             result[mask_fair] = 50.0 + (25.0 * pos)
 
         # Poor: 0-50
-        # Let's say max reasonable is 10.0
+        # Matches StockEvaluator._calculate_linear_interpolation
         max_poor = 10.0
         mask_poor = (de > fair) & (de < max_poor)
         if mask_poor.any():
             rng = max_poor - fair
             pos = (max_poor - de[mask_poor]) / rng
-            result[mask_poor] = 25.0 * pos
+            result[mask_poor] = 50.0 * pos
 
         result[de >= max_poor] = 0.0
 

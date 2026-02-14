@@ -57,8 +57,7 @@ def resolve_scoring_config(user_id, character_id_override=None):
                 'weight_roe': buffett_cfg.get('weight_roe', 0.35),
                 'weight_consistency': buffett_cfg.get('weight_consistency', 0.25),
                 'weight_earnings_consistency': buffett_cfg.get('weight_consistency', 0.25), # StockEvaluator key
-                'weight_debt_earnings': buffett_cfg.get('weight_debt_to_earnings', 0.20), # vectorized key
-                'weight_debt_to_earnings': buffett_cfg.get('weight_debt_to_earnings', 0.20), # StockEvaluator key
+                'weight_debt_to_earnings': buffett_cfg.get('weight_debt_to_earnings', 0.20),
                 'weight_gross_margin': buffett_cfg.get('weight_gross_margin', 0.20),
                 
                 # Zero out Lynch weights to ensure character purity
@@ -84,7 +83,7 @@ def resolve_scoring_config(user_id, character_id_override=None):
             config = {
                 'weight_roe': 0.35, 'weight_consistency': 0.25, 
                 'weight_earnings_consistency': 0.25,
-                'weight_debt_earnings': 0.20, 'weight_debt_to_earnings': 0.20,
+                'weight_debt_to_earnings': 0.20,
                 'weight_gross_margin': 0.20,
                 'weight_peg': 0.0, 'weight_debt': 0.0, 'weight_ownership': 0.0,
                 'roe_excellent': 20.0, 'roe_good': 15.0, 'roe_fair': 10.0,

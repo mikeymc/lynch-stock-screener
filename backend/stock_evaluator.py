@@ -2,6 +2,7 @@
 # ABOUTME: Scores stocks based on the active character's metrics and weights
 
 import logging
+import pandas as pd
 from typing import Dict, Any, Optional, List
 
 from database import Database
@@ -70,7 +71,7 @@ class StockEvaluator:
         raw_income_consistency = growth_data.get('income_consistency_score') if growth_data else None
 
         def normalize_consistency(raw_value):
-            if raw_value is None:
+            if raw_value is None or pd.isna(raw_value):
                 return None
             return max(0.0, 100.0 - (raw_value * 2.0))
 
@@ -89,6 +90,8 @@ class StockEvaluator:
             'pe_ratio': metrics.get('pe_ratio'),
             'peg_ratio': metrics.get('peg_ratio'),
             'debt_to_equity': metrics.get('debt_to_equity'),
+            'debt_to_earnings': metrics.get('debt_to_earnings'),
+            'owner_earnings': metrics.get('owner_earnings'),
             'institutional_ownership': metrics.get('institutional_ownership'),
             'dividend_yield': metrics.get('dividend_yield'),
             'earnings_cagr': earnings_cagr,
@@ -192,7 +195,13 @@ class StockEvaluator:
         - Value between 'good' and 'fair' → 25-75 (interpolated)
         - Value worse than 'fair' → 0-25 (interpolated)
         """
-        if value is None:
+        if value is None or (isinstance(value, float) and pd.isna(value)):
+            # Alignment with ScoringMixin: 
+            # Missing debt is good (100), missing growth/equity is neutral (0 or 50)
+            if threshold.lower_is_better and 'debt' in threshold.metric_id: # placeholder check
+                return 100.0
+            if 'ownership' in threshold.metric_id:
+                return 75.0
             return 0.0
 
         if threshold.lower_is_better:

@@ -191,8 +191,18 @@ class StockVectors:
         
         # Define helper to apply per group (receives DataFrame chunk for one symbol)
         def calc_group_metrics(group):
-            if len(group) < 3:
-                return pd.Series([None, None, None, None], 
+            # Extract lists
+            net_income_values = group['net_income'].tolist()
+            revenue_values = group['revenue'].tolist()
+            years = len(group) - 1
+            
+            # Require at least 3 valid calculations, UNLESS there are negative years
+            # which we penalize even with short history (parity with EarningsAnalyzer)
+            has_negative_ni = any(v is not None and v < 0 for v in net_income_values)
+            
+            if len(group) < 2:
+                inc_const = 200 if has_negative_ni else None
+                return pd.Series([None, None, inc_const, None], 
                                index=['earnings_cagr', 'revenue_cagr', 'income_consistency_score', 'revenue_consistency_score'])
             
             # Extract lists
@@ -208,14 +218,10 @@ class StockVectors:
             inc_const = self._calculate_consistency(net_income_values)
             rev_const = self._calculate_consistency(revenue_values)
             
-            # Normalize scores
-            inc_score = max(0.0, 100.0 - (inc_const * 2.0)) if inc_const is not None else None
-            rev_score = max(0.0, 100.0 - (rev_const * 2.0)) if rev_const is not None else None
-            
-            return pd.Series([e_cagr, r_cagr, inc_score, rev_score], 
+            # Return raw consistency scores for now, normalization will happen after merge
+            return pd.Series([e_cagr, r_cagr, inc_const, rev_const], 
                            index=['earnings_cagr', 'revenue_cagr', 'income_consistency_score', 'revenue_consistency_score'])
 
-        # Apply calculation (this is much faster than iterating df.loc)
         # Apply calculation (this is much faster than iterating df.loc)
         try:
             metrics_df = grouped_hist.groupby('symbol').apply(calc_group_metrics, include_groups=False)
@@ -226,6 +232,15 @@ class StockVectors:
         # Merge back to original DF
         # metrics_df has symbol as index
         df = df.merge(metrics_df, left_on='symbol', right_index=True, how='left')
+        
+        # 2. Normalize consistency scores
+        # pd is imported at the top of the file
+        df['income_consistency_score'] = df['income_consistency_score'].apply(
+            lambda x: max(0.0, 100.0 - (x * 2.0)) if x is not None and not pd.isna(x) else None
+        )
+        df['revenue_consistency_score'] = df['revenue_consistency_score'].apply(
+            lambda x: max(0.0, 100.0 - (x * 2.0)) if x is not None and not pd.isna(x) else None
+        )
         
         return df
 
@@ -254,27 +269,30 @@ class StockVectors:
         """
         if len(values) < 2:
             return None
-        if values[0] is None or values[0] <= 0:
-            return None
+        # Allow negative/zero start values if handled properly below
         
         growth_rates = []
         negative_year_penalty = 0
         has_negative_years = False
         
         for i in range(1, len(values)):
-            v_curr = values[i]
-            v_prev = values[i-1]
-            
-            if v_curr is not None and v_prev is not None and v_prev > 0:
-                growth_rate = ((v_curr - v_prev) / v_prev) * 100
+            if values[i-1] is not None and values[i] is not None and values[i-1] != 0:
+                growth_rate = (values[i] - values[i-1]) / abs(values[i-1]) * 100
                 growth_rates.append(growth_rate)
             
-            if v_curr is not None and v_curr < 0:
+            # Track negative years
+            if values[i] is not None and values[i] < 0:
+                negative_year_penalty += 10
+                has_negative_years = True
+
+            # Additional penalty: starting negative (parity with EarningsAnalyzer)
+            if i == 1 and values[i-1] is not None and values[i-1] < 0:
                 negative_year_penalty += 10
                 has_negative_years = True
         
+        # Parity with EarningsAnalyzer: return 200 if has negative years but < 3 growth rates
         if has_negative_years and len(growth_rates) < 3:
-            return 200  # Very high std_dev = very low consistency
+            return 200
         
         if len(growth_rates) < 3:
             return None

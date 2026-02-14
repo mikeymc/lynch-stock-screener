@@ -4,6 +4,7 @@
 from typing import Dict, Any, Optional, List
 from database import Database
 import math
+import pandas as pd
 
 
 class EarningsAnalyzer:
@@ -13,7 +14,7 @@ class EarningsAnalyzer:
     def calculate_earnings_growth(self, symbol: str) -> Optional[Dict[str, Any]]:
         history = self.db.get_earnings_history(symbol)
 
-        if len(history) < 3:
+        if not history:
             return None
 
         history_sorted = sorted(history, key=lambda x: x['year'])
@@ -25,9 +26,21 @@ class EarningsAnalyzer:
             if h.get('net_income') is not None and h.get('revenue') is not None
         ]
 
-        # Need at least 3 years of valid data
-        if len(valid_history) < 3:
-            return None
+        # Need at least 2 years of valid data
+        if len(valid_history) < 2:
+            # Even for single year, check for losses to apply consistency penalty (parity with StockVectors)
+            inc_const = None
+            if len(valid_history) == 1:
+                net_income = valid_history[0].get('net_income')
+                inc_const = 200 if net_income is not None and net_income < 0 else None
+            
+            return {
+                'earnings_cagr': None,
+                'revenue_cagr': None,
+                'consistency_score': inc_const,
+                'income_consistency_score': inc_const,
+                'revenue_consistency_score': None
+            }
 
         # Limit to most recent 5 years for growth calculations
         # This focuses on recent performance as per Lynch's preference
@@ -86,7 +99,7 @@ class EarningsAnalyzer:
     def calculate_growth_consistency(self, values: List[float]) -> Optional[float]:
         if len(values) < 2:
             return None
-        # Check if the first value is None (negative values are allowed for turnaround stories)
+        # Check if the first value is None
         if values[0] is None:
             return None
 
@@ -95,17 +108,23 @@ class EarningsAnalyzer:
         has_negative_years = False
         
         for i in range(1, len(values)):
-            if values[i] is not None and values[i-1] is not None and values[i-1] > 0:
-                growth_rate = ((values[i] - values[i-1]) / values[i-1]) * 100
+            # Parity with StockVectors: use abs(values[i-1]) and != 0 to allow negative starts
+            if values[i] is not None and values[i-1] is not None and values[i-1] != 0:
+                growth_rate = ((values[i] - values[i-1]) / abs(values[i-1])) * 100
                 growth_rates.append(growth_rate)
             
             # Track negative net income years
             if values[i] is not None and values[i] < 0:
-                negative_year_penalty += 10  # Add 10 to std_dev for each negative year (softer penalty)
+                negative_year_penalty += 10  # Add 10 to std_dev for each negative year
                 has_negative_years = True
+            
+            # Additional penalty: starting negative (parity with StockVectors logic for has_negative_years)
+            if values[i-1] is not None and values[i-1] < 0 and i == 1:
+                has_negative_years = True
+                negative_year_penalty += 10
 
-        # If we have negative years but insufficient valid growth rates,
-        # return a high penalty instead of None (which would default to neutral 50)
+        # Parity with StockVectors: return 200 if has negative years but < 3 growth rates
+        # This now applies before the len(growth_rates) < 3 check for short histories
         if has_negative_years and len(growth_rates) < 3:
             return 200  # Very high std_dev = very low consistency score
 

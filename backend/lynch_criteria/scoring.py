@@ -2,6 +2,7 @@
 # ABOUTME: Provides PEG, debt, ownership, and growth scoring as a mixin class.
 
 import logging
+import pandas as pd
 from typing import Optional
 
 logger = logging.getLogger(__name__)
@@ -10,7 +11,7 @@ logger = logging.getLogger(__name__)
 class ScoringMixin:
 
     def calculate_peg_ratio(self, pe_ratio: float, earnings_growth: float) -> Optional[float]:
-        if pe_ratio is None or earnings_growth is None:
+        if pe_ratio is None or pd.isna(pe_ratio) or earnings_growth is None or pd.isna(earnings_growth):
             return None
         if isinstance(pe_ratio, str) or isinstance(earnings_growth, str):
             return None
@@ -20,7 +21,7 @@ class ScoringMixin:
 
     def evaluate_peg(self, value: float) -> str:
         """Evaluate PEG ratio: lower is better"""
-        if value is None:
+        if value is None or pd.isna(value):
             return "FAIL"
 
         # Safety: use defaults if loaded from non-Lynch character config
@@ -46,7 +47,7 @@ class ScoringMixin:
         Fair (1.5-2.0): 25-75
         Poor (2.0+): 0-25
         """
-        if value is None:
+        if value is None or pd.isna(value):
             return 0.0
 
         # Safety defaults
@@ -77,7 +78,7 @@ class ScoringMixin:
 
     def evaluate_debt(self, value: float) -> str:
         """Evaluate debt-to-equity: lower is better"""
-        if value is None:
+        if value is None or pd.isna(value):
             return "PASS"  # Lynch liked no debt
 
         # Safety defaults
@@ -103,7 +104,7 @@ class ScoringMixin:
         Moderate (1.0-2.0): 25-75
         High (2.0+): 0-25
         """
-        if value is None:
+        if value is None or pd.isna(value):
             return 100.0  # No debt is great
 
         # Safety defaults
@@ -134,7 +135,7 @@ class ScoringMixin:
 
     def evaluate_institutional_ownership(self, value: float) -> str:
         """Evaluate institutional ownership: sweet spot is around 40%"""
-        if value is None:
+        if value is None or pd.isna(value):
             return "PASS"
 
         # Safety defaults
@@ -154,13 +155,12 @@ class ScoringMixin:
 
     def calculate_institutional_ownership_score(self, value: float) -> float:
         """
-        Calculate institutional ownership score (0-100).
-        Sweet spot (20%-60%): 100
-        Under-owned (< 20%): 50-100
-        Over-owned (> 60%): 0-50
+        Calculate ownership score (0-100).
+        Sweet spot (0.2-0.6): 100
+        High (>0.6): 0-100 inverse
         """
-        if value is None:
-            return 75.0  # Neutral
+        if value is None or pd.isna(value):
+            return 75.0  # Missing info is neutral/good
 
         # Safety defaults
         inst_own_min = self.inst_own_min if self.inst_own_min is not None else 0.20

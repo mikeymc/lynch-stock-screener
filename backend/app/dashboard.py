@@ -387,14 +387,14 @@ def get_market_movers():
     Query params:
       - period: 1d, 1w, 1m, ytd (default: 1d)
       - limit: number of stocks per category (default: 5)
-      - character: optional character override (default: user's active character)
+      - character_id: optional character override (default: user's active character)
     """
     period = request.args.get('period', '1d')
     limit = min(int(request.args.get('limit', 5)), 20)
     try:
         # 1. Resolve character and scoring configuration using the shared helper
         user_id = session.get('user_id')
-        character_id, config = resolve_scoring_config(user_id, request.args.get('character'))
+        character_id, config = resolve_scoring_config(user_id, request.args.get('character_id') or request.args.get('character'))
         
         # 2. Get Stock Pool & Score (Vectorized)
         df = deps.stock_vectors.load_vectors(country_filter='US')
