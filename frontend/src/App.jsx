@@ -1242,7 +1242,7 @@ function App() {
           } />
           <Route path="/stocks" element={<Navigate to="/" replace />} />
           <Route path="/earnings" element={<EarningsCalendarPage />} />
-          <Route path="/dashboard" element={<Dashboard />} />
+          <Route path="/dashboard" element={<Dashboard activeCharacter={activeCharacter} />} />
           <Route path="/theses" element={<ThesesPage />} />
           <Route path="/stock/:symbol" element={
             <StockDetail

@@ -17,7 +17,7 @@ import { useAuth } from '@/context/AuthContext'
 
 const AUTO_REFRESH_INTERVAL = 5 * 60 * 1000 // 5 minutes
 
-export default function Dashboard() {
+export default function Dashboard({ activeCharacter }) {
     const navigate = useNavigate()
 
     return (
@@ -43,7 +43,7 @@ export default function Dashboard() {
 
             {/* Row 4: Market Movers */}
             <div className="grid gap-6">
-                <MarketMovers />
+                <MarketMovers activeCharacter={activeCharacter} />
             </div>
         </div>
     )

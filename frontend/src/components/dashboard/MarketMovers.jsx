@@ -16,7 +16,7 @@ const PERIODS = [
     { value: 'ytd', label: 'YTD' }
 ]
 
-export default function MarketMovers() {
+export default function MarketMovers({ activeCharacter }) {
     const navigate = useNavigate()
     const [period, setPeriod] = useState('1d')
     const [data, setData] = useState(null)
@@ -25,10 +25,12 @@ export default function MarketMovers() {
 
     useEffect(() => {
         const fetchMovers = async () => {
+            if (!activeCharacter) return;
+
             setLoading(true)
             setError(null)
             try {
-                const response = await fetch(`/api/market/movers?period=${period}&limit=5`)
+                const response = await fetch(`/api/market/movers?period=${period}&limit=5&character_id=${activeCharacter}`)
                 if (response.ok) {
                     const result = await response.json()
                     setData(result)
@@ -44,7 +46,7 @@ export default function MarketMovers() {
         }
 
         fetchMovers()
-    }, [period])
+    }, [period, activeCharacter])
 
     return (
         <Card>
