@@ -1955,4 +1955,33 @@ class SchemaMixin:
             ON user_events(created_at)
         """)
 
+        # Strategy briefings (post-run summaries with structured data + AI narrative)
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS strategy_briefings (
+                id SERIAL PRIMARY KEY,
+                run_id INTEGER REFERENCES strategy_runs(id) UNIQUE,
+                strategy_id INTEGER REFERENCES investment_strategies(id),
+                portfolio_id INTEGER REFERENCES portfolios(id),
+                stocks_screened INTEGER,
+                stocks_scored INTEGER,
+                theses_generated INTEGER,
+                trades_executed INTEGER,
+                portfolio_value REAL,
+                portfolio_return_pct REAL,
+                spy_return_pct REAL,
+                alpha REAL,
+                buys_json TEXT,
+                sells_json TEXT,
+                holds_json TEXT,
+                watchlist_json TEXT,
+                executive_summary TEXT,
+                generated_at TIMESTAMP
+            )
+        """)
+
+        cursor.execute("""
+            CREATE INDEX IF NOT EXISTS idx_briefings_portfolio
+            ON strategy_briefings(portfolio_id, generated_at DESC)
+        """)
+
         conn.commit()
