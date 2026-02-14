@@ -1,23 +1,24 @@
 // ABOUTME: Strategy run briefings tab for autonomous portfolios
-// ABOUTME: Displays briefing cards with stats pipeline, trade details, and AI executive summaries
+// ABOUTME: Displays briefing cards with markdown summaries, trades table, and score-enriched holds
 
 import { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
+import ReactMarkdown from 'react-markdown'
+import remarkGfm from 'remark-gfm'
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
+import {
+    Table, TableBody, TableCell, TableHead, TableHeader, TableRow
+} from "@/components/ui/table"
 import { Collapsible, CollapsibleTrigger, CollapsibleContent } from "@/components/ui/collapsible"
 import { Skeleton } from "@/components/ui/skeleton"
-import { Separator } from "@/components/ui/separator"
 import {
     ChevronDown,
-    TrendingUp,
-    TrendingDown,
     Filter,
     BarChart3,
     FileText,
     ArrowLeftRight,
     ArrowRight,
-    Package,
 } from 'lucide-react'
 
 const API_BASE = '/api'
@@ -88,6 +89,10 @@ function BriefingCard({ briefing }) {
     const buys = safeParse(briefing.buys_json)
     const sells = safeParse(briefing.sells_json)
     const holds = safeParse(briefing.holds_json)
+    const trades = [
+        ...sells.map(s => ({ ...s, action: 'SELL' })),
+        ...buys.map(b => ({ ...b, action: 'BUY' })),
+    ]
 
     return (
         <Card>
@@ -117,11 +122,13 @@ function BriefingCard({ briefing }) {
             </CardHeader>
 
             <CardContent className="space-y-4">
-                {/* Executive Summary */}
+                {/* Executive Summary (markdown) */}
                 {briefing.executive_summary && (
-                    <p className="text-sm leading-relaxed">
-                        {briefing.executive_summary}
-                    </p>
+                    <div className="prose prose-sm max-w-none dark:prose-invert">
+                        <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                            {briefing.executive_summary}
+                        </ReactMarkdown>
+                    </div>
                 )}
 
                 {/* Stats Pipeline */}
@@ -135,51 +142,159 @@ function BriefingCard({ briefing }) {
                     <PipelineStat icon={ArrowLeftRight} label="Trades" value={briefing.trades_executed} />
                 </div>
 
-                {/* Trade Details */}
-                {buys.length > 0 && (
-                    <TradeSection
-                        title="Buys"
-                        items={buys}
-                        badgeVariant="success"
-                        renderDetail={(item) => (
-                            <>
-                                {item.shares && item.price && (
-                                    <span className="text-xs text-muted-foreground">
-                                        {item.shares} shares @ ${item.price.toFixed(2)}
-                                    </span>
-                                )}
-                            </>
-                        )}
-                    />
-                )}
+                {/* Trades Table */}
+                {trades.length > 0 && <TradesTable trades={trades} />}
 
-                {sells.length > 0 && (
-                    <TradeSection
-                        title="Sells"
-                        items={sells}
-                        badgeVariant="destructive"
-                        renderDetail={(item) => (
-                            <>
-                                {item.shares && item.price && (
-                                    <span className="text-xs text-muted-foreground">
-                                        {item.shares} shares @ ${item.price.toFixed(2)}
-                                    </span>
-                                )}
-                            </>
-                        )}
-                    />
-                )}
-
-                {holds.length > 0 && (
-                    <TradeSection
-                        title="Holds"
-                        items={holds}
-                        badgeVariant="secondary"
-                        renderDetail={() => null}
-                    />
-                )}
+                {/* Holds */}
+                {holds.length > 0 && <HoldsSection holds={holds} />}
             </CardContent>
         </Card>
+    )
+}
+
+function ScoreBadge({ score, status }) {
+    if (score == null) return <span className="text-xs text-muted-foreground">—</span>
+
+    const colorClass = status === 'excellent' ? 'text-emerald-600 dark:text-emerald-400'
+        : status === 'good' ? 'text-emerald-600/80 dark:text-emerald-400/80'
+        : status === 'fair' ? 'text-yellow-600 dark:text-yellow-400'
+        : 'text-red-600 dark:text-red-400'
+
+    return (
+        <span className={`text-xs font-medium tabular-nums ${colorClass}`}>
+            {score.toFixed(0)}
+        </span>
+    )
+}
+
+function TradesTable({ trades }) {
+    return (
+        <div>
+            <h4 className="text-sm font-medium mb-2">Trades</h4>
+            <Table>
+                <TableHeader>
+                    <TableRow>
+                        <TableHead className="w-[60px]">Action</TableHead>
+                        <TableHead>Symbol</TableHead>
+                        <TableHead className="text-right">Shares</TableHead>
+                        <TableHead className="text-right">Price</TableHead>
+                        <TableHead className="text-right">Value</TableHead>
+                        <TableHead className="text-right">Lynch</TableHead>
+                        <TableHead className="text-right">Buffett</TableHead>
+                        <TableHead className="text-right">DCF Upside</TableHead>
+                    </TableRow>
+                </TableHeader>
+                <TableBody>
+                    {trades.map((trade, i) => (
+                        <TableRow key={`${trade.action}-${trade.symbol}-${i}`}>
+                            <TableCell>
+                                <Badge
+                                    variant={trade.action === 'BUY' ? 'success' : 'destructive'}
+                                    className="text-[10px] px-1.5 py-0"
+                                >
+                                    {trade.action}
+                                </Badge>
+                            </TableCell>
+                            <TableCell>
+                                <Link
+                                    to={`/stock/${trade.symbol}`}
+                                    className="font-mono text-sm font-medium text-primary hover:underline"
+                                >
+                                    {trade.symbol}
+                                </Link>
+                            </TableCell>
+                            <TableCell className="text-right tabular-nums text-sm">
+                                {trade.shares ?? '—'}
+                            </TableCell>
+                            <TableCell className="text-right tabular-nums text-sm">
+                                {trade.price != null ? `$${trade.price.toFixed(2)}` : '—'}
+                            </TableCell>
+                            <TableCell className="text-right tabular-nums text-sm">
+                                {trade.position_value != null
+                                    ? `$${trade.position_value.toLocaleString(undefined, { maximumFractionDigits: 0 })}`
+                                    : '—'}
+                            </TableCell>
+                            <TableCell className="text-right">
+                                <ScoreBadge score={trade.lynch_score} status={trade.lynch_status} />
+                            </TableCell>
+                            <TableCell className="text-right">
+                                <ScoreBadge score={trade.buffett_score} status={trade.buffett_status} />
+                            </TableCell>
+                            <TableCell className="text-right">
+                                <UpsideBadge pct={trade.dcf_upside_pct} />
+                            </TableCell>
+                        </TableRow>
+                    ))}
+                </TableBody>
+            </Table>
+        </div>
+    )
+}
+
+function UpsideBadge({ pct }) {
+    if (pct == null) return <span className="text-xs text-muted-foreground">—</span>
+
+    const colorClass = pct >= 10 ? 'text-emerald-600 dark:text-emerald-400'
+        : pct >= 0 ? 'text-yellow-600 dark:text-yellow-400'
+        : 'text-red-600 dark:text-red-400'
+
+    return (
+        <span className={`text-xs font-medium tabular-nums ${colorClass}`}>
+            {pct >= 0 ? '+' : ''}{pct.toFixed(1)}%
+        </span>
+    )
+}
+
+function HoldsSection({ holds }) {
+    const [open, setOpen] = useState(false)
+
+    return (
+        <Collapsible open={open} onOpenChange={setOpen}>
+            <CollapsibleTrigger className="flex items-center gap-2 text-sm font-medium w-full text-left hover:opacity-80 transition-opacity">
+                <ChevronDown className={`h-4 w-4 transition-transform ${open ? '' : '-rotate-90'}`} />
+                Holds
+                <Badge variant="secondary" className="text-[10px] px-1.5 py-0">
+                    {holds.length}
+                </Badge>
+            </CollapsibleTrigger>
+            <CollapsibleContent>
+                <div className="mt-2 space-y-2 pl-6">
+                    {holds.map((item, i) => (
+                        <div key={item.symbol || i} className="flex items-center gap-3">
+                            <Link
+                                to={`/stock/${item.symbol}`}
+                                className="font-mono text-sm font-medium text-primary hover:underline shrink-0 w-16"
+                            >
+                                {item.symbol}
+                            </Link>
+                            {item.consensus_verdict && (
+                                <Badge
+                                    variant={item.consensus_verdict === 'BUY' ? 'success'
+                                        : item.consensus_verdict === 'AVOID' ? 'destructive'
+                                        : 'secondary'}
+                                    className="text-[10px] px-1.5 py-0"
+                                >
+                                    {item.consensus_verdict}
+                                </Badge>
+                            )}
+                            <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                                {item.lynch_score != null && (
+                                    <span>L: <ScoreBadge score={item.lynch_score} status={item.lynch_status} /></span>
+                                )}
+                                {item.buffett_score != null && (
+                                    <span>B: <ScoreBadge score={item.buffett_score} status={item.buffett_status} /></span>
+                                )}
+                                {item.position_value != null && (
+                                    <span className="text-muted-foreground">
+                                        ${item.position_value.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                                    </span>
+                                )}
+                            </div>
+                        </div>
+                    ))}
+                </div>
+            </CollapsibleContent>
+        </Collapsible>
     )
 }
 
@@ -190,44 +305,6 @@ function PipelineStat({ icon: Icon, label, value }) {
             <span className="font-medium tabular-nums">{value ?? 0}</span>
             <span className="hidden sm:inline opacity-60">{label}</span>
         </div>
-    )
-}
-
-function TradeSection({ title, items, badgeVariant, renderDetail }) {
-    const [open, setOpen] = useState(false)
-
-    return (
-        <Collapsible open={open} onOpenChange={setOpen}>
-            <CollapsibleTrigger className="flex items-center gap-2 text-sm font-medium w-full text-left hover:opacity-80 transition-opacity">
-                <ChevronDown className={`h-4 w-4 transition-transform ${open ? '' : '-rotate-90'}`} />
-                {title}
-                <Badge variant={badgeVariant} className="text-[10px] px-1.5 py-0">
-                    {items.length}
-                </Badge>
-            </CollapsibleTrigger>
-            <CollapsibleContent>
-                <div className="mt-2 space-y-2 pl-6">
-                    {items.map((item, i) => (
-                        <div key={item.symbol || i} className="flex items-start gap-2">
-                            <Link
-                                to={`/stock/${item.symbol}`}
-                                className="font-mono text-sm font-medium text-primary hover:underline shrink-0"
-                            >
-                                {item.symbol}
-                            </Link>
-                            <div className="flex flex-col gap-0.5">
-                                {renderDetail(item)}
-                                {item.reasoning && (
-                                    <span className="text-xs text-muted-foreground leading-snug">
-                                        {item.reasoning}
-                                    </span>
-                                )}
-                            </div>
-                        </div>
-                    ))}
-                </div>
-            </CollapsibleContent>
-        </Collapsible>
     )
 }
 
