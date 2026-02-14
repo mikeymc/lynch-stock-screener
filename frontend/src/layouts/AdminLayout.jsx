@@ -20,7 +20,8 @@ import {
     Activity,
     LogOut,
     ChevronLeft,
-    BarChart3
+    BarChart3,
+    Megaphone
 } from 'lucide-react'
 import UserAvatar from '@/components/UserAvatar'
 
@@ -36,6 +37,7 @@ export default function AdminLayout() {
         { name: 'Strategies', path: '/admin/strategies', icon: Layers },
         { name: 'Portfolios', path: '/admin/portfolios', icon: Briefcase },
         { name: 'User Actions', path: '/admin/user_actions', icon: Activity },
+        { name: 'Feedback', path: '/admin/feedback', icon: Megaphone },
     ]
 
     return (

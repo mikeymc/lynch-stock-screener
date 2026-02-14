@@ -220,3 +220,14 @@ def get_user_actions():
     except Exception as e:
         logger.error(f"Error fetching user events: {e}")
         return jsonify({'error': str(e)}), 500
+
+@admin_bp.route('/api/admin/feedback', methods=['GET'])
+@require_admin
+def get_all_feedback():
+    """Get all user feedback for admin review"""
+    try:
+        feedback = deps.db.get_all_feedback()
+        return jsonify({'feedback': feedback})
+    except Exception as e:
+        logger.error(f"Error fetching feedback: {e}")
+        return jsonify({'error': str(e)}), 500

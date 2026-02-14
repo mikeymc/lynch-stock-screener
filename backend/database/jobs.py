@@ -65,6 +65,41 @@ class JobsMixin:
             raise
         finally:
             self.return_connection(conn)
+    def get_all_feedback(self) -> List[Dict[str, Any]]:
+        """Get all feedback entries with user details"""
+        conn = self.get_connection()
+        try:
+            from psycopg.rows import dict_row
+            cursor = conn.cursor(row_factory=dict_row)
+            cursor.execute("""
+                SELECT 
+                    f.id,
+                    f.user_id,
+                    f.email,
+                    f.feedback_text,
+                    f.screenshot_data,
+                    f.page_url,
+                    f.metadata,
+                    f.status,
+                    f.created_at,
+                    u.name as user_name
+                FROM app_feedback f
+                LEFT JOIN users u ON f.user_id = u.id
+                ORDER BY f.created_at DESC
+            """)
+            return cursor.fetchall()
+        finally:
+            self.return_connection(conn)
+
+    def get_feedback_count(self) -> int:
+        """Get count of unread/new feedback"""
+        conn = self.get_connection()
+        try:
+            cursor = conn.cursor()
+            cursor.execute("SELECT COUNT(*) FROM app_feedback WHERE status = 'new'")
+            return cursor.fetchone()[0]
+        finally:
+            self.return_connection(conn)
 
 
     def get_background_job(self, job_id: int) -> Optional[Dict[str, Any]]:

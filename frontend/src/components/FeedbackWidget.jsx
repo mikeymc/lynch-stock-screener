@@ -58,7 +58,7 @@ export function FeedbackWidget({ isOpen, onClose }) {
                 }
             };
 
-            const response = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:5001'}/api/feedback`, {
+            const response = await fetch(`/api/feedback`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
