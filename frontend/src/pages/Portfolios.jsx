@@ -37,6 +37,7 @@ import {
 import { format } from 'date-fns'
 import { Line } from 'react-chartjs-2'
 import { useAuth } from '@/context/AuthContext'
+import BriefingsTab from '@/pages/portfolios/BriefingsTab'
 
 // Format currency with commas and 2 decimal places
 const formatCurrency = (value) => {
@@ -524,6 +525,7 @@ function PortfolioDetail({ portfolio, onBack, onRefresh, onDelete }) {
                     {!portfolio.strategy_id && <TabsTrigger value="trade">Trade</TabsTrigger>}
                     <TabsTrigger value="transactions">Transactions</TabsTrigger>
                     <TabsTrigger value="performance">Performance</TabsTrigger>
+                    {portfolio.strategy_id && <TabsTrigger value="briefings">Briefings</TabsTrigger>}
                 </TabsList>
 
                 <TabsContent value="holdings">
@@ -555,6 +557,12 @@ function PortfolioDetail({ portfolio, onBack, onRefresh, onDelete }) {
                         initialCash={initialCash}
                     />
                 </TabsContent>
+
+                {portfolio.strategy_id && (
+                    <TabsContent value="briefings">
+                        <BriefingsTab portfolioId={portfolio.id} />
+                    </TabsContent>
+                )}
             </Tabs>
         </div>
     )
