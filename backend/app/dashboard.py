@@ -391,7 +391,6 @@ def get_market_movers():
     """
     period = request.args.get('period', '1d')
     limit = min(int(request.args.get('limit', 5)), 20)
-    
     try:
         # 1. Resolve character and scoring configuration using the shared helper
         user_id = session.get('user_id')
@@ -440,9 +439,9 @@ def get_market_movers():
                         price as historical_price
                     FROM weekly_prices
                     WHERE symbol = ANY(%s)
-                      AND week_ending <= CURRENT_DATE - INTERVAL '%s days'
+                      AND week_ending <= CURRENT_DATE - (%s * INTERVAL '1 day')
                     ORDER BY symbol, week_ending DESC
-                """ % ("%s", "%s"), (symbols, f"{days_back} days"))
+                """, (symbols, days_back))
                 hist_prices = cursor.fetchall()
                 
                 # Convert to DataFrame for merging

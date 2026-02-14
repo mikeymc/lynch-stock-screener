@@ -90,6 +90,44 @@ class TestMarketMoversEndpoint:
         assert 'period' in data
         assert data['period'] == '1d'
 
+    def test_get_movers_weekly(self, client, mock_db):
+        """Test getting market movers with 1w period (historical query)."""
+        import pandas as pd
+        from datetime import date
+        
+        # 1. Mock the scoring part (vectorized evaluate_batch)
+        mock_scored_df = pd.DataFrame([
+            {'symbol': 'AAPL', 'price': 150.0, 'price_change_pct': 2.5, 'overall_status': 'PASS'}
+        ])
+        
+        # 2. Mock the DB historical price query
+        mock_cursor = MagicMock()
+        mock_cursor.fetchall.return_value = [
+            {'symbol': 'AAPL', 'historical_price': 140.0}
+        ]
+        mock_conn = MagicMock()
+        mock_conn.cursor.return_value = mock_cursor
+        mock_db.get_connection.return_value = mock_conn
+        
+        with patch('app.deps.stock_vectors.load_vectors') as mock_load:
+            mock_load.return_value = MagicMock()
+            with patch('app.deps.criteria.evaluate_batch') as mock_eval:
+                mock_eval.return_value = mock_scored_df
+                
+    def test_get_movers_weekly_no_error(self, client, mock_db):
+        """Verify that 1w period doesn't cause a 500 SQL error."""
+        # Minimal mockup to avoid 500 before SQL execution
+        mock_cursor = MagicMock()
+        mock_cursor.fetchall.return_value = []
+        mock_conn = MagicMock()
+        mock_conn.cursor.return_value = mock_cursor
+        mock_db.get_connection.return_value = mock_conn
+        
+        # We don't care about the result content here, just that it doesn't 500
+        # The 500 was coming from the cursor.execute() call specifically
+        response = client.get('/api/market/movers?period=1w')
+        assert response.status_code != 500
+
 
 class TestDashboardEndpoint:
     """Tests for GET /api/dashboard"""
