@@ -12,16 +12,108 @@ class PortfolioToolsMixin:
     # Portfolio Management Executor Methods
     # =========================================================================
 
-    def _create_portfolio(self, name: str, user_id: int, initial_cash: float = 100000.0) -> Dict[str, Any]:
-        """Create a new paper trading portfolio."""
+    def _create_portfolio(
+        self,
+        name: str,
+        user_id: int,
+        initial_cash: float = 100000.0,
+        portfolio_type: str = "self_directed",
+        template_id: str = None,
+        filters: List[Dict] = None,
+        enable_now: bool = False,
+        consensus_mode: str = None,
+        consensus_threshold: float = None,
+        position_sizing_method: str = None,
+        max_position_pct: float = None,
+        max_positions: int = None,
+        profit_target_pct: float = None,
+        stop_loss_pct: float = None,
+        addition_lynch_min: float = None,
+        addition_buffett_min: float = None,
+    ) -> Dict[str, Any]:
+        """Create a new paper trading portfolio, optionally with an autonomous strategy."""
         try:
             portfolio_id = self.db.create_portfolio(user_id=user_id, name=name, initial_cash=initial_cash)
+
+            if portfolio_type != "autonomous":
+                return {
+                    "success": True,
+                    "portfolio_id": portfolio_id,
+                    "name": name,
+                    "initial_cash": initial_cash,
+                    "message": f"Portfolio '{name}' created successfully with ${initial_cash:,.2f}.",
+                    "portfolio_url": f"/portfolios/{portfolio_id}",
+                }
+
+            # Autonomous portfolio: create associated strategy
+            from strategy_templates import FILTER_TEMPLATES, STRATEGY_DEFAULTS
+
+            if template_id:
+                if template_id not in FILTER_TEMPLATES:
+                    return {"success": False, "error": f"Unknown template: {template_id}"}
+                final_filters = FILTER_TEMPLATES[template_id]["filters"]
+                if filters:
+                    final_filters = filters
+            elif filters:
+                final_filters = filters
+            else:
+                return {"success": False, "error": "Must provide either template_id or filters for an autonomous portfolio"}
+
+            conditions = {
+                "filters": final_filters,
+                "require_thesis": True,
+                "scoring_requirements": [
+                    {"character": "lynch", "min_score": 60},
+                    {"character": "buffett", "min_score": 60}
+                ],
+                "thesis_verdict_required": ["BUY"]
+            }
+
+            if addition_lynch_min is not None or addition_buffett_min is not None:
+                addition_reqs = []
+                if addition_lynch_min is not None:
+                    addition_reqs.append({"character": "lynch", "min_score": addition_lynch_min})
+                if addition_buffett_min is not None:
+                    addition_reqs.append({"character": "buffett", "min_score": addition_buffett_min})
+                conditions["addition_scoring_requirements"] = addition_reqs
+
+            position_sizing = {
+                "method": position_sizing_method or STRATEGY_DEFAULTS["position_sizing"]["method"],
+                "max_position_pct": max_position_pct or STRATEGY_DEFAULTS["position_sizing"]["max_position_pct"],
+                "max_positions": max_positions or STRATEGY_DEFAULTS["position_sizing"]["max_positions"]
+            }
+
+            exit_conditions = {}
+            if profit_target_pct is not None:
+                exit_conditions["profit_target_pct"] = profit_target_pct
+            if stop_loss_pct is not None:
+                exit_conditions["stop_loss_pct"] = stop_loss_pct
+
+            strategy_id = self.db.create_strategy(
+                user_id=user_id,
+                portfolio_id=portfolio_id,
+                name=name,
+                description="Created via chat agent",
+                conditions=conditions,
+                consensus_mode=consensus_mode or STRATEGY_DEFAULTS["consensus_mode"],
+                consensus_threshold=consensus_threshold or STRATEGY_DEFAULTS["consensus_threshold"],
+                position_sizing=position_sizing,
+                exit_conditions=exit_conditions,
+                schedule_cron=STRATEGY_DEFAULTS["schedule_cron"]
+            )
+
+            if enable_now:
+                self.db.update_strategy(user_id, strategy_id, enabled=True)
+
             return {
                 "success": True,
                 "portfolio_id": portfolio_id,
+                "strategy_id": strategy_id,
                 "name": name,
                 "initial_cash": initial_cash,
-                "message": f"Portfolio '{name}' created successfully with ${initial_cash:,.2f}."
+                "enabled": enable_now,
+                "message": f"Autonomous portfolio '{name}' created successfully" + (" and enabled" if enable_now else ""),
+                "portfolio_url": f"/portfolios/{portfolio_id}",
             }
         except Exception as e:
             return {"success": False, "error": str(e)}
@@ -98,8 +190,8 @@ class PortfolioToolsMixin:
         except Exception as e:
             return {"success": False, "error": str(e)}
 
-    def _get_strategy_templates(self) -> Dict[str, Any]:
-        """Return available strategy templates."""
+    def _get_portfolio_templates(self) -> Dict[str, Any]:
+        """Return available templates for creating autonomous portfolios."""
         from strategy_templates import FILTER_TEMPLATES
         return {
             "success": True,
@@ -113,107 +205,4 @@ class PortfolioToolsMixin:
                 }
                 for k, v in FILTER_TEMPLATES.items()
             ]
-        }
-
-    def _create_strategy(
-        self,
-        name: str,
-        user_id: int,
-        template_id: str = None,
-        filters: List[Dict] = None,
-        portfolio_id: str = "new",
-        portfolio_name: str = None,
-        initial_cash: float = 100000.0,
-        enable_now: bool = False,
-        consensus_mode: str = None,
-        consensus_threshold: float = None,
-        position_sizing_method: str = None,
-        max_position_pct: float = None,
-        max_positions: int = None,
-        profit_target_pct: float = None,
-        stop_loss_pct: float = None,
-        addition_lynch_min: float = None,
-        addition_buffett_min: float = None
-    ) -> Dict[str, Any]:
-        """Create a new investment strategy conversationally."""
-        from strategy_templates import FILTER_TEMPLATES, STRATEGY_DEFAULTS
-
-        # Load template if specified
-        if template_id:
-            if template_id not in FILTER_TEMPLATES:
-                return {"success": False, "error": f"Unknown template: {template_id}"}
-            template = FILTER_TEMPLATES[template_id]
-            final_filters = template["filters"]
-            if filters:  # Allow override
-                final_filters = filters
-        elif filters:
-            final_filters = filters
-        else:
-            return {"success": False, "error": "Must provide either template_id or filters"}
-
-        # Handle portfolio creation
-        actual_portfolio_id = portfolio_id
-        if portfolio_id == "new":
-            pf_name = portfolio_name or f"{name} Portfolio"
-            actual_portfolio_id = self.db.create_portfolio(user_id, pf_name, initial_cash)
-
-        # Build conditions
-        conditions = {
-            "filters": final_filters,
-            "require_thesis": True,
-            "scoring_requirements": [
-                {"character": "lynch", "min_score": 60},
-                {"character": "buffett", "min_score": 60}
-            ],
-            "thesis_verdict_required": ["BUY"]
-        }
-
-        # Add addition thresholds if provided
-        if addition_lynch_min is not None or addition_buffett_min is not None:
-            addition_reqs = []
-            if addition_lynch_min is not None:
-                addition_reqs.append({"character": "lynch", "min_score": addition_lynch_min})
-            if addition_buffett_min is not None:
-                addition_reqs.append({"character": "buffett", "min_score": addition_buffett_min})
-            conditions["addition_scoring_requirements"] = addition_reqs
-
-        # Build position sizing
-        position_sizing = {
-            "method": position_sizing_method or STRATEGY_DEFAULTS["position_sizing"]["method"],
-            "max_position_pct": max_position_pct or STRATEGY_DEFAULTS["position_sizing"]["max_position_pct"],
-            "max_positions": max_positions or STRATEGY_DEFAULTS["position_sizing"]["max_positions"]
-        }
-
-        # Build exit conditions
-        exit_conditions = {}
-        if profit_target_pct is not None:
-            exit_conditions["profit_target_pct"] = profit_target_pct
-        if stop_loss_pct is not None:
-            exit_conditions["stop_loss_pct"] = stop_loss_pct
-
-        # Create strategy
-        strategy_id = self.db.create_strategy(
-            user_id=user_id,
-            portfolio_id=actual_portfolio_id,
-            name=name,
-            description=f"Created via chat agent",
-            conditions=conditions,
-            consensus_mode=consensus_mode or STRATEGY_DEFAULTS["consensus_mode"],
-            consensus_threshold=consensus_threshold or STRATEGY_DEFAULTS["consensus_threshold"],
-            position_sizing=position_sizing,
-            exit_conditions=exit_conditions,
-            schedule_cron=STRATEGY_DEFAULTS["schedule_cron"]
-        )
-
-        # Enable if requested
-        if enable_now:
-            self.db.update_strategy(user_id, strategy_id, enabled=True)
-
-        return {
-            "success": True,
-            "strategy_id": strategy_id,
-            "portfolio_id": actual_portfolio_id,
-            "enabled": enable_now,
-            "message": f"Strategy '{name}' created successfully" + (" and enabled" if enable_now else ""),
-            "strategy_url": f"/strategies/{strategy_id}"
         }

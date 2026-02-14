@@ -71,14 +71,12 @@ class ToolExecutorCore:
             "get_portfolio_status": self._get_portfolio_status,
             "buy_stock": self._buy_stock,
             "sell_stock": self._sell_stock,
-            # Strategy management tools
-            "get_strategy_templates": self._get_strategy_templates,
-            "create_strategy": self._create_strategy,
-            "get_my_strategies": self._get_my_strategies,
-            "get_strategy": self._get_strategy,
-            "update_strategy": self._update_strategy,
-            "get_strategy_activity": self._get_strategy_activity,
-            "get_strategy_decisions": self._get_strategy_decisions,
+            "get_portfolio_templates": self._get_portfolio_templates,
+            # Autonomous portfolio strategy management tools
+            "get_portfolio_strategy": self._get_portfolio_strategy_config,
+            "update_portfolio_strategy": self._update_portfolio_strategy,
+            "get_portfolio_strategy_activity": self._get_portfolio_strategy_activity,
+            "get_portfolio_strategy_decisions": self._get_portfolio_strategy_decisions,
         }
 
         executor = executor_map.get(tool_name)

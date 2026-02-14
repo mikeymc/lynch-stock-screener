@@ -333,9 +333,9 @@ class SmartChatAgent:
                         # Inject user_id context for alerts, portfolios, and strategies
                         portfolio_tools = [
                             "create_portfolio", "get_my_portfolios", "get_portfolio_status",
-                            "buy_stock", "sell_stock", "create_strategy",
-                            "get_my_strategies", "get_strategy", "update_strategy",
-                            "get_strategy_activity", "get_strategy_decisions",
+                            "buy_stock", "sell_stock", "get_portfolio_templates",
+                            "get_portfolio_strategy", "update_portfolio_strategy",
+                            "get_portfolio_strategy_activity", "get_portfolio_strategy_decisions",
                         ]
                         if (tool_name == "manage_alerts" or tool_name in portfolio_tools) and user_id:
                             tool_args["user_id"] = user_id
@@ -504,9 +504,9 @@ class SmartChatAgent:
                         # Inject user_id context for alerts, portfolios, and strategies
                         portfolio_tools = [
                             "create_portfolio", "get_my_portfolios", "get_portfolio_status",
-                            "buy_stock", "sell_stock", "create_strategy",
-                            "get_my_strategies", "get_strategy", "update_strategy",
-                            "get_strategy_activity", "get_strategy_decisions",
+                            "buy_stock", "sell_stock", "get_portfolio_templates",
+                            "get_portfolio_strategy", "update_portfolio_strategy",
+                            "get_portfolio_strategy_activity", "get_portfolio_strategy_decisions",
                         ]
                         if (tool_name == "manage_alerts" or tool_name in portfolio_tools) and user_id:
                             tool_args["user_id"] = user_id

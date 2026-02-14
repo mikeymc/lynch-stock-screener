@@ -461,12 +461,47 @@ manage_alerts_decl = FunctionDeclaration(
 
 create_portfolio_decl = FunctionDeclaration(
     name="create_portfolio",
-    description="Create a new paper trading portfolio for the user.",
+    description="""Create a new paper trading portfolio for the user.
+
+    Two portfolio types are supported:
+    - 'self_directed' (default): A manual portfolio where the user makes all trades.
+    - 'autonomous': An AI-managed portfolio that automatically screens stocks, scores them using
+      Lynch and Buffett criteria, and executes trades. Requires screening filters or a template_id.
+
+    For autonomous portfolios, use get_portfolio_templates first to see available templates.""",
     parameters=Schema(
         type=Type.OBJECT,
         properties={
             "name": Schema(type=Type.STRING, description="Name for the portfolio (e.g., 'Tech Growth', 'Retirement Mockup')"),
             "initial_cash": Schema(type=Type.NUMBER, description="Starting cash amount (default: 100,000)"),
+            "portfolio_type": Schema(
+                type=Type.STRING,
+                description="Type of portfolio: 'self_directed' (manual) or 'autonomous' (AI-managed). Default: 'self_directed'",
+                enum=["self_directed", "autonomous"],
+            ),
+            # Autonomous portfolio strategy params
+            "template_id": Schema(type=Type.STRING, description="Autonomous only: ID of template to use as base (e.g., 'growth_at_reasonable_price')"),
+            "filters": Schema(
+                type=Type.ARRAY,
+                items=Schema(type=Type.OBJECT),
+                description="Autonomous only: Custom filters array. Each filter has field, operator, value."
+            ),
+            "enable_now": Schema(type=Type.BOOLEAN, description="Autonomous only: Whether to enable the strategy immediately (default: false)"),
+            "consensus_mode": Schema(
+                type=Type.STRING,
+                description="Autonomous only: How Lynch and Buffett must agree: 'both_agree', 'weighted_confidence', 'veto_power'. Default: 'both_agree'"
+            ),
+            "consensus_threshold": Schema(type=Type.NUMBER, description="Autonomous only: Minimum score (0-100) for a consensus 'BUY'. Default: 70.0"),
+            "position_sizing_method": Schema(
+                type=Type.STRING,
+                description="Autonomous only: How to size positions: 'equal_weight', 'conviction_weighted', 'fixed_pct', 'kelly_criterion'. Default: 'equal_weight'"
+            ),
+            "max_position_pct": Schema(type=Type.NUMBER, description="Autonomous only: Maximum % of portfolio per position (e.g., 10.0 for 10%). Default: 10.0"),
+            "max_positions": Schema(type=Type.INTEGER, description="Autonomous only: Maximum number of holdings. Default: 50"),
+            "profit_target_pct": Schema(type=Type.NUMBER, description="Autonomous only: Sell when position gains this % (e.g., 50 for +50%)"),
+            "stop_loss_pct": Schema(type=Type.NUMBER, description="Autonomous only: Sell when position loses this % (e.g., -20 for -20%)"),
+            "addition_lynch_min": Schema(type=Type.NUMBER, description="Autonomous only: Minimum Lynch score for adding to existing positions"),
+            "addition_buffett_min": Schema(type=Type.NUMBER, description="Autonomous only: Minimum Buffett score for adding to existing positions"),
             "user_id": Schema(type=Type.INTEGER, description="Internal User ID (automatically injected)"),
         },
         required=["name"],
@@ -535,9 +570,9 @@ sell_stock_decl = FunctionDeclaration(
 )
 
 
-get_strategy_templates_decl = FunctionDeclaration(
-    name="get_strategy_templates",
-    description="""Get available strategy templates that users can use as starting points.
+get_portfolio_templates_decl = FunctionDeclaration(
+    name="get_portfolio_templates",
+    description="""Get available templates for creating autonomous portfolios.
     Each template includes pre-configured filters for different investment approaches like
     value investing, growth at reasonable price, dividend stocks, etc. Use this to help
     users discover proven strategy patterns.""",
@@ -548,93 +583,30 @@ get_strategy_templates_decl = FunctionDeclaration(
 )
 
 
-create_strategy_decl = FunctionDeclaration(
-    name="create_strategy",
-    description="""Create a new autonomous investment strategy for the user.
-
-    The strategy will automatically screen stocks, score them using Lynch and Buffett criteria,
-    and optionally execute trades in a paper trading portfolio.
-
-    You can create a strategy by:
-    1. Using a template (get_strategy_templates first to see options)
-    2. Custom filters specified by the user
-    3. A mix of template + custom modifications
-
-    The strategy can create a new portfolio or use an existing one.""",
-    parameters=Schema(
-        type=Type.OBJECT,
-        properties={
-            "name": Schema(type=Type.STRING, description="Name for the strategy (e.g., 'My GARP Strategy')"),
-            "template_id": Schema(type=Type.STRING, description="Optional: ID of template to use as base (e.g., 'growth_at_reasonable_price')"),
-            "filters": Schema(
-                type=Type.ARRAY,
-                items=Schema(type=Type.OBJECT),
-                description="Optional: Custom filters array. Each filter has field, operator, value."
-            ),
-            "portfolio_id": Schema(type=Type.STRING, description="Portfolio ID or 'new' to create one. Default: 'new'"),
-            "portfolio_name": Schema(type=Type.STRING, description="Name for new portfolio (only if portfolio_id='new')"),
-            "initial_cash": Schema(type=Type.NUMBER, description="Initial cash for new portfolio (default: 100000)"),
-            "enable_now": Schema(type=Type.BOOLEAN, description="Whether to enable the strategy immediately (default: false)"),
-            "consensus_mode": Schema(
-                type=Type.STRING,
-                description="How Lynch and Buffett must agree: 'both_agree' (both must approve), 'weighted_confidence' (weighted average), 'veto_power' (either can block). Default: 'both_agree'"
-            ),
-            "consensus_threshold": Schema(type=Type.NUMBER, description="Minimum score (0-100) for a consensus 'BUY'. Default: 70.0"),
-            "veto_score_threshold": Schema(type=Type.NUMBER, description="Score below which a character triggers an automatic VETO. Default: 30.0"),
-            "position_sizing_method": Schema(
-                type=Type.STRING,
-                description="How to size positions: 'equal_weight' (equal allocation), 'conviction_weighted' (scale by confidence), 'fixed_pct' (fixed %), 'kelly_criterion' (Kelly formula). Default: 'equal_weight'"
-            ),
-            "max_position_pct": Schema(type=Type.NUMBER, description="Maximum % of portfolio per position (e.g., 10.0 for 10%). Default: 10.0"),
-            "fixed_position_pct": Schema(type=Type.NUMBER, description="Fixed % of portfolio for each position (if method is 'fixed_pct')"),
-            "max_positions": Schema(type=Type.INTEGER, description="Maximum number of holdings in the portfolio. Default: 50"),
-            "profit_target_pct": Schema(type=Type.NUMBER, description="Optional: Sell when position gains this % (e.g., 50 for +50%)"),
-            "stop_loss_pct": Schema(type=Type.NUMBER, description="Optional: Sell when position loses this % (e.g., -20 for -20%)"),
-            "min_position_value": Schema(type=Type.NUMBER, description="Minimum dollar amount for a position. Trades below this value are skipped. Default: 100.0"),
-            "addition_lynch_min": Schema(type=Type.NUMBER, description="Minimum Lynch score for adding to existing positions (default: base+10)"),
-            "addition_buffett_min": Schema(type=Type.NUMBER, description="Minimum Buffett score for adding to existing positions (default: base+10)"),
-            "user_id": Schema(type=Type.INTEGER, description="Internal User ID (automatically injected)"),
-        },
-        required=["name"],
-    ),
-)
-
 
 # =============================================================================
-# Strategy Management Tools
+# Autonomous Portfolio Strategy Management Tools
 # =============================================================================
 
-get_my_strategies_decl = FunctionDeclaration(
-    name="get_my_strategies",
-    description="List all of the user's investment strategies with their status (enabled/disabled), alpha vs SPY, and last run date/status. Use this to give a quick overview of what strategies exist before diving into details.",
+get_portfolio_strategy_decl = FunctionDeclaration(
+    name="get_portfolio_strategy",
+    description="Get the strategy config of an autonomous portfolio including its screening filters, consensus mode, position sizing rules, exit conditions, and schedule. Use this when the user asks how a portfolio's strategy works or wants to review its settings.",
     parameters=Schema(
         type=Type.OBJECT,
         properties={
+            "portfolio_id": Schema(type=Type.INTEGER, description="The portfolio's id field (NOT the strategy_id) — use the id from get_my_portfolios"),
             "user_id": Schema(type=Type.INTEGER, description="Internal User ID (automatically injected)"),
         },
-        required=[],
+        required=["portfolio_id"],
     ),
 )
 
-get_strategy_decl = FunctionDeclaration(
-    name="get_strategy",
-    description="Get the full configuration of a specific strategy including its screening filters, consensus mode, position sizing rules, exit conditions, and schedule. Use this when the user asks how a strategy works or wants to review its settings.",
-    parameters=Schema(
-        type=Type.OBJECT,
-        properties={
-            "strategy_id": Schema(type=Type.INTEGER, description="ID of the strategy to retrieve"),
-            "user_id": Schema(type=Type.INTEGER, description="Internal User ID (automatically injected)"),
-        },
-        required=["strategy_id"],
-    ),
-)
-
-update_strategy_decl = FunctionDeclaration(
-    name="update_strategy",
-    description="""Modify an existing strategy conversationally. You can change any combination of fields.
+update_portfolio_strategy_decl = FunctionDeclaration(
+    name="update_portfolio_strategy",
+    description="""Modify the strategy of an autonomous portfolio conversationally. You can change any combination of fields.
 
     Examples:
-    - "disable strategy 3" → enabled=false
+    - "disable portfolio 3's strategy" → enabled=false
     - "raise the stop loss to 25%" → stop_loss_pct=-25
     - "switch to conviction-weighted sizing" → position_sizing_method='conviction_weighted'
     - "add a filter for P/E under 20" → pass updated filters array
@@ -644,7 +616,7 @@ update_strategy_decl = FunctionDeclaration(
     parameters=Schema(
         type=Type.OBJECT,
         properties={
-            "strategy_id": Schema(type=Type.INTEGER, description="ID of the strategy to update"),
+            "portfolio_id": Schema(type=Type.INTEGER, description="The portfolio's id field (NOT the strategy_id) — use the id from get_my_portfolios"),
             "name": Schema(type=Type.STRING, description="New name for the strategy"),
             "description": Schema(type=Type.STRING, description="New description"),
             "enabled": Schema(type=Type.BOOLEAN, description="Enable (true) or disable (false) the strategy"),
@@ -674,27 +646,27 @@ update_strategy_decl = FunctionDeclaration(
             ),
             "user_id": Schema(type=Type.INTEGER, description="Internal User ID (automatically injected)"),
         },
-        required=["strategy_id"],
+        required=["portfolio_id"],
     ),
 )
 
-get_strategy_activity_decl = FunctionDeclaration(
-    name="get_strategy_activity",
-    description="Get recent run history for a strategy including trade counts, stocks screened, run status, and performance vs SPY. Use this when the user asks what a strategy has been doing or how it has performed recently.",
+get_portfolio_strategy_activity_decl = FunctionDeclaration(
+    name="get_portfolio_strategy_activity",
+    description="Get run history for an autonomous portfolio's strategy including trade counts, stocks screened, run status, and performance vs SPY. Use this when the user asks what a portfolio has been doing or how it has performed recently.",
     parameters=Schema(
         type=Type.OBJECT,
         properties={
-            "strategy_id": Schema(type=Type.INTEGER, description="ID of the strategy"),
+            "portfolio_id": Schema(type=Type.INTEGER, description="The portfolio's id field (NOT the strategy_id) — use the id from get_my_portfolios"),
             "limit": Schema(type=Type.INTEGER, description="Number of recent runs to return (default: 5)"),
             "user_id": Schema(type=Type.INTEGER, description="Internal User ID (automatically injected)"),
         },
-        required=["strategy_id"],
+        required=["portfolio_id"],
     ),
 )
 
-get_strategy_decisions_decl = FunctionDeclaration(
-    name="get_strategy_decisions",
-    description="""Get per-symbol scoring and reasoning from a strategy run. Shows why each stock was bought, sold, or skipped — including Lynch and Buffett scores, thesis summary, and trade details.
+get_portfolio_strategy_decisions_decl = FunctionDeclaration(
+    name="get_portfolio_strategy_decisions",
+    description="""Get per-symbol decisions from an autonomous portfolio's strategy run. Shows why each stock was bought, sold, or skipped — including Lynch and Buffett scores, thesis summary, and trade details.
 
     Defaults to the most recent run. Use filter to narrow results:
     - 'all': every symbol evaluated
@@ -702,11 +674,11 @@ get_strategy_decisions_decl = FunctionDeclaration(
     - 'buys': only BUY decisions
     - 'sells': only SELL decisions
 
-    Use this to answer "why did you buy X?" or "what did the strategy skip last time?".""",
+    Use this to answer "why did you buy X?" or "what did the portfolio skip last time?".""",
     parameters=Schema(
         type=Type.OBJECT,
         properties={
-            "strategy_id": Schema(type=Type.INTEGER, description="ID of the strategy"),
+            "portfolio_id": Schema(type=Type.INTEGER, description="The portfolio's id field (NOT the strategy_id) — use the id from get_my_portfolios"),
             "run_id": Schema(type=Type.INTEGER, description="Specific run ID to inspect (default: latest run)"),
             "filter": Schema(
                 type=Type.STRING,
@@ -715,7 +687,7 @@ get_strategy_decisions_decl = FunctionDeclaration(
             ),
             "user_id": Schema(type=Type.INTEGER, description="Internal User ID (automatically injected)"),
         },
-        required=["strategy_id"],
+        required=["portfolio_id"],
     ),
 )
 
@@ -827,14 +799,12 @@ TOOL_DECLARATIONS = [
     get_portfolio_status_decl,
     buy_stock_decl,
     sell_stock_decl,
-    # Strategy management tools
-    get_strategy_templates_decl,
-    create_strategy_decl,
-    get_my_strategies_decl,
-    get_strategy_decl,
-    update_strategy_decl,
-    get_strategy_activity_decl,
-    get_strategy_decisions_decl,
+    get_portfolio_templates_decl,
+    # Autonomous portfolio strategy management tools
+    get_portfolio_strategy_decl,
+    update_portfolio_strategy_decl,
+    get_portfolio_strategy_activity_decl,
+    get_portfolio_strategy_decisions_decl,
 ]
 
 # Create the Tool object for Gemini API

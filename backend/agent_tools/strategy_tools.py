@@ -12,18 +12,24 @@ class StrategyToolsMixin:
     # Internal Helpers
     # =========================================================================
 
-    def _verify_strategy_ownership(self, strategy_id: int, user_id: int) -> Dict[str, Any]:
+    def _get_portfolio_strategy(self, portfolio_id: int, user_id: int) -> Dict[str, Any]:
         """
-        Fetch strategy and verify it belongs to user_id.
+        Fetch portfolio, verify ownership, and return the associated strategy dict.
 
         Returns the strategy dict on success, or {'error': ..., 'success': False} on failure.
         Callers check for 'error' key to short-circuit.
         """
+        portfolio = self.db.get_portfolio(portfolio_id)
+        if not portfolio:
+            return {"success": False, "error": f"Portfolio {portfolio_id} not found."}
+        if portfolio['user_id'] != user_id:
+            return {"success": False, "error": "Portfolio not found or unauthorized access."}
+        strategy_id = portfolio.get('strategy_id')
+        if not strategy_id:
+            return {"success": False, "error": f"Portfolio {portfolio_id} is not an autonomous portfolio."}
         strategy = self.db.get_strategy(strategy_id)
         if not strategy:
-            return {"success": False, "error": f"Strategy {strategy_id} not found."}
-        if strategy['user_id'] != user_id:
-            return {"success": False, "error": "Strategy not found or unauthorized access."}
+            return {"success": False, "error": f"Strategy not found for portfolio {portfolio_id}."}
         return dict(strategy)
 
     @staticmethod
@@ -41,21 +47,10 @@ class StrategyToolsMixin:
     # Strategy Management Executor Methods
     # =========================================================================
 
-    def _get_my_strategies(self, user_id: int) -> Dict[str, Any]:
-        """List all strategies for the user with status, alpha, and last run info."""
+    def _get_portfolio_strategy_config(self, portfolio_id: int, user_id: int) -> Dict[str, Any]:
+        """Get full strategy configuration for an autonomous portfolio."""
         try:
-            strategies = self.db.get_user_strategies(user_id)
-            return {
-                "success": True,
-                "strategies": [dict(s) for s in strategies],
-            }
-        except Exception as e:
-            return {"success": False, "error": str(e)}
-
-    def _get_strategy(self, strategy_id: int, user_id: int) -> Dict[str, Any]:
-        """Get full strategy configuration including filters, consensus, sizing, and schedule."""
-        try:
-            result = self._verify_strategy_ownership(strategy_id, user_id)
+            result = self._get_portfolio_strategy(portfolio_id, user_id)
             if 'error' in result:
                 return result
             strategy = self._parse_json_fields(result)
@@ -63,9 +58,9 @@ class StrategyToolsMixin:
         except Exception as e:
             return {"success": False, "error": str(e)}
 
-    def _update_strategy(
+    def _update_portfolio_strategy(
         self,
-        strategy_id: int,
+        portfolio_id: int,
         user_id: int,
         name: str = None,
         description: str = None,
@@ -84,18 +79,19 @@ class StrategyToolsMixin:
         filters=None,
     ) -> Dict[str, Any]:
         """
-        Modify any strategy field conversationally.
+        Modify any strategy field for an autonomous portfolio conversationally.
 
         position_sizing and exit_conditions use read-modify-write (preserves unmentioned fields).
         filters fully replaces conditions.filters.
         Direct fields (name, enabled, consensus_mode, etc.) map straight through.
         """
         try:
-            result = self._verify_strategy_ownership(strategy_id, user_id)
+            result = self._get_portfolio_strategy(portfolio_id, user_id)
             if 'error' in result:
                 return result
 
             strategy = self._parse_json_fields(result)
+            strategy_id = strategy['id']
             update_kwargs = {}
 
             # Direct scalar fields
@@ -174,18 +170,19 @@ class StrategyToolsMixin:
         except Exception as e:
             return {"success": False, "error": str(e)}
 
-    def _get_strategy_activity(
+    def _get_portfolio_strategy_activity(
         self,
-        strategy_id: int,
+        portfolio_id: int,
         user_id: int,
         limit: int = 5,
     ) -> Dict[str, Any]:
-        """Get recent run history with trade counts and performance."""
+        """Get recent run history with trade counts and performance for an autonomous portfolio."""
         try:
-            result = self._verify_strategy_ownership(strategy_id, user_id)
+            result = self._get_portfolio_strategy(portfolio_id, user_id)
             if 'error' in result:
                 return result
 
+            strategy_id = result['id']
             runs = self.db.get_strategy_runs(strategy_id, limit)
             all_perf = self.db.get_strategy_performance(strategy_id)
             # Slice performance to match limit
@@ -200,23 +197,25 @@ class StrategyToolsMixin:
         except Exception as e:
             return {"success": False, "error": str(e)}
 
-    def _get_strategy_decisions(
+    def _get_portfolio_strategy_decisions(
         self,
-        strategy_id: int,
+        portfolio_id: int,
         user_id: int,
         run_id: int = None,
         filter: str = 'all',
     ) -> Dict[str, Any]:
         """
-        Get per-symbol scoring and reasoning for a strategy run.
+        Get per-symbol scoring and reasoning for an autonomous portfolio's strategy run.
 
         run_id defaults to the most recent run.
         filter: 'all' | 'trades' (BUY+SELL) | 'buys' | 'sells'
         """
         try:
-            result = self._verify_strategy_ownership(strategy_id, user_id)
+            result = self._get_portfolio_strategy(portfolio_id, user_id)
             if 'error' in result:
                 return result
+
+            strategy_id = result['id']
 
             # Resolve run_id
             if run_id is None:
