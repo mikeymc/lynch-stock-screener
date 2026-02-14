@@ -68,7 +68,7 @@ export default function NewTheses() {
                         {error}
                     </div>
                 ) : theses.length > 0 ? (
-                    <div className="space-y-1">
+                    <div className="">
                         {theses.map((item, idx) => (
                             <ThesisRow
                                 key={`${item.symbol}-${idx}`}
@@ -96,7 +96,7 @@ function ThesisRow({ item, onClick }) {
     return (
         <button
             onClick={onClick}
-            className="w-full flex items-center justify-between py-2 px-2 rounded hover:bg-accent transition-colors text-left border-b border-border last:border-0"
+            className="w-full flex items-center justify-between py-0.5 px-2 rounded hover:bg-accent transition-colors text-left border-b border-border last:border-0"
         >
             <div className="min-w-0 flex-1 mr-4">
                 <div className="flex items-center gap-2">

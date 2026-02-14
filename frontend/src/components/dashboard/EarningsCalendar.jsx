@@ -103,7 +103,7 @@ function EarningsRow({ item, onClick }) {
     return (
         <button
             onClick={onClick}
-            className="w-full flex items-center justify-between py-0.5 px-2 rounded hover:bg-accent transition-colors text-left"
+            className="w-full flex items-center justify-between py-0.5 px-2 rounded hover:bg-accent transition-colors text-left border-b border-border last:border-0"
         >
             <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-2">
@@ -133,7 +133,7 @@ function EarningsRow({ item, onClick }) {
                 </span>
                 <Badge
                     variant={isToday ? 'destructive' : isTomorrow ? 'default' : isThisWeek ? 'secondary' : 'outline'}
-                    className="text-xs"
+                    className="text-xs h-5 py-0"
                 >
                     {isToday ? 'Today' : isTomorrow ? 'Tomorrow' : `${daysUntil}d`}
                 </Badge>
