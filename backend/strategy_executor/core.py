@@ -225,6 +225,21 @@ class StrategyExecutorCore:
 
             perf = self.benchmark_tracker.record_strategy_performance(strategy_id, new_value)
 
+            # Phase 8: Generate briefing
+            try:
+                from strategy_executor.briefing import BriefingGenerator
+                briefing_gen = BriefingGenerator(self.db)
+                briefing_data = briefing_gen.generate(
+                    run_id=run_id,
+                    strategy_id=strategy_id,
+                    portfolio_id=portfolio_id,
+                    performance=perf,
+                )
+                self.db.save_briefing(briefing_data)
+                print(f"✓ Briefing generated\n")
+            except Exception as e:
+                logger.warning(f"Briefing generation failed (non-fatal): {e}")
+
             # Complete run
             self.db.update_strategy_run(
                 run_id,
