@@ -266,51 +266,52 @@ def fetch_current_prices_batch(symbols: list[str], db=None) -> Dict[str, float]:
         return {}
         
     prices = {}
-    
-    # Try batch download first
-    try:
-        # threads=False to avoid resource contention/deadlocks on some systems
-        # period="1d" gets the latest data
-        data = yf.download(unique_symbols, period="1d", progress=False, threads=False, auto_adjust=True)
-        
-        # Handle different return formats from yfinance
-        if not data.empty:
-            # Check if we have MultiIndex columns (multiple symbols) or single level (single symbol)
-            if isinstance(data.columns, pd.MultiIndex):
-                # Multiple symbols: data['Close'] or data['Adj Close'] is a DataFrame with symbols as columns
-                # Note: yfinance recently changed behavior, 'Close' might be top level or second level depending on version
-                # Usually it is (Attribute, Ticker)
-                
-                # We try to get 'Close'
-                if 'Close' in data.columns.get_level_values(0):
-                    closes = data['Close'] # This should be a DataFrame with tickers as columns
-                    # Get the last row (latest date)
-                    last_prices = closes.iloc[-1]
-                    # Convert to dict, dropping NaNs
-                    prices = last_prices.dropna().to_dict()
-                elif 'Adj Close' in data.columns.get_level_values(0):
-                    closes = data['Adj Close']
-                    last_prices = closes.iloc[-1]
-                    prices = last_prices.dropna().to_dict()
-            else:
-                # Single symbol or flat index (if only one symbol was requested or returned)
-                # If single symbol passed to download, columns are ['Open', 'High', 'Low', 'Close', ...]
-                if 'Close' in data.columns:
-                    price = data['Close'].iloc[-1]
-                    # Check if price is scalar or series
-                    if pd.notna(price):
-                        # If unique_symbols had 1 element, that's the key
-                        if len(unique_symbols) == 1:
-                            prices[unique_symbols[0]] = float(price)
-                        else:
-                            # This case matches if yfinance returns single level despite multiple symbols (unlikely but possible)
-                            pass
-                            
-    except Exception as e:
-        logger.warning(f"[PortfolioService] Batch fetch error: {e}")
-        
-    # Fill in missing symbols individually (fallback)
-    # This ensures we don't return empty for symbols that failed batching but might work individually (or via DB)
+
+    # 1. Try database cache first (very fast)
+    if db is not None:
+        try:
+            prices = db.get_prices_batch(unique_symbols)
+            logger.info(f"[PortfolioService] Fetched {len(prices)}/{len(unique_symbols)} prices from database cache")
+        except Exception as e:
+            logger.warning(f"[PortfolioService] Cache fetch error: {e}")
+
+    # 2. Identify missing symbols for yfinance fetch
+    missing = [s for s in unique_symbols if s not in prices]
+
+    if missing:
+        logger.info(f"[PortfolioService] Fetching {len(missing)} missing prices from yfinance: {missing}")
+        try:
+            # threads=False to avoid resource contention/deadlocks on some systems
+            # period="1d" gets the latest data
+            data = yf.download(missing, period="1d", progress=False, threads=False, auto_adjust=True)
+
+            # Handle different return formats from yfinance
+            if not data.empty:
+                # Check if we have MultiIndex columns (multiple symbols) or single level (single symbol)
+                if isinstance(data.columns, pd.MultiIndex):
+                    # Multiple symbols
+                    if 'Close' in data.columns.get_level_values(0):
+                        closes = data['Close']
+                        last_prices = closes.iloc[-1]
+                        yf_prices = last_prices.dropna().to_dict()
+                        prices.update({k: float(v) for k, v in yf_prices.items()})
+                    elif 'Adj Close' in data.columns.get_level_values(0):
+                        closes = data['Adj Close']
+                        last_prices = closes.iloc[-1]
+                        yf_prices = last_prices.dropna().to_dict()
+                        prices.update({k: float(v) for k, v in yf_prices.items()})
+                else:
+                    # Single symbol or flat index
+                    if 'Close' in data.columns:
+                        price = data['Close'].iloc[-1]
+                        if pd.notna(price):
+                            # If only one symbol was missing, it's that one
+                            if len(unique_symbols) == 1:
+                                prices[unique_symbols[0]] = float(price)
+        except Exception as e:
+            logger.warning(f"[PortfolioService] Batch fetch error from yfinance: {e}")
+
+    # 3. Final fallback: Fill in any remaining missing symbols individually
     missing = [s for s in unique_symbols if s not in prices]
     if missing:
         # Only log if we missed more than expected (e.g. if batch failed completely)

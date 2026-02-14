@@ -18,30 +18,51 @@ def list_portfolios(user_id):
     try:
         portfolios = deps.db.get_user_portfolios(user_id)
 
-        # Gather all symbols across all portfolios for a single batch fetch
-        all_symbols = set()
-        for p in portfolios:
-            try:
-                holdings = deps.db.get_portfolio_holdings(p['id'])
-                for symbol in holdings.keys():
-                    all_symbols.add(symbol)
-            except Exception:
-                pass
+        # 1. Batch fetch all holdings for all portfolios in one query
+        all_holdings = deps.db.get_all_user_holdings(user_id)
 
-        # Batch fetch prices from stock_metrics (cached prices, very fast)
+        # 2. Gather all symbols across all portfolios for a single batch price fetch
+        all_symbols = set()
+        for holdings in all_holdings.values():
+            all_symbols.update(holdings.keys())
+
+        # 3. Batch fetch prices from stock_metrics (cached prices, very fast)
         prices_map = {}
         if all_symbols:
             prices_map = deps.db.get_prices_batch(list(all_symbols))
 
-        # Enrich each portfolio with computed summary data
+        # 4. Batch fetch cash and dividend stats for all portfolios
+        all_stats = deps.db.get_all_user_portfolio_stats(user_id)
+
+        # Enrich each portfolio with computed summary data using pre-fetched data
         enriched_portfolios = []
-        for i, portfolio in enumerate(portfolios):
-            summary = deps.db.get_portfolio_summary(portfolio['id'], use_live_prices=True, prices_map=prices_map)
+        for portfolio in portfolios:
+            p_id = portfolio['id']
+            p_holdings = all_holdings.get(p_id, {})
+            p_stats = all_stats.get(p_id, {'buys': 0, 'sells': 0, 'total_dividends': 0, 'ytd_dividends': 0})
+
+            # Pre-calculate cash to avoid DB lookup
+            cash = portfolio['initial_cash'] - p_stats['buys'] + p_stats['sells'] + p_stats['total_dividends']
+
+            # Call summary with pre-fetched components to eliminate N+1 queries
+            summary = deps.db.get_portfolio_summary(
+                p_id,
+                use_live_prices=False, # Use cached prices for faster list loading as agreed
+                prices_map=prices_map,
+                portfolio_obj=portfolio,
+                cash=cash,
+                holdings=p_holdings,
+                # Pass pre-computed dividend summary
+                dividend_summary={
+                    'total_dividends': p_stats['total_dividends'],
+                    'ytd_dividends': p_stats['ytd_dividends'],
+                    'breakdown': [] # List view doesn't need detailed breakdown
+                }
+            )
 
             if summary:
                 enriched_portfolios.append(summary)
             else:
-                # Fallback to basic portfolio data if summary fails
                 enriched_portfolios.append(portfolio)
 
         return jsonify({'portfolios': enriched_portfolios})

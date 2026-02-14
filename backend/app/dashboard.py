@@ -493,38 +493,64 @@ def get_dashboard_portfolios(user_id):
     """Get portfolio summaries for the dashboard."""
     try:
         portfolios = deps.db.get_user_portfolios(user_id)
-        all_portfolio_symbols = set()
-        for p in portfolios:
-            try:
-                holdings = deps.db.get_portfolio_holdings(p['id'])
-                for symbol in holdings.keys():
-                    all_portfolio_symbols.add(symbol)
-            except Exception:
-                pass
+        if not portfolios:
+            return jsonify({'portfolios': [], 'total_count': 0})
 
-        portfolio_prices = {}
-        if all_portfolio_symbols:
-            from portfolio_service import fetch_current_prices_batch
-            portfolio_prices = fetch_current_prices_batch(list(all_portfolio_symbols), db=deps.db)
+        # 1. Batch fetch all holdings for all portfolios in one query
+        all_holdings = deps.db.get_all_user_holdings(user_id)
+
+        # 2. Gather all symbols across all portfolios for a single batch price fetch
+        all_symbols = set()
+        for holdings in all_holdings.values():
+            all_symbols.update(holdings.keys())
+
+        # 3. Batch fetch prices from stock_metrics (cached prices, very fast)
+        prices_map = {}
+        if all_symbols:
+            prices_map = deps.db.get_prices_batch(list(all_symbols))
+
+        # 4. Batch fetch cash and dividend stats for all portfolios
+        all_stats = deps.db.get_all_user_portfolio_stats(user_id)
 
         portfolio_summaries = []
         for p in portfolios:
             try:
-                summary = deps.db.get_portfolio_summary(p['id'], prices_map=portfolio_prices)
-                portfolio_summaries.append({
-                    'id': p['id'],
-                    'name': p['name'],
-                    'total_value': summary.get('total_value', 0),
-                    'total_gain_loss': summary.get('gain_loss', 0),
-                    'total_gain_loss_pct': summary.get('gain_loss_percent', 0),
-                    'top_holdings': summary.get('holdings_detailed', [])[:3],
-                    'strategy_id': summary.get('strategy_id')
-                })
+                p_id = p['id']
+                p_holdings = all_holdings.get(p_id, {})
+                p_stats = all_stats.get(p_id, {'buys': 0, 'sells': 0, 'total_dividends': 0, 'ytd_dividends': 0})
+
+                # Pre-calculate cash to avoid DB lookup
+                cash = p['initial_cash'] - p_stats['buys'] + p_stats['sells'] + p_stats['total_dividends']
+
+                # Use cached prices for dashboard speed
+                summary = deps.db.get_portfolio_summary(
+                    p_id,
+                    use_live_prices=False,
+                    prices_map=prices_map,
+                    portfolio_obj=p,
+                    cash=cash,
+                    holdings=p_holdings,
+                    dividend_summary={
+                        'total_dividends': p_stats['total_dividends'],
+                        'ytd_dividends': p_stats['ytd_dividends'],
+                        'breakdown': []
+                    }
+                )
+
+                if summary:
+                    portfolio_summaries.append({
+                        'id': p['id'],
+                        'name': p['name'],
+                        'total_value': summary.get('total_value', 0),
+                        'total_gain_loss': summary.get('gain_loss', 0),
+                        'total_gain_loss_pct': summary.get('gain_loss_percent', 0),
+                        'top_holdings': summary.get('holdings_detailed', [])[:3],
+                        'strategy_id': summary.get('strategy_id')
+                    })
             except Exception as e:
                 logger.warning(f"Error getting portfolio summary for {p['id']}: {e}")
 
         total_count = len(portfolio_summaries)
-        logger.info(f"Returning {len(portfolio_summaries[:5])} portfolios for dashboard (total available: {total_count})")
         return jsonify({
             'portfolios': portfolio_summaries[:5],
             'total_count': total_count
@@ -592,28 +618,50 @@ def get_dashboard_strategies(user_id):
         # We need portfolio values for these
         portfolios = deps.db.get_user_portfolios(user_id)
         portfolio_summaries = {}
-        
-        # Batch fetch prices for all portfolio symbols
-        all_symbols = set()
-        for p in portfolios:
-            try:
-                holdings = deps.db.get_portfolio_holdings(p['id'])
-                for symbol in holdings.keys():
-                    all_symbols.add(symbol)
-            except Exception:
-                pass
-        
-        prices_map = {}
-        if all_symbols:
-            from portfolio_service import fetch_current_prices_batch
-            prices_map = fetch_current_prices_batch(list(all_symbols), db=deps.db)
-            
-        for p in portfolios:
-            try:
-                summary = deps.db.get_portfolio_summary(p['id'], prices_map=prices_map)
-                portfolio_summaries[p['id']] = summary
-            except Exception:
-                pass
+
+        if portfolios:
+            # 1. Batch fetch all holdings for all portfolios in one query
+            all_holdings = deps.db.get_all_user_holdings(user_id)
+
+            # 2. Gather all symbols across all portfolios for a single batch price fetch
+            all_symbols = set()
+            for holdings in all_holdings.values():
+                all_symbols.update(holdings.keys())
+
+            # 3. Batch fetch prices from stock_metrics (cached prices, very fast)
+            prices_map = {}
+            if all_symbols:
+                prices_map = deps.db.get_prices_batch(list(all_symbols))
+
+            # 4. Batch fetch cash and dividend stats for all portfolios
+            all_stats = deps.db.get_all_user_portfolio_stats(user_id)
+
+            for p in portfolios:
+                try:
+                    p_id = p['id']
+                    p_holdings = all_holdings.get(p_id, {})
+                    p_stats = all_stats.get(p_id, {'buys': 0, 'sells': 0, 'total_dividends': 0, 'ytd_dividends': 0})
+
+                    # Pre-calculate cash to avoid DB lookup
+                    cash = p['initial_cash'] - p_stats['buys'] + p_stats['sells'] + p_stats['total_dividends']
+
+                    summary = deps.db.get_portfolio_summary(
+                        p_id,
+                        use_live_prices=False,
+                        prices_map=prices_map,
+                        portfolio_obj=p,
+                        cash=cash,
+                        holdings=p_holdings,
+                        dividend_summary={
+                            'total_dividends': p_stats['total_dividends'],
+                            'ytd_dividends': p_stats['ytd_dividends'],
+                            'breakdown': []
+                        }
+                    )
+                    if summary:
+                        portfolio_summaries[p_id] = summary
+                except Exception:
+                    pass
 
         strategy_summaries = [
             {
@@ -791,37 +839,57 @@ def get_dashboard(user_id):
             # 1. Portfolio summaries (batched price retrieval)
             portfolios = deps.db.get_user_portfolios(user_id)
 
-            # Gather all symbols across all portfolios for a single batch fetch
-            all_portfolio_symbols = set()
-            portfolio_holdings_map = {}
-            for p in portfolios:
-                try:
-                    holdings = deps.db.get_portfolio_holdings(p['id'])
-                    portfolio_holdings_map[p['id']] = holdings
-                    for symbol in holdings.keys():
-                        all_portfolio_symbols.add(symbol)
-                except Exception:
-                    pass
+            # 1a. Batch fetch all holdings for all portfolios in one query
+            all_holdings = deps.db.get_all_user_holdings(user_id)
 
-            # Perform single batch fetch for all portfolio symbols
+            # 1b. Gather all symbols across all portfolios for a single batch fetch
+            all_portfolio_symbols = set()
+            for p_holdings in all_holdings.values():
+                all_portfolio_symbols.update(p_holdings.keys())
+
+            # 1c. Batch fetch prices from stock_metrics (cached prices, very fast)
             portfolio_prices = {}
             if all_portfolio_symbols:
-                from portfolio_service import fetch_current_prices_batch
-                portfolio_prices = fetch_current_prices_batch(list(all_portfolio_symbols), db=deps.db)
+                portfolio_prices = deps.db.get_prices_batch(list(all_portfolio_symbols))
+
+            # 1d. Batch fetch cash and dividend stats for all portfolios
+            all_stats = deps.db.get_all_user_portfolio_stats(user_id)
 
             portfolio_summaries = []
             for p in portfolios:
                 try:
-                    summary = deps.db.get_portfolio_summary(p['id'], prices_map=portfolio_prices)
-                    portfolio_summaries.append({
-                        'id': p['id'],
-                        'name': p['name'],
-                        'total_value': summary.get('total_value', 0),
-                        'total_gain_loss': summary.get('gain_loss', 0),
-                        'total_gain_loss_pct': summary.get('gain_loss_percent', 0),
-                        'top_holdings': summary.get('holdings_detailed', [])[:3],
-                        'strategy_id': summary.get('strategy_id')
-                    })
+                    p_id = p['id']
+                    p_holdings = all_holdings.get(p_id, {})
+                    p_stats = all_stats.get(p_id, {'buys': 0, 'sells': 0, 'total_dividends': 0, 'ytd_dividends': 0})
+
+                    # Pre-calculate cash to avoid DB lookup
+                    cash = p['initial_cash'] - p_stats['buys'] + p_stats['sells'] + p_stats['total_dividends']
+
+                    # Use cached prices for dashboard speed
+                    summary = deps.db.get_portfolio_summary(
+                        p_id,
+                        use_live_prices=False,
+                        prices_map=portfolio_prices,
+                        portfolio_obj=p,
+                        cash=cash,
+                        holdings=p_holdings,
+                        dividend_summary={
+                            'total_dividends': p_stats['total_dividends'],
+                            'ytd_dividends': p_stats['ytd_dividends'],
+                            'breakdown': []
+                        }
+                    )
+
+                    if summary:
+                        portfolio_summaries.append({
+                            'id': p['id'],
+                            'name': p['name'],
+                            'total_value': summary.get('total_value', 0),
+                            'total_gain_loss': summary.get('gain_loss', 0),
+                            'total_gain_loss_pct': summary.get('gain_loss_percent', 0),
+                            'top_holdings': summary.get('holdings_detailed', [])[:3],
+                            'strategy_id': summary.get('strategy_id')
+                        })
                 except Exception as e:
                     logger.warning(f"Error getting portfolio summary for {p['id']}: {e}")
 

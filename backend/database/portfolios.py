@@ -181,6 +181,76 @@ class PortfoliosMixin:
         finally:
             self.return_connection(conn)
 
+    def get_all_user_holdings(self, user_id: int) -> Dict[int, Dict[str, int]]:
+        """Fetch holdings for all portfolios of a user in a single query.
+        
+        Returns:
+            Dict mapping portfolio_id -> {symbol: quantity}
+        """
+        conn = self.get_connection()
+        try:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT pt.portfolio_id, pt.symbol,
+                       SUM(CASE
+                           WHEN pt.transaction_type = 'BUY' THEN pt.quantity
+                           WHEN pt.transaction_type = 'SELL' THEN -pt.quantity
+                           ELSE 0
+                       END) as net_qty
+                FROM portfolio_transactions pt
+                JOIN portfolios p ON pt.portfolio_id = p.id
+                WHERE p.user_id = %s
+                GROUP BY pt.portfolio_id, pt.symbol
+                HAVING SUM(CASE
+                           WHEN pt.transaction_type = 'BUY' THEN pt.quantity
+                           WHEN pt.transaction_type = 'SELL' THEN -pt.quantity
+                           ELSE 0
+                       END) > 0
+            """, (user_id,))
+            rows = cursor.fetchall()
+
+            result = {}
+            for portfolio_id, symbol, qty in rows:
+                if portfolio_id not in result:
+                    result[portfolio_id] = {}
+                result[portfolio_id][symbol] = int(qty)
+            return result
+        finally:
+            self.return_connection(conn)
+
+    def get_all_user_portfolio_stats(self, user_id: int) -> Dict[int, Dict[str, Any]]:
+        """Fetch cash-contributing transaction totals and dividend summaries for all user portfolios."""
+        from datetime import date
+        conn = self.get_connection()
+        try:
+            cursor = conn.cursor()
+            ytd_start = date(date.today().year, 1, 1)
+            cursor.execute("""
+                SELECT
+                    pt.portfolio_id,
+                    COALESCE(SUM(CASE WHEN pt.transaction_type = 'BUY' THEN pt.total_value ELSE 0 END), 0) as buys,
+                    COALESCE(SUM(CASE WHEN pt.transaction_type = 'SELL' THEN pt.total_value ELSE 0 END), 0) as sells,
+                    COALESCE(SUM(CASE WHEN pt.transaction_type = 'DIVIDEND' THEN pt.total_value ELSE 0 END), 0) as total_dividends,
+                    COALESCE(SUM(CASE WHEN pt.transaction_type = 'DIVIDEND' AND pt.executed_at >= %s THEN pt.total_value ELSE 0 END), 0) as ytd_dividends
+                FROM portfolio_transactions pt
+                JOIN portfolios p ON pt.portfolio_id = p.id
+                WHERE p.user_id = %s
+                GROUP BY pt.portfolio_id
+            """, (ytd_start, user_id))
+            rows = cursor.fetchall()
+
+            result = {}
+            for pid, buys, sells, divs, ytd_divs in rows:
+                result[pid] = {
+                    'buys': float(buys),
+                    'sells': float(sells),
+                    'total_dividends': float(divs),
+                    'ytd_dividends': float(ytd_divs)
+                }
+            return result
+        finally:
+            self.return_connection(conn)
+
     def get_portfolio_by_name(self, user_id: int, name: str) -> Optional[Dict[str, Any]]:
         """Find a portfolio by name for a specific user (case-insensitive)."""
         conn = self.get_connection()
@@ -292,11 +362,12 @@ class PortfoliosMixin:
                         })
             else:
                 # Use cached prices from stock_metrics
+                symbols = [row[0] for row in holdings_data]
+                prices_map = self.get_prices_batch(symbols)
+
                 for symbol, quantity, avg_purchase_price in holdings_data:
-                    cursor.execute("SELECT price FROM stock_metrics WHERE symbol = %s", (symbol,))
-                    row = cursor.fetchone()
-                    if row and row[0] and avg_purchase_price:
-                        current_price = row[0]
+                    current_price = prices_map.get(symbol)
+                    if current_price and avg_purchase_price:
                         total_cost = quantity * avg_purchase_price
                         current_value = quantity * current_price
                         gain_loss = current_value - total_cost
@@ -653,7 +724,17 @@ class PortfoliosMixin:
         finally:
             self.return_connection(conn)
 
-    def get_portfolio_summary(self, portfolio_id: int, use_live_prices: bool = True, prices_map: Optional[Dict[str, float]] = None) -> Optional[Dict[str, Any]]:
+    def get_portfolio_summary(
+        self,
+        portfolio_id: int,
+        use_live_prices: bool = True,
+        prices_map: Optional[Dict[str, float]] = None,
+        portfolio_obj: Optional[Dict[str, Any]] = None,
+        cash: Optional[float] = None,
+        holdings: Optional[Dict[str, int]] = None,
+        holdings_detailed: Optional[List[Dict[str, Any]]] = None,
+        dividend_summary: Optional[Dict[str, Any]] = None
+    ) -> Optional[Dict[str, Any]]:
         """Get portfolio with computed cash, holdings value, and performance.
 
         Args:
@@ -661,14 +742,22 @@ class PortfoliosMixin:
             use_live_prices: If True, fetch live prices from yfinance for accuracy.
                              If False, use cached prices from stock_metrics (faster, for snapshots).
             prices_map: Optional pre-fetched map of symbol -> price.
+            portfolio_obj: Optional pre-fetched portfolio record.
+            cash: Optional pre-computed cash balance.
+            holdings: Optional pre-computed simple holdings dict.
+            holdings_detailed: Optional pre-computed detailed holdings list.
+            dividend_summary: Optional pre-computed dividend summary.
         """
-        portfolio = self.get_portfolio(portfolio_id)
+        portfolio = portfolio_obj or self.get_portfolio(portfolio_id)
         if not portfolio:
             return None
 
-        cash = self.get_portfolio_cash(portfolio_id)
-        holdings = self.get_portfolio_holdings(portfolio_id)
-        holdings_detailed = self.get_portfolio_holdings_detailed(portfolio_id, use_live_prices, prices_map)
+        if cash is None:
+            cash = self.get_portfolio_cash(portfolio_id)
+        if holdings is None:
+            holdings = self.get_portfolio_holdings(portfolio_id)
+        if holdings_detailed is None:
+            holdings_detailed = self.get_portfolio_holdings_detailed(portfolio_id, use_live_prices, prices_map)
 
         # Calculate holdings value from detailed holdings
         holdings_value = sum(h['current_value'] for h in holdings_detailed)
@@ -679,7 +768,8 @@ class PortfoliosMixin:
         gain_loss_percent = (gain_loss / initial_cash * 100) if initial_cash > 0 else 0.0
 
         # Get dividend metrics
-        dividend_summary = self.get_portfolio_dividend_summary(portfolio_id)
+        if dividend_summary is None:
+            dividend_summary = self.get_portfolio_dividend_summary(portfolio_id)
 
         # Pass pre-computed values to avoid redundant calculations
         performance_attribution = self.get_portfolio_performance_with_attribution(
