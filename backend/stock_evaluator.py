@@ -158,7 +158,7 @@ class StockEvaluator:
                      )
 
             metric_value = base_data.get(sw.metric)
-            score = self._calculate_metric_score(metric_value, threshold)
+            score = self._calculate_metric_score(metric_value, threshold, sw.metric)
 
             component_scores[f'{sw.metric}_score'] = score
             contribution = score * weight
@@ -186,7 +186,7 @@ class StockEvaluator:
 
         return result
 
-    def _calculate_metric_score(self, value: Optional[float], threshold: Threshold) -> float:
+    def _calculate_metric_score(self, value: Optional[float], threshold: Threshold, metric_id: str) -> float:
         """Calculate 0-100 score for a metric value based on threshold config.
 
         Scoring pattern:
@@ -198,9 +198,9 @@ class StockEvaluator:
         if value is None or (isinstance(value, float) and pd.isna(value)):
             # Alignment with ScoringMixin: 
             # Missing debt is good (100), missing growth/equity is neutral (0 or 50)
-            if threshold.lower_is_better and 'debt' in threshold.metric_id: # placeholder check
+            if threshold.lower_is_better and 'debt' in metric_id:
                 return 100.0
-            if 'ownership' in threshold.metric_id:
+            if 'ownership' in metric_id:
                 return 75.0
             return 0.0
 
