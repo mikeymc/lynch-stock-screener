@@ -39,6 +39,22 @@ class BriefingGenerator:
 
         for d in decisions:
             decision = d.get('final_decision')
+            
+            # Truncation logic: 
+            # - Buys/Sells get full deliberation (capped)
+            # - Holds/Watchlist get summary only
+            is_critical = decision in ['BUY', 'SELL']
+            deliberative_text = ""
+            
+            if is_critical:
+                # Keep full deliberation but cap at 10k chars as safety
+                deliberative_text = (d.get('thesis_full') or d.get('thesis_summary') or "")[:10000]
+            else:
+                # For non-critical, prefer summary, fallback to first 500 chars of full
+                deliberative_text = d.get('thesis_summary')
+                if not deliberative_text and d.get('thesis_full'):
+                    deliberative_text = d.get('thesis_full')[:500] + "..."
+            
             entry = {
                 'symbol': d['symbol'],
                 'reasoning': d.get('decision_reasoning', ''),
@@ -50,7 +66,7 @@ class BriefingGenerator:
                 'consensus_score': d.get('consensus_score'),
                 'dcf_fair_value': d.get('dcf_fair_value'),
                 'dcf_upside_pct': d.get('dcf_upside_pct'),
-                'deliberation': d.get('thesis_full') or d.get('thesis_summary', ''),
+                'deliberation': deliberative_text or "",
             }
 
             if decision == 'BUY':
@@ -71,6 +87,16 @@ class BriefingGenerator:
             elif decision == 'SKIP':
                 entry['verdict'] = d.get('thesis_verdict', 'WATCH')
                 watchlist.append(entry)
+
+        # Filter non-critical lists to prevent token exhaustion
+        # Note: We sort watchlist by consensus score (desc) to keep the best "near misses"
+        watchlist.sort(key=lambda x: x.get('consensus_score') or 0, reverse=True)
+        watchlist = watchlist[:20]
+        
+        # Holds: Just take the top 50 (no specific sort, usually by portfolio weight is fine but we don't have it here easily)
+        holds = holds[:50]
+
+        logger.info(f"[Briefing] Run {run_id} breakdown: {len(buys)} Buys, {len(sells)} Sells, {len(holds)} Holds (sampled), {len(watchlist)} Watchlist (top 20)")
 
         # Build structured data
         briefing = {
